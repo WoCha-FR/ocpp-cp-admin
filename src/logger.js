@@ -8,29 +8,29 @@ const isDev = process.env.NODE_ENV === 'development';
 // Les scopes connus ont une couleur fixe. Tout nouveau scope reçoit
 // automatiquement une couleur stable (basée sur un hash du nom).
 const SCOPE_COLORS = {
-  CPADM:    '\x1b[32m',
-  WEBUI:    '\x1b[33m',
-  OCPP:     '\x1b[34m',
-  NOTIF:    '\x1b[35m',
-  SQLDB:    '\x1b[31m',
+  CPADM: '\x1b[32m',
+  WEBUI: '\x1b[33m',
+  OCPP: '\x1b[34m',
+  NOTIF: '\x1b[35m',
+  SQLDB: '\x1b[31m',
 };
 const RESET = '\x1b[0m';
 
 // Palette de couleurs vives pour les scopes non déclarés
 const AUTO_PALETTE = [
-  '\x1b[31m',  // rouge
-  '\x1b[32m',  // vert
-  '\x1b[33m',  // jaune
-  '\x1b[34m',  // bleu
-  '\x1b[35m',  // magenta
-  '\x1b[36m',  // cyan
-  '\x1b[90m',  // gris
-  '\x1b[91m',  // rouge clair
-  '\x1b[92m',  // vert clair
-  '\x1b[93m',  // jaune clair
-  '\x1b[94m',  // bleu clair
-  '\x1b[95m',  // magenta clair
-  '\x1b[96m',  // cyan clair
+  '\x1b[31m', // rouge
+  '\x1b[32m', // vert
+  '\x1b[33m', // jaune
+  '\x1b[34m', // bleu
+  '\x1b[35m', // magenta
+  '\x1b[36m', // cyan
+  '\x1b[90m', // gris
+  '\x1b[91m', // rouge clair
+  '\x1b[92m', // vert clair
+  '\x1b[93m', // jaune clair
+  '\x1b[94m', // bleu clair
+  '\x1b[95m', // magenta clair
+  '\x1b[96m', // cyan clair
 ];
 
 function hashCode(str) {
@@ -54,21 +54,25 @@ function colorScope(scope) {
 
 // ── Format human-readable partagé (console + fichier) ──
 // eslint-disable-next-line no-unused-vars
-const readableFormat = winston.format.printf(({ timestamp, level, message, scope, service, stack, ...meta }) => {
-  const s = scope ? `[${scope}] ` : '';
-  const extra = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
-  const stackTrace = stack ? `\n${stack}` : '';
-  return `${timestamp} ${level}: ${s}${message}${extra}${stackTrace}`;
-});
+const readableFormat = winston.format.printf(
+  ({ timestamp, level, message, scope, service, stack, ...meta }) => {
+    const s = scope ? `[${scope}] ` : '';
+    const extra = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
+    const stackTrace = stack ? `\n${stack}` : '';
+    return `${timestamp} ${level}: ${s}${message}${extra}${stackTrace}`;
+  }
+);
 
 // ── Format console avec scope colorisé ──
 // eslint-disable-next-line no-unused-vars
-const consoleFormat = winston.format.printf(({ timestamp, level, message, scope, service, stack, ...meta }) => {
-  const s = colorScope(scope);
-  const extra = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
-  const stackTrace = stack ? `\n${stack}` : '';
-  return `${timestamp} ${level}: ${s}${message}${extra}${stackTrace}`;
-});
+const consoleFormat = winston.format.printf(
+  ({ timestamp, level, message, scope, service, stack, ...meta }) => {
+    const s = colorScope(scope);
+    const extra = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
+    const stackTrace = stack ? `\n${stack}` : '';
+    return `${timestamp} ${level}: ${s}${message}${extra}${stackTrace}`;
+  }
+);
 
 const logger = winston.createLogger({
   level: 'info',
@@ -84,10 +88,7 @@ const logger = winston.createLogger({
       filename: 'app-%DATE%.log',
       maxSize: '20m',
       maxFiles: '30d',
-      format: winston.format.combine(
-        winston.format.uncolorize(),
-        readableFormat
-      ),
+      format: winston.format.combine(winston.format.uncolorize(), readableFormat),
     }),
     // Fichier erreurs uniquement
     new winston.transports.DailyRotateFile({
@@ -96,22 +97,18 @@ const logger = winston.createLogger({
       level: 'error',
       maxSize: '20m',
       maxFiles: '90d',
-      format: winston.format.combine(
-        winston.format.uncolorize(),
-        readableFormat
-      ),
+      format: winston.format.combine(winston.format.uncolorize(), readableFormat),
     }),
   ],
 });
 
 // ── Console en mode développement ──
 if (isDev) {
-  logger.add(new winston.transports.Console({
-    format: winston.format.combine(
-      winston.format.colorize(),
-      consoleFormat
-    ),
-  }));
+  logger.add(
+    new winston.transports.Console({
+      format: winston.format.combine(winston.format.colorize(), consoleFormat),
+    })
+  );
 }
 
 // ── Factory pour créer des child loggers par module ──

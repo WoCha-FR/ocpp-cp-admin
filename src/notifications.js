@@ -45,7 +45,7 @@ const EVENT_DEFINITIONS = {
     defaultChannels: [],
   },
   chargepoint_online: {
-    roles: ['admin','manager'],
+    roles: ['admin', 'manager'],
     defaultChannels: [],
   },
   chargepoint_offline: {
@@ -100,7 +100,9 @@ function init() {
   registerChannel(emailChannel);
   registerChannel(webpushChannel);
   registerChannel(pushoverChannel);
-  logger.info(`Service initialized with ${channels.size} channels : ${[...channels.keys()].join(', ')}`);
+  logger.info(
+    `Service initialized with ${channels.size} channels : ${[...channels.keys()].join(', ')}`
+  );
 }
 
 /**
@@ -124,7 +126,7 @@ function getUserEffectiveRoles(user) {
     roles.add('user');
   } else {
     const sites = user.sites || [];
-    if (sites.some(s => s.role === 'manager')) roles.add('manager');
+    if (sites.some((s) => s.role === 'manager')) roles.add('manager');
     roles.add('user');
   }
   return [...roles];
@@ -138,7 +140,7 @@ function getEventsForUser(user) {
   const lng = user.langue || 'fr';
   const result = {};
   for (const [event, def] of Object.entries(EVENT_DEFINITIONS)) {
-    if (roles.some(r => def.roles.includes(r))) {
+    if (roles.some((r) => def.roles.includes(r))) {
       result[event] = {
         label: trad(`notifications.${event}.eLabel`, { lng }),
         description: trad(`notifications.${event}.eDesc`, { lng }),
@@ -211,7 +213,10 @@ async function emit(event, data, options = {}) {
         const result = await channel.send(user, event, data, formatted);
         const normalized = normalizeChannelResult(result);
         // Loguer la notification
-        db.addNotificationLog(user.id, event, channelName,
+        db.addNotificationLog(
+          user.id,
+          event,
+          channelName,
           data.identity || event,
           '',
           normalized.success,
@@ -219,9 +224,14 @@ async function emit(event, data, options = {}) {
         );
       } catch (err) {
         logger.error(`Channel error ${channelName} for user ${user.id}: ${err.message}`);
-        db.addNotificationLog(user.id, event, channelName,
+        db.addNotificationLog(
+          user.id,
+          event,
+          channelName,
           data.identity || event,
-          '', false, err.message
+          '',
+          false,
+          err.message
         );
       }
     }
@@ -234,17 +244,15 @@ async function emit(event, data, options = {}) {
  */
 function getEnabledChannels(userId, event, prefs, eventDef) {
   // Chercher les préférences spécifiques à cet événement
-  const eventPrefs = prefs.filter(p => p.event_type === event);
+  const eventPrefs = prefs.filter((p) => p.event_type === event);
 
   if (eventPrefs.length === 0) {
     // Pas de préférences → utiliser les canaux par défaut
-    return eventDef.defaultChannels.filter(c => channels.has(c));
+    return eventDef.defaultChannels.filter((c) => channels.has(c));
   }
 
   // Retourner uniquement les canaux activés
-  return eventPrefs
-    .filter(p => p.enabled && channels.has(p.channel))
-    .map(p => p.channel);
+  return eventPrefs.filter((p) => p.enabled && channels.has(p.channel)).map((p) => p.channel);
 }
 
 /**
@@ -356,13 +364,17 @@ async function sendAddedToSiteEmail(user, site) {
     const result = await emailChannel.send(user, 'added_to_site', {}, { titre, corps });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
-      logger.error(`Added to site email failed for ${user.useremail} and site ${site.sname}: ${normalized.error}`);
+      logger.error(
+        `Added to site email failed for ${user.useremail} and site ${site.sname}: ${normalized.error}`
+      );
       return false;
     }
     logger.info(`Added to site email sent to ${user.useremail} for site ${site.sname}`);
     return true;
   } catch (err) {
-    logger.error(`Added to site email failed for ${user.useremail} and site ${site.sname}: ${err.message}`);
+    logger.error(
+      `Added to site email failed for ${user.useremail} and site ${site.sname}: ${err.message}`
+    );
     return false;
   }
 }
@@ -380,13 +392,17 @@ async function sendRemovedFromSiteEmail(user, site) {
     const result = await emailChannel.send(user, 'removed_from_site', {}, { titre, corps });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
-      logger.error(`Removed from site email failed for ${user.useremail} and site ${site.sname}: ${normalized.error}`);
+      logger.error(
+        `Removed from site email failed for ${user.useremail} and site ${site.sname}: ${normalized.error}`
+      );
       return false;
     }
     logger.info(`Removed from site email sent to ${user.useremail} for site ${site.sname}`);
     return true;
   } catch (err) {
-    logger.error(`Removed from site email failed for ${user.useremail} and site ${site.sname}: ${err.message}`);
+    logger.error(
+      `Removed from site email failed for ${user.useremail} and site ${site.sname}: ${err.message}`
+    );
     return false;
   }
 }
@@ -404,13 +420,17 @@ async function sendSuspendedInSiteEmail(user, site) {
     const result = await emailChannel.send(user, 'suspended_in_site', {}, { titre, corps });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
-      logger.error(`Suspended in site email failed for ${user.useremail} and site ${site.sname}: ${normalized.error}`);
+      logger.error(
+        `Suspended in site email failed for ${user.useremail} and site ${site.sname}: ${normalized.error}`
+      );
       return false;
     }
     logger.info(`Suspended in site email sent to ${user.useremail} for site ${site.sname}`);
     return true;
   } catch (err) {
-    logger.error(`Suspended in site email failed for ${user.useremail} and site ${site.sname}: ${err.message}`);
+    logger.error(
+      `Suspended in site email failed for ${user.useremail} and site ${site.sname}: ${err.message}`
+    );
     return false;
   }
 }
@@ -428,13 +448,17 @@ async function sendReactivatedInSiteEmail(user, site) {
     const result = await emailChannel.send(user, 'reactivated_in_site', {}, { titre, corps });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
-      logger.error(`Reactivated in site email failed for ${user.useremail} and site ${site.sname}: ${normalized.error}`);
+      logger.error(
+        `Reactivated in site email failed for ${user.useremail} and site ${site.sname}: ${normalized.error}`
+      );
       return false;
     }
     logger.info(`Reactivated in site email sent to ${user.useremail} for site ${site.sname}`);
     return true;
   } catch (err) {
-    logger.error(`Reactivated in site email failed for ${user.useremail} and site ${site.sname}: ${err.message}`);
+    logger.error(
+      `Reactivated in site email failed for ${user.useremail} and site ${site.sname}: ${err.message}`
+    );
     return false;
   }
 }

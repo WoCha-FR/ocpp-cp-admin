@@ -19,7 +19,19 @@
     "type": "git",
     "url": "git+https://github.com/WoCha-FR/ocpp-cp-admin.git"
   },
-  "keywords": [],
+  "keywords": [
+    "ocpp",
+    "ocpp-1.6",
+    "csms",
+    "charge-point",
+    "charging-station",
+    "ev-charging",
+    "electric-vehicle",
+    "websocket",
+    "admin",
+    "management",
+    "nodejs"
+  ],
   "author": "WoCha",
   "license": "AGPL-3.0-only",
   "type": "commonjs",

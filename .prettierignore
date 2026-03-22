@@ -2,3 +2,5 @@ node_modules/
 logs/
 public/
 migrations/
+package.json
+package-lock.json

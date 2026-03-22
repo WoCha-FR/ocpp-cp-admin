@@ -20,9 +20,10 @@ function getTransporter() {
   logger.debug('Email transporter configured');
 
   // Vérification SMTP asynchrone (non bloquante)
-  transporter.verify()
+  transporter
+    .verify()
     .then(() => logger.debug('SMTP connection verified successfully'))
-    .catch(err => logger.warn(`SMTP verification failed: ${err.message}`));
+    .catch((err) => logger.warn(`SMTP verification failed: ${err.message}`));
 
   return transporter;
 }

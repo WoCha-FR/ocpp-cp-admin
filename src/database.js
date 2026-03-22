@@ -39,7 +39,9 @@ function getSiteById(id) {
 }
 
 function createSite(name, address) {
-  const info = db.prepare('INSERT INTO sites (sname, address) VALUES (?, ?)').run(name, address || null);
+  const info = db
+    .prepare('INSERT INTO sites (sname, address) VALUES (?, ?)')
+    .run(name, address || null);
   return getSiteById(info.lastInsertRowid);
 }
 
@@ -54,10 +56,14 @@ function deleteSite(id) {
 
 // ── Users ──
 function getAllUsers() {
-  const users = db.prepare(`
+  const users = db
+    .prepare(
+      `
     SELECT u.id, u.useremail, u.shortname, u.role, u.created_at, u.last_login
     FROM users u ORDER BY u.useremail
-  `).all();
+  `
+    )
+    .all();
   // Attacher les sites de chaque utilisateur
   for (const user of users) {
     user.sites = getUserSites(user.id);
@@ -66,10 +72,14 @@ function getAllUsers() {
 }
 
 function getUserById(id) {
-  const user = db.prepare(`
+  const user = db
+    .prepare(
+      `
     SELECT u.id, u.useremail, u.shortname, u.role, u.langue, u.created_at, u.ntif_pushuser, u.ntif_pushtokn
     FROM users u WHERE u.id = ?
-  `).get(id);
+  `
+    )
+    .get(id);
   if (user) {
     user.sites = getUserSites(user.id);
   }
@@ -85,18 +95,19 @@ function getUserByGoogleId(googleId) {
 }
 
 function updateLastLogin(userId) {
-  return db.prepare('UPDATE users SET last_login = ? WHERE id = ?')
+  return db
+    .prepare('UPDATE users SET last_login = ? WHERE id = ?')
     .run(new Date().toISOString(), userId);
 }
 
 function updateUserGoogleProfile(userId, profile) {
-  return db.prepare('UPDATE users SET auth_gglid = ? WHERE id = ?')
-    .run(profile.id, userId);
+  return db.prepare('UPDATE users SET auth_gglid = ? WHERE id = ?').run(profile.id, userId);
 }
 
 function createUser(useremail, password, role, shortname) {
   const hash = bcrypt.hashSync(password, 10);
-  const info = db.prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?, ?, ?, ?)')
+  const info = db
+    .prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?, ?, ?, ?)')
     .run(useremail, hash, role, shortname || null);
   const userId = info.lastInsertRowid;
   return getUserById(userId);
@@ -108,16 +119,20 @@ function updateUser(id, data) {
   const useremail = data.useremail || user.useremail;
   const shortname = data.shortname !== undefined ? data.shortname : user.shortname;
   const role = data.role || user.role;
-  const ntif_pushuser = data.ntif_pushuser !== undefined ? (data.ntif_pushuser || null) : user.ntif_pushuser;
-  const ntif_pushtokn = data.ntif_pushtokn !== undefined ? (data.ntif_pushtokn || null) : user.ntif_pushtokn;
+  const ntif_pushuser =
+    data.ntif_pushuser !== undefined ? data.ntif_pushuser || null : user.ntif_pushuser;
+  const ntif_pushtokn =
+    data.ntif_pushtokn !== undefined ? data.ntif_pushtokn || null : user.ntif_pushtokn;
   const langue = data.langue !== undefined ? data.langue : user.langue;
   if (data.password) {
     const hash = bcrypt.hashSync(data.password, 10);
-    db.prepare('UPDATE users SET useremail = ?, password = ?, role = ?, shortname = ?, ntif_pushuser = ?, ntif_pushtokn = ?, langue = ? WHERE id = ?')
-      .run(useremail, hash, role, shortname || null, ntif_pushuser, ntif_pushtokn, langue, id);
+    db.prepare(
+      'UPDATE users SET useremail = ?, password = ?, role = ?, shortname = ?, ntif_pushuser = ?, ntif_pushtokn = ?, langue = ? WHERE id = ?'
+    ).run(useremail, hash, role, shortname || null, ntif_pushuser, ntif_pushtokn, langue, id);
   } else {
-    db.prepare('UPDATE users SET useremail = ?, role = ?, shortname = ?, ntif_pushuser = ?, ntif_pushtokn = ?, langue = ? WHERE id = ?')
-      .run(useremail, role, shortname || null, ntif_pushuser, ntif_pushtokn, langue, id);
+    db.prepare(
+      'UPDATE users SET useremail = ?, role = ?, shortname = ?, ntif_pushuser = ?, ntif_pushtokn = ?, langue = ? WHERE id = ?'
+    ).run(useremail, role, shortname || null, ntif_pushuser, ntif_pushtokn, langue, id);
   }
   return getUserById(id);
 }
@@ -131,22 +146,28 @@ function deleteUser(id) {
 function createPasswordReset(userId, tokenHash, expiresAt) {
   const insert = db.transaction(() => {
     // Invalider tous les tokens précédents non utilisés de cet utilisateur
-    db.prepare('UPDATE users_password_resets SET used = 1 WHERE user_id = ? AND used = 0')
-      .run(userId);
+    db.prepare('UPDATE users_password_resets SET used = 1 WHERE user_id = ? AND used = 0').run(
+      userId
+    );
     // Insérer le nouveau token
-    return db.prepare('INSERT INTO users_password_resets (user_id, token, expires_at) VALUES (?, ?, ?)')
+    return db
+      .prepare('INSERT INTO users_password_resets (user_id, token, expires_at) VALUES (?, ?, ?)')
       .run(userId, tokenHash, expiresAt);
   });
   return insert();
 }
 
 function getUserPasswordResetByToken(tokenHash) {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT upr.*, u.useremail, u.langue
     FROM users_password_resets upr
     JOIN users u ON upr.user_id = u.id
     WHERE upr.token = ?
-  `).get(tokenHash);
+  `
+    )
+    .get(tokenHash);
 }
 
 function markUserPasswordResetAsUsed(id) {
@@ -154,44 +175,58 @@ function markUserPasswordResetAsUsed(id) {
 }
 
 function deleteExpiredPasswordResets() {
-  db.prepare('DELETE FROM users_password_resets WHERE expires_at < datetime("now") OR used = 1').run();
+  db.prepare(
+    'DELETE FROM users_password_resets WHERE expires_at < datetime("now") OR used = 1'
+  ).run();
 }
 
 // ── User Sites (many-to-many) ──
 function getUserSites(userId) {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT us.site_id, us.role, us.authorized, s.sname as site_name
     FROM user_sites us
     JOIN sites s ON us.site_id = s.id
     WHERE us.user_id = ?
     ORDER BY s.sname
-  `).all(userId);
+  `
+    )
+    .all(userId);
 }
 
 function getUserSiteIds(userId) {
-  return db.prepare('SELECT site_id FROM user_sites WHERE user_id = ?')
+  return db
+    .prepare('SELECT site_id FROM user_sites WHERE user_id = ?')
     .all(userId)
-    .map(r => r.site_id);
+    .map((r) => r.site_id);
 }
 
 function getUserManagedSiteIds(userId) {
-  return db.prepare("SELECT site_id FROM user_sites WHERE user_id = ? AND role = 'manager'")
+  return db
+    .prepare("SELECT site_id FROM user_sites WHERE user_id = ? AND role = 'manager'")
     .all(userId)
-    .map(r => r.site_id);
+    .map((r) => r.site_id);
 }
 
 function getSiteUsers(siteId) {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT u.id, u.useremail, u.shortname, u.role as global_role, us.role as site_role, us.authorized, us.created_at as linked_at
     FROM user_sites us
     JOIN users u ON us.user_id = u.id
     WHERE us.site_id = ?
     ORDER BY u.useremail
-  `).all(siteId);
+  `
+    )
+    .all(siteId);
 }
 
 function getSiteUsersWithStats(siteId) {
-  const users = db.prepare(`
+  const users = db
+    .prepare(
+      `
     SELECT u.id, u.useremail, u.shortname, u.role as global_role,
       us.role as site_role, us.authorized, us.created_at as linked_at,
       COALESCE(stats.charges_month, 0) as charges_month,
@@ -228,9 +263,13 @@ function getSiteUsersWithStats(siteId) {
     ) tags ON tags.user_id = u.id
     WHERE us.site_id = ?
     ORDER BY u.useremail
-  `).all(siteId, siteId, siteId);
+  `
+    )
+    .all(siteId, siteId, siteId);
 
-  const siteStats = db.prepare(`
+  const siteStats = db
+    .prepare(
+      `
     SELECT
       COUNT(*) as charges_month,
       ROUND(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
@@ -240,14 +279,16 @@ function getSiteUsersWithStats(siteId) {
     WHERE cp.site_id = ?
       AND t.status = 'Completed'
       AND t.start_time >= date('now', 'start of month')
-  `).get(siteId);
+  `
+    )
+    .get(siteId);
 
   return {
     users,
     siteStats: {
       charges_month: siteStats?.charges_month || 0,
-      energy_month_kwh: siteStats?.energy_month_kwh || 0
-    }
+      energy_month_kwh: siteStats?.energy_month_kwh || 0,
+    },
   };
 }
 
@@ -260,17 +301,24 @@ function addUserToSite(useremail, siteId, password) {
     const hash = bcrypt.hashSync(password, 10);
     // Générer le shortname à partir de la partie avant le @ de l'email
     const shortname = useremail.split('@')[0] || null;
-    const info = db.prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?, ?, ?, ?)')
+    const info = db
+      .prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?, ?, ?, ?)')
       .run(useremail, hash, 'user', shortname);
     user = db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
     isNew = true;
   }
   // Vérifier si la liaison existe déjà
-  const existing = db.prepare('SELECT * FROM user_sites WHERE user_id = ? AND site_id = ?').get(user.id, siteId);
+  const existing = db
+    .prepare('SELECT * FROM user_sites WHERE user_id = ? AND site_id = ?')
+    .get(user.id, siteId);
   if (existing) throw new Error('ERR_USER_ALREADY_ON_SITE');
   // Ajouter la liaison avec le rôle 'user' et autorisation de recharge
-  db.prepare('INSERT INTO user_sites (user_id, site_id, role, authorized) VALUES (?, ?, ?, ?)')
-    .run(user.id, siteId, 'user', 1);
+  db.prepare('INSERT INTO user_sites (user_id, site_id, role, authorized) VALUES (?, ?, ?, ?)').run(
+    user.id,
+    siteId,
+    'user',
+    1
+  );
   return { user: getUserById(user.id), isNew };
 }
 
@@ -279,24 +327,34 @@ function removeUserFromSite(userId, siteId) {
 }
 
 function setUserSiteAuthorized(userId, siteId, authorized) {
-  db.prepare('UPDATE user_sites SET authorized = ? WHERE user_id = ? AND site_id = ?')
-    .run(authorized ? 1 : 0, userId, siteId);
+  db.prepare('UPDATE user_sites SET authorized = ? WHERE user_id = ? AND site_id = ?').run(
+    authorized ? 1 : 0,
+    userId,
+    siteId
+  );
 }
 
 function setUserSiteRole(userId, siteId, role) {
-  db.prepare('UPDATE user_sites SET role = ? WHERE user_id = ? AND site_id = ?')
-    .run(role, userId, siteId);
+  db.prepare('UPDATE user_sites SET role = ? WHERE user_id = ? AND site_id = ?').run(
+    role,
+    userId,
+    siteId
+  );
 }
 
 function countSiteManagers(siteId) {
-  const row = db.prepare('SELECT COUNT(*) as cnt FROM user_sites WHERE site_id = ? AND role = ?').get(siteId, 'manager');
+  const row = db
+    .prepare('SELECT COUNT(*) as cnt FROM user_sites WHERE site_id = ? AND role = ?')
+    .get(siteId, 'manager');
   return row ? row.cnt : 0;
 }
 
 function setUserSites(userId, sites) {
   const setSites = db.transaction((userId, sites) => {
     db.prepare('DELETE FROM user_sites WHERE user_id = ?').run(userId);
-    const insert = db.prepare('INSERT INTO user_sites (user_id, site_id, role, authorized) VALUES (?, ?, ?, ?)');
+    const insert = db.prepare(
+      'INSERT INTO user_sites (user_id, site_id, role, authorized) VALUES (?, ?, ?, ?)'
+    );
     for (const s of sites) {
       if (s.site_id) {
         const role = s.role || 'user';
@@ -310,35 +368,51 @@ function setUserSites(userId, sites) {
 
 // ── Chargepoints ──
 function getAllChargepoints() {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT cp.*, s.sname as site_name
     FROM chargepoints cp LEFT JOIN sites s ON cp.site_id = s.id
     ORDER BY cp.identity
-  `).all();
+  `
+    )
+    .all();
 }
 
 function getChargepointsBySite(siteId) {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT cp.*, s.sname as site_name
     FROM chargepoints cp LEFT JOIN sites s ON cp.site_id = s.id
     WHERE cp.site_id = ? ORDER BY cp.identity
-  `).all(siteId);
+  `
+    )
+    .all(siteId);
 }
 
 function getChargepointByIdentity(identity) {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT cp.*, s.sname as site_name
     FROM chargepoints cp LEFT JOIN sites s ON cp.site_id = s.id
     WHERE cp.identity = ?
-  `).get(identity);
+  `
+    )
+    .get(identity);
 }
 
 function getChargepointById(id) {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT cp.*, s.sname as site_name
     FROM chargepoints cp LEFT JOIN sites s ON cp.site_id = s.id
     WHERE cp.id = ?
-  `).get(id);
+  `
+    )
+    .get(id);
 }
 
 function upsertChargepoint(identity, data) {
@@ -379,7 +453,10 @@ function upsertChargepoint(identity, data) {
 
 function createChargepoint(identity, name, password, mode, site_id) {
   const hash = password ? bcrypt.hashSync(password, 10) : null;
-  const info = db.prepare('INSERT INTO chargepoints (identity, cpname, password, mode, site_id, cpstatus) VALUES (?, ?, ?, ?, ?, ?)')
+  const info = db
+    .prepare(
+      'INSERT INTO chargepoints (identity, cpname, password, mode, site_id, cpstatus) VALUES (?, ?, ?, ?, ?, ?)'
+    )
     .run(identity, name, hash, mode || 1, site_id || null, 'Planned');
   return getChargepointById(info.lastInsertRowid);
 }
@@ -389,12 +466,17 @@ function updateChargepoint(id, data) {
   if (!cp) return null;
   const identity = data.identity || cp.identity;
   const name = data.name || cp.cpname;
-  const password = data.password ? bcrypt.hashSync(data.password, 10) : (data.password === null ? null : cp.password);
+  const password = data.password
+    ? bcrypt.hashSync(data.password, 10)
+    : data.password === null
+      ? null
+      : cp.password;
   const mode = data.mode !== undefined ? data.mode : cp.mode;
   const site_id = data.site_id !== undefined ? data.site_id : cp.site_id;
   const authorized = data.authorized !== undefined ? data.authorized : cp.authorized;
-  db.prepare('UPDATE chargepoints SET identity = ?, cpname = ?, password = ?, mode = ?, site_id = ?, authorized = ? WHERE id = ?')
-      .run(identity, name, password, mode, site_id, authorized, id);
+  db.prepare(
+    'UPDATE chargepoints SET identity = ?, cpname = ?, password = ?, mode = ?, site_id = ?, authorized = ? WHERE id = ?'
+  ).run(identity, name, password, mode, site_id, authorized, id);
   return getChargepointById(id);
 }
 
@@ -410,13 +492,31 @@ function assignChargepointToSite(chargepointId, siteId) {
 function updateChargepointStatus(identity, status, connected, extras) {
   const updates = [];
   const values = [];
-  if (status !== undefined) { updates.push('cpstatus = ?'); values.push(status); }
-  if (connected !== undefined) { updates.push('connected = ?'); values.push(connected ? 1 : 0); }
+  if (status !== undefined) {
+    updates.push('cpstatus = ?');
+    values.push(status);
+  }
+  if (connected !== undefined) {
+    updates.push('connected = ?');
+    values.push(connected ? 1 : 0);
+  }
   if (extras) {
-    if (extras.error_code !== undefined) { updates.push('error_code = ?'); values.push(extras.error_code || 'NoError'); }
-    if (extras.error_info !== undefined) { updates.push('error_info = ?'); values.push(extras.error_info || null); }
-    if (extras.vendor_id !== undefined) { updates.push('vendor_id = ?'); values.push(extras.vendor_id || null); }
-    if (extras.vendor_error_code !== undefined) { updates.push('vendor_error_code = ?'); values.push(extras.vendor_error_code || null); }
+    if (extras.error_code !== undefined) {
+      updates.push('error_code = ?');
+      values.push(extras.error_code || 'NoError');
+    }
+    if (extras.error_info !== undefined) {
+      updates.push('error_info = ?');
+      values.push(extras.error_info || null);
+    }
+    if (extras.vendor_id !== undefined) {
+      updates.push('vendor_id = ?');
+      values.push(extras.vendor_id || null);
+    }
+    if (extras.vendor_error_code !== undefined) {
+      updates.push('vendor_error_code = ?');
+      values.push(extras.vendor_error_code || null);
+    }
   }
   updates.push("last_heartbeat = datetime('now')");
   values.push(identity);
@@ -428,41 +528,73 @@ function updateChargepointStatus(identity, status, connected, extras) {
 function upsertConnector(chargepointId, connectorId, status, errorCode, info, vendorId, vendorEC) {
   // Le connecteur 0 représente la borne elle-même, ses données sont stockées dans la table chargepoints
   if (connectorId === 0) return null;
-  const existing = db.prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
+  const existing = db
+    .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
     .get(chargepointId, connectorId);
   if (existing) {
-    db.prepare(`UPDATE connectors SET cnstatus = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
-      WHERE chargepoint_id = ? AND connector_id = ?`)
-      .run(status, errorCode || 'NoError', info || null, vendorId || null, vendorEC || null, chargepointId, connectorId);
+    db.prepare(
+      `UPDATE connectors SET cnstatus = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
+      WHERE chargepoint_id = ? AND connector_id = ?`
+    ).run(
+      status,
+      errorCode || 'NoError',
+      info || null,
+      vendorId || null,
+      vendorEC || null,
+      chargepointId,
+      connectorId
+    );
   } else {
-    db.prepare('INSERT INTO connectors (chargepoint_id, connector_id, cnstatus, error_code, info, vendor_id, vendor_error_code) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(chargepointId, connectorId, status, errorCode || 'NoError', info || null, vendorId || null, vendorEC || null);
+    db.prepare(
+      'INSERT INTO connectors (chargepoint_id, connector_id, cnstatus, error_code, info, vendor_id, vendor_error_code) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      chargepointId,
+      connectorId,
+      status,
+      errorCode || 'NoError',
+      info || null,
+      vendorId || null,
+      vendorEC || null
+    );
   }
-  return db.prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
+  return db
+    .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
     .get(chargepointId, connectorId);
 }
 
 function getConnectorById(connectorId) {
   return db
     .prepare(
-      'SELECT c.*, cp.identity as chargepoint_identity, cp.site_id as site_id FROM connectors c JOIN chargepoints cp ON c.chargepoint_id = cp.id WHERE c.id = ?',
+      'SELECT c.*, cp.identity as chargepoint_identity, cp.site_id as site_id FROM connectors c JOIN chargepoints cp ON c.chargepoint_id = cp.id WHERE c.id = ?'
     )
     .get(connectorId);
 }
 
 function getConnectorByChargepointAndId(chargepointId, connectorId) {
-  return db.prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?').get(chargepointId, connectorId);
+  return db
+    .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
+    .get(chargepointId, connectorId);
 }
 
 function getConnectorsByChargepoint(chargepointId) {
-  return db.prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id > 0 ORDER BY connector_id').all(chargepointId);
+  return db
+    .prepare(
+      'SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id > 0 ORDER BY connector_id'
+    )
+    .all(chargepointId);
 }
 
 function updateConnectorFields(connectorId, data) {
   const existing = db.prepare('SELECT * FROM connectors WHERE id = ?').get(connectorId);
   if (!existing) throw new Error('ERR_CONNECTOR_NOT_FOUND');
-  db.prepare(`UPDATE connectors SET connector_name = ?, connector_power = ?, connector_type = ?, updated_at = datetime('now') WHERE id = ?`)
-    .run(data.connector_name ?? existing.connector_name, data.connector_power ?? existing.connector_power, data.connector_type ?? existing.connector_type, connectorId);
+  db.prepare(
+    `UPDATE connectors SET connector_name = ?, connector_power = ?, connector_type = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(
+    data.connector_name ?? existing.connector_name,
+    data.connector_power ?? existing.connector_power,
+    data.connector_type ?? existing.connector_type,
+    connectorId
+  );
   return db.prepare('SELECT * FROM connectors WHERE id = ?').get(connectorId);
 }
 
@@ -498,26 +630,36 @@ function createTransaction(chargepointId, connectorId, idTag, meterStart, startT
   const startOfYear = new Date(now.getFullYear(), 0, 0);
   const dayOfYear = Math.floor((now - startOfYear) / 86400000);
   const base = (yy * 1000 + dayOfYear) * 10000;
-  const row = db.prepare(`
+  const row = db
+    .prepare(
+      `
     SELECT COALESCE(MAX(transaction_id), ?) + 1 AS next_id
     FROM transactions
     WHERE transaction_id BETWEEN ? AND ?
-  `).get(base, base, base + 9999);
+  `
+    )
+    .get(base, base, base + 9999);
   const transactionId = row.next_id;
 
   const source = startSource || 'rfid';
-  const info = db.prepare(`INSERT INTO transactions
+  const info = db
+    .prepare(
+      `INSERT INTO transactions
     (chargepoint_id, connector_id, transaction_id, id_tag, meter_start, start_time, status, start_source)
-    VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)`)
+    VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)`
+    )
     .run(chargepointId, connectorId, transactionId, idTag, meterStart, startTime, source);
   return db.prepare('SELECT * FROM transactions WHERE id = ?').get(info.lastInsertRowid);
-};
+}
 
 function stopTransaction(transactionId, meterStop, stopTime, reason) {
-  db.prepare(`UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed'
-    WHERE transaction_id = ? AND status = 'Active'`)
-    .run(meterStop, stopTime, reason || 'Local', transactionId);
-  return db.prepare('SELECT * FROM transactions WHERE transaction_id = ? ORDER BY id DESC').get(transactionId);
+  db.prepare(
+    `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed'
+    WHERE transaction_id = ? AND status = 'Active'`
+  ).run(meterStop, stopTime, reason || 'Local', transactionId);
+  return db
+    .prepare('SELECT * FROM transactions WHERE transaction_id = ? ORDER BY id DESC')
+    .get(transactionId);
 }
 
 function getDashboardChartData(siteIds = null, days = 30) {
@@ -531,7 +673,9 @@ function getDashboardChartData(siteIds = null, days = 30) {
   }
 
   // Énergie par jour (kWh)
-  const energyPerDay = db.prepare(`
+  const energyPerDay = db
+    .prepare(
+      `
     SELECT date(t.start_time) as day,
       ROUND(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 2) as energy_kwh,
@@ -542,7 +686,9 @@ function getDashboardChartData(siteIds = null, days = 30) {
       AND t.start_time >= date('now', '-' || ${days} || ' days')${siteFilter}
     GROUP BY date(t.start_time)
     ORDER BY day ASC
-  `).all(...params);
+  `
+    )
+    .all(...params);
 
   return { energyPerDay };
 }
@@ -554,10 +700,15 @@ function getChargingKpi(siteIds = null, days = 30) {
     siteFilter = ` AND cp.site_id IN (${siteIds.map(() => '?').join(',')})`;
     params.push(...siteIds);
   } else if (siteIds !== null && siteIds.length === 0) {
-    return { period: { totalEnergy: 0, totalSessions: 0, avgDuration: 0, avgEnergy: 0, utilization: 0 }, allTime: { totalEnergy: 0, totalSessions: 0, avgDuration: 0, avgEnergy: 0, utilization: 0 } };
+    return {
+      period: { totalEnergy: 0, totalSessions: 0, avgDuration: 0, avgEnergy: 0, utilization: 0 },
+      allTime: { totalEnergy: 0, totalSessions: 0, avgDuration: 0, avgEnergy: 0, utilization: 0 },
+    };
   }
 
-  const period = db.prepare(`
+  const period = db
+    .prepare(
+      `
     SELECT
       ROUND(COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 0), 2) as totalEnergy,
@@ -573,9 +724,13 @@ function getChargingKpi(siteIds = null, days = 30) {
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
     WHERE t.status = 'Completed'
       AND t.start_time >= date('now', '-' || ${days} || ' days')${siteFilter}
-  `).get(...params);
+  `
+    )
+    .get(...params);
 
-  const allTime = db.prepare(`
+  const allTime = db
+    .prepare(
+      `
     SELECT
       ROUND(COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 0), 2) as totalEnergy,
@@ -590,7 +745,9 @@ function getChargingKpi(siteIds = null, days = 30) {
     FROM transactions t
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
     WHERE t.status = 'Completed'${siteFilter}
-  `).get(...params);
+  `
+    )
+    .get(...params);
 
   // Taux d'utilisation : temps total de charge / (nb connecteurs × durée période)
   let connectorFilter = '';
@@ -599,42 +756,67 @@ function getChargingKpi(siteIds = null, days = 30) {
     connectorFilter = ` WHERE cp.site_id IN (${siteIds.map(() => '?').join(',')})`;
     connParams.push(...siteIds);
   }
-  const connCount = db.prepare(`
+  const connCount = db
+    .prepare(
+      `
     SELECT COUNT(*) as cnt FROM connectors cn
     JOIN chargepoints cp ON cn.chargepoint_id = cp.id${connectorFilter}
-  `).get(...connParams);
+  `
+    )
+    .get(...connParams);
   const totalConnectors = connCount?.cnt || 0;
 
   let utilizationPeriod = 0;
   let utilizationAllTime = 0;
   if (totalConnectors > 0) {
-    const chargingHoursPeriod = db.prepare(`
+    const chargingHoursPeriod = db
+      .prepare(
+        `
       SELECT COALESCE(SUM(
         (julianday(COALESCE(t.stop_time, datetime('now'))) - julianday(t.start_time)) * 24
       ), 0) as hours
       FROM transactions t
       JOIN chargepoints cp ON t.chargepoint_id = cp.id
       WHERE t.start_time >= date('now', '-' || ${days} || ' days')${siteFilter}
-    `).get(...params);
-    utilizationPeriod = Math.min(100, Math.round((chargingHoursPeriod.hours / (totalConnectors * days * 24)) * 100));
+    `
+      )
+      .get(...params);
+    utilizationPeriod = Math.min(
+      100,
+      Math.round((chargingHoursPeriod.hours / (totalConnectors * days * 24)) * 100)
+    );
 
-    const firstTx = db.prepare(`
+    const firstTx = db
+      .prepare(
+        `
       SELECT MIN(t.start_time) as first_time
       FROM transactions t
       JOIN chargepoints cp ON t.chargepoint_id = cp.id
       WHERE 1=1${siteFilter}
-    `).get(...params);
+    `
+      )
+      .get(...params);
     if (firstTx?.first_time) {
-      const totalDays = Math.max(1, (Date.now() - new Date(firstTx.first_time).getTime()) / (1000 * 60 * 60 * 24));
-      const chargingHoursAll = db.prepare(`
+      const totalDays = Math.max(
+        1,
+        (Date.now() - new Date(firstTx.first_time).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      const chargingHoursAll = db
+        .prepare(
+          `
         SELECT COALESCE(SUM(
           (julianday(COALESCE(t.stop_time, datetime('now'))) - julianday(t.start_time)) * 24
         ), 0) as hours
         FROM transactions t
         JOIN chargepoints cp ON t.chargepoint_id = cp.id
         WHERE 1=1${siteFilter}
-      `).get(...params);
-      utilizationAllTime = Math.min(100, Math.round((chargingHoursAll.hours / (totalConnectors * totalDays * 24)) * 100));
+      `
+        )
+        .get(...params);
+      utilizationAllTime = Math.min(
+        100,
+        Math.round((chargingHoursAll.hours / (totalConnectors * totalDays * 24)) * 100)
+      );
     }
   }
 
@@ -665,14 +847,29 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
 function buildTransactionQuery(baseCondition, baseParams, filters) {
   let query = TRANSACTIONS_BASE_QUERY + ' WHERE ' + baseCondition;
   const params = [...baseParams];
-  if (filters.chargepoint_id) { query += ' AND t.chargepoint_id = ?'; params.push(filters.chargepoint_id); }
+  if (filters.chargepoint_id) {
+    query += ' AND t.chargepoint_id = ?';
+    params.push(filters.chargepoint_id);
+  }
   if (filters.site_ids && filters.site_ids.length > 0) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
-  } else if (filters.site_id) { query += ' AND cp.site_id = ?'; params.push(filters.site_id); }
-  if (filters.status) { query += ' AND t.status = ?'; params.push(filters.status); }
-  if (filters.from) { query += ' AND t.start_time >= ?'; params.push(filters.from); }
-  if (filters.to) { query += ' AND t.start_time <= ?'; params.push(filters.to); }
+  } else if (filters.site_id) {
+    query += ' AND cp.site_id = ?';
+    params.push(filters.site_id);
+  }
+  if (filters.status) {
+    query += ' AND t.status = ?';
+    params.push(filters.status);
+  }
+  if (filters.from) {
+    query += ' AND t.start_time >= ?';
+    params.push(filters.from);
+  }
+  if (filters.to) {
+    query += ' AND t.start_time <= ?';
+    params.push(filters.to);
+  }
   query += ` ORDER BY t.id DESC`;
   return db.prepare(query).all(...params);
 }
@@ -687,25 +884,32 @@ function getUserTransactions(userId, filters = {}) {
 
 // ── Meter Values ──
 function updateChargepointMeterValue(chargepointId, meterValue) {
-  db.prepare(`UPDATE chargepoints SET meter_value = ? WHERE id = ?`)
-    .run(meterValue, chargepointId);
+  db.prepare(`UPDATE chargepoints SET meter_value = ? WHERE id = ?`).run(meterValue, chargepointId);
 }
 
 function updateConnectorMeterValue(chargepointId, connectorId, meterValue) {
-  db.prepare(`UPDATE connectors SET meter_value = ?, updated_at = datetime('now')
-    WHERE chargepoint_id = ? AND connector_id = ?`)
-    .run(meterValue, chargepointId, connectorId);
+  db.prepare(
+    `UPDATE connectors SET meter_value = ?, updated_at = datetime('now')
+    WHERE chargepoint_id = ? AND connector_id = ?`
+  ).run(meterValue, chargepointId, connectorId);
 }
 
 function updateTransactionPowerEnergy(transactionId, power, energyWh) {
   const updates = [];
   const params = [];
-  if (power !== null) { updates.push('power = ?'); params.push(power); }
-  if (energyWh !== null) { updates.push('energy = ? - meter_start'); params.push(energyWh); }
+  if (power !== null) {
+    updates.push('power = ?');
+    params.push(power);
+  }
+  if (energyWh !== null) {
+    updates.push('energy = ? - meter_start');
+    params.push(energyWh);
+  }
   if (updates.length === 0) return;
   params.push(transactionId);
-  db.prepare(`UPDATE transactions SET ${updates.join(', ')} WHERE transaction_id = ? AND status = 'Active'`)
-    .run(...params);
+  db.prepare(
+    `UPDATE transactions SET ${updates.join(', ')} WHERE transaction_id = ? AND status = 'Active'`
+  ).run(...params);
 }
 
 function getTransactionByTransactionId(transactionId) {
@@ -713,50 +917,67 @@ function getTransactionByTransactionId(transactionId) {
 }
 
 function getTransactionValues(transactionId) {
-  return db.prepare('SELECT * FROM transactions_values WHERE transaction_id = ?').get(transactionId);
+  return db
+    .prepare('SELECT * FROM transactions_values WHERE transaction_id = ?')
+    .get(transactionId);
 }
 
 // ── Transactions Values ──
 function upsertTransactionValues(transactionId, { energieEntry, courantEntry, socEntry } = {}) {
-  const existing = db.prepare('SELECT * FROM transactions_values WHERE transaction_id = ?').get(transactionId);
+  const existing = db
+    .prepare('SELECT * FROM transactions_values WHERE transaction_id = ?')
+    .get(transactionId);
   if (existing) {
     const updates = [];
     const params = [];
     if (socEntry) {
       const arr = existing.soc ? JSON.parse(existing.soc) : [];
       arr.push(socEntry);
-      updates.push('soc = ?'); params.push(JSON.stringify(arr));
+      updates.push('soc = ?');
+      params.push(JSON.stringify(arr));
     }
     if (courantEntry) {
       const arr = existing.courant ? JSON.parse(existing.courant) : [];
       arr.push(courantEntry);
-      updates.push('courant = ?'); params.push(JSON.stringify(arr));
+      updates.push('courant = ?');
+      params.push(JSON.stringify(arr));
     }
     if (energieEntry) {
       const arr = existing.energie ? JSON.parse(existing.energie) : [];
       arr.push(energieEntry);
-      updates.push('energie = ?'); params.push(JSON.stringify(arr));
+      updates.push('energie = ?');
+      params.push(JSON.stringify(arr));
     }
     if (updates.length > 0) {
       params.push(transactionId);
-      db.prepare(`UPDATE transactions_values SET ${updates.join(', ')} WHERE transaction_id = ?`).run(...params);
+      db.prepare(
+        `UPDATE transactions_values SET ${updates.join(', ')} WHERE transaction_id = ?`
+      ).run(...params);
     }
   } else {
-    db.prepare('INSERT INTO transactions_values (transaction_id, energie, courant, soc) VALUES (?, ?, ?, ?)')
-      .run(
-        transactionId,
-        energieEntry ? JSON.stringify([energieEntry]) : null,
-        courantEntry ? JSON.stringify([courantEntry]) : null,
-        socEntry ? JSON.stringify([socEntry]) : null
-      );
+    db.prepare(
+      'INSERT INTO transactions_values (transaction_id, energie, courant, soc) VALUES (?, ?, ?, ?)'
+    ).run(
+      transactionId,
+      energieEntry ? JSON.stringify([energieEntry]) : null,
+      courantEntry ? JSON.stringify([courantEntry]) : null,
+      socEntry ? JSON.stringify([socEntry]) : null
+    );
   }
 }
 
 // ── OCPP Messages ──
 function addOcppMessage(chargepointId, origin, messageType, action, payload) {
-  db.prepare(`INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, action, payload)
-    VALUES (?, ?, ?, ?, ?)`)
-    .run(chargepointId, origin, messageType, action || null, typeof payload === 'string' ? payload : JSON.stringify(payload));
+  db.prepare(
+    `INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, action, payload)
+    VALUES (?, ?, ?, ?, ?)`
+  ).run(
+    chargepointId,
+    origin,
+    messageType,
+    action || null,
+    typeof payload === 'string' ? payload : JSON.stringify(payload)
+  );
 }
 
 function getOcppMessages(filters = {}) {
@@ -765,10 +986,22 @@ function getOcppMessages(filters = {}) {
     LEFT JOIN chargepoints cp ON cp.id = om.chargepoint_id
     WHERE 1=1`;
   const params = [];
-  if (filters.chargepoint_id) { query += ' AND om.chargepoint_id = ?'; params.push(filters.chargepoint_id); }
-  if (filters.origin) { query += ' AND om.origin = ?'; params.push(filters.origin); }
-  if (filters.message_type) { query += ' AND om.message_type = ?'; params.push(filters.message_type); }
-  if (filters.action) { query += ' AND om.action = ?'; params.push(filters.action); }
+  if (filters.chargepoint_id) {
+    query += ' AND om.chargepoint_id = ?';
+    params.push(filters.chargepoint_id);
+  }
+  if (filters.origin) {
+    query += ' AND om.origin = ?';
+    params.push(filters.origin);
+  }
+  if (filters.message_type) {
+    query += ' AND om.message_type = ?';
+    params.push(filters.message_type);
+  }
+  if (filters.action) {
+    query += ' AND om.action = ?';
+    params.push(filters.action);
+  }
   if (filters.site_ids && filters.site_ids.length > 0) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
@@ -787,15 +1020,18 @@ function clearOcppMessages(chargepointId) {
 
 // ── Chargepoint Configuration ──
 function upsertChargepointConfig(chargepointId, key, value, readonly) {
-  const existing = db.prepare('SELECT id FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?')
+  const existing = db
+    .prepare('SELECT id FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?')
     .get(chargepointId, key);
   if (existing) {
-    db.prepare(`UPDATE chargepoint_config SET value = ?, readonly = ?, updated_at = datetime('now')
-      WHERE chargepoint_id = ? AND key = ?`)
-      .run(value, readonly ? 1 : 0, chargepointId, key);
+    db.prepare(
+      `UPDATE chargepoint_config SET value = ?, readonly = ?, updated_at = datetime('now')
+      WHERE chargepoint_id = ? AND key = ?`
+    ).run(value, readonly ? 1 : 0, chargepointId, key);
   } else {
-    db.prepare('INSERT INTO chargepoint_config (chargepoint_id, key, value, readonly) VALUES (?, ?, ?, ?)')
-      .run(chargepointId, key, value, readonly ? 1 : 0);
+    db.prepare(
+      'INSERT INTO chargepoint_config (chargepoint_id, key, value, readonly) VALUES (?, ?, ?, ?)'
+    ).run(chargepointId, key, value, readonly ? 1 : 0);
   }
 }
 
@@ -805,7 +1041,7 @@ function bulkUpsertChargepointConfig(chargepointId, configurationKeys) {
       upsertChargepointConfig(chargepointId, item.key, item.value || null, item.readonly);
     }
     // Mettre à jour les feat_* si SupportedFeatureProfiles est présent
-    const sfp = keys.find(k => k.key === 'SupportedFeatureProfiles');
+    const sfp = keys.find((k) => k.key === 'SupportedFeatureProfiles');
     if (sfp && sfp.value) {
       updateChargepointFeatures(chargepointId, sfp.value);
     }
@@ -818,40 +1054,56 @@ function bulkUpsertChargepointConfig(chargepointId, configurationKeys) {
  * à partir de la valeur de SupportedFeatureProfiles (liste séparée par des virgules).
  */
 function updateChargepointFeatures(chargepointId, profilesString) {
-  const profiles = profilesString.split(',').map(p => p.trim());
+  const profiles = profilesString.split(',').map((p) => p.trim());
   const feat_trigger = profiles.includes('RemoteTrigger') ? 1 : 0;
   const feat_firmware = profiles.includes('FirmwareManagement') ? 1 : 0;
   const feat_local_list = profiles.includes('LocalAuthListManagement') ? 1 : 0;
   const feat_reservation = profiles.includes('Reservation') ? 1 : 0;
   const feat_smartcharging = profiles.includes('SmartCharging') ? 1 : 0;
-  db.prepare(`UPDATE chargepoints SET feat_trigger = ?, feat_firmware = ?, feat_local_list = ?, feat_reservation = ?, feat_smartcharging = ? WHERE id = ?`)
-    .run(feat_trigger, feat_firmware, feat_local_list, feat_reservation, feat_smartcharging, chargepointId);
+  db.prepare(
+    `UPDATE chargepoints SET feat_trigger = ?, feat_firmware = ?, feat_local_list = ?, feat_reservation = ?, feat_smartcharging = ? WHERE id = ?`
+  ).run(
+    feat_trigger,
+    feat_firmware,
+    feat_local_list,
+    feat_reservation,
+    feat_smartcharging,
+    chargepointId
+  );
 }
 
 function getChargepointConfig(chargepointId) {
-  return db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? ORDER BY key')
+  return db
+    .prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? ORDER BY key')
     .all(chargepointId);
 }
 
 function getChargepointConfigByKey(chargepointId, key) {
-  return db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?')
+  return db
+    .prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?')
     .get(chargepointId, key);
 }
 
 function deleteChargepointConfig(chargepointId, key) {
-  db.prepare('DELETE FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?')
-    .run(chargepointId, key);
+  db.prepare('DELETE FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').run(
+    chargepointId,
+    key
+  );
 }
 
 // ── Id Tags ──
 function getAllIdTags() {
-  const tags = db.prepare(`
+  const tags = db
+    .prepare(
+      `
     SELECT it.*, COALESCE(u.shortname, u.useremail) as user_name, s.sname as site_name
     FROM id_tags it
     LEFT JOIN users u ON it.user_id = u.id
     LEFT JOIN sites s ON it.site_id = s.id
     ORDER BY it.id_tag
-  `).all();
+  `
+    )
+    .all();
   // Pour les tags liés à un utilisateur sans site spécifique, récupérer les sites autorisés
   const stmtUserSites = db.prepare(`
     SELECT us.site_id, s.sname as site_name
@@ -869,19 +1121,25 @@ function getAllIdTags() {
 }
 
 function getIdTagById(id) {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT it.*, COALESCE(u.shortname, u.useremail) as user_name, s.sname as site_name
     FROM id_tags it
     LEFT JOIN users u ON it.user_id = u.id
     LEFT JOIN sites s ON it.site_id = s.id
     WHERE it.id = ?
-  `).get(id);
+  `
+    )
+    .get(id);
 }
 
 function getIdTagByTag(idTag, siteId) {
   if (siteId) {
     // Chercher d'abord un tag spécifique au site, puis un tag global
-    return db.prepare(`
+    return db
+      .prepare(
+        `
       SELECT it.*, COALESCE(u.shortname, u.useremail) as user_name, s.sname as site_name
       FROM id_tags it
       LEFT JOIN users u ON it.user_id = u.id
@@ -889,20 +1147,29 @@ function getIdTagByTag(idTag, siteId) {
       WHERE it.id_tag = ? AND (it.site_id = ? OR it.site_id IS NULL)
       ORDER BY it.site_id DESC
       LIMIT 1
-    `).get(idTag, siteId);
+    `
+      )
+      .get(idTag, siteId);
   }
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT it.*, COALESCE(u.shortname, u.useremail) as user_name, s.sname as site_name
     FROM id_tags it
     LEFT JOIN users u ON it.user_id = u.id
     LEFT JOIN sites s ON it.site_id = s.id
     WHERE it.id_tag = ?
     LIMIT 1
-  `).get(idTag);
+  `
+    )
+    .get(idTag);
 }
 
 function createIdTag(idTag, userId, siteId, description, expiryDate) {
-  const info = db.prepare('INSERT INTO id_tags (id_tag, user_id, site_id, description, expiry_date) VALUES (?, ?, ?, ?, ?)')
+  const info = db
+    .prepare(
+      'INSERT INTO id_tags (id_tag, user_id, site_id, description, expiry_date) VALUES (?, ?, ?, ?, ?)'
+    )
     .run(idTag, userId || null, siteId || null, description || null, expiryDate || null);
   return getIdTagById(info.lastInsertRowid);
 }
@@ -916,8 +1183,9 @@ function updateIdTag(id, data) {
   const active = data.active !== undefined ? data.active : tag.active;
   const description = data.description !== undefined ? data.description : tag.description;
   const expiryDate = data.expiry_date !== undefined ? data.expiry_date : tag.expiry_date;
-  db.prepare('UPDATE id_tags SET id_tag = ?, user_id = ?, site_id = ?, active = ?, description = ?, expiry_date = ? WHERE id = ?')
-    .run(idTag, userId || null, siteId || null, active, description || null, expiryDate || null, id);
+  db.prepare(
+    'UPDATE id_tags SET id_tag = ?, user_id = ?, site_id = ?, active = ?, description = ?, expiry_date = ? WHERE id = ?'
+  ).run(idTag, userId || null, siteId || null, active, description || null, expiryDate || null, id);
   return getIdTagById(id);
 }
 
@@ -936,7 +1204,9 @@ function deleteIdTag(id) {
  */
 function getUserDashboardStats(userId) {
   // Nombre de recharges du mois en cours et énergie totale
-  const monthStats = db.prepare(`
+  const monthStats = db
+    .prepare(
+      `
     SELECT COUNT(*) as charge_count,
       ROUND(COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 0), 2) as total_energy_kwh
@@ -952,7 +1222,9 @@ function getUserDashboardStats(userId) {
     WHERE it.user_id = ?
       AND t.status = 'Completed'
       AND t.start_time >= date('now', 'start of month')
-  `).get(userId);
+  `
+    )
+    .get(userId);
 
   return {
     chargesThisMonth: monthStats?.charge_count || 0,
@@ -988,12 +1260,18 @@ function getUserTransactionStats(userId, filters = {}) {
     WHERE it.user_id = ? AND t.status = 'Completed'${extraWhere}`;
 
   // Mois en cours
-  const currentMonth = db.prepare(buildQuery(` AND t.start_time >= date('now', 'start of month')`)).get(userId);
+  const currentMonth = db
+    .prepare(buildQuery(` AND t.start_time >= date('now', 'start of month')`))
+    .get(userId);
 
   // Mois précédent
-  const prevMonth = db.prepare(buildQuery(
-    ` AND t.start_time >= date('now', 'start of month', '-1 month') AND t.start_time < date('now', 'start of month')`
-  )).get(userId);
+  const prevMonth = db
+    .prepare(
+      buildQuery(
+        ` AND t.start_time >= date('now', 'start of month', '-1 month') AND t.start_time < date('now', 'start of month')`
+      )
+    )
+    .get(userId);
 
   // All-time
   const allTime = db.prepare(buildQuery('')).get(userId);
@@ -1003,8 +1281,14 @@ function getUserTransactionStats(userId, filters = {}) {
   if (hasFilters) {
     let filterWhere = '';
     const filterParams = [userId];
-    if (filters.from) { filterWhere += ' AND t.start_time >= ?'; filterParams.push(filters.from); }
-    if (filters.to) { filterWhere += ' AND t.start_time <= ?'; filterParams.push(filters.to); }
+    if (filters.from) {
+      filterWhere += ' AND t.start_time >= ?';
+      filterParams.push(filters.from);
+    }
+    if (filters.to) {
+      filterWhere += ' AND t.start_time <= ?';
+      filterParams.push(filters.to);
+    }
     filtered = db.prepare(buildQuery(filterWhere)).get(...filterParams);
   }
 
@@ -1012,7 +1296,9 @@ function getUserTransactionStats(userId, filters = {}) {
 }
 
 function getAvailableConnectorsForUser(userId) {
-  return db.prepare(`
+  return db
+    .prepare(
+      `
     SELECT c.*, cp.identity as chargepoint_identity, cp.id as chargepoint_id,
            cp.cpname as chargepoint_name, cp.mode, cp.connected, cp.cpstatus as cp_status,
            s.sname as site_name, s.id as site_id, us.authorized as site_authorized,
@@ -1033,7 +1319,9 @@ function getAvailableConnectorsForUser(userId) {
     )
     WHERE c.connector_id > 0
     ORDER BY s.sname, cp.identity, c.connector_id
-  `).all(userId);
+  `
+    )
+    .all(userId);
 }
 
 function authorizeIdTag(idTag, siteId) {
@@ -1057,9 +1345,9 @@ function authorizeIdTag(idTag, siteId) {
   // Vérifier l'autorisation utilisateur sur le site
   // Un admin/manager peut configurer les bornes sans être autorisé à les utiliser
   if (tag.user_id && siteId) {
-    const userSite = db.prepare(
-      'SELECT authorized FROM user_sites WHERE user_id = ? AND site_id = ?'
-    ).get(tag.user_id, siteId);
+    const userSite = db
+      .prepare('SELECT authorized FROM user_sites WHERE user_id = ? AND site_id = ?')
+      .get(tag.user_id, siteId);
     // Si l'utilisateur est associé au site mais pas autorisé à charger
     if (userSite && !userSite.authorized) {
       return { status: 'Blocked', reason: 'user_not_authorized', tag };
@@ -1074,9 +1362,10 @@ function authorizeIdTag(idTag, siteId) {
 
 // ── Id Tags Events ──
 function addIdTagEvent(chargepointId, connectorId, idTag, status, reason, source) {
-  db.prepare(`INSERT INTO id_tags_events (chargepoint_id, connector_id, id_tag, status, reason, source)
-    VALUES (?, ?, ?, ?, ?, ?)`)
-    .run(chargepointId, connectorId || null, idTag, status, reason || null, source || 'authorize');
+  db.prepare(
+    `INSERT INTO id_tags_events (chargepoint_id, connector_id, id_tag, status, reason, source)
+    VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(chargepointId, connectorId || null, idTag, status, reason || null, source || 'authorize');
 }
 
 function getIdTagEvents(filters = {}) {
@@ -1085,9 +1374,18 @@ function getIdTagEvents(filters = {}) {
     LEFT JOIN chargepoints cp ON cp.id = ite.chargepoint_id
     WHERE 1=1`;
   const params = [];
-  if (filters.chargepoint_id) { query += ' AND ite.chargepoint_id = ?'; params.push(filters.chargepoint_id); }
-  if (filters.id_tag) { query += ' AND ite.id_tag = ?'; params.push(filters.id_tag); }
-  if (filters.status) { query += ' AND ite.status = ?'; params.push(filters.status); }
+  if (filters.chargepoint_id) {
+    query += ' AND ite.chargepoint_id = ?';
+    params.push(filters.chargepoint_id);
+  }
+  if (filters.id_tag) {
+    query += ' AND ite.id_tag = ?';
+    params.push(filters.id_tag);
+  }
+  if (filters.status) {
+    query += ' AND ite.status = ?';
+    params.push(filters.status);
+  }
   if (filters.site_ids && filters.site_ids.length > 0) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
@@ -1100,19 +1398,29 @@ function getIdTagEvents(filters = {}) {
 
 // ── Notification Preferences ──
 function getNotificationPreferences(userId) {
-  return db.prepare('SELECT * FROM notification_preferences WHERE user_id = ? ORDER BY event_type, channel').all(userId);
+  return db
+    .prepare(
+      'SELECT * FROM notification_preferences WHERE user_id = ? ORDER BY event_type, channel'
+    )
+    .all(userId);
 }
 
 function setNotificationPreference(userId, eventType, channel, enabled) {
-  const existing = db.prepare(
-    'SELECT id FROM notification_preferences WHERE user_id = ? AND event_type = ? AND channel = ?'
-  ).get(userId, eventType, channel);
+  const existing = db
+    .prepare(
+      'SELECT id FROM notification_preferences WHERE user_id = ? AND event_type = ? AND channel = ?'
+    )
+    .get(userId, eventType, channel);
 
   if (existing) {
-    db.prepare('UPDATE notification_preferences SET enabled = ? WHERE id = ?').run(enabled ? 1 : 0, existing.id);
+    db.prepare('UPDATE notification_preferences SET enabled = ? WHERE id = ?').run(
+      enabled ? 1 : 0,
+      existing.id
+    );
   } else {
-    db.prepare('INSERT INTO notification_preferences (user_id, event_type, channel, enabled) VALUES (?, ?, ?, ?)')
-      .run(userId, eventType, channel, enabled ? 1 : 0);
+    db.prepare(
+      'INSERT INTO notification_preferences (user_id, event_type, channel, enabled) VALUES (?, ?, ?, ?)'
+    ).run(userId, eventType, channel, enabled ? 1 : 0);
   }
 }
 
@@ -1127,19 +1435,38 @@ function setNotificationPreferencesBulk(userId, preferences) {
 
 // ── Push Subscriptions ──
 function getPushSubscriptions(userId) {
-  return db.prepare('SELECT * FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC').all(userId);
+  return db
+    .prepare('SELECT * FROM push_subscriptions WHERE user_id = ? ORDER BY created_at DESC')
+    .all(userId);
 }
 
 function savePushSubscription(userId, subscription, userAgent) {
-  const existing = db.prepare('SELECT id FROM push_subscriptions WHERE endpoint = ?').get(subscription.endpoint);
+  const existing = db
+    .prepare('SELECT id FROM push_subscriptions WHERE endpoint = ?')
+    .get(subscription.endpoint);
   if (existing) {
-    db.prepare('UPDATE push_subscriptions SET user_id = ?, keys_p256dh = ?, keys_auth = ?, user_agent = ? WHERE endpoint = ?')
-      .run(userId, subscription.keys.p256dh, subscription.keys.auth, userAgent || null, subscription.endpoint);
+    db.prepare(
+      'UPDATE push_subscriptions SET user_id = ?, keys_p256dh = ?, keys_auth = ?, user_agent = ? WHERE endpoint = ?'
+    ).run(
+      userId,
+      subscription.keys.p256dh,
+      subscription.keys.auth,
+      userAgent || null,
+      subscription.endpoint
+    );
     return existing;
   }
-  const info = db.prepare(
-    'INSERT INTO push_subscriptions (user_id, endpoint, keys_p256dh, keys_auth, user_agent) VALUES (?, ?, ?, ?, ?)'
-  ).run(userId, subscription.endpoint, subscription.keys.p256dh, subscription.keys.auth, userAgent || null);
+  const info = db
+    .prepare(
+      'INSERT INTO push_subscriptions (user_id, endpoint, keys_p256dh, keys_auth, user_agent) VALUES (?, ?, ?, ?, ?)'
+    )
+    .run(
+      userId,
+      subscription.endpoint,
+      subscription.keys.p256dh,
+      subscription.keys.auth,
+      userAgent || null
+    );
   return { id: info.lastInsertRowid };
 }
 
@@ -1155,13 +1482,21 @@ function deletePushSubscriptionsByUser(userId) {
 function addNotificationLog(userId, eventType, channel, title, body, success, errorMessage) {
   db.prepare(
     'INSERT INTO notification_log (user_id, event_type, channel, title, body, success, error_message) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(userId, eventType, channel, title || null, body || null, success ? 1 : 0, errorMessage || null);
+  ).run(
+    userId,
+    eventType,
+    channel,
+    title || null,
+    body || null,
+    success ? 1 : 0,
+    errorMessage || null
+  );
 }
 
 function getNotificationLog(userId, limit = 50) {
-  return db.prepare(
-    'SELECT * FROM notification_log WHERE user_id = ? ORDER BY created_at DESC LIMIT ?'
-  ).all(userId, limit);
+  return db
+    .prepare('SELECT * FROM notification_log WHERE user_id = ? ORDER BY created_at DESC LIMIT ?')
+    .all(userId, limit);
 }
 
 function clearNotificationLog(userId) {
@@ -1170,61 +1505,160 @@ function clearNotificationLog(userId) {
 
 // ── Queries for notification targets ──
 function getUsersByRole(role) {
-  const users = db.prepare('SELECT id, useremail, shortname, role, langue, ntif_pushuser, ntif_pushtokn FROM users WHERE role = ?').all(role);
-  for (const u of users) { u.sites = getUserSites(u.id); }
+  const users = db
+    .prepare(
+      'SELECT id, useremail, shortname, role, langue, ntif_pushuser, ntif_pushtokn FROM users WHERE role = ?'
+    )
+    .all(role);
+  for (const u of users) {
+    u.sites = getUserSites(u.id);
+  }
   return users;
 }
 
 function getUsersBySiteRole(siteId, siteRole) {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT u.id, u.useremail, u.shortname, u.role, u.langue, u.ntif_pushuser, u.ntif_pushtokn
     FROM users u
     JOIN user_sites us ON us.user_id = u.id
     WHERE us.site_id = ? AND us.role = ?
-  `).all(siteId, siteRole);
-  for (const u of rows) { u.sites = getUserSites(u.id); }
+  `
+    )
+    .all(siteId, siteRole);
+  for (const u of rows) {
+    u.sites = getUserSites(u.id);
+  }
   return rows;
 }
 
 function getAllManagers() {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT DISTINCT u.id, u.useremail, u.shortname, u.role, u.langue, u.ntif_pushuser, u.ntif_pushtokn
     FROM users u
     JOIN user_sites us ON us.user_id = u.id
     WHERE us.role = 'manager'
-  `).all();
-  for (const u of rows) { u.sites = getUserSites(u.id); }
+  `
+    )
+    .all();
+  for (const u of rows) {
+    u.sites = getUserSites(u.id);
+  }
   return rows;
 }
 
 function getAuthorizedUsersBySite(siteId) {
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT u.id, u.useremail, u.shortname, u.role, u.langue, u.ntif_pushuser, u.ntif_pushtokn
     FROM users u
     JOIN user_sites us ON us.user_id = u.id
     WHERE us.site_id = ? AND us.authorized = 1
-  `).all(siteId);
-  for (const u of rows) { u.sites = getUserSites(u.id); }
+  `
+    )
+    .all(siteId);
+  for (const u of rows) {
+    u.sites = getUserSites(u.id);
+  }
   return rows;
 }
 
 module.exports = {
-  getDb, closeDb,
-  getAllSites, getSiteById, createSite, updateSite, deleteSite,
-  getAllUsers, getUserById, getUserByEmail, getUserByGoogleId, updateLastLogin, updateUserGoogleProfile,createUser, updateUser, deleteUser,
-  createPasswordReset, getUserPasswordResetByToken, markUserPasswordResetAsUsed, deleteExpiredPasswordResets,
-  getUserSites, getUserSiteIds, getUserManagedSiteIds, setUserSites, getSiteUsers, getSiteUsersWithStats, addUserToSite, removeUserFromSite, setUserSiteAuthorized, setUserSiteRole, countSiteManagers,
-  getAllChargepoints, getChargepointsBySite, getChargepointByIdentity, getChargepointById,
-  upsertChargepoint, createChargepoint, updateChargepoint, deleteChargepoint, assignChargepointToSite, updateChargepointStatus,
-  upsertConnector, getConnectorById, getConnectorsByChargepoint, getConnectorByChargepointAndId, getAllConnectorsGrouped, updateConnectorFields,
-  createTransaction, stopTransaction, getTransactions, getUserTransactions, getDashboardChartData, getTransactionByTransactionId, getTransactionValues,
-  updateChargepointMeterValue, updateConnectorMeterValue, updateTransactionPowerEnergy, upsertTransactionValues,
-  addOcppMessage, getOcppMessages, clearOcppMessages,
-  upsertChargepointConfig, bulkUpsertChargepointConfig, getChargepointConfig, getChargepointConfigByKey, deleteChargepointConfig,
-  getAllIdTags, getIdTagById, getIdTagByTag, createIdTag, updateIdTag, deleteIdTag, authorizeIdTag, addIdTagEvent, getIdTagEvents,
-  getAvailableConnectorsForUser, getChargingKpi, getUserDashboardStats, getUserTransactionStats,
-  getNotificationPreferences, setNotificationPreference, setNotificationPreferencesBulk,
-  getPushSubscriptions, savePushSubscription, deletePushSubscription, deletePushSubscriptionsByUser,
-  addNotificationLog, getNotificationLog, clearNotificationLog,
-  getUsersByRole, getUsersBySiteRole, getAllManagers, getAuthorizedUsersBySite,
+  getDb,
+  closeDb,
+  getAllSites,
+  getSiteById,
+  createSite,
+  updateSite,
+  deleteSite,
+  getAllUsers,
+  getUserById,
+  getUserByEmail,
+  getUserByGoogleId,
+  updateLastLogin,
+  updateUserGoogleProfile,
+  createUser,
+  updateUser,
+  deleteUser,
+  createPasswordReset,
+  getUserPasswordResetByToken,
+  markUserPasswordResetAsUsed,
+  deleteExpiredPasswordResets,
+  getUserSites,
+  getUserSiteIds,
+  getUserManagedSiteIds,
+  setUserSites,
+  getSiteUsers,
+  getSiteUsersWithStats,
+  addUserToSite,
+  removeUserFromSite,
+  setUserSiteAuthorized,
+  setUserSiteRole,
+  countSiteManagers,
+  getAllChargepoints,
+  getChargepointsBySite,
+  getChargepointByIdentity,
+  getChargepointById,
+  upsertChargepoint,
+  createChargepoint,
+  updateChargepoint,
+  deleteChargepoint,
+  assignChargepointToSite,
+  updateChargepointStatus,
+  upsertConnector,
+  getConnectorById,
+  getConnectorsByChargepoint,
+  getConnectorByChargepointAndId,
+  getAllConnectorsGrouped,
+  updateConnectorFields,
+  createTransaction,
+  stopTransaction,
+  getTransactions,
+  getUserTransactions,
+  getDashboardChartData,
+  getTransactionByTransactionId,
+  getTransactionValues,
+  updateChargepointMeterValue,
+  updateConnectorMeterValue,
+  updateTransactionPowerEnergy,
+  upsertTransactionValues,
+  addOcppMessage,
+  getOcppMessages,
+  clearOcppMessages,
+  upsertChargepointConfig,
+  bulkUpsertChargepointConfig,
+  getChargepointConfig,
+  getChargepointConfigByKey,
+  deleteChargepointConfig,
+  getAllIdTags,
+  getIdTagById,
+  getIdTagByTag,
+  createIdTag,
+  updateIdTag,
+  deleteIdTag,
+  authorizeIdTag,
+  addIdTagEvent,
+  getIdTagEvents,
+  getAvailableConnectorsForUser,
+  getChargingKpi,
+  getUserDashboardStats,
+  getUserTransactionStats,
+  getNotificationPreferences,
+  setNotificationPreference,
+  setNotificationPreferencesBulk,
+  getPushSubscriptions,
+  savePushSubscription,
+  deletePushSubscription,
+  deletePushSubscriptionsByUser,
+  addNotificationLog,
+  getNotificationLog,
+  clearNotificationLog,
+  getUsersByRole,
+  getUsersBySiteRole,
+  getAllManagers,
+  getAuthorizedUsersBySite,
 };

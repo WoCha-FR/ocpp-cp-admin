@@ -26,6 +26,7 @@ jobs:
             ghcr.io/WoCha-FR/ocpp-cp-admin
           tags: |
             type=ref,event=branch
+            type=raw,value={{branch}}-{{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref_type == 'branch' }}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 

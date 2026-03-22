@@ -22,8 +22,9 @@ function initMigrationsTable(db) {
  */
 function getMigrationFiles() {
   if (!fs.existsSync(MIGRATIONS_DIR)) return [];
-  return fs.readdirSync(MIGRATIONS_DIR)
-    .filter(f => f.endsWith('.sql'))
+  return fs
+    .readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql'))
     .sort();
 }
 
@@ -31,9 +32,10 @@ function getMigrationFiles() {
  * Retourne les noms de fichiers déjà appliqués en base.
  */
 function getAppliedMigrations(db) {
-  return db.prepare('SELECT filename FROM schema_migrations ORDER BY filename')
+  return db
+    .prepare('SELECT filename FROM schema_migrations ORDER BY filename')
     .all()
-    .map(row => row.filename);
+    .map((row) => row.filename);
 }
 
 /**
@@ -45,7 +47,7 @@ function runMigrations(db) {
 
   const files = getMigrationFiles();
   const applied = new Set(getAppliedMigrations(db));
-  const pending = files.filter(f => !applied.has(f));
+  const pending = files.filter((f) => !applied.has(f));
 
   if (pending.length === 0) {
     logger.debug('Migration: up-to-date');

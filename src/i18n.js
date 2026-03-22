@@ -19,8 +19,14 @@ const resources = {};
  */
 function deepMerge(target, source) {
   for (const key of Object.keys(source)) {
-    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])
-        && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
+    if (
+      source[key] &&
+      typeof source[key] === 'object' &&
+      !Array.isArray(source[key]) &&
+      target[key] &&
+      typeof target[key] === 'object' &&
+      !Array.isArray(target[key])
+    ) {
       deepMerge(target[key], source[key]);
     } else {
       target[key] = source[key];
@@ -30,11 +36,13 @@ function deepMerge(target, source) {
 }
 
 // Charger dynamiquement tous les fichiers de traduction intégrés
-const files = fs.readdirSync(LOCALES_DIR).filter(f => f.endsWith('.json'));
+const files = fs.readdirSync(LOCALES_DIR).filter((f) => f.endsWith('.json'));
 for (const file of files) {
   const lng = path.basename(file, '.json');
   try {
-    resources[lng] = { translation: JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf-8')) };
+    resources[lng] = {
+      translation: JSON.parse(fs.readFileSync(path.join(LOCALES_DIR, file), 'utf-8')),
+    };
     SUPPORTED_LANGUAGES.push(lng);
   } catch (err) {
     logger.error(`Failed to load locale ${file}: ${err.message}`);
@@ -43,7 +51,7 @@ for (const file of files) {
 
 // Charger les locales personnalisées (ajout ou surcharge)
 if (fs.existsSync(CUSTOM_LOCALES_DIR)) {
-  const customFiles = fs.readdirSync(CUSTOM_LOCALES_DIR).filter(f => f.endsWith('.json'));
+  const customFiles = fs.readdirSync(CUSTOM_LOCALES_DIR).filter((f) => f.endsWith('.json'));
   for (const file of customFiles) {
     const lng = path.basename(file, '.json');
     try {

@@ -18,7 +18,9 @@ function initWebPush() {
   }
 
   if (!vapid.vapidPublicKey || !vapid.vapidPrivateKey) {
-    logger.error('VAPID keys missing in config.json. Generate them with: npx web-push generate-vapid-keys');
+    logger.error(
+      'VAPID keys missing in config.json. Generate them with: npx web-push generate-vapid-keys'
+    );
     return;
   }
 
@@ -37,21 +39,33 @@ function initWebPush() {
  */
 function getPushMeta(event, data) {
   const meta = {
-    server_started:       { icon: '🚀', tag: `server-started` },
-    server_stopping:      { icon: '🛑', tag: `server-stopping` },
-    pending_chargepoint:  { icon: '⌛', tag: `pending-${data.identity}` },
-    autoadd_chargepoint:  { icon: '🆕', tag: `added-${data.identity}` },
-    diagnostics_upload:   { icon: '🔬', tag: `diagnostics-${data.identity}` },
-    chargepoint_online:   { icon: '🟢', tag: `online-${data.identity}` },
-    chargepoint_offline:  { icon: '🔴', tag: `offline-${data.identity}` },
-    connector_available:  { icon: '✅', tag: `connector-available-${data.identity}-${data.connector_id}` },
-    connector_unavailable:{ icon: '❌', tag: `connector-unavailable-${data.identity}-${data.connector_id}` },
-    connector_error:      { icon: '⚠️', tag: `error-${data.identity}-${data.connector_id}` },
-    site_transaction_started: { icon: '➡️', tag: `site-tx-start-${data.identity}-${data.connector_id}` },
-    site_transaction_stopped: { icon: '⏹️', tag: `site-tx-stop-${data.identity}-${data.connector_id}` },
-    transaction_started:  { icon: '▶️', tag: `tx-start-${data.transaction_id}` },
-    transaction_stopped:  { icon: '🏁', tag: `tx-stop-${data.transaction_id}` },
-    charge_suspended_evse:{ icon: '⏸️', tag: `suspended-${data.identity}-${data.connector_id}` },
+    server_started: { icon: '🚀', tag: `server-started` },
+    server_stopping: { icon: '🛑', tag: `server-stopping` },
+    pending_chargepoint: { icon: '⌛', tag: `pending-${data.identity}` },
+    autoadd_chargepoint: { icon: '🆕', tag: `added-${data.identity}` },
+    diagnostics_upload: { icon: '🔬', tag: `diagnostics-${data.identity}` },
+    chargepoint_online: { icon: '🟢', tag: `online-${data.identity}` },
+    chargepoint_offline: { icon: '🔴', tag: `offline-${data.identity}` },
+    connector_available: {
+      icon: '✅',
+      tag: `connector-available-${data.identity}-${data.connector_id}`,
+    },
+    connector_unavailable: {
+      icon: '❌',
+      tag: `connector-unavailable-${data.identity}-${data.connector_id}`,
+    },
+    connector_error: { icon: '⚠️', tag: `error-${data.identity}-${data.connector_id}` },
+    site_transaction_started: {
+      icon: '➡️',
+      tag: `site-tx-start-${data.identity}-${data.connector_id}`,
+    },
+    site_transaction_stopped: {
+      icon: '⏹️',
+      tag: `site-tx-stop-${data.identity}-${data.connector_id}`,
+    },
+    transaction_started: { icon: '▶️', tag: `tx-start-${data.transaction_id}` },
+    transaction_stopped: { icon: '🏁', tag: `tx-stop-${data.transaction_id}` },
+    charge_suspended_evse: { icon: '⏸️', tag: `suspended-${data.identity}-${data.connector_id}` },
   };
   return meta[event] || { icon: '📨', tag: `generic-${Date.now()}` };
 }
@@ -67,7 +81,8 @@ const webpushChannel = {
     if (!initialized) return { success: false, skipped: true, reason: 'CHANNEL_NOT_INITIALIZED' };
 
     const subscriptions = db.getPushSubscriptions(user.id);
-    if (subscriptions.length === 0) return { success: false, skipped: true, reason: 'NO_SUBSCRIPTIONS' };
+    if (subscriptions.length === 0)
+      return { success: false, skipped: true, reason: 'NO_SUBSCRIPTIONS' };
 
     const { titre, corps } = i18nDatas;
     const meta = getPushMeta(event, data);
@@ -96,7 +111,9 @@ const webpushChannel = {
         await webpush.sendNotification(pushSub, payload);
         results.push({ success: true });
       } catch (err) {
-        logger.error(`Error for user ${user.id} (endpoint: ${sub.endpoint.slice(-20)}): ${err.message}`);
+        logger.error(
+          `Error for user ${user.id} (endpoint: ${sub.endpoint.slice(-20)}): ${err.message}`
+        );
         // Si l'abonnement est expiré/invalide (410 Gone ou 404), le supprimer
         if (err.statusCode === 410 || err.statusCode === 404) {
           db.deletePushSubscription(sub.endpoint);
@@ -106,10 +123,12 @@ const webpushChannel = {
       }
     }
 
-    const successCount = results.filter(r => r.success).length;
-    const firstError = results.find(r => !r.success && r.error)?.error || null;
+    const successCount = results.filter((r) => r.success).length;
+    const firstError = results.find((r) => !r.success && r.error)?.error || null;
     if (successCount > 0) {
-      logger.debug(`Notification "${event}" sent to ${user.useremail} (${successCount}/${subscriptions.length} devices)`);
+      logger.debug(
+        `Notification "${event}" sent to ${user.useremail} (${successCount}/${subscriptions.length} devices)`
+      );
     }
     return {
       success: successCount > 0,

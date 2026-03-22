@@ -50,55 +50,88 @@ function format(event, data, lang = 'fr') {
       titre: tradN('notifications.duplicate_identity.title', { identity: data.identity }),
       corps: [
         tradN('notifications.duplicate_identity.body', { identity: data.identity }),
-        tradN('notifications.duplicate_identity.info', { actualip: data.old_address, newip: data.new_address }),
+        tradN('notifications.duplicate_identity.info', {
+          actualip: data.old_address,
+          newip: data.new_address,
+        }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     identity_flapping: () => ({
       titre: tradN('notifications.identity_flapping.title', { identity: data.identity }),
       corps: [
-        tradN('notifications.identity_flapping.body', { identity: data.identity, count: data.count, seconds: data.seconds }),
+        tradN('notifications.identity_flapping.body', {
+          identity: data.identity,
+          count: data.count,
+          seconds: data.seconds,
+        }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     // ── Admin & Manager ──
-    chargepoint_online:() => ({
+    chargepoint_online: () => ({
       titre: tradN('notifications.chargepoint_online.title', { cp_name }),
       corps: [
         tradN('notifications.chargepoint_online.body', { cp_name }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
-    chargepoint_offline:() => ({
+    chargepoint_offline: () => ({
       titre: tradN('notifications.chargepoint_offline.title', { cp_name }),
       corps: [
         tradN('notifications.chargepoint_offline.body', { cp_name }),
-         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n')
+        line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     connector_available: () => ({
       titre: tradN('notifications.connector_available.title', { cp_name }),
       corps: [
-        tradN('notifications.connector_available.body', { cp_name, connector_id: data.connector_id, cn_name }),
-         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n')
+        tradN('notifications.connector_available.body', {
+          cp_name,
+          connector_id: data.connector_id,
+          cn_name,
+        }),
+        line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     connector_unavailable: () => ({
       titre: tradN('notifications.connector_unavailable.title', { cp_name }),
       corps: [
-        tradN('notifications.connector_unavailable.body', { cp_name, connector_id: data.connector_id, cn_name }),
+        tradN('notifications.connector_unavailable.body', {
+          cp_name,
+          connector_id: data.connector_id,
+          cn_name,
+        }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     connector_error: () => ({
       titre: tradN('notifications.connector_error.title', { cp_name }),
       corps: [
-        tradN('notifications.connector_error.body', { cp_name, connector_id: data.connector_id, cn_name }),
+        tradN('notifications.connector_error.body', {
+          cp_name,
+          connector_id: data.connector_id,
+          cn_name,
+        }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
         tradN('notifications.connector_error.status', { status: data.status }),
         tradN('notifications.connector_error.error_code', { error_code: data.error_code }),
         line('notifications.connector_error.info', data.info, { ...opts, info: data.info }),
-      ].filter(Boolean).join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     site_transaction_started: () => ({
       titre: tradN('notifications.site_transaction_started.title', { cp_name }),
@@ -106,7 +139,9 @@ function format(event, data, lang = 'fr') {
         tradN('notifications.site_transaction_started.body', { cp_name }),
         tradN('notifications.common.connector', { connector_id: data.connector_id, cn_name }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     site_transaction_stopped: () => ({
       titre: tradN('notifications.site_transaction_stopped.title', { cp_name }),
@@ -114,18 +149,35 @@ function format(event, data, lang = 'fr') {
         tradN('notifications.site_transaction_stopped.body', { cp_name }),
         tradN('notifications.common.connector', { connector_id: data.connector_id, cn_name }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-        line('notifications.common.energy', data.energy_kwh, { ...opts, energy_kwh: data.energy_kwh }),
+        line('notifications.common.energy', data.energy_kwh, {
+          ...opts,
+          energy_kwh: data.energy_kwh,
+        }),
         line('notifications.common.duration', data.duration, { ...opts, duration: data.duration }),
-        line('notifications.common.stop_reason', data.stop_reason, { ...opts, stop_reason: data.stop_reason }),
-      ].filter(Boolean).join('\n')
+        line('notifications.common.stop_reason', data.stop_reason, {
+          ...opts,
+          stop_reason: data.stop_reason,
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     repeated_auth_rejected: () => ({
       titre: tradN('notifications.repeated_auth_rejected.title', { id_tag: data.id_tag }),
       corps: [
-        tradN('notifications.repeated_auth_rejected.body', { id_tag: data.id_tag, count: data.count, window_minutes: data.window_minutes }),
-        line('notifications.repeated_auth_rejected.last_chargepoint', data.last_chargepoint, { ...opts, cp_last: data.last_chargepoint }),
+        tradN('notifications.repeated_auth_rejected.body', {
+          id_tag: data.id_tag,
+          count: data.count,
+          window_minutes: data.window_minutes,
+        }),
+        line('notifications.repeated_auth_rejected.last_chargepoint', data.last_chargepoint, {
+          ...opts,
+          cp_last: data.last_chargepoint,
+        }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     // ── Utilisateur ──
     transaction_started: () => ({
@@ -134,7 +186,9 @@ function format(event, data, lang = 'fr') {
         tradN('notifications.transaction_started.body', { cp_name }),
         tradN('notifications.common.connector', { connector_id: data.connector_id, cn_name }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-      ].filter(Boolean).join('\n'),
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     transaction_stopped: () => ({
       titre: tradN('notifications.transaction_stopped.title', { cp_name }),
@@ -142,10 +196,18 @@ function format(event, data, lang = 'fr') {
         tradN('notifications.transaction_stopped.body', { cp_name }),
         tradN('notifications.common.connector', { connector_id: data.connector_id, cn_name }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-        line('notifications.common.energy', data.energy_kwh, { ...opts, energy_kwh: data.energy_kwh }),
+        line('notifications.common.energy', data.energy_kwh, {
+          ...opts,
+          energy_kwh: data.energy_kwh,
+        }),
         line('notifications.common.duration', data.duration, { ...opts, duration: data.duration }),
-        line('notifications.common.stop_reason', data.stop_reason, { ...opts, stop_reason: data.stop_reason }),
-      ].filter(Boolean).join('\n'),
+        line('notifications.common.stop_reason', data.stop_reason, {
+          ...opts,
+          stop_reason: data.stop_reason,
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
     charge_suspended_evse: () => ({
       titre: tradN('notifications.charge_suspended_evse.title', { cp_name }),
@@ -153,11 +215,16 @@ function format(event, data, lang = 'fr') {
         tradN('notifications.charge_suspended_evse.body', { cp_name }),
         tradN('notifications.common.connector', { connector_id: data.connector_id, cn_name }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
-        line('notifications.common.energy', data.energy_kwh, { ...opts, energy_kwh: data.energy_kwh }),
+        line('notifications.common.energy', data.energy_kwh, {
+          ...opts,
+          energy_kwh: data.energy_kwh,
+        }),
         tradN('notifications.charge_suspended_evse.unplug'),
-      ].filter(Boolean).join('\n')
+      ]
+        .filter(Boolean)
+        .join('\n'),
     }),
-  }
+  };
 
   const factory = templates[event];
   if (factory) return factory();
@@ -166,8 +233,10 @@ function format(event, data, lang = 'fr') {
     titre: `CPAdmin – ${event}`,
     corps: [
       tradN('notifications.common.defaultBody', { event }),
-      `${JSON.stringify(data, null, 2)}`
-    ].filter(Boolean).join('\n')
+      `${JSON.stringify(data, null, 2)}`,
+    ]
+      .filter(Boolean)
+      .join('\n'),
   };
 }
 

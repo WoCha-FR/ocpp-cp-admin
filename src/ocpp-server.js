@@ -48,16 +48,22 @@ function createOCPPServer(options = {}) {
     if (isWSS) {
       let hasClientCert = false;
       try {
-        const peerCert = handshake.request && handshake.request.socket && handshake.request.socket.getPeerCertificate();
+        const peerCert =
+          handshake.request &&
+          handshake.request.socket &&
+          handshake.request.socket.getPeerCertificate();
         hasClientCert = peerCert && peerCert.subject && Object.keys(peerCert.subject).length > 0;
-      // eslint-disable-next-line no-unused-vars
+        // eslint-disable-next-line no-unused-vars
       } catch (e) {
         // Pas de certificat client disponible
       }
 
       if (!providedPassword && !hasClientCert) {
         logger.warn(`WSS connection refused: ${handshake.identity} no authentication method`);
-        return reject(401, 'WSS requires Basic Auth (Security Profile 2) or client certificate (Security Profile 3)');
+        return reject(
+          401,
+          'WSS requires Basic Auth (Security Profile 2) or client certificate (Security Profile 3)'
+        );
       }
 
       if (hasClientCert) {
@@ -76,11 +82,19 @@ function createOCPPServer(options = {}) {
     if (!cp) {
       if (config.ocpp.autoAddUnknownChargepoints) {
         logger.info(`Unknown ${handshake.identity} added automatically`);
-        cp = db.createChargepoint(handshake.identity, handshake.identity, providedPassword, 0, null);
+        cp = db.createChargepoint(
+          handshake.identity,
+          handshake.identity,
+          providedPassword,
+          0,
+          null
+        );
         // Notifier les admins
-        notifications.emit('autoadd_chargepoint', {
-          identity: handshake.identity
-        }).catch(() => {});
+        notifications
+          .emit('autoadd_chargepoint', {
+            identity: handshake.identity,
+          })
+          .catch(() => {});
       } else if (config.ocpp.pendingUnknownChargepoints) {
         logger.info(`Unknown ${handshake.identity} pending approval`);
         pendingChargepoints.set(handshake.identity, {
@@ -95,9 +109,11 @@ function createOCPPServer(options = {}) {
           timestamp: new Date().toISOString(),
         });
         // Notifier les admins
-        notifications.emit('pending_chargepoint', {
-          identity: handshake.identity
-        }).catch(() => {});
+        notifications
+          .emit('pending_chargepoint', {
+            identity: handshake.identity,
+          })
+          .catch(() => {});
         return reject(401, 'Charge point pending approval');
       } else {
         return reject(401, 'Unknown charge point');
@@ -133,24 +149,34 @@ function createOCPPServer(options = {}) {
       if (oldAddr && newAddr && oldAddr !== newAddr) {
         logger.warn(`Duplicate identity suspected: ${identity} from ${oldAddr} AND ${newAddr}`);
         const cpDup = db.getChargepointByIdentity(identity);
-        notifications.emit('duplicate_identity', {
-          identity,
-          old_address: oldAddr,
-          new_address: newAddr,
-          site_name: cpDup ? cpDup.site_name : null,
-        }, { siteId: cpDup ? cpDup.site_id : null }).catch(() => {});
+        notifications
+          .emit(
+            'duplicate_identity',
+            {
+              identity,
+              old_address: oldAddr,
+              new_address: newAddr,
+              site_name: cpDup ? cpDup.site_name : null,
+            },
+            { siteId: cpDup ? cpDup.site_id : null }
+          )
+          .catch(() => {});
       }
       // ── Détection flapping (reconnexions en boucle) ──
       if (trackFlapping(identity)) {
         // eslint-disable-next-line no-unused-vars
-        try { client.close(); } catch (e) { /* empty */ }
+        try {
+          client.close();
+        } catch (e) {
+          /* empty */
+        }
         return; // ← arrêter complètement le traitement de cette connexion
       }
       // ── on continue ──
       logger.debug(`Reconnection detected, closing existing connection: ${identity}`);
       try {
         existingClient.close();
-      // eslint-disable-next-line no-unused-vars
+        // eslint-disable-next-line no-unused-vars
       } catch (e) {
         // ignorer les erreurs de fermeture
       }
@@ -158,15 +184,25 @@ function createOCPPServer(options = {}) {
     logger.info(`Chargepoint connected: ${identity}`);
     // Enregistrer dans la map et la DB
     connectedClients.set(identity, client);
-    db.upsertChargepoint(identity, { connected: 1, connected_wss: isWSS ? 1 : 0, endpoint_address: client.session.remoteAddress || null });
+    db.upsertChargepoint(identity, {
+      connected: 1,
+      connected_wss: isWSS ? 1 : 0,
+      endpoint_address: client.session.remoteAddress || null,
+    });
     broadcast('chargepoint_connected', { identity });
     // Notifier borne en ligne
     const cpForNotif = db.getChargepointByIdentity(identity);
-    notifications.emit('chargepoint_online', {
-      identity,
-      cp_name: cpForNotif ? cpForNotif.cpname : null,
-      site_name: cpForNotif ? cpForNotif.site_name : null,
-    }, { siteId: cpForNotif ? cpForNotif.site_id : null }).catch(() => {});
+    notifications
+      .emit(
+        'chargepoint_online',
+        {
+          identity,
+          cp_name: cpForNotif ? cpForNotif.cpname : null,
+          site_name: cpForNotif ? cpForNotif.site_name : null,
+        },
+        { siteId: cpForNotif ? cpForNotif.site_id : null }
+      )
+      .catch(() => {});
     // Récupérer l'ID de la borne pour les FK
     const cpRecord = db.getChargepointByIdentity(identity);
     const chargepointId = cpRecord ? cpRecord.id : null;
@@ -177,19 +213,38 @@ function createOCPPServer(options = {}) {
         // Log CALL entrant (depuis la borne)
         if (chargepointId) db.addOcppMessage(chargepointId, 'chargepoint', 'CALL', action, params);
         logger.debug(`Received ${action} from ${identity}: ${JSON.stringify(params)}`);
-        broadcast('ocpp_message', { identity, origin: 'chargepoint', message_type: 'CALL', action, payload: params });
+        broadcast('ocpp_message', {
+          identity,
+          origin: 'chargepoint',
+          message_type: 'CALL',
+          action,
+          payload: params,
+        });
         try {
           const result = handler(params);
           // Log CALLRESULT sortant (depuis le CSMS)
           if (chargepointId) db.addOcppMessage(chargepointId, 'csms', 'CALLRESULT', action, result);
           logger.debug(`Responding to ${action} from ${identity}: ${JSON.stringify(result)}`);
-          broadcast('ocpp_message', { identity, origin: 'csms', message_type: 'CALLRESULT', action, payload: result });
+          broadcast('ocpp_message', {
+            identity,
+            origin: 'csms',
+            message_type: 'CALLRESULT',
+            action,
+            payload: result,
+          });
           return result;
         } catch (err) {
           // Log CALLERROR sortant
-          if (chargepointId) db.addOcppMessage(chargepointId, 'csms', 'CALLERROR', action, { error: err.message });
+          if (chargepointId)
+            db.addOcppMessage(chargepointId, 'csms', 'CALLERROR', action, { error: err.message });
           logger.error(`Error handling ${action} from csms to ${identity}: ${err.message}`);
-          broadcast('ocpp_message', { identity, origin: 'csms', message_type: 'CALLERROR', action, payload: { error: err.message } });
+          broadcast('ocpp_message', {
+            identity,
+            origin: 'csms',
+            message_type: 'CALLERROR',
+            action,
+            payload: { error: err.message },
+          });
           throw err;
         }
       });
@@ -250,57 +305,103 @@ function createOCPPServer(options = {}) {
         const existingConnector = db.getConnectorByChargepointAndId(cp.id, params.connectorId);
         const previousStatus = existingConnector?.cnstatus || null;
         // Mettre à jour le connecteur en base
-        db.upsertConnector(cp.id, params.connectorId, params.status, params.errorCode, params.info, params.vendorId || null, params.vendorErrorCode || null);
+        db.upsertConnector(
+          cp.id,
+          params.connectorId,
+          params.status,
+          params.errorCode,
+          params.info,
+          params.vendorId || null,
+          params.vendorErrorCode || null
+        );
         const updatedCp = db.getChargepointByIdentity(identity);
         const connectors = db.getConnectorsByChargepoint(cp.id);
         broadcast('status_update', { chargepoint: updatedCp, connectors });
         // Notifier connecteur Available uniquement après un Unavailable ou Faulted pour éviter les notifications redondantes
-        if (params.status === 'Available' && (previousStatus === 'Unavailable' || previousStatus === 'Faulted')) {
-          notifications.emit('connector_available', {
-            identity,
-            connector_id: params.connectorId,
-            cp_name: updatedCp ? updatedCp.cpname : null,
-            cn_name: connectors.find(c => c.connector_id === params.connectorId)?.connector_name || null,
-            site_name: updatedCp ? updatedCp.site_name : null,
-          }, { siteId: updatedCp ? updatedCp.site_id : null }).catch(() => {});
+        if (
+          params.status === 'Available' &&
+          (previousStatus === 'Unavailable' || previousStatus === 'Faulted')
+        ) {
+          notifications
+            .emit(
+              'connector_available',
+              {
+                identity,
+                connector_id: params.connectorId,
+                cp_name: updatedCp ? updatedCp.cpname : null,
+                cn_name:
+                  connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                  null,
+                site_name: updatedCp ? updatedCp.site_name : null,
+              },
+              { siteId: updatedCp ? updatedCp.site_id : null }
+            )
+            .catch(() => {});
         }
         // Notifier connecteur Unavailable
         if (params.status === 'Unavailable') {
-          notifications.emit('connector_unavailable', {
-            identity,
-            connector_id: params.connectorId,
-            cp_name: updatedCp ? updatedCp.cpname : null,
-            cn_name: connectors.find(c => c.connector_id === params.connectorId)?.connector_name || null,
-            site_name: updatedCp ? updatedCp.site_name : null,
-          }, { siteId: updatedCp ? updatedCp.site_id : null }).catch(() => {});
+          notifications
+            .emit(
+              'connector_unavailable',
+              {
+                identity,
+                connector_id: params.connectorId,
+                cp_name: updatedCp ? updatedCp.cpname : null,
+                cn_name:
+                  connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                  null,
+                site_name: updatedCp ? updatedCp.site_name : null,
+              },
+              { siteId: updatedCp ? updatedCp.site_id : null }
+            )
+            .catch(() => {});
         }
         // Notifier connecteur en erreur (Faulted ou errorCode != NoError)
         if (params.status === 'Faulted' || (params.errorCode && params.errorCode !== 'NoError')) {
-          logger.warn(`Connector error on ${identity} #${params.connectorId}: status=${params.status} errorCode=${params.errorCode}`);
-          notifications.emit('connector_error', {
-            identity,
-            connector_id: params.connectorId,
-            status: params.status,
-            error_code: params.errorCode,
-            info: params.info || null,
-            cp_name: updatedCp ? updatedCp.cpname : null,
-            cn_name: connectors.find(c => c.connector_id === params.connectorId)?.connector_name || null,
-            site_name: updatedCp ? updatedCp.site_name : null,
-          }, { siteId: updatedCp ? updatedCp.site_id : null }).catch(() => {});
+          logger.warn(
+            `Connector error on ${identity} #${params.connectorId}: status=${params.status} errorCode=${params.errorCode}`
+          );
+          notifications
+            .emit(
+              'connector_error',
+              {
+                identity,
+                connector_id: params.connectorId,
+                status: params.status,
+                error_code: params.errorCode,
+                info: params.info || null,
+                cp_name: updatedCp ? updatedCp.cpname : null,
+                cn_name:
+                  connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                  null,
+                site_name: updatedCp ? updatedCp.site_name : null,
+              },
+              { siteId: updatedCp ? updatedCp.site_id : null }
+            )
+            .catch(() => {});
         }
         // Notifier SuspendedEVSE pour l'utilisateur de la transaction active
         if (params.connectorId > 0 && params.status === 'SuspendedEVSE') {
-          const activeTx = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' })
-            .find(t => t.connector_id === params.connectorId);
+          const activeTx = db
+            .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
+            .find((t) => t.connector_id === params.connectorId);
           if (activeTx && activeTx.tag_user_id && activeTx.energy > 0) {
-            notifications.emit('charge_suspended_evse', {
-              identity,
-              connector_id: params.connectorId,
-              energy_kwh: ((activeTx.energy) / 1000).toFixed(2),
-              cp_name: updatedCp ? updatedCp.cpname : null,
-              cn_name: connectors.find(c => c.connector_id === params.connectorId)?.connector_name || null,
-              site_name: updatedCp ? updatedCp.site_name : null,
-            }, { userId: activeTx.tag_user_id }).catch(() => {});
+            notifications
+              .emit(
+                'charge_suspended_evse',
+                {
+                  identity,
+                  connector_id: params.connectorId,
+                  energy_kwh: (activeTx.energy / 1000).toFixed(2),
+                  cp_name: updatedCp ? updatedCp.cpname : null,
+                  cn_name:
+                    connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                    null,
+                  site_name: updatedCp ? updatedCp.site_name : null,
+                },
+                { userId: activeTx.tag_user_id }
+              )
+              .catch(() => {});
           }
         }
         // Mode 2 (Plug & Charge) : envoi automatique de RemoteStartTransaction quand un connecteur passe en Preparing
@@ -317,15 +418,21 @@ function createOCPPServer(options = {}) {
           callClient(client, identity, 'RemoteStartTransaction', {
             idTag,
             connectorId: params.connectorId,
-          }).then((result) => {
-            logger.info(`RemoteStartTransaction Plug&Charge executed for ${identity} #${params.connectorId}: ${result.status}`);
-            if (result.status !== 'Accepted') {
+          })
+            .then((result) => {
+              logger.info(
+                `RemoteStartTransaction Plug&Charge executed for ${identity} #${params.connectorId}: ${result.status}`
+              );
+              if (result.status !== 'Accepted') {
+                pendingRemoteStarts.delete(pendingKey);
+              }
+            })
+            .catch((err) => {
+              logger.error(
+                `RemoteStartTransaction Plug&Charge mode error for ${identity} #${params.connectorId}: ${err.message}`
+              );
               pendingRemoteStarts.delete(pendingKey);
-            }
-          }).catch((err) => {
-            logger.error(`RemoteStartTransaction Plug&Charge mode error for ${identity} #${params.connectorId}: ${err.message}`);
-            pendingRemoteStarts.delete(pendingKey);
-          });
+            });
         }
       }
       return {};
@@ -340,12 +447,19 @@ function createOCPPServer(options = {}) {
       logger.info(`Authorize result for ${identity}: ${authResult.status}`);
 
       // En mode Autonome (mode 3), on accepte toujours
-      if (cp &&  cp.mode === 3) {
+      if (cp && cp.mode === 3) {
         return { idTagInfo: { status: 'Accepted' } };
       }
       // Stocker et diffuser les rejets d'autorisation
       if (authResult.status !== 'Accepted' && chargepointId) {
-        db.addIdTagEvent(chargepointId, null, params.idTag, authResult.status, authResult.reason, 'authorize');
+        db.addIdTagEvent(
+          chargepointId,
+          null,
+          params.idTag,
+          authResult.status,
+          authResult.reason,
+          'authorize'
+        );
         broadcast('auth_rejected', {
           identity,
           id_tag: params.idTag,
@@ -360,7 +474,9 @@ function createOCPPServer(options = {}) {
       return {
         idTagInfo: {
           status: authResult.status,
-          ...(authResult.tag && authResult.tag.expiry_date ? { expiryDate: authResult.tag.expiry_date } : {}),
+          ...(authResult.tag && authResult.tag.expiry_date
+            ? { expiryDate: authResult.tag.expiry_date }
+            : {}),
         },
       };
     });
@@ -429,25 +545,41 @@ function createOCPPServer(options = {}) {
         // Notifier le démarrage de transaction
         const siteId = cp ? cp.site_id : null;
         const connectors = db.getConnectorsByChargepoint(cp.id);
-        notifications.emit('site_transaction_started', {
-          identity,
-          connector_id: params.connectorId,
-          cp_name: cp ? cp.cpname : null,
-          cn_name: connectors.find(c => c.connector_id === params.connectorId)?.connector_name || null,
-          site_name: cp ? cp.site_name : null,
-        }, { siteId }).catch(() => {});
+        notifications
+          .emit(
+            'site_transaction_started',
+            {
+              identity,
+              connector_id: params.connectorId,
+              cp_name: cp ? cp.cpname : null,
+              cn_name:
+                connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                null,
+              site_name: cp ? cp.site_name : null,
+            },
+            { siteId }
+          )
+          .catch(() => {});
         // Notifier l'utilisateur du début de transaction
         if (params.idTag) {
           const tag = db.getIdTagByTag(params.idTag, siteId);
           if (tag && tag.user_id) {
-            notifications.emit('transaction_started', {
-              identity,
-              connector_id: params.connectorId,
-              transaction_id: transactionId,
-              cp_name: cp ? cp.cpname : null,
-              cn_name: connectors.find(c => c.connector_id === params.connectorId)?.connector_name || null,
-              site_name: cp ? cp.site_name : null,
-            }, { userId: tag.user_id }).catch(() => {});
+            notifications
+              .emit(
+                'transaction_started',
+                {
+                  identity,
+                  connector_id: params.connectorId,
+                  transaction_id: transactionId,
+                  cp_name: cp ? cp.cpname : null,
+                  cn_name:
+                    connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                    null,
+                  site_name: cp ? cp.site_name : null,
+                },
+                { userId: tag.user_id }
+              )
+              .catch(() => {});
           }
         }
       }
@@ -461,12 +593,7 @@ function createOCPPServer(options = {}) {
     // ── StopTransaction ──
     loggedHandle('StopTransaction', (params) => {
       logger.info(`StopTransaction from ${identity} #${params.connectorId}`);
-      db.stopTransaction(
-        params.transactionId,
-        params.meterStop,
-        params.timestamp,
-        params.reason
-      );
+      db.stopTransaction(params.transactionId, params.meterStop, params.timestamp, params.reason);
 
       broadcast('transaction_stop', {
         identity,
@@ -491,31 +618,50 @@ function createOCPPServer(options = {}) {
         if (stoppedTx.start_time && stoppedTx.stop_time) {
           const diffMs = new Date(stoppedTx.stop_time) - new Date(stoppedTx.start_time);
           const mins = Math.floor(diffMs / 60000);
-          duration = mins >= 60 ? `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, '0')}` : `${mins} min`;
+          duration =
+            mins >= 60
+              ? `${Math.floor(mins / 60)}h${String(mins % 60).padStart(2, '0')}`
+              : `${mins} min`;
         }
         // Notifier la fin de recharge sur site
-        notifications.emit('site_transaction_stopped', {
-          identity,
-          connector_id: stoppedTx.connector_id,
-          energy_kwh: energyKwh,
-          duration,
-          stop_reason: params.reason || 'Local',
-          cp_name: cpForTx ? cpForTx.cpname : null,
-          cn_name: connectors.find(c => c.connector_id === stoppedTx.connector_id)?.connector_name || null,
-          site_name: cpForTx ? cpForTx.site_name : null,
-        }, { siteId }).catch(() => {});
+        notifications
+          .emit(
+            'site_transaction_stopped',
+            {
+              identity,
+              connector_id: stoppedTx.connector_id,
+              energy_kwh: energyKwh,
+              duration,
+              stop_reason: params.reason || 'Local',
+              cp_name: cpForTx ? cpForTx.cpname : null,
+              cn_name:
+                connectors.find((c) => c.connector_id === stoppedTx.connector_id)?.connector_name ||
+                null,
+              site_name: cpForTx ? cpForTx.site_name : null,
+            },
+            { siteId }
+          )
+          .catch(() => {});
         // Notifier l'utilisateur de la fin de transaction
         if (tag && tag.user_id) {
-          notifications.emit('transaction_stopped', {
-            identity,
-            energy_kwh: energyKwh,
-            duration,
-            transaction_id: params.transactionId,
-            stop_reason: params.reason || 'Local',
-            cp_name: cpForTx ? cpForTx.cpname : null,
-            cn_name: connectors.find(c => c.connector_id === stoppedTx.connector_id)?.connector_name || null,
-            site_name: cpForTx ? cpForTx.site_name : null,
-          }, { userId: tag.user_id }).catch(() => {});
+          notifications
+            .emit(
+              'transaction_stopped',
+              {
+                identity,
+                energy_kwh: energyKwh,
+                duration,
+                transaction_id: params.transactionId,
+                stop_reason: params.reason || 'Local',
+                cp_name: cpForTx ? cpForTx.cpname : null,
+                cn_name:
+                  connectors.find((c) => c.connector_id === stoppedTx.connector_id)
+                    ?.connector_name || null,
+                site_name: cpForTx ? cpForTx.site_name : null,
+              },
+              { userId: tag.user_id }
+            )
+            .catch(() => {});
         }
       }
 
@@ -541,12 +687,12 @@ function createOCPPServer(options = {}) {
 
         for (const mv of params.meterValue) {
           timestamp = mv.timestamp || null;
-          for (const sv of (mv.sampledValue || [])) {
+          for (const sv of mv.sampledValue || []) {
             // Stocker le total sur le connecteur
             if (sv.measurand === 'Energy.Active.Import.Register') {
               // Convertir kWh en Wh
               const value = parseFloat(sv.value);
-              energyWh  = sv.unit === 'kWh' ? value * 1000 : value;
+              energyWh = sv.unit === 'kWh' ? value * 1000 : value;
               // Connector 0 = la borne elle-même : stocker sur chargepoints
               if (params.connectorId === 0) {
                 db.updateChargepointMeterValue(cp.id, energyWh);
@@ -609,8 +755,19 @@ function createOCPPServer(options = {}) {
                 energy: relativeEnergy,
               };
             }
-            if (currentOffered !== null || currentL1 !== null || currentL2 !== null || currentL3 !== null) {
-              tvData.courantEntry = { x: unixTs, offer: currentOffered, l1: currentL1, l2: currentL2, l3: currentL3 };
+            if (
+              currentOffered !== null ||
+              currentL1 !== null ||
+              currentL2 !== null ||
+              currentL3 !== null
+            ) {
+              tvData.courantEntry = {
+                x: unixTs,
+                offer: currentOffered,
+                l1: currentL1,
+                l2: currentL2,
+                l3: currentL3,
+              };
             }
             if (socValue !== null) tvData.socEntry = { x: unixTs, y: socValue };
             if (Object.keys(tvData).length > 0) {
@@ -641,12 +798,14 @@ function createOCPPServer(options = {}) {
         broadcast('diagnostics_upload', { identity, status: params.status });
         // Notifier l'admin du résultat de l'upload de diagnostics
         const updatedCp = db.getChargepointByIdentity(identity);
-        notifications.emit('diagnostics_upload', {
-          identity,
-          status: params.status,
-          cp_name: updatedCp ? updatedCp.cpname : null,
-          site_name: updatedCp ? updatedCp.site_name : null,
-        }).catch(() => {});
+        notifications
+          .emit('diagnostics_upload', {
+            identity,
+            status: params.status,
+            cp_name: updatedCp ? updatedCp.cpname : null,
+            site_name: updatedCp ? updatedCp.site_name : null,
+          })
+          .catch(() => {});
       }
       return {};
     });
@@ -655,10 +814,23 @@ function createOCPPServer(options = {}) {
     client.handle(({ method, params }) => {
       logger.warn(`OCPP method not managed ${method} from ${identity}`);
       if (chargepointId) db.addOcppMessage(chargepointId, 'chargepoint', 'CALL', method, params);
-      broadcast('ocpp_message', { identity, origin: 'chargepoint', message_type: 'CALL', action: method, payload: params });
+      broadcast('ocpp_message', {
+        identity,
+        origin: 'chargepoint',
+        message_type: 'CALL',
+        action: method,
+        payload: params,
+      });
       const err = createRPCError('NotImplemented');
-      if (chargepointId) db.addOcppMessage(chargepointId, 'csms', 'CALLERROR', method, { error: 'NotImplemented' });
-      broadcast('ocpp_message', { identity, origin: 'csms', message_type: 'CALLERROR', action: method, payload: { error: 'NotImplemented' } });
+      if (chargepointId)
+        db.addOcppMessage(chargepointId, 'csms', 'CALLERROR', method, { error: 'NotImplemented' });
+      broadcast('ocpp_message', {
+        identity,
+        origin: 'csms',
+        message_type: 'CALLERROR',
+        action: method,
+        payload: { error: 'NotImplemented' },
+      });
       throw err;
     });
 
@@ -672,15 +844,26 @@ function createOCPPServer(options = {}) {
       }
       logger.info(`Chargepoint ${identity} disconnected`);
       connectedClients.delete(identity);
-      db.upsertChargepoint(identity, { connected: 0, connected_wss: 0, endpoint_address: null, cpstatus: 'Unavailable' });
+      db.upsertChargepoint(identity, {
+        connected: 0,
+        connected_wss: 0,
+        endpoint_address: null,
+        cpstatus: 'Unavailable',
+      });
       broadcast('chargepoint_disconnected', { identity });
       // Notifier borne hors ligne
       const cpDisc = db.getChargepointByIdentity(identity);
-      notifications.emit('chargepoint_offline', {
-        identity,
-        cpname: cpDisc ? cpDisc.cpname : null,
-        site_name: cpDisc ? cpDisc.site_name : null,
-      }, { siteId: cpDisc ? cpDisc.site_id : null }).catch(() => {});
+      notifications
+        .emit(
+          'chargepoint_offline',
+          {
+            identity,
+            cpname: cpDisc ? cpDisc.cpname : null,
+            site_name: cpDisc ? cpDisc.site_name : null,
+          },
+          { siteId: cpDisc ? cpDisc.site_id : null }
+        )
+        .catch(() => {});
     });
   });
 
@@ -694,13 +877,25 @@ async function callClient(client, identity, method, params) {
 
   // Log CALL sortant
   if (cpId) db.addOcppMessage(cpId, 'csms', 'CALL', method, params);
-  broadcast('ocpp_message', { identity, origin: 'csms', message_type: 'CALL', action: method, payload: params });
+  broadcast('ocpp_message', {
+    identity,
+    origin: 'csms',
+    message_type: 'CALL',
+    action: method,
+    payload: params,
+  });
 
   const result = await client.call(method, params);
 
   // Log CALLRESULT entrant
   if (cpId) db.addOcppMessage(cpId, 'chargepoint', 'CALLRESULT', method, result);
-  broadcast('ocpp_message', { identity, origin: 'chargepoint', message_type: 'CALLRESULT', action: method, payload: result });
+  broadcast('ocpp_message', {
+    identity,
+    origin: 'chargepoint',
+    message_type: 'CALLRESULT',
+    action: method,
+    payload: result,
+  });
 
   // Intercepter GetConfiguration pour stocker la config en BDD
   if (method === 'GetConfiguration' && result && result.configurationKey) {
@@ -726,12 +921,17 @@ function disconnectChargepoint(identity) {
     if (cp) {
       const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
       for (const tx of activeTxs) {
-        db.stopTransaction(tx.transaction_id, tx.meter_start || 0, new Date().toISOString(), 'DeAuthorized');
+        db.stopTransaction(
+          tx.transaction_id,
+          tx.meter_start || 0,
+          new Date().toISOString(),
+          'DeAuthorized'
+        );
       }
     }
     try {
       client.close();
-    // eslint-disable-next-line no-unused-vars
+      // eslint-disable-next-line no-unused-vars
     } catch (e) {
       // ignorer les erreurs de fermeture
     }
@@ -742,11 +942,12 @@ function disconnectChargepoint(identity) {
 function trackRepeatedAuthReject(idTag, identity, cp) {
   const config = getConfig();
   const AUTH_REJECT_THRESHOLD = (config.notifs && config.notifs.authRejectThreshold) || 3;
-  const AUTH_REJECT_WINDOW_MS = ((config.notifs && config.notifs.authRejectWindowMinutes) || 5) * 60 * 1000;
+  const AUTH_REJECT_WINDOW_MS =
+    ((config.notifs && config.notifs.authRejectWindowMinutes) || 5) * 60 * 1000;
   const now = Date.now();
   const tracker = authRejectTracker.get(idTag);
 
-  if (tracker && (now - tracker.firstTime) < AUTH_REJECT_WINDOW_MS) {
+  if (tracker && now - tracker.firstTime < AUTH_REJECT_WINDOW_MS) {
     // Toujours dans la fenêtre, incrémenter
     tracker.count++;
     tracker.lastIdentity = identity;
@@ -755,15 +956,23 @@ function trackRepeatedAuthReject(idTag, identity, cp) {
 
     if (tracker.count === AUTH_REJECT_THRESHOLD) {
       // Seuil atteint : envoyer la notification
-      logger.warn(`Repeated auth rejections for tag ${idTag}: ${tracker.count} in ${AUTH_REJECT_WINDOW_MS / 1000}s`);
-      notifications.emit('repeated_auth_rejected', {
-        identity,
-        id_tag: idTag,
-        count: tracker.count,
-        window_minutes: Math.round(AUTH_REJECT_WINDOW_MS / 60000),
-        cp_name: cp ? cp.cpname : null,
-        site_name: cp ? cp.site_name : null,
-      }, { siteId: cp ? cp.site_id : null }).catch(() => {});
+      logger.warn(
+        `Repeated auth rejections for tag ${idTag}: ${tracker.count} in ${AUTH_REJECT_WINDOW_MS / 1000}s`
+      );
+      notifications
+        .emit(
+          'repeated_auth_rejected',
+          {
+            identity,
+            id_tag: idTag,
+            count: tracker.count,
+            window_minutes: Math.round(AUTH_REJECT_WINDOW_MS / 60000),
+            cp_name: cp ? cp.cpname : null,
+            site_name: cp ? cp.site_name : null,
+          },
+          { siteId: cp ? cp.site_id : null }
+        )
+        .catch(() => {});
     }
   } else {
     // Nouvelle fenêtre
@@ -778,7 +987,7 @@ function trackRepeatedAuthReject(idTag, identity, cp) {
   // Nettoyage périodique des entrées expirées (toutes les 50 insertions)
   if (authRejectTracker.size > 50) {
     for (const [tag, data] of authRejectTracker) {
-      if ((now - data.firstTime) > AUTH_REJECT_WINDOW_MS) authRejectTracker.delete(tag);
+      if (now - data.firstTime > AUTH_REJECT_WINDOW_MS) authRejectTracker.delete(tag);
     }
   }
 }
@@ -790,17 +999,25 @@ function trackFlapping(identity) {
   const FLAP_THRESHOLD = (config.notifs && config.notifs.flapThreshold) || 4;
   const now = Date.now();
   const flap = reconnectTracker.get(identity);
-  if (flap && (now - flap.firstTime) < FLAP_WINDOW_MS) {
+  if (flap && now - flap.firstTime < FLAP_WINDOW_MS) {
     flap.count++;
     if (flap.count === FLAP_THRESHOLD) {
-      logger.error(`Identity flapping: ${identity} (${flap.count} reconnections in ${FLAP_WINDOW_MS / 1000}s)`);
+      logger.error(
+        `Identity flapping: ${identity} (${flap.count} reconnections in ${FLAP_WINDOW_MS / 1000}s)`
+      );
       const cpFlap = db.getChargepointByIdentity(identity);
-      notifications.emit('identity_flapping', {
-        identity,
-        count: flap.count,
-        seconds: Math.round((now - flap.firstTime) / 1000),
-        site_name: cpFlap ? cpFlap.site_name : null,
-      }, { siteId: cpFlap ? cpFlap.site_id : null }).catch(() => {});
+      notifications
+        .emit(
+          'identity_flapping',
+          {
+            identity,
+            count: flap.count,
+            seconds: Math.round((now - flap.firstTime) / 1000),
+            site_name: cpFlap ? cpFlap.site_name : null,
+          },
+          { siteId: cpFlap ? cpFlap.site_id : null }
+        )
+        .catch(() => {});
       return true;
     }
   } else {
@@ -809,9 +1026,17 @@ function trackFlapping(identity) {
   // Nettoyage périodique des entrées expirées (toutes les 50 insertions)
   if (reconnectTracker.size > 50) {
     for (const [id, data] of reconnectTracker) {
-      if ((now - data.firstTime) > FLAP_WINDOW_MS) reconnectTracker.delete(id);
+      if (now - data.firstTime > FLAP_WINDOW_MS) reconnectTracker.delete(id);
     }
   }
   return false;
 }
-module.exports = { createOCPPServer, setBroadcast, getConnectedClients, callClient, disconnectChargepoint, pendingRemoteStarts, pendingChargepoints };
+module.exports = {
+  createOCPPServer,
+  setBroadcast,
+  getConnectedClients,
+  callClient,
+  disconnectChargepoint,
+  pendingRemoteStarts,
+  pendingChargepoints,
+};

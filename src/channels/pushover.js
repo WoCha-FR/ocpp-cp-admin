@@ -19,21 +19,21 @@ function initPushover() {
  */
 function getPushoverMeta(event, _data) {
   const meta = {
-    server_started:           { priority: 0 },
-    server_stopping:          { priority: 1 },
-    pending_chargepoint:      { priority: 1 },
-    autoadd_chargepoint:      { priority: 1 },
-    diagnostics_upload:       { priority: 1 },
-    chargepoint_online:       { priority: 0 },
-    chargepoint_offline:      { priority: 1 },
-    connector_available:      { priority: 0 },
-    connector_unavailable:    { priority: 1 },
-    connector_error:          { priority: 1 },
+    server_started: { priority: 0 },
+    server_stopping: { priority: 1 },
+    pending_chargepoint: { priority: 1 },
+    autoadd_chargepoint: { priority: 1 },
+    diagnostics_upload: { priority: 1 },
+    chargepoint_online: { priority: 0 },
+    chargepoint_offline: { priority: 1 },
+    connector_available: { priority: 0 },
+    connector_unavailable: { priority: 1 },
+    connector_error: { priority: 1 },
     site_transaction_started: { priority: 0 },
     site_transaction_stopped: { priority: 0 },
-    transaction_started:      { priority: 0 },
-    transaction_stopped:      { priority: 0 },
-    charge_suspended_evse:    { priority: 0 },
+    transaction_started: { priority: 0 },
+    transaction_stopped: { priority: 0 },
+    charge_suspended_evse: { priority: 0 },
   };
   return meta[event] || { priority: 0 };
 }
@@ -66,7 +66,7 @@ const pushoverChannel = {
       user: user.ntif_pushuser,
       title: titre,
       message: text,
-      priority: meta.priority
+      priority: meta.priority,
     };
 
     try {
@@ -82,7 +82,9 @@ const pushoverChannel = {
         logger.error(errorMsg);
         return { success: false, error: errorMsg };
       }
-      logger.debug(`"${event}" notification sent to ${user.shortname || user.useremail} via Pushover`);
+      logger.debug(
+        `"${event}" notification sent to ${user.shortname || user.useremail} via Pushover`
+      );
       return { success: true };
     } catch (err) {
       logger.error(`Error sending Pushover to ${user.shortname || user.useremail}: ${err.message}`);

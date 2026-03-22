@@ -26,26 +26,46 @@ function resolveConfigPath() {
 // type: 'auto' (défaut) = cast automatique booléen/nombre, 'string' = toujours string.
 const ENV_OVERRIDES = [
   // ── Déploiement / URLs ──
-  { env: 'CPADMIN_PUBLIC_URL',            path: ['webui', 'publicUrl'] },
-  { env: 'CPADMIN_HTTP_HOST',             path: ['webui', 'httpHost'] },
-  { env: 'CPADMIN_TRUST_PROXY',           path: ['webui', 'trustProxy'] },
-  { env: 'CPADMIN_OCPP_WS_URL',           path: ['ocpp', 'ocppWsUrl'] },
-  { env: 'CPADMIN_OCPP_WSS_URL',          path: ['ocpp', 'wss', 'ocppWsUrl'] },
-  { env: 'CPADMIN_DIAGNOSTICS_URL',       path: ['ocpp', 'diagnosticsLocation'] },
+  { env: 'CPADMIN_PUBLIC_URL', path: ['webui', 'publicUrl'] },
+  { env: 'CPADMIN_HTTP_HOST', path: ['webui', 'httpHost'] },
+  { env: 'CPADMIN_TRUST_PROXY', path: ['webui', 'trustProxy'] },
+  { env: 'CPADMIN_OCPP_WS_URL', path: ['ocpp', 'ocppWsUrl'] },
+  { env: 'CPADMIN_OCPP_WSS_URL', path: ['ocpp', 'wss', 'ocppWsUrl'] },
+  { env: 'CPADMIN_DIAGNOSTICS_URL', path: ['ocpp', 'diagnosticsLocation'] },
   // ── Secrets ──
-  { env: 'CPADMIN_SESSION_SECRET',        path: ['webui', 'sessionSecret'], type: 'string' },
-  { env: 'CPADMIN_MAIL_HOST',             path: ['notifs', 'mail', 'transport', 'host'] },
-  { env: 'CPADMIN_MAIL_PORT',             path: ['notifs', 'mail', 'transport', 'port'] },
-  { env: 'CPADMIN_MAIL_USER',             path: ['notifs', 'mail', 'transport', 'auth', 'user'], type: 'string' },
-  { env: 'CPADMIN_MAIL_PASS',             path: ['notifs', 'mail', 'transport', 'auth', 'pass'], type: 'string' },
-  { env: 'CPADMIN_GOOGLE_CLIENT_ID',      path: ['auth', 'google', 'client_id'], type: 'string' },
-  { env: 'CPADMIN_GOOGLE_CLIENT_SECRET',  path: ['auth', 'google', 'client_secret'], type: 'string' },
-  { env: 'CPADMIN_VAPID_PUBLIC_KEY',      path: ['notifs', 'webpush', 'vapidPublicKey'], type: 'string' },
-  { env: 'CPADMIN_VAPID_PRIVATE_KEY',     path: ['notifs', 'webpush', 'vapidPrivateKey'], type: 'string' },
+  { env: 'CPADMIN_SESSION_SECRET', path: ['webui', 'sessionSecret'], type: 'string' },
+  { env: 'CPADMIN_MAIL_HOST', path: ['notifs', 'mail', 'transport', 'host'] },
+  { env: 'CPADMIN_MAIL_PORT', path: ['notifs', 'mail', 'transport', 'port'] },
+  {
+    env: 'CPADMIN_MAIL_USER',
+    path: ['notifs', 'mail', 'transport', 'auth', 'user'],
+    type: 'string',
+  },
+  {
+    env: 'CPADMIN_MAIL_PASS',
+    path: ['notifs', 'mail', 'transport', 'auth', 'pass'],
+    type: 'string',
+  },
+  { env: 'CPADMIN_GOOGLE_CLIENT_ID', path: ['auth', 'google', 'client_id'], type: 'string' },
+  {
+    env: 'CPADMIN_GOOGLE_CLIENT_SECRET',
+    path: ['auth', 'google', 'client_secret'],
+    type: 'string',
+  },
+  {
+    env: 'CPADMIN_VAPID_PUBLIC_KEY',
+    path: ['notifs', 'webpush', 'vapidPublicKey'],
+    type: 'string',
+  },
+  {
+    env: 'CPADMIN_VAPID_PRIVATE_KEY',
+    path: ['notifs', 'webpush', 'vapidPrivateKey'],
+    type: 'string',
+  },
   // ── Configuration générale ──
-  { env: 'CPADMIN_LOGLEVEL',              path: ['loglevel'] },
-  { env: 'CPADMIN_LANGUAGE',              path: ['language'] },
-  { env: 'CPADMIN_CPO_NAME',              path: ['cpoName'], type: 'string' },
+  { env: 'CPADMIN_LOGLEVEL', path: ['loglevel'] },
+  { env: 'CPADMIN_LANGUAGE', path: ['language'] },
+  { env: 'CPADMIN_CPO_NAME', path: ['cpoName'], type: 'string' },
 ];
 
 function castEnvValue(raw, type) {

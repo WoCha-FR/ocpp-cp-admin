@@ -46,19 +46,21 @@ if (config.webui.trustProxy) {
 }
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-      scriptSrcAttr: ["'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-      imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'", "ws:", "wss:"],
-      fontSrc: ["'self'"],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+        scriptSrcAttr: ["'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+        imgSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'", 'ws:', 'wss:'],
+        fontSrc: ["'self'"],
+      },
     },
-  },
-}));
+  })
+);
 const sessionMiddleware = session({
   store: new SqliteStore({
     client: sqliteDb,
@@ -113,12 +115,15 @@ const defaultLang = config.language || 'fr';
 const languageLabels = {};
 for (const lng of SUPPORTED_LANGUAGES) {
   const label = i18next.t('language_label', { lng });
-  languageLabels[lng] = (label && label !== 'language_label') ? label : `🌐 ${lng.toUpperCase()}`;
+  languageLabels[lng] = label && label !== 'language_label' ? label : `🌐 ${lng.toUpperCase()}`;
 }
 const i18nScript = `<script>window.__I18N__=${JSON.stringify(i18nResources)};window.__SUPPORTED_LANGUAGES__=${JSON.stringify(SUPPORTED_LANGUAGES)};window.__DEFAULT_LANG__=${JSON.stringify(defaultLang)};window.__LANGUAGE_LABELS__=${JSON.stringify(languageLabels)};</script>`;
 
 // Préparer le HTML final avec les traductions injectées (une seule fois, mis en cache)
-const finalHtml = indexHtml.replace('<script src="https://cdn.jsdelivr.net/npm/i18next', i18nScript + '<script src="https://cdn.jsdelivr.net/npm/i18next');
+const finalHtml = indexHtml.replace(
+  '<script src="https://cdn.jsdelivr.net/npm/i18next',
+  i18nScript + '<script src="https://cdn.jsdelivr.net/npm/i18next'
+);
 
 // Servir l'UI statique (index: false pour que le catch-all serve le HTML avec i18n)
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
@@ -149,7 +154,12 @@ function loadCertKeyPair(label, certFile, keyFile, log) {
 // ── Charger les certificats SSL pour UI HTTPS ──
 let uiSslOptions = null;
 if (uiSslEnabled) {
-  uiSslOptions = loadCertKeyPair('HTTPS', config.webui.https.certFile, config.webui.https.keyFile, logWEBUI);
+  uiSslOptions = loadCertKeyPair(
+    'HTTPS',
+    config.webui.https.certFile,
+    config.webui.https.keyFile,
+    logWEBUI
+  );
 }
 
 // ── Charger les certificats SSL (RSA & ECDSA) pour OCPP WSS ──
@@ -160,12 +170,14 @@ if (wsSslEnabled) {
     { name: 'RSA', conf: config.ocpp.wss.rsa },
     { name: 'ECDSA', conf: config.ocpp.wss.ecdsa },
   ];
-  const loaded = pairs.map(({ name, conf }) => loadCertKeyPair(`WSS ${name}`, conf?.certFile, conf?.keyFile, logOCPP));
+  const loaded = pairs.map(({ name, conf }) =>
+    loadCertKeyPair(`WSS ${name}`, conf?.certFile, conf?.keyFile, logOCPP)
+  );
 
   wsSslOptions = {
-    cert: loaded.map(p => p.cert),
-    key: loaded.map(p => p.key),
-    requestCert: true,        // Demander un certificat client (Security Profile 3)
+    cert: loaded.map((p) => p.cert),
+    key: loaded.map((p) => p.key),
+    requestCert: true, // Demander un certificat client (Security Profile 3)
     rejectUnauthorized: ocppStrictClientCert, // true = profile 3 strict, false = mode mixte profile 2/3
   };
 
@@ -180,9 +192,13 @@ if (wsSslEnabled) {
 
   logOCPP.debug(`WSS: RSA & ECDSA certificates loaded (strictClientCert=${ocppStrictClientCert})`);
   if (ocppStrictClientCert) {
-    logOCPP.info('WSS strict client certificate validation enabled (OCPP Security Profile 3 strict)');
+    logOCPP.info(
+      'WSS strict client certificate validation enabled (OCPP Security Profile 3 strict)'
+    );
   } else {
-    logOCPP.info('WSS mixed mode enabled: Profile 2 (Basic Auth) and Profile 3 (client cert) accepted');
+    logOCPP.info(
+      'WSS mixed mode enabled: Profile 2 (Basic Auth) and Profile 3 (client cert) accepted'
+    );
   }
 }
 
@@ -216,7 +232,8 @@ if (httpsServer) attachUIWebSocket(httpsServer, ' (secure)');
 
 function broadcastToUI(message) {
   for (const client of uiClients) {
-    if (client.readyState === 1) { // WebSocket.OPEN
+    if (client.readyState === 1) {
+      // WebSocket.OPEN
       client.send(message);
     }
   }
@@ -258,7 +275,7 @@ async function start() {
   notifications.emit('server_started', {});
 }
 
-start().catch(err => {
+start().catch((err) => {
   logger.error('Start-up error:', err);
   process.exit(1);
 });
