@@ -227,7 +227,7 @@ Consultez le fichier [`docker/README.md`](docker/README.md) pour le détail de c
 | `/app/config` | Configuration, base de données et certificats (`certs/`) |
 | `/app/logs` | Fichiers de journalisation |
 | `/app/public/img` | Images statiques |
-
+| `/app/locales-custom` | Fichiers de locale personnalisés (ajout ou surcharge de traductions) |
 Le point d'accès `/healthz` est utilisé pour le health check Docker (HTTP GET, toutes les 30s).
 
 Au premier démarrage, si `config/config.json` n'existe pas, il est créé automatiquement depuis `config.sample.json`.
@@ -268,7 +268,7 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | Variable | Config JSON | Exemple |
 |---|---|---|
 | `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
-| `CPADMIN_LANGUAGE` | `language` | `fr`, `en` |
+| `CPADMIN_LANGUAGE` | `language` | Tout code locale du dossier `locales/` (ex. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `Mon CPO` |
 
 > Les booléens (`true`/`false`) et les nombres sont convertis automatiquement. Les secrets sont toujours traités comme des chaînes de caractères.
@@ -286,7 +286,7 @@ Les valeurs du fichier de configuration peuvent être surchargées par variables
 | Paramètre | Type | Défaut | Description |
 |---|---|---|---|
 | `loglevel` | string | `"error"` | Niveau de log : `error`, `warn`, `info`, `debug` |
-| `language` | string | `"fr"` | Langue par défaut de l'application (`fr`, `en`) |
+| `language` | string | `"fr"` | Langue par défaut de l'application (tout code locale du dossier `locales/`, ex. `fr`, `en`) |
 | `dbname` | string | `"cpadmin.db"` | Nom du fichier de base de données SQLite |
 | `cpoName` | string | `"CP Admin"` | Nom de l'organisation (affiché dans l'interface) |
 
@@ -606,13 +606,43 @@ En mode développement, les logs sont également affichés en console avec color
 
 ## Internationalisation
 
-L'application est disponible en :
+L'application est livrée avec :
 - **Français** (`fr`) — langue par défaut
 - **Anglais** (`en`)
 
-La langue par défaut est configurée dans `config.json` (`language`). Chaque utilisateur peut choisir sa langue préférée dans son profil.
+La langue par défaut est configurée dans `config.json` (`language`) ou via la variable d'environnement `CPADMIN_LANGUAGE`. Chaque utilisateur peut choisir sa langue préférée dans son profil.
 
 Les traductions incluent l'interface, les notifications, les exports CSV et les formats de dates.
+
+### Ajouter une nouvelle langue
+
+De nouvelles langues peuvent être ajoutées **sans modifier le code source**. Le moteur i18n découvre automatiquement tous les fichiers `.json` du dossier `locales/` au démarrage.
+
+Pour ajouter une langue (ex. allemand `de`) :
+
+1. Copier un fichier de locale existant comme modèle :
+   ```bash
+   cp locales/en.json locales/de.json
+   ```
+2. Traduire toutes les valeurs dans `locales/de.json` (conserver les clés inchangées)
+3. Mettre à jour la section `language_label` et `_localeConfig` pour la nouvelle locale :
+   ```json
+   {
+     "language_label": "🇩🇪 Deutsch",
+     "_localeConfig": {
+       "dateFns": "de",
+       "flatpickrLocale": "de",
+       "dateFormat": "d.m.Y",
+       "dateTimeFormat": "d.m.Y H:i"
+     }
+   }
+   ```
+4. Définir la nouvelle langue par défaut (optionnel) :
+   - Dans `config.json` : `"language": "de"`
+   - Ou via variable d'environnement : `CPADMIN_LANGUAGE=de`
+5. Redémarrer l'application
+
+> Avec Docker, les locales intégrées (`en`, `fr`) font partie de l'image et sont mises à jour à chaque nouvelle version. Pour ajouter une locale personnalisée **sans reconstruire l'image**, placez le fichier `.json` dans le volume `locales-custom`. Les fichiers personnalisés sont fusionnés par-dessus les locales intégrées — les clés du fichier personnalisé surchargent celles de l'image, le reste est conservé. Voir [`docker/README.fr.md`](docker/README.fr.md) pour les détails.
 
 ---
 

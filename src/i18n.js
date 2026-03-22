@@ -10,10 +10,26 @@ const { getConfig } = require('./config');
 const logger = require('./logger').scope('I18N');
 
 const LOCALES_DIR = path.join(__dirname, '..', 'locales');
+const CUSTOM_LOCALES_DIR = path.join(__dirname, '..', 'locales-custom');
 const SUPPORTED_LANGUAGES = [];
 const resources = {};
 
-// Charger dynamiquement tous les fichiers de traduction
+/**
+ * Deep merge source into target (modifies target in place).
+ */
+function deepMerge(target, source) {
+  for (const key of Object.keys(source)) {
+    if (source[key] && typeof source[key] === 'object' && !Array.isArray(source[key])
+        && target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])) {
+      deepMerge(target[key], source[key]);
+    } else {
+      target[key] = source[key];
+    }
+  }
+  return target;
+}
+
+// Charger dynamiquement tous les fichiers de traduction intégrés
 const files = fs.readdirSync(LOCALES_DIR).filter(f => f.endsWith('.json'));
 for (const file of files) {
   const lng = path.basename(file, '.json');
@@ -22,6 +38,29 @@ for (const file of files) {
     SUPPORTED_LANGUAGES.push(lng);
   } catch (err) {
     logger.error(`Failed to load locale ${file}: ${err.message}`);
+  }
+}
+
+// Charger les locales personnalisées (ajout ou surcharge)
+if (fs.existsSync(CUSTOM_LOCALES_DIR)) {
+  const customFiles = fs.readdirSync(CUSTOM_LOCALES_DIR).filter(f => f.endsWith('.json'));
+  for (const file of customFiles) {
+    const lng = path.basename(file, '.json');
+    try {
+      const custom = JSON.parse(fs.readFileSync(path.join(CUSTOM_LOCALES_DIR, file), 'utf-8'));
+      if (resources[lng]) {
+        // Fusionner par-dessus la locale intégrée
+        deepMerge(resources[lng].translation, custom);
+        logger.info(`Merged custom locale overrides for '${lng}'`);
+      } else {
+        // Nouvelle langue ajoutée par l'utilisateur
+        resources[lng] = { translation: custom };
+        SUPPORTED_LANGUAGES.push(lng);
+        logger.info(`Loaded custom locale '${lng}'`);
+      }
+    } catch (err) {
+      logger.error(`Failed to load custom locale ${file}: ${err.message}`);
+    }
   }
 }
 

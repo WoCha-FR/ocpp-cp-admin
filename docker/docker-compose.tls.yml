@@ -35,7 +35,10 @@ services:
     volumes:
       - config:/app/config
       - logs:/app/logs
-      - public-img:/app/public/img
+      # Uncomment the following line to enable image uploads (e.g. for custom favicon and logos)
+      #- public-img:/app/public/img
+      # Uncomment the following line to enable custom locales (for translations)
+      #- locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
       - CPADMIN_PUBLIC_URL=https://cpadmin.local
@@ -47,6 +50,8 @@ services:
       - CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local
       # Décommenter pour définir le secret de session via ENV
       # - CPADMIN_SESSION_SECRET=change-me
+      # Décommenter pour changer la langue par défaut (toute locale du dossier locales/)
+      # - CPADMIN_LANGUAGE=en
     labels:
       - "traefik.enable=true"
 
@@ -99,6 +104,7 @@ services:
 volumes:
   config:
   logs:
-  public-img:
+  #public-img:
+  #locales-custom:
   ftp-data:
   letsencrypt:

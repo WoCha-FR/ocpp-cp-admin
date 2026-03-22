@@ -9,12 +9,18 @@ services:
     volumes:
       - config:/app/config
       - logs:/app/logs
-      - public-img:/app/public/img
+      # Uncomment the following line to enable image uploads (e.g. for custom favicon and logos)
+      #- public-img:/app/public/img
+      # Uncomment the following line to enable custom locales (for translations)
+      #- locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
       - CPADMIN_HTTP_HOST=0.0.0.0
+      # Uncomment to override the default language (any locale from locales/)
+      # - CPADMIN_LANGUAGE=en
 
 volumes:
   config:
   logs:
-  public-img:
+  #public-img:
+  #locales-custom:

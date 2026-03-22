@@ -135,7 +135,7 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | Variable | JSON Config | Example |
 |---|---|---|
 | `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
-| `CPADMIN_LANGUAGE` | `language` | `fr`, `en` |
+| `CPADMIN_LANGUAGE` | `language` | Any locale code from `locales/` folder (e.g. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `My CPO` |
 
 > Booleans (`true`/`false`) and numbers are automatically converted.
@@ -150,5 +150,20 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | `config` | Configuration (`config.json`) and certificates (`certs/`) |
 | `logs` | Log files |
 | `public-img` | Web interface static images |
+| `locales-custom` | Custom locale files (add or override translations) |
 | `ftp-data` | Retrieved diagnostics files (FTP-based composes) |
 | `letsencrypt` | ACME Let's Encrypt certificates (TLS compose) |
+
+### Adding a Custom Locale (Docker)
+
+Built-in locales (`en`, `fr`) are embedded in the image and updated with each release. To add a new language or override existing translations, place `.json` files in the `locales-custom` volume:
+
+```bash
+# Copy the volume mount point (find the actual path with docker volume inspect)
+docker cp my-de.json ocpp-cp-admin:/app/locales-custom/de.json
+docker restart ocpp-cp-admin
+```
+
+Custom files are **merged on top** of built-in locales:
+- A file with an existing locale code (e.g. `fr.json`) overrides specific keys, keeping the rest intact.
+- A file with a new code (e.g. `de.json`) registers the language.

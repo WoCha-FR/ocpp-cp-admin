@@ -135,7 +135,7 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | Variable | Config JSON | Exemple |
 |---|---|---|
 | `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
-| `CPADMIN_LANGUAGE` | `language` | `fr`, `en` |
+| `CPADMIN_LANGUAGE` | `language` | Tout code locale du dossier `locales/` (ex. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `Mon CPO` |
 
 > Les booléens (`true`/`false`) et les nombres sont convertis automatiquement.
@@ -150,5 +150,20 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `config` | Configuration (`config.json`) et certificats (`certs/`) |
 | `logs` | Fichiers de logs |
 | `public-img` | Images statiques de l'interface |
+| `locales-custom` | Fichiers de locale personnalisés (ajout ou surcharge de traductions) |
 | `ftp-data` | Fichiers de diagnostics récupérés (composes avec FTP) |
 | `letsencrypt` | Certificats ACME Let's Encrypt (compose TLS) |
+
+### Ajouter une locale personnalisée (Docker)
+
+Les locales intégrées (`en`, `fr`) font partie de l'image et sont mises à jour à chaque nouvelle version. Pour ajouter une nouvelle langue ou surcharger des traductions existantes, placez des fichiers `.json` dans le volume `locales-custom` :
+
+```bash
+# Copier un fichier de locale dans le conteneur
+docker cp mon-de.json ocpp-cp-admin:/app/locales-custom/de.json
+docker restart ocpp-cp-admin
+```
+
+Les fichiers personnalisés sont **fusionnés par-dessus** les locales intégrées :
+- Un fichier avec un code existant (ex. `fr.json`) surcharge uniquement les clés présentes, le reste est conservé.
+- Un fichier avec un nouveau code (ex. `de.json`) enregistre la langue comme disponible.

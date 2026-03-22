@@ -30,13 +30,13 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN mkdir -p /opt/defaults/config /opt/defaults/public-img \
     && cp /app/config/config.sample.json /opt/defaults/config/config.sample.json \
     && cp -a /app/public/img/. /opt/defaults/public-img/ \
-    && mkdir -p /app/logs /app/public/img \
-    && chown -R app:app /opt/defaults /app/logs /app/public/img \
+    && mkdir -p /app/logs /app/public/img /app/locales-custom \
+    && chown -R app:app /opt/defaults /app/logs /app/public/img /app/locales-custom \
     && chown app:app /usr/local/bin/docker-entrypoint.sh \
     && sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
-VOLUME ["/app/config", "/app/logs", "/app/public/img"]
+VOLUME ["/app/config", "/app/logs", "/app/public/img", "/app/locales-custom"]
 
 USER app
 

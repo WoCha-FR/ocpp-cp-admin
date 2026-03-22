@@ -233,7 +233,7 @@ See [`docker/README.md`](docker/README.md) for details on each compose file.
 | `/app/config` | Configuration, database, and certificates (`certs/`) |
 | `/app/logs` | Log files |
 | `/app/public/img` | Static images |
-
+| `/app/locales-custom` | Custom locale files (add or override translations) |
 The `/healthz` endpoint is used for Docker health checks (HTTP GET, every 30s).
 
 On first startup, if `config/config.json` does not exist, it is automatically created from `config.sample.json`.
@@ -274,7 +274,7 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | Variable | JSON Config | Example |
 |---|---|---|
 | `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
-| `CPADMIN_LANGUAGE` | `language` | `fr`, `en` |
+| `CPADMIN_LANGUAGE` | `language` | Any locale code from `locales/` folder (e.g. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `My CPO` |
 
 > Booleans (`true`/`false`) and numbers are automatically converted. Secrets are always treated as strings.
@@ -292,7 +292,7 @@ Configuration values can be overridden by environment variables (see the [Enviro
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `loglevel` | string | `"error"` | Log level: `error`, `warn`, `info`, `debug` |
-| `language` | string | `"fr"` | Default application language (`fr`, `en`) |
+| `language` | string | `"fr"` | Default application language (any locale code from `locales/` folder, e.g. `fr`, `en`) |
 | `dbname` | string | `"cpadmin.db"` | SQLite database file name |
 | `cpoName` | string | `"CP Admin"` | Organization name (displayed in the interface) |
 
@@ -612,13 +612,43 @@ In development mode, logs are also displayed in the console with color-coded sco
 
 ## Internationalization
 
-The application is available in:
+The application ships with:
 - **French** (`fr`) — default language
 - **English** (`en`)
 
-The default language is configured in `config.json` (`language`). Each user can choose their preferred language in their profile.
+The default language is configured in `config.json` (`language`) or via the `CPADMIN_LANGUAGE` environment variable. Each user can choose their preferred language in their profile.
 
 Translations cover the interface, notifications, CSV exports, and date formats.
+
+### Adding a New Language
+
+New languages can be added **without modifying the source code**. The i18n engine automatically discovers all `.json` files in the `locales/` folder at startup.
+
+To add a language (e.g. German `de`):
+
+1. Copy an existing locale file as a template:
+   ```bash
+   cp locales/en.json locales/de.json
+   ```
+2. Translate all values in `locales/de.json` (keep the keys unchanged)
+3. Update the `language_label` and `_localeConfig` section to match the new locale:
+   ```json
+   {
+     "language_label": "🇩🇪 Deutsch",
+     "_localeConfig": {
+       "dateFns": "de",
+       "flatpickrLocale": "de",
+       "dateFormat": "d.m.Y",
+       "dateTimeFormat": "d.m.Y H:i"
+     }
+   }
+   ```
+4. Set the new language as default (optional):
+   - In `config.json`: `"language": "de"`
+   - Or via environment variable: `CPADMIN_LANGUAGE=de`
+5. Restart the application
+
+> With Docker, built-in locales (`en`, `fr`) are embedded in the image and updated with each release. To add a custom locale **without rebuilding**, place the `.json` file in the `locales-custom` volume. Custom files are merged on top of built-in locales — keys from custom files override built-in ones while the rest remains intact. See [`docker/README.md`](docker/README.md) for details.
 
 ---
 
