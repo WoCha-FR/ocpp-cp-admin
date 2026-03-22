@@ -101,6 +101,31 @@ docker compose -f docker/docker-compose.tls.yml up -d
 
 ---
 
+## Mounted Volume Permissions
+
+The container runs as a non-root user (`app`, UID 1000). At startup, it attempts to populate empty volumes (`config/`, `public/img/`) with default files.
+
+If the host directory belongs to `root` or another user, this initial copy fails with:
+
+```
+cp: can't create '/app/config/config.sample.json': Permission denied
+```
+
+> The container still starts, but the default files are **not** copied.
+
+**Fix**: grant write access to the container's UID on the mounted host directories:
+
+```bash
+sudo chown -R 1000:1000 ./config ./public/img
+# or if you prefer to keep ownership:
+sudo chmod -R 775 ./config ./public/img
+sudo chown -R :1000 ./config ./public/img
+```
+
+Then restart the container — the default files will be initialized correctly.
+
+---
+
 ## Environment Variables
 
 Values from `config.json` can be overridden by environment variables (the JSON file is not modified).
@@ -129,6 +154,25 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | `CPADMIN_GOOGLE_CLIENT_SECRET` | `auth.google.client_secret` |
 | `CPADMIN_VAPID_PUBLIC_KEY` | `notifs.webpush.vapidPublicKey` |
 | `CPADMIN_VAPID_PRIVATE_KEY` | `notifs.webpush.vapidPrivateKey` |
+
+### Feature Toggles
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_MAIL_ENABLED` | `notifs.mail.enabled` | `true` |
+| `CPADMIN_MAIL_FROM` | `notifs.mail.from` | `CPADMIN <noreply@example.com>` |
+| `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS from start) |
+| `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
+| `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
+| `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
+
+### OCPP Behavior
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict OCPP 1.6 validation) |
+| `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
+| `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
 
 ### General Configuration
 

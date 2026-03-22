@@ -62,6 +62,17 @@ const ENV_OVERRIDES = [
     path: ['notifs', 'webpush', 'vapidPrivateKey'],
     type: 'string',
   },
+  // ── Activation des fonctionnalités ──
+  { env: 'CPADMIN_MAIL_ENABLED', path: ['notifs', 'mail', 'enabled'] },
+  { env: 'CPADMIN_MAIL_FROM', path: ['notifs', 'mail', 'from'], type: 'string' },
+  { env: 'CPADMIN_MAIL_SECURE', path: ['notifs', 'mail', 'transport', 'secure'] },
+  { env: 'CPADMIN_WEBPUSH_ENABLED', path: ['notifs', 'webpush', 'enabled'] },
+  { env: 'CPADMIN_VAPID_SUBJECT', path: ['notifs', 'webpush', 'vapidSubject'], type: 'string' },
+  { env: 'CPADMIN_GOOGLE_AUTH_ENABLED', path: ['auth', 'google', 'enabled'] },
+  // ── Comportement OCPP ──
+  { env: 'CPADMIN_OCPP_STRICT_MODE', path: ['ocpp', 'strictMode'] },
+  { env: 'CPADMIN_OCPP_AUTO_ADD', path: ['ocpp', 'autoAddUnknownChargepoints'] },
+  { env: 'CPADMIN_OCPP_PENDING_UNKNOWN', path: ['ocpp', 'pendingUnknownChargepoints'] },
   // ── Configuration générale ──
   { env: 'CPADMIN_LOGLEVEL', path: ['loglevel'] },
   { env: 'CPADMIN_LANGUAGE', path: ['language'] },

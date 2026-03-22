@@ -269,6 +269,25 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | `CPADMIN_VAPID_PUBLIC_KEY` | `notifs.webpush.vapidPublicKey` |
 | `CPADMIN_VAPID_PRIVATE_KEY` | `notifs.webpush.vapidPrivateKey` |
 
+### Feature Toggles
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_MAIL_ENABLED` | `notifs.mail.enabled` | `true` |
+| `CPADMIN_MAIL_FROM` | `notifs.mail.from` | `CPADMIN <noreply@example.com>` |
+| `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS from start) |
+| `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
+| `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
+| `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
+
+### OCPP Behavior
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict OCPP 1.6 validation) |
+| `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
+| `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
+
 ### General Configuration
 
 | Variable | JSON Config | Example |

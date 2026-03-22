@@ -101,6 +101,31 @@ docker compose -f docker/docker-compose.tls.yml up -d
 
 ---
 
+## Permissions des volumes montés
+
+Le conteneur s'exécute avec un utilisateur non-root (`app`, UID 1000). Au démarrage, il tente de peupler les volumes vides (`config/`, `public/img/`) avec les fichiers par défaut.
+
+Si le répertoire hôte monté appartient à `root` ou à un autre utilisateur, cette copie initiale échoue avec une erreur :
+
+```
+cp: can't create '/app/config/config.sample.json': Permission denied
+```
+
+> Le conteneur démarre quand même, mais les fichiers par défaut ne sont **pas** copiés.
+
+**Solution** : accordez les droits en écriture à l'UID du conteneur sur les répertoires hôtes montés :
+
+```bash
+sudo chown -R 1000:1000 ./config ./public/img
+# ou si vous préférez rester propriétaire :
+sudo chmod -R 775 ./config ./public/img
+sudo chown -R :1000 ./config ./public/img
+```
+
+Ensuite, relancez le conteneur — les fichiers par défaut seront correctement initialisés.
+
+---
+
 ## Variables d'environnement
 
 Les valeurs de `config.json` peuvent être surchargées par variables d'environnement (le fichier JSON n'est pas modifié).
@@ -129,6 +154,25 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_GOOGLE_CLIENT_SECRET` | `auth.google.client_secret` |
 | `CPADMIN_VAPID_PUBLIC_KEY` | `notifs.webpush.vapidPublicKey` |
 | `CPADMIN_VAPID_PRIVATE_KEY` | `notifs.webpush.vapidPrivateKey` |
+
+### Activation des fonctionnalités
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_MAIL_ENABLED` | `notifs.mail.enabled` | `true` |
+| `CPADMIN_MAIL_FROM` | `notifs.mail.from` | `CPADMIN <noreply@example.com>` |
+| `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS dès la connexion) |
+| `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
+| `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
+| `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
+
+### Comportement OCPP
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (désactiver la validation stricte OCPP 1.6) |
+| `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (enregistrer automatiquement les bornes inconnues) |
+| `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
 
 ### Configuration générale
 

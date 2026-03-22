@@ -263,6 +263,25 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_VAPID_PUBLIC_KEY` | `notifs.webpush.vapidPublicKey` |
 | `CPADMIN_VAPID_PRIVATE_KEY` | `notifs.webpush.vapidPrivateKey` |
 
+### Activation des fonctionnalités
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_MAIL_ENABLED` | `notifs.mail.enabled` | `true` |
+| `CPADMIN_MAIL_FROM` | `notifs.mail.from` | `CPADMIN <noreply@example.com>` |
+| `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS dès la connexion) |
+| `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
+| `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
+| `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
+
+### Comportement OCPP
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (désactiver la validation stricte OCPP 1.6) |
+| `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (enregistrer automatiquement les bornes inconnues) |
+| `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
+
 ### Configuration générale
 
 | Variable | Config JSON | Exemple |
