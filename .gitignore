@@ -1,0 +1,15 @@
+node_modules/
+.devTools/
+.vscode/sftp.json
+logs/
+
+# Config utilisateur (secrets, chemins locaux)
+config/config.json
+config/config.dev.json
+# Base de données dans le dossier config
+config/*.db
+config/*.db-shm
+config/*.db-wal
+# Certificats SSL dans le dossier config
+config/*.crt
+config/*.key

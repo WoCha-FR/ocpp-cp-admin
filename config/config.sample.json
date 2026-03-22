@@ -1,0 +1,79 @@
+{
+  "loglevel": "error",
+  "language": "fr",
+  "dbname": "cpadmin.db",
+  "cpoName": "CP Admin",
+  "webui": {
+    "httpHost": "localhost",
+    "httpPort": 3000,
+    "trustProxy": false,
+    "publicUrl": "http://localhost:3000",
+    "sessionSecret": "",
+    "https": {
+      "enabled": false,
+      "httpsPort": 3001,
+      "certFile": "certs/server.crt",
+      "keyFile": "certs/server.key"
+    }
+  },
+  "ocpp": {
+    "host": "0.0.0.0",
+    "wsPort": 9000,
+    "strictMode": true,
+    "heartbeatInterval": 3600,
+    "autoAddUnknownChargepoints": false,
+    "pendingUnknownChargepoints": true,
+    "ocppWsUrl": "ws://ws.cpadmin.local:9000",
+    "diagnosticsLocation": "ftp://ftp.cpadmin.local/diagnostics",
+    "wss": {
+      "enabled": false,
+      "wssPort": 9001,
+      "strictClientCert": false,
+      "ocppWsUrl": "wss://ws.cpadmin.local:9001",
+      "rsa": {
+        "certFile": "certs/rsa-server.crt",
+        "keyFile": "certs/rsa-server.key"
+      },
+      "ecdsa": {
+        "certFile": "certs/ecdsa-server.crt",
+        "keyFile": "certs/ecdsa-server.key"
+      },
+      "caFile": ""
+    }
+  },
+  "notifs": {
+    "authRejectThreshold": 3,
+    "authRejectWindowMinutes": 5,
+    "flapThreshold": 4,
+    "flapWindowMinutes": 2,
+    "mail": {
+      "enabled": false,
+      "from": "CPADMIN <noreply@cpadmin.local>",
+      "transport": {
+        "host": "smtp.cpadmin.local",
+        "port": 587,
+        "secure": false,
+        "auth": {
+          "user": "user@cpadmin.local",
+          "pass": "password"
+        }
+      }
+    },
+    "webpush": {
+      "enabled": false,
+      "vapidSubject": "",
+      "vapidPublicKey": "",
+      "vapidPrivateKey": ""
+    },
+    "pushover": {
+      "enabled": false
+    }
+  },
+  "auth": {
+    "google": {
+      "enabled": false,
+      "client_id": "",
+      "client_secret": ""
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "name": "ocpp-cp-admin",
+  "version": "1.0.0",
+  "description": "OCPP 1.6 Charge Point Management System (CSMS) for operating and monitoring EV charging infrastructure.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "cross-env NODE_ENV=development node --watch src/server.js",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "format": "prettier --write \"src/**/*.js\" \"*.json\" \"*.js\"",
+    "format:check": "prettier --check \"src/**/*.js\" \"*.json\" \"*.js\""
+  },
+  "homepage": "https://github.com/WoCha-FR/ocpp-cp-admin#readme",
+  "bugs": {
+    "url": "https://github.com/WoCha-FR/ocpp-cp-admin/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WoCha-FR/ocpp-cp-admin.git"
+  },
+  "keywords": [],
+  "author": "WoCha",
+  "license": "AGPL-3.0-only",
+  "type": "commonjs",
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.8.0",
+    "better-sqlite3-session-store": "^0.1.0",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.3.1",
+    "express-session": "^1.19.0",
+    "express-validator": "^7.3.1",
+    "helmet": "^8.1.0",
+    "i18next": "^25.8.20",
+    "nodemailer": "^8.0.3",
+    "ocpp-rpc": "^2.2.1",
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "passport-local": "^1.0.0",
+    "uuid": "^13.0.0",
+    "web-push": "^3.6.7",
+    "winston": "^3.19.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "cross-env": "^10.1.0",
+    "eslint": "^10.1.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

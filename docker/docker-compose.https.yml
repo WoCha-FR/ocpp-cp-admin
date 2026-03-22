@@ -1,0 +1,20 @@
+services:
+  ocpp-cp-admin:
+    image: ghcr.io/wocha-fr/ocpp-cp-admin:latest
+    container_name: ocpp-cp-admin-ssl
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+      - "9001:9001"
+    volumes:
+      - config:/app/config
+      - logs:/app/logs
+      - public-img:/app/public/img
+    environment:
+      - NODE_ENV=production
+      - CPADMIN_HTTP_HOST=0.0.0.0
+
+volumes:
+  config:
+  logs:
+  public-img:

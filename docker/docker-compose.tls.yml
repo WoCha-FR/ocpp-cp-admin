@@ -1,0 +1,104 @@
+services:
+
+  # ── Reverse Proxy ──────────────────────────────────────────
+  traefik:
+    image: traefik:v3.4
+    container_name: traefik
+    restart: unless-stopped
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      # ── HTTP / HTTPS entrypoints ──
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      # ── TCP entrypoint pour WSS OCPP passthrough ──
+      - "--entrypoints.ocpp-wss.address=:9001"
+      # ── Certificats TLS (Let's Encrypt) ──
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@cpadmin.local"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "9001:9001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+
+  # ── Application OCPP CP Admin ──────────────────────────────
+  ocpp-cp-admin:
+    image: ghcr.io/wocha-fr/ocpp-cp-admin:latest
+    container_name: ocpp-cp-admin
+    restart: unless-stopped
+    depends_on:
+      - ftp
+    volumes:
+      - config:/app/config
+      - logs:/app/logs
+      - public-img:/app/public/img
+    environment:
+      - NODE_ENV=production
+      - CPADMIN_PUBLIC_URL=https://cpadmin.local
+      - CPADMIN_HTTP_HOST=0.0.0.0
+      # WS pour les bornes qui ne supportent pas TLS (via Traefik HTTP)
+      - CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local
+      # WSS géré directement par l'app (TLS passthrough, Security Profile 2/3)
+      - CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local:9001
+      - CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local
+      # Décommenter pour définir le secret de session via ENV
+      # - CPADMIN_SESSION_SECRET=change-me
+    labels:
+      - "traefik.enable=true"
+
+      # ── UI HTTP → HTTPS redirect ──
+      - "traefik.http.routers.ui-http.rule=Host(`cpadmin.local`)"
+      - "traefik.http.routers.ui-http.entrypoints=web"
+      - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-https.redirectscheme.permanent=true"
+      - "traefik.http.routers.ui-http.middlewares=redirect-https"
+
+      # ── UI HTTPS (TLS terminé par Traefik) ──
+      - "traefik.http.routers.ui.rule=Host(`cpadmin.local`)"
+      - "traefik.http.routers.ui.entrypoints=websecure"
+      - "traefik.http.routers.ui.tls=true"
+      - "traefik.http.routers.ui.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ui.service=ui"
+      - "traefik.http.services.ui.loadbalancer.server.port=3000"
+
+      # ── OCPP WS (HTTP, bornes sans TLS) ──
+      - "traefik.http.routers.ocpp-ws.rule=Host(`ws.cpadmin.local`)"
+      - "traefik.http.routers.ocpp-ws.entrypoints=web"
+      - "traefik.http.routers.ocpp-ws.service=ocpp-ws"
+      - "traefik.http.services.ocpp-ws.loadbalancer.server.port=9000"
+
+      # ── OCPP WSS (TCP passthrough — TLS géré par l'app) ──
+      - "traefik.tcp.routers.ocpp-wss.rule=HostSNI(`ws.cpadmin.local`)"
+      - "traefik.tcp.routers.ocpp-wss.entrypoints=ocpp-wss"
+      - "traefik.tcp.routers.ocpp-wss.tls.passthrough=true"
+      - "traefik.tcp.routers.ocpp-wss.service=ocpp-wss"
+      - "traefik.tcp.services.ocpp-wss.loadbalancer.server.port=9001"
+
+  # ── Serveur FTP pour les diagnostics de bornes ─────────────
+  ftp:
+    image: delfer/alpine-ftp-server
+    container_name: ocpp-ftp
+    restart: unless-stopped
+    ports:
+      - "21:21"
+      - "21000-21010:21000-21010"
+    environment:
+      - USERS=ocpp|changeme
+      - ADDRESS=ftp.cpadmin.local
+      - MIN_PORT=21000
+      - MAX_PORT=21010
+    volumes:
+      - ftp-data:/home/ocpp
+    labels:
+      - "traefik.enable=false"
+
+volumes:
+  config:
+  logs:
+  public-img:
+  ftp-data:
+  letsencrypt:
