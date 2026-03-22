@@ -36,4 +36,7 @@ if [ ! -f /app/config/config.json ]; then
   fi
 fi
 
-exec "$@"
+# Fix ownership on mounted volumes so the app user can write.
+chown -R app:app /app/config /app/logs /app/public/img /app/locales-custom 2>/dev/null || true
+
+exec su-exec app "$@"

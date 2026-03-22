@@ -238,6 +238,8 @@ The `/healthz` endpoint is used for Docker health checks (HTTP GET, every 30s).
 
 On first startup, if `config/config.json` does not exist, it is automatically created from `config.sample.json`.
 
+The entrypoint runs as root to seed default files and fix volume permissions, then drops privileges to a dedicated non-root user (`app`) via `su-exec`.
+
 ---
 
 ## Environment Variables
@@ -278,6 +280,7 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS from start) |
 | `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
 | `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
+| `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
 | `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
 
 ### OCPP Behavior

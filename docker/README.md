@@ -103,26 +103,9 @@ docker compose -f docker/docker-compose.tls.yml up -d
 
 ## Mounted Volume Permissions
 
-The container runs as a non-root user (`app`, UID 1000). At startup, it attempts to populate empty volumes (`config/`, `public/img/`) with default files.
+The entrypoint runs as root to seed default files into empty volumes (`config/`, `public/img/`) and fix their ownership. It then drops privileges to a dedicated non-root user (`app`, UID 1000) via `su-exec` before starting the application.
 
-If the host directory belongs to `root` or another user, this initial copy fails with:
-
-```
-cp: can't create '/app/config/config.sample.json': Permission denied
-```
-
-> The container still starts, but the default files are **not** copied.
-
-**Fix**: grant write access to the container's UID on the mounted host directories:
-
-```bash
-sudo chown -R 1000:1000 ./config ./public/img
-# or if you prefer to keep ownership:
-sudo chmod -R 775 ./config ./public/img
-sudo chown -R :1000 ./config ./public/img
-```
-
-Then restart the container — the default files will be initialized correctly.
+This means volume permissions are handled automatically — no manual `chown` is required on the host.
 
 ---
 
@@ -164,6 +147,7 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS from start) |
 | `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
 | `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
+| `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
 | `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
 
 ### OCPP Behavior

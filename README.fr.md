@@ -232,6 +232,8 @@ Le point d'accès `/healthz` est utilisé pour le health check Docker (HTTP GET,
 
 Au premier démarrage, si `config/config.json` n'existe pas, il est créé automatiquement depuis `config.sample.json`.
 
+L'entrypoint s'exécute en root pour copier les fichiers par défaut et corriger les permissions des volumes, puis bascule vers un utilisateur non-root dédié (`app`) via `su-exec`.
+
 ---
 
 ## Variables d'environnement
@@ -272,6 +274,7 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS dès la connexion) |
 | `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
 | `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
+| `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
 | `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
 
 ### Comportement OCPP

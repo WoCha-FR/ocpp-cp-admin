@@ -68,6 +68,7 @@ const ENV_OVERRIDES = [
   { env: 'CPADMIN_MAIL_SECURE', path: ['notifs', 'mail', 'transport', 'secure'] },
   { env: 'CPADMIN_WEBPUSH_ENABLED', path: ['notifs', 'webpush', 'enabled'] },
   { env: 'CPADMIN_VAPID_SUBJECT', path: ['notifs', 'webpush', 'vapidSubject'], type: 'string' },
+  { env: 'CPADMIN_PUSHOVER_ENABLED', path: ['notifs', 'pushover', 'enabled'] },
   { env: 'CPADMIN_GOOGLE_AUTH_ENABLED', path: ['auth', 'google', 'enabled'] },
   // ── Comportement OCPP ──
   { env: 'CPADMIN_OCPP_STRICT_MODE', path: ['ocpp', 'strictMode'] },

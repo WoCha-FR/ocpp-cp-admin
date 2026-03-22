@@ -12,7 +12,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Create non-root user first so we can copy files directly with target ownership.
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app \
+    && apk add --no-cache su-exec
 
 # Install runtime dependencies first for better layer caching.
 COPY --chown=app:app package*.json ./
@@ -37,8 +38,6 @@ RUN mkdir -p /opt/defaults/config /opt/defaults/public-img \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
 VOLUME ["/app/config", "/app/logs", "/app/public/img", "/app/locales-custom"]
-
-USER app
 
 EXPOSE 3000 3001 9000 9001
 
