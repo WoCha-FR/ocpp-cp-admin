@@ -54,14 +54,12 @@ services:
       # - CPADMIN_LANGUAGE=en
     labels:
       - "traefik.enable=true"
-
       # ── UI HTTP → HTTPS redirect ──
       - "traefik.http.routers.ui-http.rule=Host(`cpadmin.local`)"
       - "traefik.http.routers.ui-http.entrypoints=web"
       - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
       - "traefik.http.middlewares.redirect-https.redirectscheme.permanent=true"
       - "traefik.http.routers.ui-http.middlewares=redirect-https"
-
       # ── UI HTTPS (TLS terminé par Traefik) ──
       - "traefik.http.routers.ui.rule=Host(`cpadmin.local`)"
       - "traefik.http.routers.ui.entrypoints=websecure"
@@ -69,13 +67,11 @@ services:
       - "traefik.http.routers.ui.tls.certresolver=letsencrypt"
       - "traefik.http.routers.ui.service=ui"
       - "traefik.http.services.ui.loadbalancer.server.port=3000"
-
       # ── OCPP WS (HTTP, bornes sans TLS) ──
       - "traefik.http.routers.ocpp-ws.rule=Host(`ws.cpadmin.local`)"
       - "traefik.http.routers.ocpp-ws.entrypoints=web"
       - "traefik.http.routers.ocpp-ws.service=ocpp-ws"
       - "traefik.http.services.ocpp-ws.loadbalancer.server.port=9000"
-
       # ── OCPP WSS (TCP passthrough — TLS géré par l'app) ──
       - "traefik.tcp.routers.ocpp-wss.rule=HostSNI(`ws.cpadmin.local`)"
       - "traefik.tcp.routers.ocpp-wss.entrypoints=ocpp-wss"

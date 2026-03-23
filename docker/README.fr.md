@@ -13,7 +13,7 @@ Choisissez celui qui correspond à votre infrastructure.
 |---|---|
 | `docker-compose.http.yml` | Déploiement simple, HTTP uniquement |
 | `docker-compose.https.yml` | Déploiement simple, HTTPS/WSS géré par l'app |
-| `docker-compose.yml` | Stack complète avec Traefik + FTP |
+| `docker-compose.yml` | Stack complète avec Traefik (HTTPS) + FTP |
 | `docker-compose.tls.yml` | Stack complète avec Traefik, HTTPS + WSS passthrough |
 
 ---
@@ -50,25 +50,27 @@ docker compose -f docker/docker-compose.https.yml up -d
 
 ---
 
-### `docker-compose.yml` — Traefik + FTP (HTTP, TLS termination)
+### `docker-compose.yml` — Traefik + FTP (HTTPS, TLS termination)
 
 Stack complète avec trois services :
 
 | Service | Rôle |
 |---|---|
-| **Traefik** | Reverse proxy, routage par nom d'hôte sur le port 80 |
+| **Traefik** | Reverse proxy, HTTPS (Let's Encrypt) + WSS sur le port 443 |
 | **ocpp-cp-admin** | Application (HTTP + WS en interne) |
 | **FTP** | Serveur FTP pour la récupération des diagnostics de bornes |
 
 **Routage Traefik :**
-- `http://cpadmin.local` → interface web
-- `ws://ws.cpadmin.local` → serveur OCPP WebSocket
+- `http://cpadmin.local` → redirection vers HTTPS
+- `https://cpadmin.local` → interface web (TLS terminé par Traefik)
+- `ws://ws.cpadmin.local` (port 80) → OCPP WebSocket (bornes sans TLS)
+- `wss://ws.cpadmin.local` (port 443) → OCPP WebSocket (TLS terminé par Traefik)
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d
 ```
 
-> L'app ne gère pas le TLS — Traefik s'en charge si besoin.
+> L'app ne gère pas le TLS — Traefik s'en charge via Let's Encrypt.
 
 ---
 
@@ -123,32 +125,15 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_OCPP_WS_URL` | `ocpp.ocppWsUrl` | `ws://ws.example.com` |
 | `CPADMIN_OCPP_WSS_URL` | `ocpp.wss.ocppWsUrl` | `wss://ws.example.com:9001` |
 | `CPADMIN_DIAGNOSTICS_URL` | `ocpp.diagnosticsLocation` | `ftp://ftp.example.com` |
+| `CPADMIN_SESSION_SECRET` | `webui.sessionSecret` | |
 
-### Secrets
-
-| Variable | Config JSON |
-|---|---|
-| `CPADMIN_SESSION_SECRET` | `webui.sessionSecret` |
-| `CPADMIN_MAIL_HOST` | `notifs.mail.transport.host` |
-| `CPADMIN_MAIL_PORT` | `notifs.mail.transport.port` |
-| `CPADMIN_MAIL_USER` | `notifs.mail.transport.auth.user` |
-| `CPADMIN_MAIL_PASS` | `notifs.mail.transport.auth.pass` |
-| `CPADMIN_GOOGLE_CLIENT_ID` | `auth.google.client_id` |
-| `CPADMIN_GOOGLE_CLIENT_SECRET` | `auth.google.client_secret` |
-| `CPADMIN_VAPID_PUBLIC_KEY` | `notifs.webpush.vapidPublicKey` |
-| `CPADMIN_VAPID_PRIVATE_KEY` | `notifs.webpush.vapidPrivateKey` |
-
-### Activation des fonctionnalités
+### Configuration générale
 
 | Variable | Config JSON | Exemple |
 |---|---|---|
-| `CPADMIN_MAIL_ENABLED` | `notifs.mail.enabled` | `true` |
-| `CPADMIN_MAIL_FROM` | `notifs.mail.from` | `CPADMIN <noreply@example.com>` |
-| `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS dès la connexion) |
-| `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
-| `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
-| `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
-| `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
+| `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
+| `CPADMIN_LANGUAGE` | `language` | Tout code locale du dossier `locales/` (ex. `fr`, `en`) |
+| `CPADMIN_CPO_NAME` | `cpoName` | `Mon CPO` |
 
 ### Comportement OCPP
 
@@ -158,13 +143,40 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (enregistrer automatiquement les bornes inconnues) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
 
-### Configuration générale
+### Configuration mail
 
 | Variable | Config JSON | Exemple |
 |---|---|---|
-| `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
-| `CPADMIN_LANGUAGE` | `language` | Tout code locale du dossier `locales/` (ex. `fr`, `en`) |
-| `CPADMIN_CPO_NAME` | `cpoName` | `Mon CPO` |
+| `CPADMIN_MAIL_ENABLED` | `notifs.mail.enabled` | `true` |
+| `CPADMIN_MAIL_FROM` | `notifs.mail.from` | `CPADMIN <noreply@example.com>` |
+| `CPADMIN_MAIL_HOST` | `notifs.mail.transport.host` | |
+| `CPADMIN_MAIL_PORT` | `notifs.mail.transport.port` | |
+| `CPADMIN_MAIL_USER` | `notifs.mail.transport.auth.user` | |
+| `CPADMIN_MAIL_PASS` | `notifs.mail.transport.auth.pass` | |
+| `CPADMIN_MAIL_SECURE` | `notifs.mail.transport.secure` | `true` (SSL/TLS dès la connexion) |
+
+### Configuration WebPush
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_WEBPUSH_ENABLED` | `notifs.webpush.enabled` | `true` |
+| `CPADMIN_VAPID_PUBLIC_KEY` | `notifs.webpush.vapidPublicKey` | |
+| `CPADMIN_VAPID_PRIVATE_KEY` | `notifs.webpush.vapidPrivateKey` | |
+| `CPADMIN_VAPID_SUBJECT` | `notifs.webpush.vapidSubject` | `mailto:admin@example.com` |
+
+### Configuration Pushover
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
+
+### Configuration Google Auth
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
+| `CPADMIN_GOOGLE_CLIENT_ID` | `auth.google.client_id` | |
+| `CPADMIN_GOOGLE_CLIENT_SECRET` | `auth.google.client_secret` | |
 
 > Les booléens (`true`/`false`) et les nombres sont convertis automatiquement.
 > Les secrets sont toujours traités comme des chaînes de caractères.

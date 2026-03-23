@@ -44,7 +44,7 @@
     "express-session": "^1.19.0",
     "express-validator": "^7.3.1",
     "helmet": "^8.1.0",
-    "i18next": "^25.8.20",
+    "i18next": "^25.10.5",
     "nodemailer": "^8.0.3",
     "ocpp-rpc": "^2.2.1",
     "passport": "^0.7.0",
@@ -54,7 +54,7 @@
     "web-push": "^3.6.7",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "ws": "^8.19.0"
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

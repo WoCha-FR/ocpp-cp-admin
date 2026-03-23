@@ -97,6 +97,7 @@ function createOCPPServer(options = {}) {
           .catch(() => {});
       } else if (config.ocpp.pendingUnknownChargepoints) {
         logger.info(`Unknown ${handshake.identity} pending approval`);
+        const alreadyPending = pendingChargepoints.has(handshake.identity);
         pendingChargepoints.set(handshake.identity, {
           identity: handshake.identity,
           remoteAddress: handshake.remoteAddress,
@@ -108,12 +109,10 @@ function createOCPPServer(options = {}) {
           remoteAddress: handshake.remoteAddress,
           timestamp: new Date().toISOString(),
         });
-        // Notifier les admins
-        notifications
-          .emit('pending_chargepoint', {
-            identity: handshake.identity,
-          })
-          .catch(() => {});
+        // Notifier les admins uniquement à la première tentative de connexion
+        if (!alreadyPending) {
+          notifications.emit('pending_chargepoint', { identity: handshake.identity }).catch(() => {});
+        }
         return reject(401, 'Charge point pending approval');
       } else {
         return reject(401, 'Unknown charge point');
@@ -121,7 +120,6 @@ function createOCPPServer(options = {}) {
     }
 
     const dbPassword = cp.password || null;
-
     if (!providedPassword && dbPassword) {
       logger.warn(`Connection refused: ${handshake.identity} password required but missing`);
       return reject(401, 'Password required');
@@ -164,9 +162,9 @@ function createOCPPServer(options = {}) {
       }
       // ── Détection flapping (reconnexions en boucle) ──
       if (trackFlapping(identity)) {
-        // eslint-disable-next-line no-unused-vars
         try {
           client.close();
+          // eslint-disable-next-line no-unused-vars
         } catch (e) {
           /* empty */
         }
@@ -866,7 +864,6 @@ function createOCPPServer(options = {}) {
         .catch(() => {});
     });
   });
-
   return server;
 }
 
@@ -1031,6 +1028,7 @@ function trackFlapping(identity) {
   }
   return false;
 }
+
 module.exports = {
   createOCPPServer,
   setBroadcast,
