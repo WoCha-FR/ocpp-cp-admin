@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS chargepoints (
   feat_local_list INTEGER DEFAULT 0,
   feat_reservation INTEGER DEFAULT 0,
   feat_smartcharging INTEGER DEFAULT 0,
+  has_connector0 INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
 );

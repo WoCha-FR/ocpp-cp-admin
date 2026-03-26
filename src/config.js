@@ -100,7 +100,7 @@ function applyEnvOverrides(cfg) {
       obj = obj[keys[i]];
     }
     obj[keys[keys.length - 1]] = value;
-    logger.info(`Config override from env: ${env}`);
+    logger.debug(`Config override from env: ${env}`);
   }
 }
 

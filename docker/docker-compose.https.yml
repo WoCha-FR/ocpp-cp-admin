@@ -1,26 +1,150 @@
 services:
+
+  # ── Génération et renouvellement des certificats TLS ───────
+  # Obtient un certificat Let's Encrypt via challenge HTTP standalone (port 80).
+  # Les certs sont copiés dans ./data/config/certs/ après chaque obtention/renouvellement
+  # afin que l'app les lise directement via son bind mount /app/config.
+  #
+  # PREMIER DÉMARRAGE : lancer certbot seul avant le reste du stack :
+  #   docker compose -f docker-compose.https.yml up certbot
+  # Attendre le message "[certbot] Certificates deployed." puis :
+  #   docker compose -f docker-compose.https.yml up -d
+  #
+  # ⚠  Remplacer CERTBOT_DOMAIN et CERTBOT_EMAIL avant de lancer.
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./data/certs:/etc/letsencrypt
+      - ./data/config/certs:/deploy-certs
+      - ./data/certbot-logs:/var/log/letsencrypt
+    environment:
+      # Domaine principal exposé aux bornes et aux utilisateurs
+      - CERTBOT_DOMAIN=cpadmin.example.com
+      # E-mail pour les alertes d'expiration Let's Encrypt
+      - CERTBOT_EMAIL=admin@example.com
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        obtain() {
+          # Certificat RSA (Security Profile 2 — compatibilité maximale)
+          certbot certonly --standalone --non-interactive --agree-tos \
+            --email "$$CERTBOT_EMAIL" -d "$$CERTBOT_DOMAIN" \
+            --cert-name "$$CERTBOT_DOMAIN-rsa" \
+            --key-type rsa
+          # Certificat ECDSA P-256 (Security Profile 3 — bornes modernes)
+          certbot certonly --standalone --non-interactive --agree-tos \
+            --email "$$CERTBOT_EMAIL" -d "$$CERTBOT_DOMAIN" \
+            --cert-name "$$CERTBOT_DOMAIN-ecdsa" \
+            --key-type ecdsa --elliptic-curve secp256r1
+        }
+        deploy() {
+          mkdir -p /deploy-certs
+          RSA=/etc/letsencrypt/live/$$CERTBOT_DOMAIN-rsa
+          ECC=/etc/letsencrypt/live/$$CERTBOT_DOMAIN-ecdsa
+          # Cert UI HTTPS (RSA)
+          cp $$RSA/fullchain.pem /deploy-certs/server.crt
+          cp $$RSA/privkey.pem   /deploy-certs/server.key
+          # Cert OCPP WSS — RSA (compatibilité bornes ne supportant pas ECDSA)
+          cp $$RSA/fullchain.pem /deploy-certs/rsa-server.crt
+          cp $$RSA/privkey.pem   /deploy-certs/rsa-server.key
+          # Cert OCPP WSS — ECDSA P-256 (bornes modernes préférant ECDSA)
+          cp $$ECC/fullchain.pem /deploy-certs/ecdsa-server.crt
+          cp $$ECC/privkey.pem   /deploy-certs/ecdsa-server.key
+          # CA chain intermédiaire (validation côté borne)
+          cp $$RSA/chain.pem     /deploy-certs/ca.pem
+          echo "[certbot] Certificates deployed (RSA + ECDSA)."
+        }
+        obtain
+        deploy
+        trap 'exit 0' TERM INT
+        while :; do
+          sleep 12h & wait $$!
+          certbot renew --standalone && deploy
+        done
+
+  # ── Application OCPP CP Admin (HTTPS natif) ────────────────
   ocpp-cp-admin:
     image: ghcr.io/wocha-fr/ocpp-cp-admin:latest
     container_name: ocpp-cp-admin-ssl
     restart: unless-stopped
+    depends_on:
+      - ftp
+      - certbot
     ports:
-      - "3001:3001"
-      - "9001:9001"
+      - "3001:3001"   # UI HTTPS
+      - "9000:9000"   # OCPP WS  (non chiffré, Security Profile 1)
+      - "9001:9001"   # OCPP WSS (TLS géré par l'app, Security Profile 2/3)
     volumes:
-      - config:/app/config
-      - logs:/app/logs
+      - ./data/config:/app/config
+      - ./data/logs:/app/logs
+      # Les certs sont déposés par certbot dans ./data/config/certs/
+      # et lus par l'app via /app/config/certs/ (chemins par défaut de config.sample.json)
       # Uncomment the following line to enable image uploads (e.g. for custom favicon and logos)
-      #- public-img:/app/public/img
+      #- ./data/public-img:/app/public/img
       # Uncomment the following line to enable custom locales (for translations)
-      #- locales-custom:/app/locales-custom
+      #- ./data/locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
-      - CPADMIN_HTTP_HOST=0.0.0.0
-      # Uncomment to override the default language (any locale from locales/)
-      # - CPADMIN_LANGUAGE=en
 
-volumes:
-  config:
-  logs:
-  #public-img:
-  #locales-custom:
+      # ── Déploiement / URLs ──────────────────────────────────
+      - CPADMIN_HTTP_HOST=0.0.0.0
+      # URL publique HTTPS (utilisée pour les liens dans les notifications)
+      - CPADMIN_PUBLIC_URL=https://cpadmin.example.com
+      # URL WebSocket OCPP non chiffré (bornes sans TLS, Security Profile 1)
+      - CPADMIN_OCPP_WS_URL=ws://cpadmin.example.com:9000
+      # URL WebSocket OCPP chiffré (bornes avec TLS, Security Profile 2/3)
+      - CPADMIN_OCPP_WSS_URL=wss://cpadmin.example.com:9001
+
+      # ── Diagnostics FTP ─────────────────────────────────────
+      - CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@cpadmin.example.com
+
+      # ── Sécurité ────────────────────────────────────────────
+      # IMPORTANT : changer cette valeur en production (min. 32 caractères aléatoires)
+      - CPADMIN_SESSION_SECRET=change-me-in-production
+
+      # ── Comportement OCPP ───────────────────────────────────
+      - CPADMIN_OCPP_AUTO_ADD=true
+      - CPADMIN_OCPP_PENDING_UNKNOWN=false
+      - CPADMIN_OCPP_STRICT_MODE=false
+
+      # ── Configuration générale ──────────────────────────────
+      - CPADMIN_LOGLEVEL=info
+      # - CPADMIN_LANGUAGE=fr
+      # - CPADMIN_CPO_NAME=Mon CPO
+
+      # ── Notifications e-mail (optionnel) ────────────────────
+      # - CPADMIN_MAIL_ENABLED=false
+      # - CPADMIN_MAIL_HOST=smtp.example.com
+      # - CPADMIN_MAIL_PORT=587
+      # - CPADMIN_MAIL_SECURE=false
+      # - CPADMIN_MAIL_USER=user@example.com
+      # - CPADMIN_MAIL_PASS=password
+      # - CPADMIN_MAIL_FROM=noreply@example.com
+
+      # ── Notifications Web Push (optionnel) ──────────────────
+      # - CPADMIN_WEBPUSH_ENABLED=false
+      # - CPADMIN_VAPID_PUBLIC_KEY=
+      # - CPADMIN_VAPID_PRIVATE_KEY=
+      # - CPADMIN_VAPID_SUBJECT=mailto:admin@example.com
+
+  # ── Serveur FTP pour les diagnostics de bornes ─────────────
+  ftp:
+    image: delfer/alpine-ftp-server
+    container_name: ocpp-ftp-ssl
+    restart: unless-stopped
+    ports:
+      - "21:21"
+      - "21000-21010:21000-21010"
+    environment:
+      - USERS=ocpp|changeme
+      # Adresse IP ou DNS externe accessible par les bornes (mode passif FTP)
+      - ADDRESS=cpadmin.example.com
+      - MIN_PORT=21000
+      - MAX_PORT=21010
+    volumes:
+      - ./data/ftp:/ftp/ocpp

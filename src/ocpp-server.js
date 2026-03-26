@@ -188,6 +188,18 @@ function createOCPPServer(options = {}) {
       endpoint_address: client.session.remoteAddress || null,
     });
     broadcast('chargepoint_connected', { identity });
+
+    // Détecter les bornes non conformes au mode strict OCPP (champs supplémentaires dans les réponses)
+    client.on('strictValidationFailure', ({ method, error, outbound, isCall }) => {
+      if (!outbound && !isCall) {
+        // La borne a répondu avec des champs non autorisés par le schéma OCPP 1.6
+        logger.warn(
+          `[${identity}] Strict mode violation on ${method}.conf: ${error?.message} — this chargepoint is not OCPP strict-mode compliant. Set ocpp.strictMode to false in the configuration to avoid errors.`
+        );
+        broadcast('strict_mode_violation', { identity, method });
+      }
+    });
+
     // Notifier borne en ligne
     const cpForNotif = db.getChargepointByIdentity(identity);
     notifications
@@ -298,6 +310,7 @@ function createOCPPServer(options = {}) {
             vendor_id: params.vendorId || null,
             vendor_error_code: params.vendorErrorCode || null,
           });
+          db.upsertChargepoint(identity, { has_connector0: 1 });
         }
         // Stocker le status actuel du connecteur
         const existingConnector = db.getConnectorByChargepointAndId(cp.id, params.connectorId);
@@ -312,6 +325,15 @@ function createOCPPServer(options = {}) {
           params.vendorId || null,
           params.vendorErrorCode || null
         );
+        // Si la borne n'envoie pas de connecteur 0, dériver cpstatus depuis les connecteurs :
+        // Available si au moins 1 connecteur != Unavailable, Unavailable si tous sont Unavailable
+        if (params.connectorId !== 0 && !cp.has_connector0 && cp.cpstatus === 'Unavailable') {
+          const allConnectors = db.getConnectorsByChargepoint(cp.id);
+          const derivedStatus = allConnectors.some((c) => c.cnstatus !== 'Unavailable')
+            ? 'Available'
+            : 'Unavailable';
+          db.updateChargepointStatus(identity, derivedStatus, true);
+        }
         const updatedCp = db.getChargepointByIdentity(identity);
         const connectors = db.getConnectorsByChargepoint(cp.id);
         broadcast('status_update', { chargepoint: updatedCp, connectors });
@@ -847,6 +869,7 @@ function createOCPPServer(options = {}) {
         connected_wss: 0,
         endpoint_address: null,
         cpstatus: 'Unavailable',
+        has_connector0: 0,
       });
       broadcast('chargepoint_disconnected', { identity });
       // Notifier borne hors ligne

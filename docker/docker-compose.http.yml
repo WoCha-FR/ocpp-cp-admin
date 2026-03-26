@@ -1,26 +1,87 @@
 services:
+
+  # ── Application OCPP CP Admin ──────────────────────────────
   ocpp-cp-admin:
     image: ghcr.io/wocha-fr/ocpp-cp-admin:latest
     container_name: ocpp-cp-admin
     restart: unless-stopped
+    depends_on:
+      - ftp
     ports:
       - "3000:3000"
       - "9000:9000"
     volumes:
-      - config:/app/config
-      - logs:/app/logs
+      - ./data/config:/app/config
+      - ./data/logs:/app/logs
       # Uncomment the following line to enable image uploads (e.g. for custom favicon and logos)
-      #- public-img:/app/public/img
+      #- ./data/public-img:/app/public/img
       # Uncomment the following line to enable custom locales (for translations)
-      #- locales-custom:/app/locales-custom
+      #- ./data/locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
-      - CPADMIN_HTTP_HOST=0.0.0.0
-      # Uncomment to override the default language (any locale from locales/)
-      # - CPADMIN_LANGUAGE=en
 
-volumes:
-  config:
-  logs:
-  #public-img:
-  #locales-custom:
+      # ── Déploiement / URLs ──────────────────────────────────
+      - CPADMIN_HTTP_HOST=0.0.0.0
+      # URL publique de l'interface (utilisée pour les liens dans les notifications)
+      - CPADMIN_PUBLIC_URL=http://localhost:3000
+      # URL WebSocket OCPP pour les bornes (remplacer par l'IP/nom DNS du serveur)
+      - CPADMIN_OCPP_WS_URL=ws://localhost:9000
+
+      # ── Diagnostics FTP ─────────────────────────────────────
+      # URL FTP où les bornes envoient leurs fichiers de diagnostic
+      # Remplacer par l'IP/nom DNS du serveur accessible par les bornes
+      - CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@localhost
+
+      # ── Sécurité ────────────────────────────────────────────
+      # IMPORTANT : changer cette valeur en production (min. 32 caractères aléatoires)
+      - CPADMIN_SESSION_SECRET=change-me-in-production
+
+      # ── Comportement OCPP ───────────────────────────────────
+      # Ajouter automatiquement les bornes inconnues à la première connexion
+      - CPADMIN_OCPP_AUTO_ADD=true
+      # Mettre les bornes inconnues en statut "pending" (nécessite validation manuelle)
+      - CPADMIN_OCPP_PENDING_UNKNOWN=false
+      # Mode strict OCPP (rejette les messages non conformes à la spec)
+      - CPADMIN_OCPP_STRICT_MODE=false
+
+      # ── Configuration générale ──────────────────────────────
+      # Niveau de log : error | warn | info | debug
+      - CPADMIN_LOGLEVEL=info
+      # Langue par défaut (toute locale du dossier locales/)
+      # - CPADMIN_LANGUAGE=fr
+      # Nom de l'opérateur (CPO) affiché dans l'interface
+      # - CPADMIN_CPO_NAME=Mon CPO
+
+      # ── Notifications e-mail (optionnel) ────────────────────
+      # - CPADMIN_MAIL_ENABLED=false
+      # - CPADMIN_MAIL_HOST=smtp.example.com
+      # - CPADMIN_MAIL_PORT=587
+      # - CPADMIN_MAIL_SECURE=false
+      # - CPADMIN_MAIL_USER=user@example.com
+      # - CPADMIN_MAIL_PASS=password
+      # - CPADMIN_MAIL_FROM=noreply@example.com
+
+      # ── Notifications Web Push (optionnel) ──────────────────
+      # - CPADMIN_WEBPUSH_ENABLED=false
+      # - CPADMIN_VAPID_PUBLIC_KEY=
+      # - CPADMIN_VAPID_PRIVATE_KEY=
+      # - CPADMIN_VAPID_SUBJECT=mailto:admin@example.com
+
+  # ── Serveur FTP pour les diagnostics de bornes ─────────────
+  ftp:
+    image: delfer/alpine-ftp-server
+    container_name: ocpp-ftp
+    restart: unless-stopped
+    ports:
+      - "21:21"
+      - "21000-21010:21000-21010"
+    environment:
+      # Format : USER|PASSWORD  (ajouter plusieurs utilisateurs avec |)
+      - USERS=ocpp|changeme
+      # Adresse IP ou DNS externe (celle que les bornes utiliseront pour le mode passif)
+      - ADDRESS=localhost
+      - MIN_PORT=21000
+      - MAX_PORT=21010
+    volumes:
+      # Les fichiers de diagnostic sont directement accessibles dans ./data/ftp/ocpp/
+      - ./data/ftp:/ftp/ocpp

@@ -11,19 +11,24 @@ services:
       # ── HTTP / HTTPS entrypoints ──
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-      # ── TCP entrypoint pour WSS OCPP passthrough ──
-      - "--entrypoints.ocpp-wss.address=:9001"
-      # ── Certificats TLS (Let's Encrypt) ──
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      - "--certificatesresolvers.letsencrypt.acme.email=admin@cpadmin.local"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+      # ── Certificat RSA — compatibilité bornes ne supportant pas ECDSA ──
+      - "--certificatesresolvers.letsencrypt-rsa.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt-rsa.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt-rsa.acme.email=admin@cpadmin.local"
+      - "--certificatesresolvers.letsencrypt-rsa.acme.storage=/letsencrypt/acme-rsa.json"
+      - "--certificatesresolvers.letsencrypt-rsa.acme.keyType=RSA2048"
+      # ── Certificat ECDSA P-256 — bornes modernes préférant ECDSA ──
+      - "--certificatesresolvers.letsencrypt-ecdsa.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt-ecdsa.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt-ecdsa.acme.email=admin@cpadmin.local"
+      - "--certificatesresolvers.letsencrypt-ecdsa.acme.storage=/letsencrypt/acme-ecdsa.json"
+      - "--certificatesresolvers.letsencrypt-ecdsa.acme.keyType=EC256"
     ports:
       - "80:80"
       - "443:443"
-      - "9001:9001"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - letsencrypt:/letsencrypt
+      - ./data/letsencrypt:/letsencrypt
 
   # ── Application OCPP CP Admin ──────────────────────────────
   ocpp-cp-admin:
@@ -31,22 +36,29 @@ services:
     container_name: ocpp-cp-admin
     restart: unless-stopped
     depends_on:
-      - ftp
+      ftp:
+        condition: service_started
+      cert-dumper-rsa:
+        condition: service_started
+      cert-dumper-ecdsa:
+        condition: service_started
+      cert-init:
+        condition: service_completed_successfully
     volumes:
-      - config:/app/config
-      - logs:/app/logs
+      - ./data/config:/app/config
+      - ./data/logs:/app/logs
       # Uncomment the following line to enable image uploads (e.g. for custom favicon and logos)
-      #- public-img:/app/public/img
+      #- ./data/public-img:/app/public/img
       # Uncomment the following line to enable custom locales (for translations)
-      #- locales-custom:/app/locales-custom
+      #- ./data/locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
       - CPADMIN_PUBLIC_URL=https://cpadmin.local
       - CPADMIN_HTTP_HOST=0.0.0.0
       # WS pour les bornes qui ne supportent pas TLS (via Traefik HTTP)
       - CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local
-      # WSS géré directement par l'app (TLS passthrough, Security Profile 2/3)
-      - CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local:9001
+      # WSS géré directement par l'app (TLS passthrough, Security Profile 2 et 3)
+      - CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local
       - CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local
       # Décommenter pour définir le secret de session via ENV
       # - CPADMIN_SESSION_SECRET=change-me
@@ -60,11 +72,14 @@ services:
       - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
       - "traefik.http.middlewares.redirect-https.redirectscheme.permanent=true"
       - "traefik.http.routers.ui-http.middlewares=redirect-https"
-      # ── UI HTTPS (TLS terminé par Traefik) ──
+      # ── UI HTTPS — cert RSA (+ ws.cpadmin.local en SAN) ──
+      - "traefik.http.routers.ui.priority=20"
       - "traefik.http.routers.ui.rule=Host(`cpadmin.local`)"
       - "traefik.http.routers.ui.entrypoints=websecure"
       - "traefik.http.routers.ui.tls=true"
-      - "traefik.http.routers.ui.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ui.tls.certresolver=letsencrypt-rsa"
+      - "traefik.http.routers.ui.tls.domains[0].main=cpadmin.local"
+      - "traefik.http.routers.ui.tls.domains[0].sans=ws.cpadmin.local"
       - "traefik.http.routers.ui.service=ui"
       - "traefik.http.services.ui.loadbalancer.server.port=3000"
       # ── OCPP WS (HTTP, bornes sans TLS) ──
@@ -72,12 +87,110 @@ services:
       - "traefik.http.routers.ocpp-ws.entrypoints=web"
       - "traefik.http.routers.ocpp-ws.service=ocpp-ws"
       - "traefik.http.services.ocpp-ws.loadbalancer.server.port=9000"
+      # ── Déclencheur cert ECDSA (cpadmin.local + SAN ws.cpadmin.local) ──
+      # Priorité 1 < ui (20) : ne prend jamais le trafic, déclenche uniquement la génération ECDSA.
+      # Nécessaire car le TCP passthrough intercepte ws.cpadmin.local:443 avant tout routeur HTTP.
+      - "traefik.http.routers.ui-ecdsa.rule=Host(`cpadmin.local`)"
+      - "traefik.http.routers.ui-ecdsa.entrypoints=websecure"
+      - "traefik.http.routers.ui-ecdsa.tls=true"
+      - "traefik.http.routers.ui-ecdsa.tls.certresolver=letsencrypt-ecdsa"
+      - "traefik.http.routers.ui-ecdsa.tls.domains[0].main=cpadmin.local"
+      - "traefik.http.routers.ui-ecdsa.tls.domains[0].sans=ws.cpadmin.local"
+      - "traefik.http.routers.ui-ecdsa.service=noop@internal"
+      - "traefik.http.routers.ui-ecdsa.priority=1"
       # ── OCPP WSS (TCP passthrough — TLS géré par l'app) ──
       - "traefik.tcp.routers.ocpp-wss.rule=HostSNI(`ws.cpadmin.local`)"
-      - "traefik.tcp.routers.ocpp-wss.entrypoints=ocpp-wss"
+      - "traefik.tcp.routers.ocpp-wss.entrypoints=websecure"
       - "traefik.tcp.routers.ocpp-wss.tls.passthrough=true"
       - "traefik.tcp.routers.ocpp-wss.service=ocpp-wss"
       - "traefik.tcp.services.ocpp-wss.loadbalancer.server.port=9001"
+
+  # ── Extraction des certificats Traefik → config/certs/ ─────
+  # Surveille acme.json et copie les certs dès qu'ils sont émis ou renouvelés.
+  cert-dumper-rsa:
+    image: ldez/traefik-certs-dumper:v2.8.3
+    container_name: ocpp-cert-dumper-rsa
+    restart: unless-stopped
+    depends_on:
+      - traefik
+    volumes:
+      - ./data/letsencrypt:/traefik:ro
+      - ./data/config:/app/config
+    command: >
+      file --watch
+      --source /traefik/acme-rsa.json
+      --dest /app/config/certs
+      --domain-subdir=false
+      --crt-name rsa-server
+      --key-name rsa-server
+
+  cert-dumper-ecdsa:
+    image: ldez/traefik-certs-dumper:v2.8.3
+    container_name: ocpp-cert-dumper-ecdsa
+    restart: unless-stopped
+    depends_on:
+      - traefik
+    volumes:
+      - ./data/letsencrypt:/traefik:ro
+      - ./data/config:/app/config
+    command: >
+      file --watch
+      --source /traefik/acme-ecdsa.json
+      --dest /app/config/certs
+      --domain-subdir=false
+      --crt-name ecdsa-server
+      --key-name ecdsa-server
+
+  # ── Initialisation CA + certificat client OCPP (Security Profile 3) ──────
+  # One-shot : génère ca.crt + client.pem dans data/config/certs/ si absents.
+  # Une fois généré, configurer config.json :
+  #   wss.strictClientCert = true
+  #   wss.caFile           = "certs/ca.crt"
+  # Puis déposer client.pem sur chaque borne (contient cert + clé privée).
+  cert-init:
+    image: alpine:3
+    container_name: ocpp-cert-init
+    restart: "no"
+    volumes:
+      - ./data/config:/app/config
+    command:
+      - sh
+      - -c
+      - |
+        apk add --no-cache openssl > /dev/null 2>&1
+        CERTS=/app/config/certs
+        mkdir -p $$CERTS
+
+        if [ ! -f $$CERTS/ca.crt ]; then
+          echo "[cert-init] Génération de la CA locale..."
+          openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+            -keyout $$CERTS/ca.key \
+            -out    $$CERTS/ca.crt \
+            -subj   "/CN=OCPP-CA"
+          echo "[cert-init] CA créée."
+        else
+          echo "[cert-init] CA déjà présente, skip."
+        fi
+
+        if [ ! -f $$CERTS/client.pem ]; then
+          echo "[cert-init] Génération du certificat client..."
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout $$CERTS/client.key \
+            -out    $$CERTS/client.csr \
+            -subj   "/CN=ocpp-client"
+          openssl x509 -req -days 365 -sha256 \
+            -in          $$CERTS/client.csr \
+            -CA          $$CERTS/ca.crt \
+            -CAkey       $$CERTS/ca.key \
+            -CAcreateserial \
+            -out         $$CERTS/client.crt
+          cat $$CERTS/client.crt $$CERTS/client.key > $$CERTS/client.pem
+          rm  $$CERTS/client.csr $$CERTS/client.srl 2>/dev/null || true
+          chmod 600 $$CERTS/ca.key $$CERTS/client.key $$CERTS/client.pem
+          echo "[cert-init] Certificat client créé : client.pem"
+        else
+          echo "[cert-init] Certificat client déjà présent, skip."
+        fi
 
   # ── Serveur FTP pour les diagnostics de bornes ─────────────
   ftp:
@@ -93,14 +206,7 @@ services:
       - MIN_PORT=21000
       - MAX_PORT=21010
     volumes:
-      - ftp-data:/home/ocpp
+      - ./data/ftp:/ftp/ocpp
     labels:
       - "traefik.enable=false"
 
-volumes:
-  config:
-  logs:
-  #public-img:
-  #locales-custom:
-  ftp-data:
-  letsencrypt:

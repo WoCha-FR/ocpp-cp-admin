@@ -1387,6 +1387,9 @@ function handleRealtimeEvent(type, data) {
       if (data.status === 'Uploaded') toast(t('realTime.diagnosticsUploaded', { identity: data.identity }), 'success');
       if (data.status === 'UploadFailed') toast(t('realTime.diagnosticsFailed', { identity: data.identity }), 'error');
       break;
+    case 'strict_mode_violation':
+      toast(t('realTime.strictModeViolation', { identity: data.identity, method: data.method }), 'warning');
+      break;
   }
 }
 

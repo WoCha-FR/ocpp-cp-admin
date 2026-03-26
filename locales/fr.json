@@ -115,7 +115,8 @@
     "transactionStopped": "Transaction arrêtée sur {{identity}}",
     "cpPending": "Borne inconnue {{identity}} en attente de validation",
     "diagnosticsUploaded": "Diagnostic uploadé pour {{identity}}",
-    "diagnosticsFailed": "Échec de l'upload du diagnostic pour {{identity}}"
+    "diagnosticsFailed": "Échec de l'upload du diagnostic pour {{identity}}",
+    "strictModeViolation": "{{identity}} : réponse {{method}} non conforme OCPP (champs supplémentaires). Désactivez ocpp.strictMode dans la configuration."
   },
   "dashboard": {
     "totalChargepoints": "Bornes totales",

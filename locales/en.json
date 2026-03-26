@@ -115,7 +115,8 @@
     "transactionStopped": "Transaction stopped on {{identity}}",
     "cpPending": "Unknown chargepoint {{identity}} pending validation",
     "diagnosticsUploaded": "Diagnostics uploaded for {{identity}}",
-    "diagnosticsFailed": "Diagnostics upload failed for {{identity}}"
+    "diagnosticsFailed": "Diagnostics upload failed for {{identity}}",
+    "strictModeViolation": "{{identity}}: non-compliant {{method}} response (extra fields). Disable ocpp.strictMode in the configuration."
   },
   "dashboard": {
     "totalChargepoints": "Total Chargepoints",

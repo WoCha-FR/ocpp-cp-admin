@@ -24,6 +24,9 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
   - [OCPP Server](#ocpp-server)
   - [Notifications](#notifications)
   - [Google OAuth Authentication](#google-oauth-authentication)
+- [TLS Certificates](#tls-certificates)
+  - [HTTPS — Web Interface](#https--web-interface)
+  - [WSS — OCPP Server](#wss--ocpp-server-security-profile-2--3)
 - [Getting Started](#getting-started)
 - [Roles and Permissions](#roles-and-permissions)
 - [OCPP 1.6 Protocol](#ocpp-16-protocol)
@@ -197,9 +200,9 @@ Four Docker Compose files are available in the `docker/` folder, suited for diff
 | File | Description |
 |---|---|
 | `docker-compose.http.yml` | App only — HTTP + WS (ports 3000/9000) |
-| `docker-compose.https.yml` | App only — HTTPS + WSS (ports 3001/9001) |
-| `docker-compose.yml` | Full stack: Traefik (HTTPS) + App + FTP |
-| `docker-compose.tls.yml` | Full stack: Traefik (HTTPS + WSS passthrough) + App + FTP |
+| `docker-compose.https.yml` | App only — HTTPS + WSS (ports 3001/9000/9001, certbot included) |
+| `docker-compose.yml` | Full stack: Traefik (HTTPS, TLS termination) + App + FTP |
+| `docker-compose.tls.yml` | Full stack: Traefik (HTTPS + WSS passthrough) + cert export + App + FTP |
 
 ```bash
 # Example: full stack with Traefik
@@ -453,6 +456,165 @@ Configuration values can be overridden by environment variables (see the [Enviro
 ```
 
 When enabled, users can sign in with their Google account. The Google account is matched by email address to an existing user. The OAuth callback URL is derived from `webui.publicUrl`.
+
+---
+
+## TLS Certificates
+
+Certificates are stored in the `config/certs/` folder (all paths in `config.json` are relative to `config/`).
+
+The application supports **hot-reload**: when a certificate file changes on disk the server reloads its TLS context automatically — no restart required. Symlinks pointing to Let's Encrypt's `live/` directory take full advantage of this.
+
+---
+
+### HTTPS — Web Interface
+
+> Requires `webui.https.enabled: true`.
+
+**Development — self-signed certificate:**
+
+```bash
+mkdir -p config/certs
+openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+  -keyout config/certs/server.key \
+  -out    config/certs/server.crt \
+  -subj   "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
+
+**Production — Let's Encrypt (symlinks, auto-renewed):**
+
+```bash
+certbot certonly --standalone -d cpadmin.example.com
+
+mkdir -p config/certs
+ln -sf /etc/letsencrypt/live/cpadmin.example.com/fullchain.pem config/certs/server.crt
+ln -sf /etc/letsencrypt/live/cpadmin.example.com/privkey.pem   config/certs/server.key
+```
+
+Because the symlinks always resolve to the latest archive files after `certbot renew`, no post-renewal hook is needed — the server detects the change and hot-reloads automatically.
+
+`config.json` excerpt:
+
+```json
+"webui": {
+  "https": {
+    "enabled": true,
+    "httpsPort": 3001,
+    "certFile": "certs/server.crt",
+    "keyFile":  "certs/server.key"
+  }
+}
+```
+
+---
+
+### WSS — OCPP Server (Security Profile 2 / 3)
+
+> Requires `ocpp.wss.enabled: true`. The server loads **both an RSA and an ECDSA certificate simultaneously** to support the widest range of charge point implementations.
+
+**Development — self-signed RSA + ECDSA:**
+
+```bash
+mkdir -p config/certs
+
+# RSA
+openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+  -keyout config/certs/rsa-server.key \
+  -out    config/certs/rsa-server.crt \
+  -subj   "/CN=ws.cpadmin.local" \
+  -addext "subjectAltName=DNS:ws.cpadmin.local,IP:127.0.0.1"
+
+# ECDSA
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -sha256 -days 365 -nodes \
+  -keyout config/certs/ecdsa-server.key \
+  -out    config/certs/ecdsa-server.crt \
+  -subj   "/CN=ws.cpadmin.local" \
+  -addext "subjectAltName=DNS:ws.cpadmin.local,IP:127.0.0.1"
+```
+
+**Production — Let's Encrypt (symlinks, auto-renewed):**
+
+```bash
+# RSA certificate (default)
+certbot certonly --standalone -d ws.cpadmin.example.com
+
+# ECDSA certificate (separate lineage)
+certbot certonly --standalone -d ws.cpadmin.example.com \
+  --key-type ecdsa --cert-name ws-cpadmin-ecdsa
+
+mkdir -p config/certs
+
+# RSA symlinks
+ln -sf /etc/letsencrypt/live/ws.cpadmin.example.com/fullchain.pem config/certs/rsa-server.crt
+ln -sf /etc/letsencrypt/live/ws.cpadmin.example.com/privkey.pem   config/certs/rsa-server.key
+
+# ECDSA symlinks
+ln -sf /etc/letsencrypt/live/ws-cpadmin-ecdsa/fullchain.pem config/certs/ecdsa-server.crt
+ln -sf /etc/letsencrypt/live/ws-cpadmin-ecdsa/privkey.pem   config/certs/ecdsa-server.key
+```
+
+`config.json` excerpt:
+
+```json
+"ocpp": {
+  "wss": {
+    "enabled": true,
+    "wssPort": 9001,
+    "strictClientCert": false,
+    "rsa":   { "certFile": "certs/rsa-server.crt",  "keyFile": "certs/rsa-server.key" },
+    "ecdsa": { "certFile": "certs/ecdsa-server.crt", "keyFile": "certs/ecdsa-server.key" },
+    "caFile": ""
+  }
+}
+```
+
+#### Security Profile 3 — Client Certificate Authentication
+
+The server validates that the client certificate is signed by a trusted CA. A **single certificate shared by all charge points** is sufficient — the CN is not matched against the charge point identity.
+
+**1. Create a local CA:**
+
+```bash
+openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+  -keyout config/certs/ca.key \
+  -out    config/certs/ca.crt \
+  -subj   "/CN=OCPP-CA"
+```
+
+**2. Issue a single client certificate (installed on all charge points):**
+
+```bash
+# Key + CSR
+openssl req -newkey rsa:2048 -nodes \
+  -keyout config/certs/client.key \
+  -out    config/certs/client.csr \
+  -subj   "/CN=ocpp-client"
+
+# Sign with the CA
+openssl x509 -req -days 365 -sha256 \
+  -in     config/certs/client.csr \
+  -CA     config/certs/ca.crt \
+  -CAkey  config/certs/ca.key \
+  -CAcreateserial \
+  -out    config/certs/client.crt
+
+# Combine certificate and key into a single PEM file
+cat config/certs/client.crt config/certs/client.key > config/certs/client.pem
+```
+
+**3. Enable strict client certificate validation:**
+
+```json
+"wss": {
+  "strictClientCert": true,
+  "caFile": "certs/ca.crt"
+}
+```
+
+Install `client.pem` (contains both certificate and private key) on each charge point.
+
+> **Mixed mode** (`strictClientCert: false` with `caFile` set): the server requests a certificate but still accepts password authentication (Profile 2). Certificates that are presented are validated against the CA.
 
 ---
 

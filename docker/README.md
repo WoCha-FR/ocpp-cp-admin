@@ -13,8 +13,8 @@ Choose the one that matches your infrastructure.
 |---|---|
 | `docker-compose.http.yml` | Simple deployment, HTTP only |
 | `docker-compose.https.yml` | Simple deployment, HTTPS/WSS managed by the app |
-| `docker-compose.yml` | Full stack with Traefik (HTTPS) + FTP |
-| `docker-compose.tls.yml` | Full stack with Traefik, HTTPS + WSS passthrough |
+| `docker-compose.yml` | Full stack with Traefik (HTTPS, TLS termination) + FTP |
+| `docker-compose.tls.yml` | Full stack with Traefik, HTTPS + WSS passthrough + cert export |
 
 ---
 
@@ -31,22 +31,52 @@ docker compose -f docker/docker-compose.http.yml up -d
 
 > Suitable for internal use, development, or when an external reverse proxy is already in place.
 
+**Variables to replace before starting:**
+
+| Variable / Value | Role | Mandatory |
+|---|---|---|
+| `CPADMIN_PUBLIC_URL=http://localhost:3000` | Public URL of the web interface (used in notification links) | Yes |
+| `CPADMIN_OCPP_WS_URL=ws://localhost:9000` | OCPP WebSocket URL given to charge points | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@localhost` | FTP URL where charge points send diagnostics — adapt host and credentials | Yes |
+| `CPADMIN_SESSION_SECRET=change-me-in-production` | Session signing secret — use at least 32 random characters | Yes |
+| FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
+| FTP `ADDRESS=localhost` | External address used by charge points in FTP passive mode | Yes |
+
 ---
 
 ### `docker-compose.https.yml` — App Only (HTTPS + WSS)
 
-The application handles TLS itself. Certificates must be placed in the `config` volume, under the `certs/` folder (as defined in `config.json`).
+The application handles TLS itself. Certificates are obtained via **Let's Encrypt** (certbot standalone) and automatically deployed to `./data/config/certs/`.
 
 - **Port 3001**: web interface (HTTPS)
-- **Port 9001**: OCPP WebSocket Secure server
+- **Port 9000**: OCPP WebSocket (unencrypted, Security Profile 1)
+- **Port 9001**: OCPP WebSocket Secure (TLS managed by the app, Security Profile 2/3)
+
+**First start — obtain certificates before launching the full stack:**
 
 ```bash
+docker compose -f docker/docker-compose.https.yml up certbot
+# Wait for "[certbot] Certificates deployed." then:
 docker compose -f docker/docker-compose.https.yml up -d
 ```
 
+**Variables to replace before starting:**
+
+| Variable / Value | Role | Mandatory |
+|---|---|---|
+| `CERTBOT_DOMAIN=cpadmin.example.com` | Domain for Let's Encrypt certificate — must be publicly reachable | Yes |
+| `CERTBOT_EMAIL=admin@example.com` | Email for Let's Encrypt expiry alerts | Yes |
+| `CPADMIN_PUBLIC_URL=https://cpadmin.example.com` | Public HTTPS URL of the web interface | Yes |
+| `CPADMIN_OCPP_WS_URL=ws://cpadmin.example.com:9000` | OCPP WS URL (charge points without TLS) | Yes |
+| `CPADMIN_OCPP_WSS_URL=wss://cpadmin.example.com:9001` | OCPP WSS URL (charge points with TLS) | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@cpadmin.example.com` | FTP URL for diagnostics — adapt host and credentials | Yes |
+| `CPADMIN_SESSION_SECRET=change-me-in-production` | Session signing secret — use at least 32 random characters | Yes |
+| FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
+| FTP `ADDRESS=cpadmin.example.com` | External address for FTP passive mode | Yes |
+
 **Prerequisites:**
+- Port 80 must be publicly reachable for the ACME HTTP challenge
 - Enable `webui.https.enabled` and/or `ocpp.wss.enabled` in `config.json`
-- Place certificates in `config/certs/`
 
 ---
 
@@ -56,7 +86,7 @@ Full stack with three services:
 
 | Service | Role |
 |---|---|
-| **Traefik** | Reverse proxy, HTTPS (Let's Encrypt) + WSS on port 443 |
+| **Traefik** | Reverse proxy, HTTPS (Let's Encrypt via TLS challenge) + WSS on port 443 |
 | **ocpp-cp-admin** | Application (HTTP + WS internally) |
 | **FTP** | FTP server for charge point diagnostics retrieval |
 
@@ -72,15 +102,35 @@ docker compose -f docker/docker-compose.yml up -d
 
 > The app does not handle TLS — Traefik takes care of it via Let's Encrypt.
 
+**Variables to replace before starting:**
+
+| Variable / Value | Role | Mandatory |
+|---|---|---|
+| `admin@cpadmin.local` (ACME email in `command:`) | Email for Let's Encrypt expiry alerts | Yes |
+| `cpadmin.local` (all Traefik labels) | Domain of the web interface | Yes |
+| `ws.cpadmin.local` (all Traefik labels) | Domain of the OCPP WebSocket endpoint | Yes |
+| `CPADMIN_PUBLIC_URL=https://cpadmin.local` | Public HTTPS URL of the web interface | Yes |
+| `CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local` | OCPP WS URL given to charge points | Yes |
+| `CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local` | OCPP WSS URL given to charge points | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local` | FTP URL for diagnostics | Yes |
+| `CPADMIN_SESSION_SECRET=change-me-with-a-random-secret` | Session signing secret — use at least 32 random characters | Yes |
+| FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
+| FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
+
 ---
 
 ### `docker-compose.tls.yml` — Traefik + FTP (HTTPS + WSS Passthrough)
 
-Fully secured version. Traefik handles HTTPS for the web interface (Let's Encrypt) and performs **TCP passthrough** for OCPP WSS, allowing the app to manage client certificate authentication.
+Fully secured version. Traefik handles HTTPS for the web interface (Let's Encrypt) and performs **TCP passthrough** for OCPP WSS, allowing the app to manage TLS and client certificate authentication (Security Profile 3).
+
+Traefik generates **two certificates** (RSA2048 + ECDSA P-256) via Let's Encrypt. They are automatically extracted to `./data/config/certs/` by two dedicated `cert-dumper` services.
 
 | Service | Role |
 |---|---|
-| **Traefik** | HTTPS reverse proxy (Let's Encrypt) + TCP passthrough WSS |
+| **Traefik** | HTTPS reverse proxy (Let's Encrypt, RSA + ECDSA) + TCP passthrough WSS |
+| **cert-dumper-rsa** | Watches `acme-rsa.json` and copies RSA certs to `./data/config/certs/` |
+| **cert-dumper-ecdsa** | Watches `acme-ecdsa.json` and copies ECDSA certs to `./data/config/certs/` |
+| **cert-init** | One-shot: generates a local CA + shared client certificate (`client.pem`) in `./data/config/certs/` — skipped on subsequent starts if files already exist |
 | **ocpp-cp-admin** | Application (OCPP WSS managed internally) |
 | **FTP** | FTP server for diagnostics |
 
@@ -88,18 +138,48 @@ Fully secured version. Traefik handles HTTPS for the web interface (Let's Encryp
 - `https://cpadmin.local` (port 443) → web interface (TLS terminated by Traefik)
 - `http://cpadmin.local` (port 80) → automatic redirect to HTTPS
 - `ws://ws.cpadmin.local` (port 80) → OCPP WS (charge points without TLS)
-- `wss://ws.cpadmin.local` (port 9001) → OCPP WSS (TLS passthrough to the app)
+- `wss://ws.cpadmin.local` (port 9001) → OCPP WSS (TCP passthrough — TLS managed by the app)
 
 ```bash
 docker compose -f docker/docker-compose.tls.yml up -d
 ```
 
+**Variables to replace before starting:**
+
+| Variable / Value | Role | Mandatory |
+|---|---|---|
+| `admin@cpadmin.local` (ACME email, repeated for RSA and ECDSA resolvers) | Email for Let's Encrypt expiry alerts | Yes |
+| `cpadmin.local` (all Traefik labels) | Domain of the web interface | Yes |
+| `ws.cpadmin.local` (all Traefik labels) | Domain of the OCPP WebSocket endpoint | Yes |
+| `CPADMIN_PUBLIC_URL=https://cpadmin.local` | Public HTTPS URL of the web interface | Yes |
+| `CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local` | OCPP WS URL (charge points without TLS) | Yes |
+| `CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local` | OCPP WSS URL (charge points with TLS, Security Profile 2/3) | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local` | FTP URL for diagnostics | Yes |
+| FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
+| FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
+
 **Prerequisites:**
 - Enable `ocpp.wss.enabled` in `config.json`
-- Place OCPP certificates (RSA/ECDSA) in `config/certs/`
-- Update the ACME email in the compose file (`admin@cpadmin.local`)
+- The cert-dumpers automatically populate `./data/config/certs/` with `rsa-server.crt`, `rsa-server.key`, `ecdsa-server.crt`, `ecdsa-server.key` — no manual certificate handling required
 
-> Required if charge points use OCPP **Security Profile 3** (client certificate authentication).
+**Security Profile 3 — client certificate authentication:**
+
+On first `docker compose up`, `cert-init` automatically generates in `./data/config/certs/`:
+- `ca.key` / `ca.crt` — local CA (validity: 10 years)
+- `client.key` / `client.crt` / `client.pem` — single shared certificate for all charge points (validity: 1 year)
+
+To activate Security Profile 3, add the following to `config.json` and restart:
+
+```json
+"wss": {
+  "strictClientCert": true,
+  "caFile": "certs/ca.crt"
+}
+```
+
+Then deploy `./data/config/certs/client.pem` (contains certificate + private key) to each charge point.
+
+> `cert-init` is idempotent: files already present are never overwritten. To renew the client certificate, delete `client.pem` and restart the stack.
 
 ---
 
@@ -108,6 +188,24 @@ docker compose -f docker/docker-compose.tls.yml up -d
 The entrypoint runs as root to seed default files into empty volumes (`config/`, `public/img/`) and fix their ownership. It then drops privileges to a dedicated non-root user (`app`, UID 1000) via `su-exec` before starting the application.
 
 This means volume permissions are handled automatically — no manual `chown` is required on the host.
+
+---
+
+## Data Directory Structure
+
+All compose files use **bind mounts** under a `./data/` directory, relative to the compose file location. This makes your data directly accessible on the host filesystem.
+
+```
+./data/
+├── config/            # config.json + certificates (certs/)
+├── logs/              # application log files
+├── ftp/               # FTP diagnostics files (ocpp/ subfolder)
+├── public-img/        # custom static images (optional, uncomment in compose)
+├── locales-custom/    # custom locale files (optional, uncomment in compose)
+└── letsencrypt/       # Traefik ACME files (docker-compose.tls.yml only)
+```
+
+> The `letsencrypt` named Docker volume is only used in `docker-compose.yml` (managed by Docker, not accessible directly on the host).
 
 ---
 
@@ -182,17 +280,6 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 > Secrets are always treated as strings.
 
 ---
-
-## Volumes
-
-| Volume | Contents |
-|---|---|
-| `config` | Configuration (`config.json`) and certificates (`certs/`) |
-| `logs` | Log files |
-| `public-img` | Web interface static images |
-| `locales-custom` | Custom locale files (add or override translations) |
-| `ftp-data` | Retrieved diagnostics files (FTP-based composes) |
-| `letsencrypt` | ACME Let's Encrypt certificates (TLS compose) |
 
 ### Adding a Custom Locale (Docker)
 

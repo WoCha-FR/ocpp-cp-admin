@@ -151,10 +151,13 @@ function loadCertKeyPair(label, certFile, keyFile, log) {
   return { cert: fs.readFileSync(certPath), key: fs.readFileSync(keyPath) };
 }
 
-// ── Charger les certificats SSL pour UI HTTPS ──
-let uiSslOptions = null;
-if (uiSslEnabled) {
-  uiSslOptions = loadCertKeyPair(
+// ── Chemins des certificats surveillés ──
+const watchedCertPaths = new Set();
+let certReloadTimer = null;
+
+// ── Construire les options TLS pour UI HTTPS ──
+function buildUiSslOptions() {
+  return loadCertKeyPair(
     'HTTPS',
     config.webui.https.certFile,
     config.webui.https.keyFile,
@@ -162,10 +165,8 @@ if (uiSslEnabled) {
   );
 }
 
-// ── Charger les certificats SSL (RSA & ECDSA) pour OCPP WSS ──
-let wsSslOptions = null;
-
-if (wsSslEnabled) {
+// ── Construire les options TLS pour OCPP WSS (RSA & ECDSA) ──
+function buildWsSslOptions() {
   const pairs = [
     { name: 'RSA', conf: config.ocpp.wss.rsa },
     { name: 'ECDSA', conf: config.ocpp.wss.ecdsa },
@@ -173,23 +174,84 @@ if (wsSslEnabled) {
   const loaded = pairs.map(({ name, conf }) =>
     loadCertKeyPair(`WSS ${name}`, conf?.certFile, conf?.keyFile, logOCPP)
   );
-
-  wsSslOptions = {
+  const options = {
     cert: loaded.map((p) => p.cert),
     key: loaded.map((p) => p.key),
     requestCert: true, // Demander un certificat client (Security Profile 3)
     rejectUnauthorized: ocppStrictClientCert, // true = profile 3 strict, false = mode mixte profile 2/3
   };
-
   if (config.ocpp.wss.caFile) {
     const caPath = path.resolve(getConfigDir(), config.ocpp.wss.caFile);
     if (fs.existsSync(caPath)) {
-      wsSslOptions.ca = fs.readFileSync(caPath);
+      options.ca = fs.readFileSync(caPath);
     } else {
       logOCPP.warn(`WSS: CA file not found (ignored): ${caPath}`);
     }
   }
+  return options;
+}
 
+// ── Rechargement à chaud des certificats TLS (sans redémarrage) ──
+function reloadCerts() {
+  for (const p of watchedCertPaths) {
+    if (!fs.existsSync(p)) {
+      logger.error(`Certificate file missing during reload: ${p} — reload skipped`);
+      return;
+    }
+  }
+  try {
+    if (uiSslEnabled && httpsServer) {
+      httpsServer.setSecureContext(buildUiSslOptions());
+      logWEBUI.info('UI HTTPS: TLS certificates hot-reloaded');
+    }
+    if (wsSslEnabled && ocppHttpsServer) {
+      ocppHttpsServer.setSecureContext(buildWsSslOptions());
+      logOCPP.info('OCPP WSS: TLS certificates hot-reloaded');
+    }
+  } catch (err) {
+    logger.error('Failed to hot-reload TLS certificates:', err);
+    gracefulShutdown('CERT_RELOAD_ERROR');
+  }
+}
+
+// ── Surveillance des fichiers certificats ──
+function watchCertFiles() {
+  if (watchedCertPaths.size === 0) return;
+  for (const certPath of watchedCertPaths) {
+    fs.watchFile(certPath, { interval: 60_000, persistent: false }, (curr, prev) => {
+      if (curr.mtimeMs !== prev.mtimeMs) {
+        if (certReloadTimer) clearTimeout(certReloadTimer);
+        certReloadTimer = setTimeout(() => {
+          logger.info(`Certificate changed: ${path.basename(certPath)} — reloading TLS context`);
+          reloadCerts();
+        }, 500);
+      }
+    });
+  }
+  logger.debug(`Watching ${watchedCertPaths.size} certificate file(s) for TLS hot-reload`);
+}
+
+// ── Charger les certificats SSL pour UI HTTPS ──
+let uiSslOptions = null;
+if (uiSslEnabled) {
+  uiSslOptions = buildUiSslOptions();
+  watchedCertPaths.add(path.resolve(getConfigDir(), config.webui.https.certFile));
+  watchedCertPaths.add(path.resolve(getConfigDir(), config.webui.https.keyFile));
+}
+
+// ── Charger les certificats SSL (RSA & ECDSA) pour OCPP WSS ──
+let wsSslOptions = null;
+
+if (wsSslEnabled) {
+  wsSslOptions = buildWsSslOptions();
+  for (const conf of [config.ocpp.wss.rsa, config.ocpp.wss.ecdsa]) {
+    if (conf?.certFile) watchedCertPaths.add(path.resolve(getConfigDir(), conf.certFile));
+    if (conf?.keyFile) watchedCertPaths.add(path.resolve(getConfigDir(), conf.keyFile));
+  }
+  if (config.ocpp.wss.caFile) {
+    const caPath = path.resolve(getConfigDir(), config.ocpp.wss.caFile);
+    if (fs.existsSync(caPath)) watchedCertPaths.add(caPath);
+  }
   logOCPP.debug(`WSS: RSA & ECDSA certificates loaded (strictClientCert=${ocppStrictClientCert})`);
   if (ocppStrictClientCert) {
     logOCPP.info(
@@ -271,6 +333,8 @@ async function start() {
       logWEBUI.info(`Web interface available at https://${HTTP_HOST}:${HTTPS_PORT}`);
     });
   }
+  // Démarrer la surveillance des certificats TLS
+  watchCertFiles();
   // Emission d'une notification de démarrage
   notifications.emit('server_started', {});
 }
@@ -295,6 +359,9 @@ async function gracefulShutdown(signal) {
   }, TIMEOUT);
 
   try {
+    // 0. Arrêter la surveillance des certificats
+    for (const p of watchedCertPaths) fs.unwatchFile(p);
+    if (certReloadTimer) clearTimeout(certReloadTimer);
     await notifications.emit('server_stopping', { signal });
     // 1. Fermer les clients WebSocket UI
     for (const client of uiClients) {
@@ -317,7 +384,8 @@ async function gracefulShutdown(signal) {
     // 6. Arrêt complet
     logger.debug('Clean stop complete.');
     clearTimeout(forceExit);
-    process.exit(0);
+    logger.on('finish', () => process.exit(0));
+    logger.end();
   } catch (err) {
     logger.error('Error during stop :', err);
     clearTimeout(forceExit);

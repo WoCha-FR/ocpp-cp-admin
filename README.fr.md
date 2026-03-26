@@ -24,6 +24,9 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
   - [Serveur OCPP](#serveur-ocpp)
   - [Notifications](#notifications)
   - [Authentification Google OAuth](#authentification-google-oauth)
+- [Certificats TLS](#certificats-tls)
+  - [HTTPS — Interface Web](#https--interface-web)
+  - [WSS — Serveur OCPP](#wss--serveur-ocpp-profils-de-sécurité-2--3)
 - [Démarrage](#démarrage)
 - [Rôles et permissions](#rôles-et-permissions)
 - [Protocole OCPP 1.6](#protocole-ocpp-16)
@@ -191,9 +194,9 @@ Quatre fichiers Docker Compose sont disponibles dans le dossier `docker/`, adapt
 | Fichier | Description |
 |---|---|
 | `docker-compose.http.yml` | App seule — HTTP + WS (ports 3000/9000) |
-| `docker-compose.https.yml` | App seule — HTTPS + WSS (ports 3001/9001) |
-| `docker-compose.yml` | Stack complète : Traefik (HTTPS) + App + FTP |
-| `docker-compose.tls.yml` | Stack complète : Traefik (HTTPS + WSS passthrough) + App + FTP |
+| `docker-compose.https.yml` | App seule — HTTPS + WSS (ports 3001/9000/9001, certbot inclus) |
+| `docker-compose.yml` | Stack complète : Traefik (HTTPS, TLS termination) + App + FTP |
+| `docker-compose.tls.yml` | Stack complète : Traefik (HTTPS + WSS passthrough) + export certs + App + FTP |
 
 ```bash
 # Exemple : stack complète avec Traefik
@@ -447,6 +450,165 @@ Les valeurs du fichier de configuration peuvent être surchargées par variables
 ```
 
 Si activé, les utilisateurs peuvent se connecter via leur compte Google. Le compte Google est associé par adresse email à un utilisateur existant. L'URL de callback OAuth est dérivée de `webui.publicUrl`.
+
+---
+
+## Certificats TLS
+
+Les certificats sont stockés dans le dossier `config/certs/` (tous les chemins dans `config.json` sont relatifs à `config/`).
+
+L'application supporte le **rechargement à chaud** : lorsqu'un fichier de certificat change sur le disque, le serveur recharge son contexte TLS automatiquement — sans redémarrage. Les liens symboliques pointant vers le dossier `live/` de Let's Encrypt tirent pleinement profit de ce mécanisme.
+
+---
+
+### HTTPS — Interface Web
+
+> Nécessite `webui.https.enabled: true`.
+
+**Développement — certificat auto-signé :**
+
+```bash
+mkdir -p config/certs
+openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+  -keyout config/certs/server.key \
+  -out    config/certs/server.crt \
+  -subj   "/CN=localhost" \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
+```
+
+**Production — Let's Encrypt (liens symboliques, renouvellement automatique) :**
+
+```bash
+certbot certonly --standalone -d cpadmin.example.com
+
+mkdir -p config/certs
+ln -sf /etc/letsencrypt/live/cpadmin.example.com/fullchain.pem config/certs/server.crt
+ln -sf /etc/letsencrypt/live/cpadmin.example.com/privkey.pem   config/certs/server.key
+```
+
+Les liens symboliques pointant toujours vers les derniers fichiers d'archive après `certbot renew`, aucun hook post-renouvellement n'est nécessaire — le serveur détecte le changement et recharge automatiquement.
+
+Extrait `config.json` :
+
+```json
+"webui": {
+  "https": {
+    "enabled": true,
+    "httpsPort": 3001,
+    "certFile": "certs/server.crt",
+    "keyFile":  "certs/server.key"
+  }
+}
+```
+
+---
+
+### WSS — Serveur OCPP (Profils de sécurité 2 / 3)
+
+> Nécessite `ocpp.wss.enabled: true`. Le serveur charge **simultanément un certificat RSA et un certificat ECDSA** afin de prendre en charge le plus grand nombre d'implémentations de bornes.
+
+**Développement — RSA + ECDSA auto-signés :**
+
+```bash
+mkdir -p config/certs
+
+# RSA
+openssl req -x509 -newkey rsa:4096 -sha256 -days 365 -nodes \
+  -keyout config/certs/rsa-server.key \
+  -out    config/certs/rsa-server.crt \
+  -subj   "/CN=ws.cpadmin.local" \
+  -addext "subjectAltName=DNS:ws.cpadmin.local,IP:127.0.0.1"
+
+# ECDSA
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -sha256 -days 365 -nodes \
+  -keyout config/certs/ecdsa-server.key \
+  -out    config/certs/ecdsa-server.crt \
+  -subj   "/CN=ws.cpadmin.local" \
+  -addext "subjectAltName=DNS:ws.cpadmin.local,IP:127.0.0.1"
+```
+
+**Production — Let's Encrypt (liens symboliques, renouvellement automatique) :**
+
+```bash
+# Certificat RSA (par défaut)
+certbot certonly --standalone -d ws.cpadmin.example.com
+
+# Certificat ECDSA (lignée séparée)
+certbot certonly --standalone -d ws.cpadmin.example.com \
+  --key-type ecdsa --cert-name ws-cpadmin-ecdsa
+
+mkdir -p config/certs
+
+# Liens symboliques RSA
+ln -sf /etc/letsencrypt/live/ws.cpadmin.example.com/fullchain.pem config/certs/rsa-server.crt
+ln -sf /etc/letsencrypt/live/ws.cpadmin.example.com/privkey.pem   config/certs/rsa-server.key
+
+# Liens symboliques ECDSA
+ln -sf /etc/letsencrypt/live/ws-cpadmin-ecdsa/fullchain.pem config/certs/ecdsa-server.crt
+ln -sf /etc/letsencrypt/live/ws-cpadmin-ecdsa/privkey.pem   config/certs/ecdsa-server.key
+```
+
+Extrait `config.json` :
+
+```json
+"ocpp": {
+  "wss": {
+    "enabled": true,
+    "wssPort": 9001,
+    "strictClientCert": false,
+    "rsa":   { "certFile": "certs/rsa-server.crt",  "keyFile": "certs/rsa-server.key" },
+    "ecdsa": { "certFile": "certs/ecdsa-server.crt", "keyFile": "certs/ecdsa-server.key" },
+    "caFile": ""
+  }
+}
+```
+
+#### Profil de sécurité 3 — Authentification par certificat client
+
+Le serveur vérifie que le certificat client est signé par une CA de confiance. Un **certificat unique partagé par toutes les bornes** est suffisant — le CN n'est pas comparé à l'identité de la borne.
+
+**1. Créer une CA locale :**
+
+```bash
+openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
+  -keyout config/certs/ca.key \
+  -out    config/certs/ca.crt \
+  -subj   "/CN=OCPP-CA"
+```
+
+**2. Émettre un certificat client unique (à installer sur toutes les bornes) :**
+
+```bash
+# Clé + CSR
+openssl req -newkey rsa:2048 -nodes \
+  -keyout config/certs/client.key \
+  -out    config/certs/client.csr \
+  -subj   "/CN=ocpp-client"
+
+# Signer avec la CA
+openssl x509 -req -days 365 -sha256 \
+  -in     config/certs/client.csr \
+  -CA     config/certs/ca.crt \
+  -CAkey  config/certs/ca.key \
+  -CAcreateserial \
+  -out    config/certs/client.crt
+
+# Combiner le certificat et la clé dans un seul fichier PEM
+cat config/certs/client.crt config/certs/client.key > config/certs/client.pem
+```
+
+**3. Activer la validation stricte du certificat client :**
+
+```json
+"wss": {
+  "strictClientCert": true,
+  "caFile": "certs/ca.crt"
+}
+```
+
+Installez `client.pem` (contient le certificat et la clé privée) sur chaque borne.
+
+> **Mode mixte** (`strictClientCert: false` avec `caFile` renseigné) : le serveur demande un certificat mais accepte également l'authentification par mot de passe (Profil 2). Les certificats présentés sont validés contre la CA.
 
 ---
 

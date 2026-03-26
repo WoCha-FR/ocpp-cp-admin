@@ -30,15 +30,22 @@ services:
     depends_on:
       - ftp
     volumes:
-      - config:/app/config
-      - logs:/app/logs
+      # Bind mounts : accès direct à config.json et aux logs depuis l'hôte
+      - ./data/config:/app/config
+      - ./data/logs:/app/logs
       # Uncomment the following line to enable image uploads (e.g. for custom favicon and logos)
-      #- public-img:/app/public/img
+      #- ./data/public-img:/app/public/img
       # Uncomment the following line to enable custom locales (for translations)
-      #- locales-custom:/app/locales-custom
+      #- ./data/locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
-      # URLs adaptées au reverse proxy (HTTPS via Traefik)
+
+      # ── Général ──
+      - CPADMIN_CPO_NAME=Mon CPO
+      - CPADMIN_LANGUAGE=fr
+      - CPADMIN_LOGLEVEL=info
+
+      # ── URLs / Réseau (adaptées au reverse proxy Traefik) ──
       - CPADMIN_PUBLIC_URL=https://cpadmin.local
       - CPADMIN_HTTP_HOST=0.0.0.0
       - CPADMIN_TRUST_PROXY=true
@@ -47,10 +54,37 @@ services:
       # WSS pour les bornes avec TLS (port 443 via Traefik)
       - CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local
       - CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local
-      # Décommenter pour définir le secret de session via ENV
-      # - CPADMIN_SESSION_SECRET=change-me
-      # Décommenter pour changer la langue par défaut (toute locale du dossier locales/)
-      # - CPADMIN_LANGUAGE=en
+
+      # ── Sécurité ──
+      - CPADMIN_SESSION_SECRET=change-me-with-a-random-secret
+
+      # ── Comportement OCPP ──
+      - CPADMIN_OCPP_STRICT_MODE=false
+      - CPADMIN_OCPP_AUTO_ADD=true
+      - CPADMIN_OCPP_PENDING_UNKNOWN=false
+
+      # ── Notifications mail (décommenter pour activer) ──
+      # - CPADMIN_MAIL_ENABLED=true
+      # - CPADMIN_MAIL_FROM=noreply@cpadmin.local
+      # - CPADMIN_MAIL_HOST=smtp.example.com
+      # - CPADMIN_MAIL_PORT=587
+      # - CPADMIN_MAIL_SECURE=false
+      # - CPADMIN_MAIL_USER=user@example.com
+      # - CPADMIN_MAIL_PASS=smtp-password
+
+      # ── Notifications Web Push (décommenter pour activer) ──
+      # - CPADMIN_WEBPUSH_ENABLED=true
+      # - CPADMIN_VAPID_SUBJECT=mailto:admin@cpadmin.local
+      # - CPADMIN_VAPID_PUBLIC_KEY=your-vapid-public-key
+      # - CPADMIN_VAPID_PRIVATE_KEY=your-vapid-private-key
+
+      # ── Notifications Pushover (décommenter pour activer) ──
+      # - CPADMIN_PUSHOVER_ENABLED=true
+
+      # ── Authentification Google OAuth (décommenter pour activer) ──
+      # - CPADMIN_GOOGLE_AUTH_ENABLED=true
+      # - CPADMIN_GOOGLE_CLIENT_ID=your-google-client-id
+      # - CPADMIN_GOOGLE_CLIENT_SECRET=your-google-client-secret
     labels:
       - "traefik.enable=true"
       # ── UI HTTP → HTTPS redirect ──
@@ -92,14 +126,10 @@ services:
       - MIN_PORT=21000
       - MAX_PORT=21010
     volumes:
-      - ftp-data:/home/ocpp
+      - ./data/ftp:/ftp/ocpp
     labels:
       - "traefik.enable=false"
 
 volumes:
-  config:
-  logs:
-  #public-img:
-  #locales-custom:
-  ftp-data:
+  # letsencrypt reste en volume nommé (géré par Docker, données critiques)
   letsencrypt:
