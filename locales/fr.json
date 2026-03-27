@@ -534,7 +534,9 @@
     "myTransactions": "Mes Transactions",
     "transactionDetail": "Détail Transaction",
     "myNotifications": "Mes Notifications",
-    "myProfile": "Mon profil"
+    "myProfile": "Mon profil",
+    "configEditor": "Configuration",
+    "adminSpace": "Administration"
   },
   "notifications": {
     "common": {
@@ -807,5 +809,25 @@
     "duration": "Durée (min)",
     "status": "État",
     "stop_reason": "Raison arrêt"
+  },
+  "configEditor": {
+    "title": "Éditeur de configuration",
+    "restartWarning": "Toute modification entraîne un redémarrage automatique du serveur.",
+    "saveRestart": "Enregistrer et redémarrer",
+    "restarting": "Redémarrage du serveur...",
+    "reconnecting": "Reconnexion en cours...",
+    "sections": {
+      "general": "Général",
+      "webui": "Interface Web",
+      "ocpp": "Serveur OCPP",
+      "notifs": "Notifications",
+      "auth": "Authentification"
+    },
+    "colParam": "Paramètre",
+    "colFile": "Valeur fichier",
+    "colEnv": "Variable d'env.",
+    "colValue": "Nouvelle valeur",
+    "envNotSet": "non définie",
+    "validationRequired": "Champ obligatoire : {key}"
   }
 }

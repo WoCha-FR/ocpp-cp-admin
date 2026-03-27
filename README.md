@@ -323,6 +323,18 @@ The configuration file is `config/config.json`. In development mode (`NODE_ENV=d
 
 Configuration values can be overridden by environment variables (see the [Environment Variables](#environment-variables) section).
 
+### Configuration Editor (UI)
+
+Administrators can edit the configuration directly from the web interface via **Settings → Configuration**. The editor displays all parameters organized by section in a table with three columns:
+
+- **File value** — the value currently stored in `config.json`
+- **Env. variable** — the associated environment variable name and its current value (or *not set* if undefined)
+- **New value** — editable field pre-filled with the effective value (env override takes precedence over the file value)
+
+Required fields are validated before saving. The application restarts automatically after a successful save.
+
+> Environment variables are informational only — they cannot be modified from the UI. The editor writes only to `config.json`.
+
 ### General
 
 | Parameter | Type | Default | Description |

@@ -125,6 +125,7 @@ services:
       - ADDRESS=ftp.cpadmin.local
       - MIN_PORT=21000
       - MAX_PORT=21010
+      - ADDED_FLAGS= --dirlist_enable=NO --download_enable=NO --delete_enable=NO
     volumes:
       - ./data/ftp:/ftp/ocpp
     labels:

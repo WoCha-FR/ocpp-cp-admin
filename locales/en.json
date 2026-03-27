@@ -534,7 +534,9 @@
     "myTransactions": "My Transactions",
     "transactionDetail": "Transaction Detail",
     "myNotifications": "My Notifications",
-    "myProfile": "My Profile"
+    "myProfile": "My Profile",
+    "configEditor": "Configuration",
+    "adminSpace": "Administration"
   },
   "notifications": {
     "common": {
@@ -807,5 +809,25 @@
     "duration": "Duration (min)",
     "status": "Status",
     "stop_reason": "Stop Reason"
+  },
+  "configEditor": {
+    "title": "Configuration Editor",
+    "restartWarning": "Any change will trigger an automatic server restart.",
+    "saveRestart": "Save and restart",
+    "restarting": "Restarting server...",
+    "reconnecting": "Reconnecting...",
+    "sections": {
+      "general": "General",
+      "webui": "Web Interface",
+      "ocpp": "OCPP Server",
+      "notifs": "Notifications",
+      "auth": "Authentication"
+    },
+    "colParam": "Parameter",
+    "colFile": "File value",
+    "colEnv": "Env. variable",
+    "colValue": "New value",
+    "envNotSet": "not set",
+    "validationRequired": "Required field: {key}"
   }
 }

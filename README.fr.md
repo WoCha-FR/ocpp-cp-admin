@@ -317,6 +317,18 @@ Le fichier de configuration est `config/config.json`. En mode développement (`N
 
 Les valeurs du fichier de configuration peuvent être surchargées par variables d'environnement (voir la section [Variables d'environnement](#variables-denvironnement)).
 
+### Éditeur de configuration (UI)
+
+Les administrateurs peuvent modifier la configuration directement depuis l'interface web via **Paramètres → Configuration**. L'éditeur affiche tous les paramètres regroupés par section dans un tableau à trois colonnes :
+
+- **Valeur fichier** — la valeur actuellement stockée dans `config.json`
+- **Variable d'env.** — le nom de la variable d'environnement associée et sa valeur courante (ou *non définie* si absente)
+- **Nouvelle valeur** — champ éditable pré-rempli avec la valeur effective (la surcharge env a priorité sur la valeur fichier)
+
+Les champs obligatoires sont validés avant l'enregistrement. L'application redémarre automatiquement après une sauvegarde réussie.
+
+> Les variables d'environnement sont affichées à titre informatif uniquement — elles ne peuvent pas être modifiées depuis l'interface. L'éditeur écrit uniquement dans `config.json`.
+
 ### Général
 
 | Paramètre | Type | Défaut | Description |

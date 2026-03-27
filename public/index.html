@@ -678,6 +678,20 @@
     [data-theme="dark"] .numInputWrapper span:hover { background: var(--gray-200); }
     [data-theme="dark"] .flatpickr-months .flatpickr-prev-month, [data-theme="dark"] .flatpickr-months .flatpickr-next-month { color: var(--text-primary); fill: var(--text-primary); }
     [data-theme="dark"] .flatpickr-months .flatpickr-prev-month:hover svg, [data-theme="dark"] .flatpickr-months .flatpickr-next-month:hover svg { fill: var(--primary); }
+    .config-table { width: 100%; border-collapse: collapse; }
+    .config-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .config-table .col-key { font-family: monospace; font-size: 0.85em; color: var(--text-muted); }
+    .config-table .col-file { font-size: 0.85em; color: var(--text-muted); font-family: monospace; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .config-table .col-env { font-size: 0.85em; }
+    .config-table .col-value { min-width: 180px; }
+    .config-table tr.input-error td.col-value .form-control { outline: 2px solid var(--danger, #dc2626); border-radius: 3px; }
+    .config-section-header { font-weight: 600; font-size: 0.8em; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); padding: 14px 12px 6px; }
+    .env-badge { background: #f59e0b22; color: #d97706; font-size: 0.75em; padding: 2px 6px; border-radius: 4px; font-family: monospace; cursor: help; }
+    .env-override-note { font-size: 0.78em; color: var(--text-muted); display: block; margin-top: 2px; }
+    .restart-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+    .restart-overlay-box { background: var(--bg-surface); border-radius: 12px; padding: 32px 40px; text-align: center; min-width: 260px; }
+    .restart-overlay-box .spinner { font-size: 2em; margin-bottom: 12px; animation: spin 1s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/i18next@24/i18next.min.js"></script>
@@ -829,6 +843,11 @@
       </a>
       <a onclick="navigate('notifications')" data-page="notifications" id="navNotifications">
         <span class="icon">🔔</span> <span data-i18n="navigation.myNotifications">Mes Notifications</span>
+      </a>
+      <div class="nav-divider hidden" id="navAdminDivider"></div>
+      <span class="nav-divider-label hidden" id="navAdminDividerLabel" data-i18n="navigation.adminSpace">Administration</span>
+      <a onclick="navigate('configeditor')" data-page="configeditor" id="navConfigEditor" class="hidden">
+        <span class="icon">⚙️</span> <span data-i18n="navigation.configEditor">Configuration</span>
       </a>
     </nav>
     <div style="padding: 4px 0; border-top: 1px solid var(--sidebar-border);">
@@ -1322,6 +1341,11 @@ function showApp() {
   document.getElementById('navUserDividerLabel').classList.toggle('hidden', !showDivider);
   // Masquer "Ma Recharge" pour les utilisateurs simples (fusionnée dans leur dashboard)
   document.getElementById('navMyCharge').classList.toggle('hidden', !canManage());
+  // Zone admin
+  const isAdmin = currentUser.role === 'admin';
+  document.getElementById('navAdminDivider').classList.toggle('hidden', !isAdmin);
+  document.getElementById('navAdminDividerLabel').classList.toggle('hidden', !isAdmin);
+  document.getElementById('navConfigEditor').classList.toggle('hidden', !isAdmin);
   connectWebSocket();
   navigate('dashboard');
   checkPushPrompt();
@@ -1437,6 +1461,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function navigate(page, silent = false) {
   closeSidebar();
+  // Bloquer l'accès aux pages admin
+  if (page === 'configeditor' && currentUser.role !== 'admin') {
+    return navigate('dashboard');
+  }
   // Bloquer l'accès aux pages manager sans droits
   if ((page === 'idtags' || page === 'sites') && !canManage()) {
     return navigate('dashboard');
@@ -1465,12 +1493,13 @@ function navigate(page, silent = false) {
     chargepointdetail: t('navigation.chargepoints'),
     notifications: t('navigation.myNotifications'),
     profile: t('navigation.myProfile'),
+    configeditor: t('navigation.configEditor'),
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
 
   // Les utilisateurs simples ont leur propre dashboard
   const dashboardRenderer = canManage() ? renderDashboard : renderUserDashboard;
-  const renderers = { dashboard: dashboardRenderer, chargepoints: renderChargepoints, sites: renderSites, siteusers: renderSiteUsers, transactions: renderTransactions, connectors: renderConnectors, mycharge: renderUserDashboard, mytransactions: renderMyTransactions, idtags: renderIdTags, users: renderUsers, notifications: renderNotifications, profile: renderProfile, transactiondetail: refreshTransactionDetail };
+  const renderers = { dashboard: dashboardRenderer, chargepoints: renderChargepoints, sites: renderSites, siteusers: renderSiteUsers, transactions: renderTransactions, connectors: renderConnectors, mycharge: renderUserDashboard, mytransactions: renderMyTransactions, idtags: renderIdTags, users: renderUsers, notifications: renderNotifications, profile: renderProfile, transactiondetail: refreshTransactionDetail, configeditor: renderConfigEditor };
   if (renderers[page]) renderers[page]();
 }
 
@@ -4470,6 +4499,161 @@ function urlBase64ToUint8Array(base64String) {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
+}
+
+// ══════════════════════════════════════
+//  CONFIG EDITOR
+// ══════════════════════════════════════
+async function renderConfigEditor() {
+  if (currentUser.role !== 'admin') return navigate('dashboard');
+  document.getElementById('topbarActions').innerHTML = '';
+  let data;
+  try {
+    data = await api('GET', '/configeditor');
+  } catch (err) {
+    document.getElementById('pageContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  const sectionOrder = ['general', 'webui', 'ocpp', 'notifs', 'auth'];
+  const bySection = {};
+  for (const f of data.fields) {
+    if (!bySection[f.section]) bySection[f.section] = [];
+    bySection[f.section].push(f);
+  }
+
+  let html = `<div class="alert" style="background:var(--warning-bg,#fef9c3);color:var(--warning-text,#854d0e);border:1px solid var(--warning-border,#fde047);border-radius:6px;padding:10px 14px;margin-bottom:16px;">
+    ⚠️ ${t('configEditor.restartWarning')}
+  </div>
+  <form id="configEditorForm" onsubmit="saveConfigEditor(event)">`;
+
+  for (const section of sectionOrder) {
+    const fields = bySection[section];
+    if (!fields || fields.length === 0) continue;
+    html += `<div class="card" style="margin-bottom:16px;">
+      <div class="config-section-header">${t(`configEditor.sections.${section}`)}</div>
+      <table class="config-table">
+        <thead><tr>
+          <th class="config-section-header col-key">${t('configEditor.colParam')}</th>
+          <th class="config-section-header col-file">${t('configEditor.colFile')}</th>
+          <th class="config-section-header col-env">${t('configEditor.colEnv')}</th>
+          <th class="config-section-header col-value">${t('configEditor.colValue')}</th>
+        </tr></thead>
+        <tbody>`;
+    for (const f of fields) {
+      const fileDisplay = f.fileValue === null ? '<em style="opacity:.5">—</em>' : `<span title="${escapeAttr(String(f.fileValue))}">${escapeHtml(String(f.fileValue))}</span>`;
+      html += `<tr>
+        <td class="col-key">${escapeHtml(f.key)}</td>
+        <td class="col-file">${fileDisplay}</td>
+        <td class="col-env">${buildConfigEnvCell(f)}</td>
+        <td class="col-value">${buildConfigInput(f)}</td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  html += `<div style="text-align:right;margin-top:8px;">
+    <button type="submit" class="btn btn-primary">${t('configEditor.saveRestart')}</button>
+  </div></form>`;
+
+  document.getElementById('pageContent').innerHTML = html;
+}
+
+function buildConfigInput(f) {
+  const id = `cfg_${f.key.replace(/\./g, '_')}`;
+  const val = f.envValue ?? f.fileValue ?? '';
+  const req = f.required ? 'data-required="true"' : '';
+  if (f.type === 'boolean') {
+    return `<input type="checkbox" id="${id}" data-key="${escapeAttr(f.key)}" data-type="boolean" ${String(val) === 'true' ? 'checked' : ''}>`;
+  }
+  if (f.type === 'number') {
+    return `<input type="number" id="${id}" data-key="${escapeAttr(f.key)}" data-type="number" ${req} value="${escapeAttr(String(val ?? ''))}" class="form-control form-control-sm">`;
+  }
+  if (f.type === 'select') {
+    const opts = (f.choices || []).map(c => `<option value="${escapeAttr(c)}" ${val === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+    return `<select id="${id}" data-key="${escapeAttr(f.key)}" data-type="select" ${req} class="form-control form-control-sm">${opts}</select>`;
+  }
+  if (f.sensitive) {
+    return `<div style="display:flex;gap:4px;align-items:center;">
+      <input type="password" id="${id}" data-key="${escapeAttr(f.key)}" data-type="string" ${req} value="${escapeAttr(String(val ?? ''))}" class="form-control form-control-sm">
+      <button type="button" class="btn btn-sm btn-secondary" onclick="const i=document.getElementById('${id}');i.type=i.type==='password'?'text':'password'">👁</button>
+    </div>`;
+  }
+  return `<input type="text" id="${id}" data-key="${escapeAttr(f.key)}" data-type="string" ${req} value="${escapeAttr(String(val ?? ''))}" class="form-control form-control-sm">`;
+}
+
+function buildConfigEnvCell(f) {
+  if (f.envVar === null) return '—';
+  const badge = `<span class="env-badge">${escapeHtml(f.envVar)}</span>`;
+  let valueRow;
+  if (f.envValue !== null) {
+    const displayVal = f.sensitive
+      ? `<span style="letter-spacing:0.1em;color:var(--text-muted)">••••••</span>`
+      : `<code style="font-size:0.82em">${escapeHtml(String(f.envValue))}</code>`;
+    valueRow = `<div style="margin-top:3px;font-size:0.8em;">= ${displayVal}</div>`;
+  } else {
+    valueRow = `<div style="margin-top:3px;font-size:0.8em;color:var(--text-muted);font-style:italic;">${t('configEditor.envNotSet')}</div>`;
+  }
+  return `<div>${badge}${valueRow}</div>`;
+}
+
+async function saveConfigEditor(e) {
+  e.preventDefault();
+  const form = document.getElementById('configEditorForm');
+  // Nettoyer les erreurs précédentes
+  form.querySelectorAll('tr.input-error').forEach(tr => tr.classList.remove('input-error'));
+  // Validation
+  const errors = [];
+  form.querySelectorAll('[data-key]').forEach(el => {
+    const key = el.dataset.key;
+    const type = el.dataset.type;
+    const required = el.dataset.required === 'true';
+    if (required && type !== 'boolean' && !el.value.trim()) {
+      el.closest('tr')?.classList.add('input-error');
+      errors.push(key);
+    } else if (type === 'number' && el.value !== '' && isNaN(Number(el.value))) {
+      el.closest('tr')?.classList.add('input-error');
+      errors.push(key);
+    }
+  });
+  if (errors.length > 0) {
+    toast(t('configEditor.validationRequired').replace('{key}', errors[0]), 'error');
+    return;
+  }
+  const body = {};
+  form.querySelectorAll('[data-key]').forEach(el => {
+    const key = el.dataset.key;
+    if (el.type === 'checkbox') {
+      body[key] = el.checked;
+    } else {
+      body[key] = el.value;
+    }
+  });
+  try {
+    await api('PUT', '/configeditor', body);
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  // Overlay redémarrage
+  const overlay = document.createElement('div');
+  overlay.className = 'restart-overlay';
+  overlay.innerHTML = `<div class="restart-overlay-box">
+    <div class="spinner">⚙️</div>
+    <div><strong>${t('configEditor.restarting')}</strong></div>
+    <div style="margin-top:6px;color:var(--text-muted);">${t('configEditor.reconnecting')}</div>
+  </div>`;
+  document.body.appendChild(overlay);
+  // Polling jusqu'à ce que le serveur réponde
+  const poll = setInterval(async () => {
+    try {
+      await api('GET', '/appsettings');
+      clearInterval(poll);
+      overlay.remove();
+      toast(t('common.save') + ' ✓', 'success');
+      navigate('dashboard');
+    } catch {}
+  }, 2000);
 }
 
 // ══════════════════════════════════════

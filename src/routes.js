@@ -1,3 +1,5 @@
+const fs = require('fs');
+const { spawn } = require('child_process');
 const express = require('express');
 const crypto = require('crypto');
 const { checkSchema, validationResult, matchedData } = require('express-validator');
@@ -14,7 +16,7 @@ const {
 } = require('./ocpp-server');
 const schema = require('./validationSchema');
 const notifications = require('./notifications');
-const { getConfig } = require('./config');
+const { getConfig, getConfigFilePath, ENV_OVERRIDES, CONFIG_FIELDS, deepGet, deepSet } = require('./config');
 const { trad, SUPPORTED_LANGUAGES, i18next } = require('./i18n');
 const logger = require('./logger').scope('AUTH');
 
@@ -1822,6 +1824,62 @@ router.get(
 router.delete('/notifications/log', requireAuth, (req, res) => {
   db.clearNotificationLog(req.user.id);
   res.json({ ok: true });
+});
+
+// ══════════════════════════════════════
+//  CONFIG EDITOR
+// ══════════════════════════════════════
+router.get('/configeditor', requireRole('admin'), (req, res) => {
+  const rawFile = JSON.parse(fs.readFileSync(getConfigFilePath(), 'utf-8'));
+  const fields = CONFIG_FIELDS.map((field) => {
+    const envEntry = ENV_OVERRIDES.find((e) => e.path.join('.') === field.key);
+    const envVar = envEntry?.env ?? null;
+    const envValue = envVar ? (process.env[envVar] ?? null) : null;
+    return {
+      ...field,
+      envVar,
+      envValue,
+      fileValue: deepGet(rawFile, field.key) ?? null,
+    };
+  });
+  res.json({ fields });
+});
+
+router.put('/configeditor', requireRole('admin'), (req, res) => {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    return res.status(400).json({ error: 'ERR_INVALID_BODY' });
+  }
+  const rawFile = JSON.parse(fs.readFileSync(getConfigFilePath(), 'utf-8'));
+  const validKeys = new Set(CONFIG_FIELDS.map((f) => f.key));
+  for (const [key, value] of Object.entries(req.body)) {
+    if (!validKeys.has(key)) continue;
+    const field = CONFIG_FIELDS.find((f) => f.key === key);
+    let casted;
+    if (field.type === 'boolean') {
+      casted = value === true || value === 'true';
+    } else if (field.type === 'number') {
+      casted = Number(value);
+      if (Number.isNaN(casted)) continue;
+    } else {
+      casted = value == null ? null : String(value);
+    }
+    deepSet(rawFile, key, casted);
+  }
+  const missingRequired = CONFIG_FIELDS.filter((f) => f.required && deepGet(rawFile, f.key) == null);
+  if (missingRequired.length > 0) {
+    return res.status(400).json({ error: 'ERR_REQUIRED_MISSING', fields: missingRequired.map((f) => f.key) });
+  }
+  fs.writeFileSync(getConfigFilePath(), JSON.stringify(rawFile, null, 2));
+  res.json({ success: true });
+  setTimeout(() => {
+    spawn(process.execPath, process.argv.slice(1), {
+      detached: true,
+      stdio: 'inherit',
+      env: process.env,
+      cwd: process.cwd(),
+    }).unref();
+    process.exit(0);
+  }, 300);
 });
 
 module.exports = router;

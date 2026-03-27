@@ -168,4 +168,80 @@ function getConfigDir() {
   return configDir;
 }
 
-module.exports = { loadConfig, getConfig, getConfigDir };
+function getConfigFilePath() {
+  const { file } = resolveConfigPath();
+  return file;
+}
+
+const CONFIG_FIELDS = [
+  // ── Général ──
+  { key: 'loglevel',   section: 'general', type: 'select', choices: ['error','warn','info','debug'], required: false, sensitive: false },
+  { key: 'language',   section: 'general', type: 'select', choices: ['fr','en'],                    required: false, sensitive: false },
+  { key: 'cpoName',    section: 'general', type: 'string',                                           required: false, sensitive: false },
+  { key: 'dbname',     section: 'general', type: 'string',                                           required: false, sensitive: false },
+  // ── Web UI ──
+  { key: 'webui.httpHost',        section: 'webui', type: 'string',  required: false, sensitive: false },
+  { key: 'webui.httpPort',        section: 'webui', type: 'number',  required: true,  sensitive: false },
+  { key: 'webui.publicUrl',       section: 'webui', type: 'string',  required: false, sensitive: false },
+  { key: 'webui.sessionSecret',   section: 'webui', type: 'string',  required: true,  sensitive: true  },
+  { key: 'webui.trustProxy',      section: 'webui', type: 'boolean', required: false, sensitive: false },
+  { key: 'webui.https.enabled',   section: 'webui', type: 'boolean', required: false, sensitive: false },
+  { key: 'webui.https.httpsPort', section: 'webui', type: 'number',  required: false, sensitive: false },
+  { key: 'webui.https.certFile',  section: 'webui', type: 'string',  required: false, sensitive: false },
+  { key: 'webui.https.keyFile',   section: 'webui', type: 'string',  required: false, sensitive: false },
+  // ── OCPP ──
+  { key: 'ocpp.host',                        section: 'ocpp', type: 'string',  required: true,  sensitive: false },
+  { key: 'ocpp.wsPort',                      section: 'ocpp', type: 'number',  required: true,  sensitive: false },
+  { key: 'ocpp.strictMode',                  section: 'ocpp', type: 'boolean', required: false, sensitive: false },
+  { key: 'ocpp.heartbeatInterval',           section: 'ocpp', type: 'number',  required: false, sensitive: false },
+  { key: 'ocpp.autoAddUnknownChargepoints',  section: 'ocpp', type: 'boolean', required: false, sensitive: false },
+  { key: 'ocpp.pendingUnknownChargepoints',  section: 'ocpp', type: 'boolean', required: false, sensitive: false },
+  { key: 'ocpp.ocppWsUrl',                   section: 'ocpp', type: 'string',  required: false, sensitive: false },
+  { key: 'ocpp.diagnosticsLocation',         section: 'ocpp', type: 'string',  required: false, sensitive: false },
+  { key: 'ocpp.wss.enabled',                 section: 'ocpp', type: 'boolean', required: false, sensitive: false },
+  { key: 'ocpp.wss.wssPort',                 section: 'ocpp', type: 'number',  required: false, sensitive: false },
+  { key: 'ocpp.wss.strictClientCert',        section: 'ocpp', type: 'boolean', required: false, sensitive: false },
+  { key: 'ocpp.wss.ocppWsUrl',               section: 'ocpp', type: 'string',  required: false, sensitive: false },
+  { key: 'ocpp.wss.rsa.certFile',            section: 'ocpp', type: 'string',  required: false, sensitive: false },
+  { key: 'ocpp.wss.rsa.keyFile',             section: 'ocpp', type: 'string',  required: false, sensitive: false },
+  { key: 'ocpp.wss.ecdsa.certFile',          section: 'ocpp', type: 'string',  required: false, sensitive: false },
+  { key: 'ocpp.wss.ecdsa.keyFile',           section: 'ocpp', type: 'string',  required: false, sensitive: false },
+  { key: 'ocpp.wss.caFile',                  section: 'ocpp', type: 'string',  required: false, sensitive: false },
+  // ── Notifications ──
+  { key: 'notifs.authRejectThreshold',          section: 'notifs', type: 'number',  required: false, sensitive: false },
+  { key: 'notifs.authRejectWindowMinutes',      section: 'notifs', type: 'number',  required: false, sensitive: false },
+  { key: 'notifs.flapThreshold',                section: 'notifs', type: 'number',  required: false, sensitive: false },
+  { key: 'notifs.flapWindowMinutes',            section: 'notifs', type: 'number',  required: false, sensitive: false },
+  { key: 'notifs.mail.enabled',                 section: 'notifs', type: 'boolean', required: false, sensitive: false },
+  { key: 'notifs.mail.from',                    section: 'notifs', type: 'string',  required: false, sensitive: false },
+  { key: 'notifs.mail.transport.host',          section: 'notifs', type: 'string',  required: false, sensitive: false },
+  { key: 'notifs.mail.transport.port',          section: 'notifs', type: 'number',  required: false, sensitive: false },
+  { key: 'notifs.mail.transport.secure',        section: 'notifs', type: 'boolean', required: false, sensitive: false },
+  { key: 'notifs.mail.transport.auth.user',     section: 'notifs', type: 'string',  required: false, sensitive: false },
+  { key: 'notifs.mail.transport.auth.pass',     section: 'notifs', type: 'string',  required: false, sensitive: true  },
+  { key: 'notifs.webpush.enabled',              section: 'notifs', type: 'boolean', required: false, sensitive: false },
+  { key: 'notifs.webpush.vapidSubject',         section: 'notifs', type: 'string',  required: false, sensitive: false },
+  { key: 'notifs.webpush.vapidPublicKey',       section: 'notifs', type: 'string',  required: false, sensitive: true  },
+  { key: 'notifs.webpush.vapidPrivateKey',      section: 'notifs', type: 'string',  required: false, sensitive: true  },
+  { key: 'notifs.pushover.enabled',             section: 'notifs', type: 'boolean', required: false, sensitive: false },
+  // ── Auth ──
+  { key: 'auth.google.enabled',       section: 'auth', type: 'boolean', required: false, sensitive: false },
+  { key: 'auth.google.client_id',     section: 'auth', type: 'string',  required: false, sensitive: false },
+  { key: 'auth.google.client_secret', section: 'auth', type: 'string',  required: false, sensitive: true  },
+];
+
+function deepGet(obj, dotPath) {
+  return dotPath.split('.').reduce((o, k) => (o != null ? o[k] : undefined), obj);
+}
+
+function deepSet(obj, dotPath, value) {
+  const keys = dotPath.split('.');
+  let o = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (o[keys[i]] == null || typeof o[keys[i]] !== 'object') o[keys[i]] = {};
+    o = o[keys[i]];
+  }
+  o[keys[keys.length - 1]] = value;
+}
+
+module.exports = { loadConfig, getConfig, getConfigDir, getConfigFilePath, ENV_OVERRIDES, CONFIG_FIELDS, deepGet, deepSet };
