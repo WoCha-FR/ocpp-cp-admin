@@ -16,7 +16,14 @@ const {
 } = require('./ocpp-server');
 const schema = require('./validationSchema');
 const notifications = require('./notifications');
-const { getConfig, getConfigFilePath, ENV_OVERRIDES, CONFIG_FIELDS, deepGet, deepSet } = require('./config');
+const {
+  getConfig,
+  getConfigFilePath,
+  ENV_OVERRIDES,
+  CONFIG_FIELDS,
+  deepGet,
+  deepSet,
+} = require('./config');
 const { trad, SUPPORTED_LANGUAGES, i18next } = require('./i18n');
 const logger = require('./logger').scope('AUTH');
 
@@ -1865,9 +1872,13 @@ router.put('/configeditor', requireRole('admin'), (req, res) => {
     }
     deepSet(rawFile, key, casted);
   }
-  const missingRequired = CONFIG_FIELDS.filter((f) => f.required && deepGet(rawFile, f.key) == null);
+  const missingRequired = CONFIG_FIELDS.filter(
+    (f) => f.required && deepGet(rawFile, f.key) == null
+  );
   if (missingRequired.length > 0) {
-    return res.status(400).json({ error: 'ERR_REQUIRED_MISSING', fields: missingRequired.map((f) => f.key) });
+    return res
+      .status(400)
+      .json({ error: 'ERR_REQUIRED_MISSING', fields: missingRequired.map((f) => f.key) });
   }
   fs.writeFileSync(getConfigFilePath(), JSON.stringify(rawFile, null, 2));
   res.json({ success: true });

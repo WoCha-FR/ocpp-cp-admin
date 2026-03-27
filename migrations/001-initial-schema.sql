@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS chargepoints (
   feat_reservation INTEGER DEFAULT 0,
   feat_smartcharging INTEGER DEFAULT 0,
   has_connector0 INTEGER DEFAULT 0,
+  initialized INTEGER DEFAULT 0,
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
 );
@@ -109,6 +110,15 @@ CREATE TABLE IF NOT EXISTS chargepoint_config (
   updated_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE,
   UNIQUE(chargepoint_id, key)
+);
+
+CREATE TABLE IF NOT EXISTS chargepoint_init_config (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  key TEXT NOT NULL UNIQUE,
+  value TEXT NOT NULL,
+  enabled INTEGER DEFAULT 1 CHECK(enabled IN (0,1)),
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
@@ -218,3 +228,20 @@ CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_notif_log_user ON notification_log(user_id, created_at);
 
 INSERT OR IGNORE INTO users (useremail, password, role, shortname) VALUES ('admin@admin.com', '$2b$10$OHSdpl41Wv4kFwtYqfmyRu2rjEzi1QI3n6W33S1gn1PVn5Ue4mTTG', 'admin', 'Admin');
+INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
+  ('HeartbeatInterval', '3600', 0),
+  ('WebSocketPingInterval', '60', 0),
+  ('ConnectionTimeOut', '60', 0),
+  ('StopTransactionOnEVSideDisconnect', 'true', 0),
+  ('UnlockConnectorOnEVSideDisconnect', 'true', 0),
+  ('StopTransactionOnInvalidId', 'true', 0),
+  ('TransactionMessageAttempts', '3', 0),
+  ('TransactionMessageRetryInterval', '60', 0),
+  ('MeterValueSampleInterval', '60', 0),
+  ('MeterValuesSampledData', 'Energy.Active.Import.Register,Power.Active.Import', 0),
+  ('ClockAlignedDataInterval', '0', 0),
+  ('LocalPreAuthorize', 'true', 0),
+  ('AllowOfflineTxForUnknownId', 'false', 0),
+  ('MinimumStatusDuration', '0', 0),
+  ('ResetRetries', '3', 0),
+  ('LocalAuthListEnabled', 'false', 0);

@@ -1,5 +1,6 @@
 const User = {
   useremail: {
+    in: ['body'],
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
@@ -7,12 +8,14 @@ const User = {
     errorMessage: 'VALIDATION_USER_EMAIL_INVALID',
   },
   password: {
+    in: ['body'],
     trim: true,
     isString: true,
     isStrongPassword: { options: { minLength: 8, maxLength: 50 } },
     errorMessage: 'VALIDATION_USER_PASSWORD',
   },
   shortname: {
+    in: ['body'],
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 2, max: 50 } },
     trim: true,
@@ -23,6 +26,7 @@ const User = {
 
 const UserUpdate = {
   useremail: {
+    in: ['body'],
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
@@ -30,6 +34,7 @@ const UserUpdate = {
     errorMessage: 'VALIDATION_USER_EMAIL_INVALID',
   },
   shortname: {
+    in: ['body'],
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 2, max: 50 } },
     trim: true,
@@ -37,6 +42,7 @@ const UserUpdate = {
     errorMessage: 'VALIDATION_USER_SHORTNAME',
   },
   password: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     trim: true,
     isString: true,
@@ -47,6 +53,7 @@ const UserUpdate = {
 
 const Site = {
   name: {
+    in: ['body'],
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 5, max: 75 } },
     trim: true,
@@ -54,6 +61,7 @@ const Site = {
     errorMessage: 'VALIDATION_SITE_NAME',
   },
   address: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_,. ]*$/ },
     isLength: { options: { min: 5, max: 255 } },
@@ -65,6 +73,7 @@ const Site = {
 
 const UserSite = {
   useremail: {
+    in: ['body'],
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
@@ -75,6 +84,7 @@ const UserSite = {
 
 const ChargePoint = {
   identity: {
+    in: ['body'],
     matches: { options: /^[A-Z0-9-_]*$/ },
     isLength: { options: { min: 5, max: 45 } },
     trim: true,
@@ -82,6 +92,7 @@ const ChargePoint = {
     errorMessage: 'VALIDATION_CHARGEPOINT_IDENTITY',
   },
   name: {
+    in: ['body'],
     optional: { options: { nullable: true } },
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 5, max: 75 } },
@@ -90,6 +101,7 @@ const ChargePoint = {
     errorMessage: 'VALIDATION_CHARGEPOINT_NAME',
   },
   password: {
+    in: ['body'],
     optional: { options: { nullable: true } },
     matches: { options: /^[a-zA-Z0-9]*$/ },
     isLength: { options: { min: 8, max: 16 } },
@@ -97,12 +109,18 @@ const ChargePoint = {
     errorMessage: 'VALIDATION_CHARGEPOINT_PASSWORD',
   },
   mode: {
+    in: ['body'],
     isInt: true,
     isIn: { options: [[1, 2, 3]] },
     errorMessage: 'VALIDATION_CHARGEPOINT_MODE',
   },
-  site_id: { isInt: { options: { gt: 0 } }, errorMessage: 'VALIDATION_CHARGEPOINT_SITE' },
+  site_id: {
+    in: ['body'],
+    isInt: { options: { gt: 0 } },
+    errorMessage: 'VALIDATION_CHARGEPOINT_SITE',
+  },
   authorized: {
+    in: ['body'],
     optional: true,
     isInt: true,
     isIn: { options: [[0, 1]] },
@@ -116,6 +134,7 @@ const ChargePointSite = {
 
 const ConnectorDetails = {
   connector_name: {
+    in: ['body'],
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 1, max: 50 } },
     trim: true,
@@ -123,10 +142,12 @@ const ConnectorDetails = {
     errorMessage: 'VALIDATION_CONNECTOR_NAME',
   },
   connector_power: {
+    in: ['body'],
     isInt: { options: { min: 1, max: 900 } },
     errorMessage: 'VALIDATION_CONNECTOR_POWER',
   },
   connector_type: {
+    in: ['body'],
     matches: { options: /^[a-zA-Z0-9-_ ]*$/ },
     trim: true,
     escape: true,
@@ -136,14 +157,16 @@ const ConnectorDetails = {
 
 const IdTag = {
   id_tag: {
+    in: ['body'],
     matches: { options: /^[a-zA-Z0-9]*$/ },
     isLength: { options: { min: 6, max: 20 } },
     trim: true,
     errorMessage: 'VALIDATION_IDTAG_FORMAT',
   },
-  user_id: { optional: { options: { nullable: true } }, isInt: true },
-  site_id: { optional: { options: { nullable: true } }, isInt: true },
+  user_id: { in: ['body'], optional: { options: { nullable: true } }, isInt: true },
+  site_id: { in: ['body'], optional: { options: { nullable: true } }, isInt: true },
   description: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     isLength: { options: { min: 1, max: 255 } },
     trim: true,
@@ -151,15 +174,17 @@ const IdTag = {
     errorMessage: 'VALIDATION_IDTAG_DESCRIPTION',
   },
   expiry_date: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     isISO8601: true,
     errorMessage: 'VALIDATION_IDTAG_EXPIRY_DATE',
   },
-  active: { optional: true, isInt: true, isIn: { options: [[0, 1]] } },
+  active: { in: ['body'], optional: true, isInt: true, isIn: { options: [[0, 1]] } },
 };
 
 const UserProfile = {
   useremail: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
@@ -168,6 +193,7 @@ const UserProfile = {
     errorMessage: 'VALIDATION_USER_EMAIL_INVALID',
   },
   shortname: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 2, max: 50 } },
@@ -176,11 +202,13 @@ const UserProfile = {
     errorMessage: 'VALIDATION_USER_SHORTNAME',
   },
   currentPassword: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     isLength: { options: { min: 1 } },
     errorMessage: 'VALIDATION_USER_CURRENT_PASSWORD',
   },
   newPassword: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     isStrongPassword: { options: { minLength: 8, maxLength: 50 } },
     trim: true,
@@ -188,12 +216,14 @@ const UserProfile = {
     errorMessage: 'VALIDATION_USER_PASSWORD',
   },
   langue: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     matches: { options: /^[a-z]{2}$/ },
     trim: true,
     errorMessage: 'VALIDATION_USER_LANG',
   },
   ntif_pushuser: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     matches: { options: /^[a-zA-Z0-9]*$/ },
     isLength: { options: { min: 30, max: 30 } },
@@ -201,6 +231,7 @@ const UserProfile = {
     errorMessage: 'VALIDATION_PUSHOVER_USER',
   },
   ntif_pushtokn: {
+    in: ['body'],
     optional: { options: { values: 'falsy' } },
     matches: { options: /^[a-zA-Z0-9]*$/ },
     isLength: { options: { min: 30, max: 30 } },
@@ -211,6 +242,7 @@ const UserProfile = {
 
 const ForgotPassword = {
   useremail: {
+    in: ['body'],
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
@@ -221,11 +253,13 @@ const ForgotPassword = {
 
 const ResetPassword = {
   token: {
+    in: ['body'],
     matches: { options: /^[a-f0-9]{64}$/ },
     trim: true,
     errorMessage: 'VALIDATION_PASSWORD_RESET_TOKEN',
   },
   newPassword: {
+    in: ['body'],
     isStrongPassword: { options: { minLength: 8, maxLength: 50 } },
     trim: true,
     isString: true,
@@ -234,7 +268,7 @@ const ResetPassword = {
 };
 
 const ResendSetupPassword = {
-  userId: { isInt: { options: { gt: 0 } }, errorMessage: 'VALIDATION_USER_ID' },
+  userId: { in: ['body'], isInt: { options: { gt: 0 } }, errorMessage: 'VALIDATION_USER_ID' },
 };
 
 const Login = {
@@ -489,7 +523,7 @@ const OcppCommand = {
           'SetChargingProfile',
           'TriggerMessage',
           'UnlockConnector',
-          'UpdateFirmware'
+          'UpdateFirmware',
         ],
       ],
     },
@@ -511,6 +545,37 @@ const ChargepointConfigUpdate = {
     isString: true,
     isLength: { options: { min: 1, max: 1024 } },
     errorMessage: 'VALIDATION_CONFIG_VALUE',
+  },
+};
+
+const InitConfig = {
+  key: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 1, max: 64 } },
+    matches: { options: /^[a-zA-Z0-9_.-]+$/ },
+    errorMessage: 'VALIDATION_CONFIG_KEY',
+  },
+  value: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 1, max: 1024 } },
+    errorMessage: 'VALIDATION_CONFIG_VALUE',
+  },
+};
+
+const InitConfigUpdate = {
+  value: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 1, max: 1024 } },
+    errorMessage: 'VALIDATION_CONFIG_VALUE',
+  },
+  enabled: {
+    in: ['body'],
+    isBoolean: true,
+    toBoolean: true,
+    optional: { options: { nullable: true } },
   },
 };
 
@@ -619,6 +684,8 @@ module.exports = {
   IdTagEventsQuery,
   OcppCommand,
   ChargepointConfigUpdate,
+  InitConfig,
+  InitConfigUpdate,
   NotificationPreferences,
   PushSubscribe,
   PushUnsubscribe,

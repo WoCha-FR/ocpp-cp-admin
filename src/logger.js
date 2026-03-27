@@ -53,8 +53,8 @@ function colorScope(scope) {
 }
 
 // ── Format human-readable partagé (console + fichier) ──
-// eslint-disable-next-line no-unused-vars
 const readableFormat = winston.format.printf(
+  // eslint-disable-next-line no-unused-vars
   ({ timestamp, level, message, scope, service, stack, ...meta }) => {
     const s = scope ? `[${scope}] ` : '';
     const extra = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';
@@ -64,8 +64,8 @@ const readableFormat = winston.format.printf(
 );
 
 // ── Format console avec scope colorisé ──
-// eslint-disable-next-line no-unused-vars
 const consoleFormat = winston.format.printf(
+  // eslint-disable-next-line no-unused-vars
   ({ timestamp, level, message, scope, service, stack, ...meta }) => {
     const s = colorScope(scope);
     const extra = Object.keys(meta).length ? ' ' + JSON.stringify(meta) : '';

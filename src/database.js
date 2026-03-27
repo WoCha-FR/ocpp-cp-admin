@@ -1091,6 +1091,45 @@ function deleteChargepointConfig(chargepointId, key) {
   );
 }
 
+function getInitialChargepointConfig() {
+  return db.prepare('SELECT * FROM chargepoint_init_config ORDER BY key').all();
+}
+
+function getEnabledInitialChargepointConfig() {
+  return db.prepare('SELECT * FROM chargepoint_init_config WHERE enabled = 1 ORDER BY key').all();
+}
+
+function createInitialChargepointConfig(key, value, enabled) {
+  return db
+    .prepare('INSERT INTO chargepoint_init_config (key, value, enabled) VALUES (?, ?, ?)')
+    .run(key, value, enabled ? 1 : 0);
+}
+
+function updateInitialChargepointConfig(id, data) {
+  const fields = [];
+  const values = [];
+  if (data.value !== undefined) {
+    fields.push('value = ?');
+    values.push(data.value);
+  }
+  if (data.enabled !== undefined) {
+    fields.push('enabled = ?');
+    values.push(data.enabled ? 1 : 0);
+  }
+  if (fields.length === 0) return;
+  fields.push("updated_at = datetime('now')");
+  values.push(id);
+  db.prepare(`UPDATE chargepoint_init_config SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+}
+
+function deleteInitialChargepointConfig(id) {
+  db.prepare('DELETE FROM chargepoint_init_config WHERE id = ?').run(id);
+}
+
+function markChargepointInitialized(chargepointId) {
+  db.prepare('UPDATE chargepoints SET initialized = 1 WHERE id = ?').run(chargepointId);
+}
+
 // ── Id Tags ──
 function getAllIdTags() {
   const tags = db
@@ -1634,6 +1673,12 @@ module.exports = {
   getChargepointConfig,
   getChargepointConfigByKey,
   deleteChargepointConfig,
+  getInitialChargepointConfig,
+  getEnabledInitialChargepointConfig,
+  createInitialChargepointConfig,
+  updateInitialChargepointConfig,
+  deleteInitialChargepointConfig,
+  markChargepointInitialized,
   getAllIdTags,
   getIdTagById,
   getIdTagByTag,

@@ -111,7 +111,9 @@ function createOCPPServer(options = {}) {
         });
         // Notifier les admins uniquement à la première tentative de connexion
         if (!alreadyPending) {
-          notifications.emit('pending_chargepoint', { identity: handshake.identity }).catch(() => {});
+          notifications
+            .emit('pending_chargepoint', { identity: handshake.identity })
+            .catch(() => {});
         }
         return reject(401, 'Charge point pending approval');
       } else {
@@ -278,6 +280,34 @@ function createOCPPServer(options = {}) {
 
       const cp = db.getChargepointByIdentity(identity);
       broadcast('chargepoint_update', cp);
+
+      // Initialiser la borne si besoin
+      setImmediate(async (cp) => {
+        if (!cp || cp.initialized) return;
+        // Étape 1 — GetConfiguration : peuple automatiquement chargepoint_config via bulkUpsertChargepointConfig
+        try {
+          await callClient(client, identity, 'GetConfiguration', {});
+        } catch (e) {
+          logger.warn(`[InitSeq] ${identity} GetConfiguration: ${e.message}`);
+        }
+
+        // Étape 2 — Vider le cache d'autorisation
+        try {
+          await callClient(client, identity, 'ClearCache', {});
+        } catch (e) {
+          logger.warn(`[InitSeq] ${identity} ClearCache: ${e.message}`);
+        }
+
+        // Étape 3 — Supprimer les profils de charge résiduels
+        try {
+          await callClient(client, identity, 'ClearChargingProfile', {});
+        } catch (e) {
+          logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
+        }
+
+        // Étape 4 — Marquer la borne comme initialisée pour éviter de refaire l'init à chaque reboot
+        db.markChargepointInitialized(cp.id);
+      }, cp);
 
       return {
         status: 'Accepted',
