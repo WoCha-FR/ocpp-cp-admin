@@ -2,7 +2,7 @@ services:
 
   # ── Reverse Proxy ──────────────────────────────────────────
   traefik:
-    image: traefik:v3.4
+    image: traefik:v3.6
     container_name: traefik
     restart: unless-stopped
     command:
@@ -39,52 +39,60 @@ services:
       #- ./data/locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
+      # Décommenter pour afficher les logs en console (debug temporaire uniquement)
+      # - LOG_CONSOLE=true
 
-      # ── Général ──
-      - CPADMIN_CPO_NAME=Mon CPO
-      - CPADMIN_LANGUAGE=fr
-      - CPADMIN_LOGLEVEL=info
-
-      # ── URLs / Réseau (adaptées au reverse proxy Traefik) ──
-      - CPADMIN_PUBLIC_URL=https://cpadmin.local
+      # ── Déploiement / URLs ──────────────────────────────────
       - CPADMIN_HTTP_HOST=0.0.0.0
       - CPADMIN_TRUST_PROXY=true
-      # WS pour les bornes sans TLS (port 80 via Traefik)
+      # URL publique HTTPS (utilisée pour les liens dans les notifications)
+      - CPADMIN_PUBLIC_URL=https://cpadmin.local
+      # URL WebSocket OCPP non chiffré (bornes sans TLS, via Traefik port 80)
       - CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local
-      # WSS pour les bornes avec TLS (port 443 via Traefik)
+      # URL WebSocket OCPP chiffré, TLS terminé par Traefik (Security Profile 2/3)
       - CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local
+
+      # ── Diagnostics FTP ─────────────────────────────────────
+      # URL FTP où les bornes déposent leurs fichiers de diagnostic
       - CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local
 
-      # ── Sécurité ──
+      # ── Sécurité ────────────────────────────────────────────
+      # IMPORTANT : changer cette valeur (min. 32 caractères aléatoires)
       - CPADMIN_SESSION_SECRET=change-me-with-a-random-secret
 
-      # ── Comportement OCPP ──
+      # ── Comportement OCPP ───────────────────────────────────
       - CPADMIN_OCPP_STRICT_MODE=false
       - CPADMIN_OCPP_AUTO_ADD=true
       - CPADMIN_OCPP_PENDING_UNKNOWN=false
 
-      # ── Notifications mail (décommenter pour activer) ──
+      # ── Configuration générale ──────────────────────────────
+      # Niveau de log : error | warn | info | debug
+      - CPADMIN_LOGLEVEL=info
+      # - CPADMIN_LANGUAGE=fr
+      # - CPADMIN_CPO_NAME=Mon CPO
+
+      # ── Notifications e-mail (optionnel) ────────────────────
       # - CPADMIN_MAIL_ENABLED=true
-      # - CPADMIN_MAIL_FROM=noreply@cpadmin.local
       # - CPADMIN_MAIL_HOST=smtp.example.com
       # - CPADMIN_MAIL_PORT=587
       # - CPADMIN_MAIL_SECURE=false
       # - CPADMIN_MAIL_USER=user@example.com
-      # - CPADMIN_MAIL_PASS=smtp-password
+      # - CPADMIN_MAIL_PASS=password
+      # - CPADMIN_MAIL_FROM=noreply@cpadmin.local
 
-      # ── Notifications Web Push (décommenter pour activer) ──
+      # ── Notifications Web Push (optionnel) ──────────────────
       # - CPADMIN_WEBPUSH_ENABLED=true
       # - CPADMIN_VAPID_SUBJECT=mailto:admin@cpadmin.local
-      # - CPADMIN_VAPID_PUBLIC_KEY=your-vapid-public-key
-      # - CPADMIN_VAPID_PRIVATE_KEY=your-vapid-private-key
+      # - CPADMIN_VAPID_PUBLIC_KEY=
+      # - CPADMIN_VAPID_PRIVATE_KEY=
 
-      # ── Notifications Pushover (décommenter pour activer) ──
+      # ── Notifications Pushover (optionnel) ──────────────────
       # - CPADMIN_PUSHOVER_ENABLED=true
 
-      # ── Authentification Google OAuth (décommenter pour activer) ──
+      # ── Authentification Google OAuth (optionnel) ───────────
       # - CPADMIN_GOOGLE_AUTH_ENABLED=true
-      # - CPADMIN_GOOGLE_CLIENT_ID=your-google-client-id
-      # - CPADMIN_GOOGLE_CLIENT_SECRET=your-google-client-secret
+      # - CPADMIN_GOOGLE_CLIENT_ID=
+      # - CPADMIN_GOOGLE_CLIENT_SECRET=
     labels:
       - "traefik.enable=true"
       # ── UI HTTP → HTTPS redirect ──

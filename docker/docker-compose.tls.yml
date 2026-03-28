@@ -2,7 +2,7 @@ services:
 
   # ── Reverse Proxy ──────────────────────────────────────────
   traefik:
-    image: traefik:v3.4
+    image: traefik:v3.6
     container_name: traefik
     restart: unless-stopped
     command:
@@ -53,17 +53,60 @@ services:
       #- ./data/locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
-      - CPADMIN_PUBLIC_URL=https://cpadmin.local
+      # Décommenter pour afficher les logs en console (debug temporaire uniquement)
+      # - LOG_CONSOLE=true
+
+      # ── Déploiement / URLs ──────────────────────────────────
       - CPADMIN_HTTP_HOST=0.0.0.0
-      # WS pour les bornes qui ne supportent pas TLS (via Traefik HTTP)
+      - CPADMIN_TRUST_PROXY=true
+      # URL publique HTTPS (utilisée pour les liens dans les notifications)
+      - CPADMIN_PUBLIC_URL=https://cpadmin.local
+      # URL WebSocket OCPP non chiffré (bornes sans TLS, via Traefik port 80)
       - CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local
-      # WSS géré directement par l'app (TLS passthrough, Security Profile 2 et 3)
+      # URL WebSocket OCPP chiffré, TLS géré par l'app (TCP passthrough, Security Profile 2/3)
       - CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local
+
+      # ── Diagnostics FTP ─────────────────────────────────────
+      # URL FTP où les bornes déposent leurs fichiers de diagnostic
       - CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local
-      # Décommenter pour définir le secret de session via ENV
-      # - CPADMIN_SESSION_SECRET=change-me
-      # Décommenter pour changer la langue par défaut (toute locale du dossier locales/)
-      # - CPADMIN_LANGUAGE=en
+
+      # ── Sécurité ────────────────────────────────────────────
+      # IMPORTANT : changer cette valeur (min. 32 caractères aléatoires)
+      - CPADMIN_SESSION_SECRET=change-me-with-a-random-secret
+
+      # ── Comportement OCPP ───────────────────────────────────
+      - CPADMIN_OCPP_STRICT_MODE=false
+      - CPADMIN_OCPP_AUTO_ADD=true
+      - CPADMIN_OCPP_PENDING_UNKNOWN=false
+
+      # ── Configuration générale ──────────────────────────────
+      # Niveau de log : error | warn | info | debug
+      - CPADMIN_LOGLEVEL=info
+      # - CPADMIN_LANGUAGE=fr
+      # - CPADMIN_CPO_NAME=Mon CPO
+
+      # ── Notifications e-mail (optionnel) ────────────────────
+      # - CPADMIN_MAIL_ENABLED=true
+      # - CPADMIN_MAIL_HOST=smtp.example.com
+      # - CPADMIN_MAIL_PORT=587
+      # - CPADMIN_MAIL_SECURE=false
+      # - CPADMIN_MAIL_USER=user@example.com
+      # - CPADMIN_MAIL_PASS=password
+      # - CPADMIN_MAIL_FROM=noreply@cpadmin.local
+
+      # ── Notifications Web Push (optionnel) ──────────────────
+      # - CPADMIN_WEBPUSH_ENABLED=true
+      # - CPADMIN_VAPID_SUBJECT=mailto:admin@cpadmin.local
+      # - CPADMIN_VAPID_PUBLIC_KEY=
+      # - CPADMIN_VAPID_PRIVATE_KEY=
+
+      # ── Notifications Pushover (optionnel) ──────────────────
+      # - CPADMIN_PUSHOVER_ENABLED=true
+
+      # ── Authentification Google OAuth (optionnel) ───────────
+      # - CPADMIN_GOOGLE_AUTH_ENABLED=true
+      # - CPADMIN_GOOGLE_CLIENT_ID=
+      # - CPADMIN_GOOGLE_CLIENT_SECRET=
     labels:
       - "traefik.enable=true"
       # ── UI HTTP → HTTPS redirect ──
@@ -72,6 +115,7 @@ services:
       - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
       - "traefik.http.middlewares.redirect-https.redirectscheme.permanent=true"
       - "traefik.http.routers.ui-http.middlewares=redirect-https"
+      - "traefik.http.routers.ui-http.service=noop@internal"
       # ── UI HTTPS — cert RSA (+ ws.cpadmin.local en SAN) ──
       - "traefik.http.routers.ui.priority=20"
       - "traefik.http.routers.ui.rule=Host(`cpadmin.local`)"
@@ -108,7 +152,7 @@ services:
   # ── Extraction des certificats Traefik → config/certs/ ─────
   # Surveille acme.json et copie les certs dès qu'ils sont émis ou renouvelés.
   cert-dumper-rsa:
-    image: ldez/traefik-certs-dumper:v2.8.3
+    image: ldez/traefik-certs-dumper:v2.11.0
     container_name: ocpp-cert-dumper-rsa
     restart: unless-stopped
     depends_on:
@@ -116,16 +160,22 @@ services:
     volumes:
       - ./data/letsencrypt:/traefik:ro
       - ./data/config:/app/config
-    command: >
-      file --watch
-      --source /traefik/acme-rsa.json
-      --dest /app/config/certs
-      --domain-subdir=false
-      --crt-name rsa-server
-      --key-name rsa-server
+    entrypoint: []
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo '#!/bin/sh' > /tmp/hook.sh
+        echo 'cp /dump/certs/cpadmin.local.crt /app/config/certs/rsa-server.crt' >> /tmp/hook.sh
+        echo 'cp /dump/private/cpadmin.local.key /app/config/certs/rsa-server.key' >> /tmp/hook.sh
+        chmod +x /tmp/hook.sh
+        mkdir -p /dump /app/config/certs
+        traefik-certs-dumper file --version v3 --source /traefik/acme-rsa.json --dest /dump
+        /tmp/hook.sh
+        exec traefik-certs-dumper file --watch --version v3 --source /traefik/acme-rsa.json --dest /dump --post-hook /tmp/hook.sh
 
   cert-dumper-ecdsa:
-    image: ldez/traefik-certs-dumper:v2.8.3
+    image: ldez/traefik-certs-dumper:v2.11.0
     container_name: ocpp-cert-dumper-ecdsa
     restart: unless-stopped
     depends_on:
@@ -133,13 +183,19 @@ services:
     volumes:
       - ./data/letsencrypt:/traefik:ro
       - ./data/config:/app/config
-    command: >
-      file --watch
-      --source /traefik/acme-ecdsa.json
-      --dest /app/config/certs
-      --domain-subdir=false
-      --crt-name ecdsa-server
-      --key-name ecdsa-server
+    entrypoint: []
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo '#!/bin/sh' > /tmp/hook.sh
+        echo 'cp /dump/certs/cpadmin.local.crt /app/config/certs/ecdsa-server.crt' >> /tmp/hook.sh
+        echo 'cp /dump/private/cpadmin.local.key /app/config/certs/ecdsa-server.key' >> /tmp/hook.sh
+        chmod +x /tmp/hook.sh
+        mkdir -p /dump /app/config/certs
+        traefik-certs-dumper file --version v3 --source /traefik/acme-ecdsa.json --dest /dump
+        /tmp/hook.sh
+        exec traefik-certs-dumper file --watch --version v3 --source /traefik/acme-ecdsa.json --dest /dump --post-hook /tmp/hook.sh
 
   # ── Initialisation CA + certificat client OCPP (Security Profile 3) ──────
   # One-shot : génère ca.crt + client.pem dans data/config/certs/ si absents.

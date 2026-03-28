@@ -90,6 +90,8 @@ services:
       #- ./data/locales-custom:/app/locales-custom
     environment:
       - NODE_ENV=production
+      # Décommenter pour afficher les logs en console (debug temporaire uniquement)
+      # - LOG_CONSOLE=true
 
       # ── Déploiement / URLs ──────────────────────────────────
       - CPADMIN_HTTP_HOST=0.0.0.0
@@ -97,28 +99,30 @@ services:
       - CPADMIN_PUBLIC_URL=https://cpadmin.example.com
       # URL WebSocket OCPP non chiffré (bornes sans TLS, Security Profile 1)
       - CPADMIN_OCPP_WS_URL=ws://cpadmin.example.com:9000
-      # URL WebSocket OCPP chiffré (bornes avec TLS, Security Profile 2/3)
+      # URL WebSocket OCPP chiffré, TLS géré par l'app (Security Profile 2/3)
       - CPADMIN_OCPP_WSS_URL=wss://cpadmin.example.com:9001
 
       # ── Diagnostics FTP ─────────────────────────────────────
+      # URL FTP où les bornes déposent leurs fichiers de diagnostic
       - CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@cpadmin.example.com
 
       # ── Sécurité ────────────────────────────────────────────
-      # IMPORTANT : changer cette valeur en production (min. 32 caractères aléatoires)
+      # IMPORTANT : changer cette valeur (min. 32 caractères aléatoires)
       - CPADMIN_SESSION_SECRET=change-me-in-production
 
       # ── Comportement OCPP ───────────────────────────────────
+      - CPADMIN_OCPP_STRICT_MODE=false
       - CPADMIN_OCPP_AUTO_ADD=true
       - CPADMIN_OCPP_PENDING_UNKNOWN=false
-      - CPADMIN_OCPP_STRICT_MODE=false
 
       # ── Configuration générale ──────────────────────────────
+      # Niveau de log : error | warn | info | debug
       - CPADMIN_LOGLEVEL=info
       # - CPADMIN_LANGUAGE=fr
       # - CPADMIN_CPO_NAME=Mon CPO
 
       # ── Notifications e-mail (optionnel) ────────────────────
-      # - CPADMIN_MAIL_ENABLED=false
+      # - CPADMIN_MAIL_ENABLED=true
       # - CPADMIN_MAIL_HOST=smtp.example.com
       # - CPADMIN_MAIL_PORT=587
       # - CPADMIN_MAIL_SECURE=false
@@ -127,10 +131,18 @@ services:
       # - CPADMIN_MAIL_FROM=noreply@example.com
 
       # ── Notifications Web Push (optionnel) ──────────────────
-      # - CPADMIN_WEBPUSH_ENABLED=false
+      # - CPADMIN_WEBPUSH_ENABLED=true
+      # - CPADMIN_VAPID_SUBJECT=mailto:admin@example.com
       # - CPADMIN_VAPID_PUBLIC_KEY=
       # - CPADMIN_VAPID_PRIVATE_KEY=
-      # - CPADMIN_VAPID_SUBJECT=mailto:admin@example.com
+
+      # ── Notifications Pushover (optionnel) ──────────────────
+      # - CPADMIN_PUSHOVER_ENABLED=true
+
+      # ── Authentification Google OAuth (optionnel) ───────────
+      # - CPADMIN_GOOGLE_AUTH_ENABLED=true
+      # - CPADMIN_GOOGLE_CLIENT_ID=
+      # - CPADMIN_GOOGLE_CLIENT_SECRET=
 
   # ── Serveur FTP pour les diagnostics de bornes ─────────────
   ftp:

@@ -339,9 +339,14 @@ async function start() {
   notifications.emit('server_started', {});
 }
 
+function flushAndExit(code) {
+  logger.on('finish', () => process.exit(code));
+  logger.end();
+}
+
 start().catch((err) => {
   logger.error('Start-up error:', err);
-  process.exit(1);
+  flushAndExit(1);
 });
 
 // ── Graceful Shutdown ──
@@ -355,7 +360,7 @@ async function gracefulShutdown(signal) {
   const TIMEOUT = 10_000;
   const forceExit = setTimeout(() => {
     logger.error('Timeout exceeded, forced stop.');
-    process.exit(1);
+    flushAndExit(1);
   }, TIMEOUT);
 
   try {
@@ -389,7 +394,7 @@ async function gracefulShutdown(signal) {
   } catch (err) {
     logger.error('Error during stop :', err);
     clearTimeout(forceExit);
-    process.exit(1);
+    flushAndExit(1);
   }
 }
 

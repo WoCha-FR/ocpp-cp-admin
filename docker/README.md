@@ -230,6 +230,7 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | Variable | JSON Config | Example |
 |---|---|---|
 | `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
+| `LOG_CONSOLE` | *(no JSON equivalent)* | `true` — force console log output (useful for temporary debugging in production) |
 | `CPADMIN_LANGUAGE` | `language` | Any locale code from `locales/` folder (e.g. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `My CPO` |
 

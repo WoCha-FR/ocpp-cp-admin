@@ -266,6 +266,7 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | Variable | JSON Config | Example |
 |---|---|---|
 | `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
+| `LOG_CONSOLE` | *(no JSON equivalent)* | `true` — force console log output (useful for temporary debugging in production) |
 | `CPADMIN_LANGUAGE` | `language` | Any locale code from `locales/` folder (e.g. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `My CPO` |
 
@@ -814,6 +815,14 @@ Maximum file size: 20 MB.
 Predefined logging scopes: `CPADM`, `WEBUI`, `OCPP`, `NOTIF`, `SQLDB`.
 
 In development mode, logs are also displayed in the console with color-coded scopes.
+
+To temporarily enable console output in production (e.g. to diagnose a startup error), set the `LOG_CONSOLE=true` environment variable:
+
+```bash
+LOG_CONSOLE=true npm start
+```
+
+Console output in production uses plain text (no ANSI colors).
 
 ---
 

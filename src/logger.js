@@ -102,11 +102,14 @@ const logger = winston.createLogger({
   ],
 });
 
-// ── Console en mode développement ──
-if (isDev) {
+// ── Console en mode développement ou si LOG_CONSOLE=true ──
+const consoleEnabled = isDev || process.env.LOG_CONSOLE === 'true';
+if (consoleEnabled) {
   logger.add(
     new winston.transports.Console({
-      format: winston.format.combine(winston.format.colorize(), consoleFormat),
+      format: isDev
+        ? winston.format.combine(winston.format.colorize(), consoleFormat)
+        : winston.format.combine(winston.format.uncolorize(), consoleFormat),
     })
   );
 }

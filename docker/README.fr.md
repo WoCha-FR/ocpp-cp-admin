@@ -230,6 +230,7 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | Variable | Config JSON | Exemple |
 |---|---|---|
 | `CPADMIN_LOGLEVEL` | `loglevel` | `debug`, `info`, `error` |
+| `LOG_CONSOLE` | *(pas d'équivalent JSON)* | `true` — force l'affichage des logs en console (utile pour déboguer temporairement en production) |
 | `CPADMIN_LANGUAGE` | `language` | Tout code locale du dossier `locales/` (ex. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `Mon CPO` |
 

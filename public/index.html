@@ -694,7 +694,7 @@
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/i18next@24/i18next.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/i18next@26/i18next.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script>
@@ -715,7 +715,7 @@
       fallbackLng: __defaultLang,
       resources: window.__I18N__ || {},
       interpolation: { escapeValue: false },
-      initImmediate: false
+      initAsync: false
     });
     function t(key, opts) { return i18next.t(key, opts); }
   </script>
@@ -806,7 +806,7 @@
   <aside class="sidebar">
     <div class="sidebar-header">
       <h1>⚡ CPAdmin</h1>
-      <h3>🏢 <span data-setting="cpoName"></span></h3>
+      <h1>🏢 <span data-setting="cpoName"></span></h1>
     </div>
     <nav class="sidebar-nav">
       <a onclick="navigate('dashboard')" data-page="dashboard" class="active">
