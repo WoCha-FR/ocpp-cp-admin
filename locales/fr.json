@@ -253,7 +253,9 @@
     "cpConfNoKeysHint": "Cliquez sur \"Rafraîchir\" pour récupérer la configuration depuis la borne.",
     "cpConfSetAccepted": "Configuration \"{{key}}\" modifiée avec succès",
     "cpConfSetRebootRequired": "Configuration \"{{key}}\" modifiée. Un redémarrage de la borne est nécessaire.",
-    "cpConfSetError": "La borne a refusé la modification: {{status}}"
+    "cpConfSetError": "La borne a refusé la modification: {{status}}",
+    "cpConfOverride": "Forcé par l'admin",
+    "cpConfOverrideHint": "Cette valeur a été définie manuellement et ne sera pas écrasée par la configuration initiale globale."
   },
   "connectors": {
     "cNoConnectors": "Aucun connecteur signalé",

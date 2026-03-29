@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS chargepoint_config (
   value TEXT,
   readonly INTEGER DEFAULT 0,
   updated_at TEXT DEFAULT (datetime('now')),
+  is_override INTEGER NOT NULL DEFAULT 0,
   FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE,
   UNIQUE(chargepoint_id, key)
 );

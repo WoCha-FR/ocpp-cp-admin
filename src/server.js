@@ -318,9 +318,13 @@ async function start() {
     ocppWssServer = createOCPPServer({ isWSS: true });
     setBroadcast(broadcastToUI); // connecter le broadcast aussi sur le serveur WSS
     ocppHttpsServer = https.createServer(wsSslOptions);
-    await ocppWssServer.listen(ocppHttpsServer);
-    ocppHttpsServer.listen(OCPP_WSS_PORT, OCPP_HOST, () => {
-      logOCPP.info(`OCPP 1.6J WSS server listening on wss://${OCPP_HOST}:${OCPP_WSS_PORT}`);
+    ocppHttpsServer.on('upgrade', ocppWssServer.handleUpgrade);
+    await new Promise((resolve, reject) => {
+      ocppHttpsServer.once('error', reject);
+      ocppHttpsServer.listen(OCPP_WSS_PORT, OCPP_HOST, () => {
+        logOCPP.info(`OCPP 1.6J WSS server listening on wss://${OCPP_HOST}:${OCPP_WSS_PORT}`);
+        resolve();
+      });
     });
   }
   // Démarrer le serveur HTTP (UI + API)

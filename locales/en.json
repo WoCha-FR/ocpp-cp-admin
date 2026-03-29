@@ -253,7 +253,9 @@
     "cpConfNoKeysHint": "Click \"Refresh\" to retrieve the configuration from the chargepoint.",
     "cpConfSetAccepted": "Configuration \"{{key}}\" updated successfully",
     "cpConfSetRebootRequired": "Configuration \"{{key}}\" updated. A chargepoint reboot is required.",
-    "cpConfSetError": "The chargepoint rejected the change: {{status}}"
+    "cpConfSetError": "The chargepoint rejected the change: {{status}}",
+    "cpConfOverride": "Admin override",
+    "cpConfOverrideHint": "This value was manually set and will not be overwritten by the global initial configuration."
   },
   "connectors": {
     "cNoConnectors": "No connectors reported",

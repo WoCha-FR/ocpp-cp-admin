@@ -117,6 +117,7 @@ function createOCPPServer(options = {}) {
         }
         return reject(401, 'Charge point pending approval');
       } else {
+        logger.info(`Connection refused: unknown charge point ${handshake.identity}`);
         return reject(401, 'Unknown charge point');
       }
     }
@@ -264,7 +265,6 @@ function createOCPPServer(options = {}) {
 
     // ── BootNotification ──
     loggedHandle('BootNotification', (params) => {
-      logger.debug(`BootNotification from ${identity}`);
       db.upsertChargepoint(identity, {
         vendor: params.chargePointVendor || null,
         model: params.chargePointModel || null,
@@ -286,6 +286,9 @@ function createOCPPServer(options = {}) {
         if (!cp || cp.initialized) return;
         // Étape 1 — GetConfiguration : peuple automatiquement chargepoint_config via bulkUpsertChargepointConfig
         try {
+          logger.debug(
+            `[InitSeq] Calling GetConfiguration on ${identity} to initialize config cache`
+          );
           await callClient(client, identity, 'GetConfiguration', {});
         } catch (e) {
           logger.warn(`[InitSeq] ${identity} GetConfiguration: ${e.message}`);
@@ -293,6 +296,7 @@ function createOCPPServer(options = {}) {
 
         // Étape 2 — Vider le cache d'autorisation
         try {
+          logger.debug(`[InitSeq] Calling ClearCache on ${identity} to clear authorization cache`);
           await callClient(client, identity, 'ClearCache', {});
         } catch (e) {
           logger.warn(`[InitSeq] ${identity} ClearCache: ${e.message}`);
@@ -300,13 +304,36 @@ function createOCPPServer(options = {}) {
 
         // Étape 3 — Supprimer les profils de charge résiduels
         try {
+          logger.debug(
+            `[InitSeq] Calling ClearChargingProfile on ${identity} to clear charging profiles`
+          );
           await callClient(client, identity, 'ClearChargingProfile', {});
         } catch (e) {
           logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
         }
 
-        // Étape 4 — Marquer la borne comme initialisée pour éviter de refaire l'init à chaque reboot
+        // Étape 4 — ChangeConfiguration : seulement si la valeur actuelle de la borne diffère du défaut global
+        const globals = db.getEnabledInitialChargepointConfig();
+        for (const cfg of globals) {
+          const current = db.getChargepointConfigByKey(cp.id, cfg.key);
+          if (current?.is_override) continue;         // override admin, on ne touche pas
+          if (current?.value === cfg.value) continue; // déjà à la bonne valeur, on skip
+          try {
+            const result = await callClient(client, identity, 'ChangeConfiguration', {
+              key: cfg.key,
+              value: cfg.value,
+            });
+            if (result?.status === 'Accepted' || result?.status === 'RebootRequired') {
+              db.upsertChargepointConfig(cp.id, cfg.key, cfg.value, false);
+            }
+          } catch (e) {
+            logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: ${e.message}`);
+          }
+        }
+
+        // Étape 5 — Marquer la borne comme initialisée pour éviter de refaire l'init à chaque reboot
         db.markChargepointInitialized(cp.id);
+        logger.debug(`[InitSeq] ${identity} initialization sequence completed`);
       }, cp);
 
       return {
@@ -329,7 +356,6 @@ function createOCPPServer(options = {}) {
 
     // ── StatusNotification ──
     loggedHandle('StatusNotification', (params) => {
-      logger.debug(`StatusNotification from ${identity} #${params.connectorId}`);
       const cp = db.getChargepointByIdentity(identity);
       if (cp) {
         // Connector 0 = le CP lui-même : stocker les infos directement sur la borne
@@ -490,7 +516,6 @@ function createOCPPServer(options = {}) {
 
     // ── Authorize ──
     loggedHandle('Authorize', (params) => {
-      logger.debug(`Authorize request from ${identity}`);
       const cp = db.getChargepointByIdentity(identity);
       const siteId = cp ? cp.site_id : null;
       const authResult = db.authorizeIdTag(params.idTag, siteId);
@@ -724,7 +749,7 @@ function createOCPPServer(options = {}) {
     loggedHandle('MeterValues', (params) => {
       const cp = db.getChargepointByIdentity(identity);
       if (cp && params.meterValue) {
-        logger.debug(`MeterValues from ${identity} #${params.connectorId}`);
+        logger.info(`MeterValues from ${identity} #${params.connectorId}`);
         let powerW = null;
         let powerOffered = null;
         let energyWh = null;
@@ -837,13 +862,11 @@ function createOCPPServer(options = {}) {
 
     // ── DataTransfer ──
     loggedHandle('DataTransfer', (_params) => {
-      logger.debug(`DataTransfer from ${identity}`);
       return { status: 'Accepted' };
     });
 
     // ── DiagnosticsStatusNotification ──
     loggedHandle('DiagnosticsStatusNotification', (params) => {
-      logger.debug(`DiagnosticsStatusNotification from ${identity}: ${params.status}`);
       if (params.status === 'Uploaded' || params.status === 'UploadFailed') {
         broadcast('diagnostics_upload', { identity, status: params.status });
         // Notifier l'admin du résultat de l'upload de diagnostics
@@ -934,6 +957,7 @@ async function callClient(client, identity, method, params) {
     action: method,
     payload: params,
   });
+  logger.info(`Calling ${method} on ${identity} with params: ${JSON.stringify(params)}`);
 
   const result = await client.call(method, params);
 
@@ -946,6 +970,7 @@ async function callClient(client, identity, method, params) {
     action: method,
     payload: result,
   });
+  logger.debug(`Received response for ${method} from ${identity}: ${JSON.stringify(result)}`);
 
   // Intercepter GetConfiguration pour stocker la config en BDD
   if (method === 'GetConfiguration' && result && result.configurationKey) {

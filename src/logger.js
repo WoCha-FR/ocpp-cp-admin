@@ -119,13 +119,13 @@ logger.scope = (scopeName) => logger.child({ scope: scopeName });
 
 // ── Modifier le niveau de log à chaud (après chargement config par ex.) ──
 logger.setLevel = (level) => {
+  logger.info(`Log level changed to '${level}'`, { scope: 'CPADM' });
   logger.level = level;
   logger.transports.forEach((t) => {
     // Ne pas changer le niveau du transport error-only
     if (t.filename && t.filename.startsWith('error-')) return;
     t.level = level;
   });
-  logger.info(`Log level changed to '${level}'`, { scope: 'CPADM' });
 };
 
 module.exports = logger;

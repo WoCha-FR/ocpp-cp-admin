@@ -18,31 +18,31 @@ const logger = require('./logger').scope('NOTIF');
 const EVENT_DEFINITIONS = {
   server_started: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   server_stopping: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   pending_chargepoint: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   autoadd_chargepoint: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   diagnostics_upload: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   duplicate_identity: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   identity_flapping: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   chargepoint_online: {
     roles: ['admin', 'manager'],
@@ -78,15 +78,15 @@ const EVENT_DEFINITIONS = {
   },
   transaction_started: {
     roles: ['user'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   transaction_stopped: {
     roles: ['user'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
   charge_suspended_evse: {
     roles: ['user'],
-    defaultChannels: [],
+    defaultChannels: ['webpush'],
   },
 };
 

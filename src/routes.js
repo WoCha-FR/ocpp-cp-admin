@@ -1019,8 +1019,10 @@ router.put(
       });
 
       if (result.status === 'Accepted' || result.status === 'RebootRequired') {
-        // Mettre à jour en BDD
-        db.upsertChargepointConfig(cp.id, key, String(value), false);
+        // is_override = false si la valeur correspond au défaut global activé, true sinon
+        const globalCfg = db.getInitialChargepointConfigByKey(key);
+        const isOverride = !(globalCfg?.enabled && globalCfg.value === String(value));
+        db.upsertChargepointConfig(cp.id, key, String(value), false, isOverride);
       }
 
       res.json({ result, status: result.status });

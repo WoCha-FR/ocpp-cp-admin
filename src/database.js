@@ -1019,19 +1019,26 @@ function clearOcppMessages(chargepointId) {
 }
 
 // ── Chargepoint Configuration ──
-function upsertChargepointConfig(chargepointId, key, value, readonly) {
+function upsertChargepointConfig(chargepointId, key, value, readonly, isOverride = false) {
   const existing = db
     .prepare('SELECT id FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?')
     .get(chargepointId, key);
   if (existing) {
-    db.prepare(
-      `UPDATE chargepoint_config SET value = ?, readonly = ?, updated_at = datetime('now')
-      WHERE chargepoint_id = ? AND key = ?`
-    ).run(value, readonly ? 1 : 0, chargepointId, key);
+    if (isOverride) {
+      db.prepare(
+        `UPDATE chargepoint_config SET value = ?, readonly = ?, is_override = 1, updated_at = datetime('now')
+        WHERE chargepoint_id = ? AND key = ?`
+      ).run(value, readonly ? 1 : 0, chargepointId, key);
+    } else {
+      db.prepare(
+        `UPDATE chargepoint_config SET value = ?, readonly = ?, updated_at = datetime('now')
+        WHERE chargepoint_id = ? AND key = ?`
+      ).run(value, readonly ? 1 : 0, chargepointId, key);
+    }
   } else {
     db.prepare(
-      'INSERT INTO chargepoint_config (chargepoint_id, key, value, readonly) VALUES (?, ?, ?, ?)'
-    ).run(chargepointId, key, value, readonly ? 1 : 0);
+      'INSERT INTO chargepoint_config (chargepoint_id, key, value, readonly, is_override) VALUES (?, ?, ?, ?, ?)'
+    ).run(chargepointId, key, value, readonly ? 1 : 0, isOverride ? 1 : 0);
   }
 }
 
@@ -1097,6 +1104,10 @@ function getInitialChargepointConfig() {
 
 function getEnabledInitialChargepointConfig() {
   return db.prepare('SELECT * FROM chargepoint_init_config WHERE enabled = 1 ORDER BY key').all();
+}
+
+function getInitialChargepointConfigByKey(key) {
+  return db.prepare('SELECT * FROM chargepoint_init_config WHERE key = ?').get(key);
 }
 
 function createInitialChargepointConfig(key, value, enabled) {
@@ -1675,6 +1686,7 @@ module.exports = {
   deleteChargepointConfig,
   getInitialChargepointConfig,
   getEnabledInitialChargepointConfig,
+  getInitialChargepointConfigByKey,
   createInitialChargepointConfig,
   updateInitialChargepointConfig,
   deleteInitialChargepointConfig,
