@@ -180,6 +180,8 @@
     "cpAuthorized": "Borne autorisée à se connecter",
     "cpAccept": "Accepter",
     "cpAccepted": "Borne {{identity}} acceptée",
+    "cpAcceptTitle": "Accepter la borne {{identity}}",
+    "cpNoSiteAvailable": "Aucun site disponible. Créez un site avant d'accepter une borne.",
     "cpRefuse": "Refuser",
     "cpRefuseConfirm": "Refuser la borne \"{{identity}}\" ? Elle sera retirée de la liste d'attente.",
     "cpRefused": "Borne {{identity}} refusée",
@@ -814,6 +816,8 @@
   },
   "configEditor": {
     "title": "Éditeur de configuration",
+    "tabApp": "Application",
+    "tabChargepoints": "Bornes",
     "restartWarning": "Toute modification entraîne un redémarrage automatique du serveur.",
     "saveRestart": "Enregistrer et redémarrer",
     "restarting": "Redémarrage du serveur...",
@@ -831,5 +835,16 @@
     "colValue": "Nouvelle valeur",
     "envNotSet": "non définie",
     "validationRequired": "Champ obligatoire : {key}"
+  },
+  "initConfig": {
+    "description": "Paramètres ChangeConfiguration envoyés automatiquement à toute borne lors de sa première connexion, si leurs valeurs diffèrent des valeurs actuelles.",
+    "key": "Clé",
+    "value": "Valeur",
+    "enabled": "Activé",
+    "addBtn": "Ajouter une entrée",
+    "addTitle": "Nouvelle entrée",
+    "editTitle": "Modifier l'entrée",
+    "deleteConfirm": "Supprimer cette entrée de configuration ?",
+    "keyExists": "Cette clé existe déjà."
   }
 }

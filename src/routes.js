@@ -665,14 +665,19 @@ router.get('/chargepoints/pending', requireRole('admin'), (req, res) => {
 router.post(
   '/chargepoints/pending/:identity/accept',
   requireRole('admin'),
-  ...validateSchema(schema.PendingChargepointIdentity),
+  ...validateSchema(schema.PendingChargepointIdentity, schema.ChargePointSite),
   (req, res) => {
+    const result = validationResult(req);
+    if (!result.isEmpty()) {
+      return res.status(400).json({ error: result.array().map((e) => e.msg) });
+    }
+    const data = matchedData(req);
     const identity = req.params.identity;
     const pending = pendingChargepoints.get(identity);
     if (!pending) return res.status(404).json({ error: 'ERR_NO_PENDING_CHARGEPOINT' });
 
     try {
-      const cp = db.createChargepoint(identity, identity, pending.password, 0, null);
+      const cp = db.createChargepoint(identity, identity, pending.password, 0, data.site_id);
       pendingChargepoints.delete(identity);
       res.json(cp);
     } catch (e) {
@@ -882,7 +887,7 @@ router.post(
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
 
     // Vérifier que le manager gère ce site
-    if (req.user.role !== 'admin' && cp.site_id) {
+    if (req.user.role !== 'admin') {
       const managedIds = getUserManagedSiteIds(req);
       if (managedIds !== null && !managedIds.includes(cp.site_id)) {
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
@@ -941,7 +946,7 @@ router.post(
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
 
     // Vérifier que le manager gère ce site
-    if (req.user.role !== 'admin' && cp.site_id) {
+    if (req.user.role !== 'admin') {
       const managedIds = getUserManagedSiteIds(req);
       if (managedIds !== null && !managedIds.includes(cp.site_id)) {
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
@@ -1028,6 +1033,83 @@ router.put(
       res.json({ result, status: result.status });
     } catch (e) {
       errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+// ══════════════════════════════════════
+//  INIT CONFIG (chargepoint defaults)
+// ══════════════════════════════════════
+router.get('/init-config', requireRole('admin'), (req, res) => {
+  res.json(db.getInitialChargepointConfig());
+});
+
+router.post(
+  '/init-config',
+  requireRole('admin'),
+  ...validateSchema(schema.InitConfig),
+  (req, res) => {
+    const { key, value } = matchedData(req);
+    try {
+      const result = db.createInitialChargepointConfig(key, value, false);
+      res.json({ id: result.lastInsertRowid });
+    } catch (e) {
+      if (e.message?.includes('UNIQUE')) {
+        return errorResponse(res, 409, 'INIT_CONFIG_KEY_EXISTS');
+      }
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+router.put(
+  '/init-config/:id',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam, schema.InitConfigUpdate),
+  (req, res) => {
+    const { id } = req.params;
+    const data = matchedData(req, { locations: ['body'] });
+    db.updateInitialChargepointConfig(Number(id), data);
+    res.json({ ok: true });
+  }
+);
+
+router.delete(
+  '/init-config/:id',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    db.deleteInitialChargepointConfig(Number(req.params.id));
+    res.json({ ok: true });
+  }
+);
+
+router.post(
+  '/init-config/chargepoint/:id/apply',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    const globals = db.getEnabledInitialChargepointConfig();
+    for (const cfg of globals) {
+      const current = db.getChargepointConfigByKey(cp.id, cfg.key);
+      if (current?.is_override) continue; // override admin, on ne touche pas
+      try {
+        const result = await callClient(client, cp.identity, 'ChangeConfiguration', {
+          key: cfg.key,
+          value: cfg.value,
+        });
+        if (result?.status === 'Accepted' || result?.status === 'RebootRequired') {
+          db.upsertChargepointConfig(cp.id, cfg.key, cfg.value, false);
+        }
+      } catch (e) {
+        logger.warn(`[InitSeq] ${cp.identity} ChangeConfiguration ${cfg.key}: ${e.message}`);
+      }
     }
   }
 );

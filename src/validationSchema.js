@@ -569,6 +569,7 @@ const InitConfigUpdate = {
     in: ['body'],
     isString: true,
     isLength: { options: { min: 1, max: 1024 } },
+    optional: { options: { nullable: true } },
     errorMessage: 'VALIDATION_CONFIG_VALUE',
   },
   enabled: {

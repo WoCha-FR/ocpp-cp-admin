@@ -2021,9 +2021,29 @@ async function execAssignSite(cpId) {
 }
 
 async function acceptPendingChargepoint(identity) {
+  const sites = await api('GET', '/sites');
+  if (!sites.length) return toast(t('chargepoint.cpNoSiteAvailable'), 'error');
+  openModal(`
+    <h3>${t('chargepoint.cpAcceptTitle', { identity })}</h3>
+    <div class="form-group">
+      <label>${t('common.site_one')}</label>
+      <select id="acceptSiteSelect">
+        ${sites.map(s => `<option value="${s.id}">${s.sname}</option>`).join('')}
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-success" onclick="execAcceptPending('${escapeAttr(identity)}')">${t('chargepoint.cpAccept')}</button>
+    </div>
+  `);
+}
+
+async function execAcceptPending(identity) {
+  const siteId = Number(document.getElementById('acceptSiteSelect').value);
+  closeModal();
   try {
-    await api('POST', `/chargepoints/pending/${encodeURIComponent(identity)}/accept`);
-    toast(`${t('chargepoint.cpAccepted', { identity })}`, 'success');
+    await api('POST', `/chargepoints/pending/${encodeURIComponent(identity)}/accept`, { site_id: siteId });
+    toast(t('chargepoint.cpAccepted', { identity }), 'success');
     renderChargepoints();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -4505,14 +4525,38 @@ function urlBase64ToUint8Array(base64String) {
 // ══════════════════════════════════════
 //  CONFIG EDITOR
 // ══════════════════════════════════════
+let currentConfigTab = 'app';
+
 async function renderConfigEditor() {
   if (currentUser.role !== 'admin') return navigate('dashboard');
   document.getElementById('topbarActions').innerHTML = '';
+
+  const html = `
+    <div class="tabs">
+      <button class="tab ${currentConfigTab === 'app' ? 'active' : ''}" onclick="switchConfigTab('app')">${t('configEditor.tabApp')}</button>
+      <button class="tab ${currentConfigTab === 'chargepoints' ? 'active' : ''}" onclick="switchConfigTab('chargepoints')">${t('configEditor.tabChargepoints')}</button>
+    </div>
+    <div id="configTabContent"></div>`;
+  document.getElementById('pageContent').innerHTML = html;
+
+  if (currentConfigTab === 'app') {
+    await renderConfigTabApp();
+  } else {
+    await renderConfigTabChargepoints();
+  }
+}
+
+function switchConfigTab(tab) {
+  currentConfigTab = tab;
+  renderConfigEditor();
+}
+
+async function renderConfigTabApp() {
   let data;
   try {
     data = await api('GET', '/configeditor');
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    document.getElementById('configTabContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
 
@@ -4557,7 +4601,125 @@ async function renderConfigEditor() {
     <button type="submit" class="btn btn-primary">${t('configEditor.saveRestart')}</button>
   </div></form>`;
 
-  document.getElementById('pageContent').innerHTML = html;
+  document.getElementById('configTabContent').innerHTML = html;
+}
+
+async function renderConfigTabChargepoints() {
+  let rows;
+  try {
+    rows = await api('GET', '/init-config');
+  } catch (err) {
+    document.getElementById('configTabContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description')}</p>`;
+
+  html += `<div class="card"><table class="data-table">
+    <thead><tr>
+      <th>${t('initConfig.key')}</th>
+      <th>${t('initConfig.value')}</th>
+      <th>${t('initConfig.enabled')}</th>
+      <th>${t('common.actions')}</th>
+    </tr></thead><tbody>`;
+
+  if (rows.length === 0) {
+    html += `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted);">—</td></tr>`;
+  }
+
+  for (const r of rows) {
+    html += `<tr>
+      <td><code>${escapeHtml(r.key)}</code></td>
+      <td>${escapeHtml(r.value)}</td>
+      <td><input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="toggleInitConfig(${r.id}, this.checked)"></td>
+      <td>
+        <button class="btn btn-sm btn-secondary" onclick="showEditInitConfigModal(${r.id}, '${escapeAttr(r.key)}', '${escapeAttr(r.value)}', ${!!r.enabled})">${t('common.edit')}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteInitConfig(${r.id})">${t('common.delete')}</button>
+      </td>
+    </tr>`;
+  }
+
+  html += `</tbody></table></div>`;
+
+  document.getElementById('configTabContent').innerHTML = html;
+  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-primary btn-sm" onclick="showCreateInitConfigModal()">+ ${t('initConfig.addBtn')}</button>`;
+}
+
+// ── Init Config CRUD ──
+
+function showCreateInitConfigModal() {
+  openModal(`
+    <h3>${t('initConfig.addTitle')}</h3>
+    <div class="form-group"><label>${t('initConfig.key')}</label><input type="text" id="initCfgKey" required /></div>
+    <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="initCfgValue" required /></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" onclick="createInitConfig()">${t('common.create')}</button>
+    </div>
+  `);
+}
+
+async function createInitConfig() {
+  const key = document.getElementById('initCfgKey').value.trim();
+  const value = document.getElementById('initCfgValue').value.trim();
+  if (!key || !value) return;
+  try {
+    await api('POST', '/init-config', { key, value });
+    closeModal();
+    renderConfigTabChargepoints();
+  } catch (err) {
+    if (err.message?.includes('409')) {
+      toast(t('initConfig.keyExists'), 'error');
+    } else {
+      toast(err.message, 'error');
+    }
+  }
+}
+
+function showEditInitConfigModal(id, key, value, enabled) {
+  openModal(`
+    <h3>${t('initConfig.editTitle')}</h3>
+    <div class="form-group"><label>${t('initConfig.key')}</label><input type="text" value="${escapeAttr(key)}" disabled class="form-control" /></div>
+    <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="editInitCfgValue" value="${escapeAttr(value)}" required /></div>
+    <div class="form-group"><label><input type="checkbox" id="editInitCfgEnabled" ${enabled ? 'checked' : ''}> ${t('initConfig.enabled')}</label></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" onclick="updateInitConfig(${id})">${t('common.save')}</button>
+    </div>
+  `);
+}
+
+async function updateInitConfig(id) {
+  const value = document.getElementById('editInitCfgValue').value.trim();
+  const enabled = document.getElementById('editInitCfgEnabled').checked;
+  if (!value) return;
+  try {
+    await api('PUT', `/init-config/${id}`, { value, enabled });
+    closeModal();
+    renderConfigTabChargepoints();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function toggleInitConfig(id, enabled) {
+  try {
+    await api('PUT', `/init-config/${id}`, { enabled });
+  } catch (err) {
+    toast(err.message, 'error');
+    renderConfigTabChargepoints();
+  }
+}
+
+async function deleteInitConfig(id) {
+  const ok = await confirmDialog(t('initConfig.deleteConfirm'), { danger: true });
+  if (!ok) return;
+  try {
+    await api('DELETE', `/init-config/${id}`);
+    renderConfigTabChargepoints();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 function buildConfigInput(f) {

@@ -180,6 +180,8 @@
     "cpAuthorized": "Chargepoint authorized to connect",
     "cpAccept": "Accept",
     "cpAccepted": "Chargepoint {{identity}} accepted",
+    "cpAcceptTitle": "Accept chargepoint {{identity}}",
+    "cpNoSiteAvailable": "No site available. Create a site before accepting a chargepoint.",
     "cpRefuse": "Refuse",
     "cpRefuseConfirm": "Refuse chargepoint \"{{identity}}\"? It will be removed from the waiting list.",
     "cpRefused": "Chargepoint {{identity}} refused",
@@ -814,6 +816,8 @@
   },
   "configEditor": {
     "title": "Configuration Editor",
+    "tabApp": "Application",
+    "tabChargepoints": "Chargepoints",
     "restartWarning": "Any change will trigger an automatic server restart.",
     "saveRestart": "Save and restart",
     "restarting": "Restarting server...",
@@ -831,5 +835,16 @@
     "colValue": "New value",
     "envNotSet": "not set",
     "validationRequired": "Required field: {key}"
+  },
+  "initConfig": {
+    "description": "ChangeConfiguration parameters automatically sent to every chargepoint on its first connection, if their values differ from current ones.",
+    "key": "Key",
+    "value": "Value",
+    "enabled": "Enabled",
+    "addBtn": "Add entry",
+    "addTitle": "New entry",
+    "editTitle": "Edit entry",
+    "deleteConfirm": "Delete this configuration entry?",
+    "keyExists": "This key already exists."
   }
 }
