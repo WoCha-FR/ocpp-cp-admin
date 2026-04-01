@@ -44,7 +44,7 @@ jobs:
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
           tags: |
             wocha/ocpp-cp-admin
-            ghcr.io/WoCha-FR/ocpp-cp-admin
+            ghcr.io/wocha-fr/ocpp-cp-admin
 
       - name: Export digest
         run: |
@@ -95,7 +95,7 @@ jobs:
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
           tags: |
             wocha/ocpp-cp-admin
-            ghcr.io/WoCha-FR/ocpp-cp-admin
+            ghcr.io/wocha-fr/ocpp-cp-admin
 
       - name: Export digest
         run: |
@@ -138,7 +138,7 @@ jobs:
         with:
           images: |
             wocha/ocpp-cp-admin
-            ghcr.io/WoCha-FR/ocpp-cp-admin
+            ghcr.io/wocha-fr/ocpp-cp-admin
           tags: |
             type=ref,event=branch
             type=raw,value={{branch}}-{{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref_type == 'branch' }}
@@ -175,5 +175,5 @@ jobs:
           # GitHub Container Registry
           docker buildx imagetools create \
             $(jq -cr '.tags | map(select(startswith("ghcr.io/")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            ghcr.io/WoCha-FR/ocpp-cp-admin@sha256:${DIGEST_AMD64} \
-            ghcr.io/WoCha-FR/ocpp-cp-admin@sha256:${DIGEST_ARM64}
+            ghcr.io/wocha-fr/ocpp-cp-admin@sha256:${DIGEST_AMD64} \
+            ghcr.io/wocha-fr/ocpp-cp-admin@sha256:${DIGEST_ARM64}
