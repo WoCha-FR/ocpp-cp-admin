@@ -60,6 +60,12 @@ function createOCPPServer(options = {}) {
 
       if (!providedPassword && !hasClientCert) {
         logger.warn(`WSS connection refused: ${handshake.identity} no authentication method`);
+        notifications
+          .emit('chargepoint_refused', {
+            identity: handshake.identity,
+            reason: 'wss_no_auth',
+          })
+          .catch(() => {});
         return reject(
           401,
           'WSS requires Basic Auth (Security Profile 2) or client certificate (Security Profile 3)'
@@ -76,6 +82,12 @@ function createOCPPServer(options = {}) {
     // Vérifier si la borne est autorisée
     if (cp && !cp.authorized) {
       logger.warn(`Connection refused: charge ${handshake.identity} point not authorized`);
+      notifications
+        .emit('chargepoint_refused', {
+          identity: handshake.identity,
+          reason: 'not_authorized',
+        })
+        .catch(() => {});
       return reject(401, 'Charge point not authorized');
     }
 
@@ -118,6 +130,12 @@ function createOCPPServer(options = {}) {
         return reject(401, 'Charge point pending approval');
       } else {
         logger.info(`Connection refused: unknown charge point ${handshake.identity}`);
+        notifications
+          .emit('chargepoint_refused', {
+            identity: handshake.identity,
+            reason: 'unknown',
+          })
+          .catch(() => {});
         return reject(401, 'Unknown charge point');
       }
     }
@@ -125,14 +143,32 @@ function createOCPPServer(options = {}) {
     const dbPassword = cp.password || null;
     if (!providedPassword && dbPassword) {
       logger.warn(`Connection refused: ${handshake.identity} password required but missing`);
+      notifications
+        .emit('chargepoint_refused', {
+          identity: handshake.identity,
+          reason: 'password_required',
+        })
+        .catch(() => {});
       return reject(401, 'Password required');
     }
     if (providedPassword && !dbPassword) {
       logger.warn(`Connection refused: ${handshake.identity} password provided but not expected`);
+      notifications
+        .emit('chargepoint_refused', {
+          identity: handshake.identity,
+          reason: 'password_unexpected',
+        })
+        .catch(() => {});
       return reject(401, 'Password not expected');
     }
     if (providedPassword && dbPassword && !bcrypt.compareSync(providedPassword, dbPassword)) {
       logger.warn(`Connection refused: ${handshake.identity} invalid password`);
+      notifications
+        .emit('chargepoint_refused', {
+          identity: handshake.identity,
+          reason: 'invalid_password',
+        })
+        .catch(() => {});
       return reject(401, 'Invalid password');
     }
 
@@ -316,7 +352,7 @@ function createOCPPServer(options = {}) {
         const globals = db.getEnabledInitialChargepointConfig();
         for (const cfg of globals) {
           const current = db.getChargepointConfigByKey(cp.id, cfg.key);
-          if (current?.is_override) continue;         // override admin, on ne touche pas
+          if (current?.is_override) continue; // override admin, on ne touche pas
           if (current?.value === cfg.value) continue; // déjà à la bonne valeur, on skip
           try {
             const result = await callClient(client, identity, 'ChangeConfiguration', {
@@ -1107,12 +1143,49 @@ function trackFlapping(identity) {
   return false;
 }
 
+// ── Heartbeat Watchdog ──
+// Détecte les bornes connectées qui n'envoient plus de heartbeat et les déconnecte.
+const WATCHDOG_CHECK_INTERVAL_MS = 60 * 1000; // Vérification toutes les 60 secondes
+const HEARTBEAT_MISS_FACTOR = 3; // Tolérance : 3× l'intervalle de heartbeat
+let heartbeatWatchdogTimer = null;
+
+function startHeartbeatWatchdog() {
+  const config = getConfig();
+  const heartbeatInterval = config.ocpp.heartbeatInterval || 300; // secondes
+  const timeoutMs = heartbeatInterval * HEARTBEAT_MISS_FACTOR * 1000;
+
+  heartbeatWatchdogTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [identity] of connectedClients) {
+      const cp = db.getChargepointByIdentity(identity);
+      if (!cp || !cp.last_heartbeat) continue; // Borne en cours d'init, on ignore
+
+      const lastHb = new Date(cp.last_heartbeat).getTime();
+      if (now - lastHb > timeoutMs) {
+        logger.warn(
+          `Heartbeat timeout for ${identity}: last heartbeat ${Math.round((now - lastHb) / 1000)}s ago (limit: ${heartbeatInterval * HEARTBEAT_MISS_FACTOR}s)`
+        );
+        disconnectChargepoint(identity);
+      }
+    }
+  }, WATCHDOG_CHECK_INTERVAL_MS);
+}
+
+function stopHeartbeatWatchdog() {
+  if (heartbeatWatchdogTimer) {
+    clearInterval(heartbeatWatchdogTimer);
+    heartbeatWatchdogTimer = null;
+  }
+}
+
 module.exports = {
   createOCPPServer,
   setBroadcast,
   getConnectedClients,
   callClient,
   disconnectChargepoint,
+  startHeartbeatWatchdog,
+  stopHeartbeatWatchdog,
   pendingRemoteStarts,
   pendingChargepoints,
 };

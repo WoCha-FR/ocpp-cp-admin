@@ -14,7 +14,12 @@ const logger = require('./logger').scope('CPADM');
 const { getConfig, getConfigDir } = require('./config');
 const db = require('./database');
 const passport = require('./auth');
-const { createOCPPServer, setBroadcast } = require('./ocpp-server');
+const {
+  createOCPPServer,
+  setBroadcast,
+  startHeartbeatWatchdog,
+  stopHeartbeatWatchdog,
+} = require('./ocpp-server');
 const routes = require('./routes');
 const notifications = require('./notifications');
 
@@ -339,6 +344,9 @@ async function start() {
   }
   // Démarrer la surveillance des certificats TLS
   watchCertFiles();
+  // Démarrer le watchdog de heartbeat
+  startHeartbeatWatchdog();
+  logOCPP.info('Heartbeat watchdog started');
   // Emission d'une notification de démarrage
   notifications.emit('server_started', {});
 }
@@ -368,7 +376,8 @@ async function gracefulShutdown(signal) {
   }, TIMEOUT);
 
   try {
-    // 0. Arrêter la surveillance des certificats
+    // 0. Arrêter le watchdog de heartbeat et la surveillance des certificats
+    stopHeartbeatWatchdog();
     for (const p of watchedCertPaths) fs.unwatchFile(p);
     if (certReloadTimer) clearTimeout(certReloadTimer);
     await notifications.emit('server_stopping', { signal });

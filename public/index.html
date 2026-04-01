@@ -876,6 +876,8 @@
       <div id="topbarActions"></div>
     </div>
     <div id="pushPromptContainer"></div>
+    <div id="credentialsPromptContainer"></div>
+    <div id="sitePromptContainer"></div>
     <div class="content" id="pageContent"></div>
   </div>
 </div>
@@ -1320,14 +1322,12 @@ async function logout() {
 function showApp() {
   document.getElementById('loginPage').classList.add('hidden');
   document.getElementById('appPage').classList.remove('hidden');
-
   // Afficher info utilisateur
   const isManager = currentUser.role !== 'admin' && (currentUser.sites || []).some(s => s.role === 'manager');
   const roleKey = currentUser.role === 'admin' ? 'admin' : (isManager ? 'manager' : 'user');
   document.getElementById('userInfoSidebar').innerHTML = `
     ${currentUser.shortname || currentUser.useremail} <span class="role-badge role-${roleKey}">${t(`common.${roleKey}`)}</span>
   `;
-
   // Afficher/cacher menu selon rôle
   document.getElementById('navSites').classList.toggle('hidden', !canManage());
   document.getElementById('navChargePoints').classList.toggle('hidden', !canManage());
@@ -1349,6 +1349,8 @@ function showApp() {
   connectWebSocket();
   navigate('dashboard');
   checkPushPrompt();
+  checkDefaultCredentials();
+  checkSitePrompt();
 }
 
 // ══════════════════════════════════════
@@ -4466,6 +4468,60 @@ async function acceptPushPrompt() {
   }
 }
 
+// ── Site prompt post-login ──
+async function checkSitePrompt() {
+  const container = document.getElementById('sitePromptContainer');
+  container.innerHTML = '';
+
+  if (!currentUser || currentUser.role !== 'admin') return;
+
+  try {
+    const sites = await api('GET', '/sites');
+    if (sites.length > 0) return;
+  } catch {
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="push-prompt-banner">
+      <div class="push-prompt-text">
+        <strong>🏢 ${t('sitePrompt.promptTitle')}</strong>
+        <p>${t('sitePrompt.promptHint')}</p>
+      </div>
+      <div class="push-prompt-actions">
+        <button class="btn btn-primary btn-sm" onclick="navigate('sites'); showCreateSiteModal()">${t('sitePrompt.btnCreate')}</button>
+      </div>
+    </div>
+  `;
+}
+
+// ── Credentials prompt post-login ──
+async function checkDefaultCredentials() {
+  const container = document.getElementById('credentialsPromptContainer');
+  container.innerHTML = '';
+
+  if (!currentUser) return;
+
+  try {
+    const result = await api('GET', '/auth/default-credentials-check');
+    if (!result.defaultEmail && !result.defaultPassword) return;
+  } catch {
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="push-prompt-banner">
+      <div class="push-prompt-text">
+        <strong>⚠️ ${t('credentialsPrompt.promptTitle')}</strong>
+        <p>${t('credentialsPrompt.promptHint')}</p>
+      </div>
+      <div class="push-prompt-actions">
+        <button class="btn btn-primary btn-sm" onclick="navigate('profile')">${t('credentialsPrompt.btnFix')}</button>
+      </div>
+    </div>
+  `;
+}
+
 // ── Web Push ──
 async function subscribeToPush() {
   try {
@@ -4932,6 +4988,7 @@ async function saveProfile(e) {
       ${currentUser.shortname || currentUser.useremail} <span class="role-badge role-${roleKey}">${t(`common.${roleKey}`)}</span>
     `;
     toast(t('profile.pUpdated'), 'success');
+    checkDefaultCredentials();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -4962,6 +5019,7 @@ async function savePassword(e) {
     await api('PUT', '/user/profile', { currentPassword, newPassword });
     toast(t('profile.pPwdUpdated'), 'success');
     document.getElementById('passwordForm').reset();
+    checkDefaultCredentials();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -5042,6 +5100,7 @@ async function createSite() {
     closeModal();
     toast(t('sites.siteCreated'), 'success');
     renderSites();
+    checkSitePrompt();
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5060,6 +5119,7 @@ async function deleteSite(id, name) {
     await api('DELETE', `/sites/${id}`);
     toast(t('sites.siteDeleted'), 'success');
     renderSites();
+    checkSitePrompt();
   } catch (err) { toast(err.message, 'error'); }
 }
 

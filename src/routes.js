@@ -190,6 +190,14 @@ router.get('/auth/me', (req, res) => {
   res.json(req.user);
 });
 
+router.get('/auth/default-credentials-check', requireAuth, (req, res) => {
+  const user = db.getUserByEmail(req.user.useremail);
+  const bcrypt = require('bcryptjs');
+  const defaultEmail = user.useremail === 'admin@admin.com';
+  const defaultPassword = bcrypt.compareSync('admin123', user.password);
+  res.json({ defaultEmail, defaultPassword });
+});
+
 if (googleAuthEnabled) {
   router.get(
     '/auth/google/login',

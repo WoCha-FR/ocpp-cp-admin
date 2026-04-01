@@ -472,6 +472,16 @@
     "promptTitle": "Enable push notifications?",
     "promptHint": "Get real-time alerts about charges, chargers and events, even when the browser is closed."
   },
+  "sitePrompt": {
+    "promptTitle": "No site configured",
+    "promptHint": "Create your first site to start managing your charge points.",
+    "btnCreate": "Create a site"
+  },
+  "credentialsPrompt": {
+    "promptTitle": "Default credentials not changed",
+    "promptHint": "The administrator email or password is still the default one. Change them immediately to secure your installation.",
+    "btnFix": "Edit my profile"
+  },
   "profile": {
     "pTitle": "Personal information",
     "pNamePlaceHolder": "Your name",
@@ -575,6 +585,21 @@
       "eDesc" : "A new chargepoint was automatically added to the system",
       "title": "Charge point added",
       "body": "Charge point {{identity}} has been added to the system."
+    },
+    "chargepoint_refused": {
+      "eLabel": "Chargepoint refused by server",
+      "eDesc": "A chargepoint was refused when connecting to the server",
+      "title": "Connection refused – {{identity}}",
+      "body": "The chargepoint {{identity}} was refused when connecting to the server.",
+      "info": "Reason: {{reason}}",
+      "reasons": {
+        "wss_no_auth":         "No WSS authentication method provided",
+        "not_authorized":      "Charge point not authorized",
+        "unknown":             "Unknown charge point",
+        "password_required":   "Password required but missing",
+        "password_unexpected": "Password provided but not expected",
+        "invalid_password":    "Invalid password"
+      }
     },
     "diagnostics_upload": {
       "eLabel": "Diagnostics upload",

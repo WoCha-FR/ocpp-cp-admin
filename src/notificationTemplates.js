@@ -42,6 +42,17 @@ function format(event, data, lang = 'fr') {
       titre: tradN('notifications.autoadd_chargepoint.title'),
       corps: tradN('notifications.autoadd_chargepoint.body', { identity: data.identity }),
     }),
+    chargepoint_refused: () => ({
+      titre: tradN('notifications.chargepoint_refused.title', { identity: data.identity }),
+      corps: [
+        tradN('notifications.chargepoint_refused.body', { identity: data.identity }),
+        tradN('notifications.chargepoint_refused.info', {
+          reason: tradN(`notifications.chargepoint_refused.reasons.${data.reason}`),
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }),
     diagnostics_upload: () => ({
       titre: tradN('notifications.diagnostics_upload.title', { cp_name }),
       corps: tradN('notifications.diagnostics_upload.body', { status: data.status }),

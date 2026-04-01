@@ -472,6 +472,16 @@
     "promptTitle": "Activer les notifications Push ?",
     "promptHint": "Recevez des alertes en temps réel sur les charges, bornes et événements, même quand le navigateur est fermé."
   },
+  "sitePrompt": {
+    "promptTitle": "Aucun site configuré",
+    "promptHint": "Créez un premier site pour commencer à gérer vos bornes de recharge.",
+    "btnCreate": "Créer un site"
+  },
+  "credentialsPrompt": {
+    "promptTitle": "Identifiants par défaut non modifiés",
+    "promptHint": "L'email ou le mot de passe de l'administrateur est toujours celui par défaut. Modifiez-les immédiatement pour sécuriser votre installation.",
+    "btnFix": "Modifier mon profil"
+  },
   "profile": {
     "pTitle": "Informations personnelles",
     "pNamePlaceHolder": "Votre nom",
@@ -575,6 +585,21 @@
       "eDesc": "Une nouvelle borne est automatiquement ajoutée au système",
       "title": "Borne ajoutée",
       "body": "La borne {{identity}} a été ajoutée au système."
+    },
+    "chargepoint_refused": {
+      "eLabel": "Borne refusée par le serveur",
+      "eDesc" : "Une borne a été refusée lors de sa connexion au serveur",
+      "title": "Connexion refusée – {{identity}}",
+      "body": "La borne {{identity}} a été refusée lors de sa connexion au serveur.",
+      "info": "Raison : {{reason}}",
+      "reasons": {
+        "wss_no_auth":         "Aucune méthode d'authentification WSS fournie",
+        "not_authorized":      "Borne non autorisée",
+        "unknown":             "Borne inconnue",
+        "password_required":   "Mot de passe requis mais absent",
+        "password_unexpected": "Mot de passe fourni mais non attendu",
+        "invalid_password":    "Mot de passe invalide"
+      }
     },
     "diagnostics_upload": {
       "eLabel": "Upload de diagnostics",

@@ -32,6 +32,10 @@ const EVENT_DEFINITIONS = {
     roles: ['admin'],
     defaultChannels: ['webpush'],
   },
+  chargepoint_refused: {
+    roles: ['admin'],
+    defaultChannels: ['webpush'],
+  },
   diagnostics_upload: {
     roles: ['admin'],
     defaultChannels: ['webpush'],
