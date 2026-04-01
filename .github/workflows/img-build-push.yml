@@ -42,6 +42,9 @@ jobs:
           file: ./Dockerfile
           provenance: false
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          tags: |
+            wocha/ocpp-cp-admin
+            ghcr.io/WoCha-FR/ocpp-cp-admin
 
       - name: Export digest
         run: |
@@ -90,6 +93,9 @@ jobs:
           file: ./Dockerfile
           provenance: false
           outputs: type=image,push-by-digest=true,name-canonical=true,push=true
+          tags: |
+            wocha/ocpp-cp-admin
+            ghcr.io/WoCha-FR/ocpp-cp-admin
 
       - name: Export digest
         run: |
