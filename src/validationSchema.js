@@ -425,6 +425,13 @@ const TransactionsQuery = {
   },
   from: { in: ['query'], optional: true, isISO8601: true, errorMessage: 'VALIDATION_DATE_FROM' },
   to: { in: ['query'], optional: true, isISO8601: true, errorMessage: 'VALIDATION_DATE_TO' },
+  limit: {
+    in: ['query'],
+    optional: true,
+    isInt: { options: { min: 1, max: 200 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_LIMIT',
+  },
 };
 
 const UserTransactionsQuery = {
@@ -493,7 +500,7 @@ const IdTagEventsQuery = {
   limit: {
     in: ['query'],
     optional: true,
-    isInt: { options: { min: 1, max: 500 } },
+    isInt: { options: { min: 1, max: 200 } },
     toInt: true,
     errorMessage: 'VALIDATION_LIMIT',
   },

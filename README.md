@@ -17,6 +17,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
   - [Node.js](#nodejs-installation)
   - [Docker](#docker-installation)
   - [Docker Compose](#docker-compose)
+  - [Bare-metal (systemd)](#bare-metal-deployment-systemd)
 - [Environment Variables](#environment-variables)
 - [Configuration](#configuration)
   - [General](#general)
@@ -37,6 +38,8 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - [Logging](#logging)
 - [Internationalization](#internationalization)
 - [Development Scripts](#development-scripts)
+- [Database](#database)
+  - [Backup](#backup)
 
 ---
 
@@ -93,6 +96,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Light/dark theme
 - Push notifications via Service Worker
 - `/healthz` endpoint for monitoring
+- `/metrics` endpoint in Prometheus text format (optional bearer token protection)
 
 ---
 
@@ -220,6 +224,46 @@ Traefik-based stacks include:
 
 See [`docker/README.md`](docker/README.md) for details on each compose file.
 
+### Bare-metal Deployment (systemd)
+
+For servers running without Docker, a ready-to-use systemd unit is provided in `scripts/`.
+
+**1. Create a dedicated user and deploy the application:**
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin ocpp-cp-admin
+sudo mkdir -p /opt/ocpp-cp-admin
+sudo cp -r . /opt/ocpp-cp-admin
+sudo chown -R ocpp-cp-admin:ocpp-cp-admin /opt/ocpp-cp-admin
+cd /opt/ocpp-cp-admin && sudo -u ocpp-cp-admin npm ci --omit=dev
+```
+
+**2. Configure environment variables:**
+
+```bash
+# Copy the template and fill in your values
+sudo mkdir -p /etc/ocpp-cp-admin
+sudo cp scripts/env.example /etc/ocpp-cp-admin/env
+sudo nano /etc/ocpp-cp-admin/env
+sudo chmod 600 /etc/ocpp-cp-admin/env
+
+# Then uncomment the EnvironmentFile= line in the unit file:
+# EnvironmentFile=/etc/ocpp-cp-admin/env
+```
+
+See [`scripts/env.example`](scripts/env.example) for all available variables.
+
+**3. Install and start the service:**
+
+```bash
+sudo cp scripts/ocpp-cp-admin.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ocpp-cp-admin
+
+# View logs
+journalctl -u ocpp-cp-admin -f
+```
+
 **Exposed Ports:**
 
 | Port | Usage |
@@ -238,6 +282,8 @@ See [`docker/README.md`](docker/README.md) for details on each compose file.
 | `/app/public/img` | Static images |
 | `/app/locales-custom` | Custom locale files (add or override translations) |
 The `/healthz` endpoint is used for Docker health checks (HTTP GET, every 30s).
+
+The `/metrics` endpoint exposes Prometheus-format metrics (chargepoints, transactions, connectors by status, uptime, heap). It is accessible without authentication by default; set `metrics.bearerToken` (or `CPADMIN_METRICS_TOKEN`) to require a bearer token.
 
 On first startup, if `config/config.json` does not exist, it is automatically created from `config.sample.json`.
 
@@ -312,6 +358,14 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
 | `CPADMIN_GOOGLE_CLIENT_ID` | `auth.google.client_id` | |
 | `CPADMIN_GOOGLE_CLIENT_SECRET` | `auth.google.client_secret` | |
+
+### Prometheus Metrics
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_METRICS_TOKEN` | `metrics.bearerToken` | `my-secret-token` |
+
+> If not set, `/metrics` is accessible without authentication (suitable for private/Docker networks).
 
 > Booleans (`true`/`false`) and numbers are automatically converted.
 > Secrets are always treated as strings.
@@ -888,6 +942,9 @@ npm run format
 
 # Check formatting without modifying
 npm run format:check
+
+# Backup the database (see Database > Backup)
+npm run backup
 ```
 
 ---
@@ -897,6 +954,57 @@ npm run format:check
 The application uses **SQLite** with **WAL** (Write-Ahead Logging) mode for improved concurrency performance.
 
 Migrations are automatically executed on startup from the `migrations/` folder. The database is created in the `config/` folder with the configured name (default: `cpadmin.db`).
+
+### Backup
+
+A backup script is provided in `scripts/backup.js`. It uses the `better-sqlite3` online backup API, which is safe even while the application is running (WAL mode compatible).
+
+```bash
+# Backup with default settings (7 backups kept in config/backups/)
+npm run backup
+
+# Custom destination and retention
+node scripts/backup.js --backup-dir /mnt/nas/backups --keep 30
+
+# Custom database path
+node scripts/backup.js --db-path /data/cpadmin.db --backup-dir /backups
+```
+
+Backup files are named `cpadmin_YYYY-MM-DD_HH-MM-SS.db`. Old backups beyond the `--keep` limit are automatically deleted.
+
+**Restore procedure:**
+
+1. Stop the application.
+2. Copy the desired backup over the database file:
+   ```bash
+   cp config/backups/cpadmin_YYYY-MM-DD_HH-MM-SS.db config/cpadmin.db
+   ```
+3. Remove WAL files if present:
+   ```bash
+   rm -f config/cpadmin.db-shm config/cpadmin.db-wal
+   ```
+4. Restart the application.
+
+**Docker — scheduled backup (optional):**
+
+Add this service to your `docker-compose.yml`:
+
+```yaml
+backup:
+  image: ghcr.io/wocha-fr/ocpp-cp-admin:latest
+  restart: unless-stopped
+  entrypoint: /bin/sh
+  command: >
+    -c "while true; do
+          node /app/scripts/backup.js --backup-dir /backups --keep 30;
+          sleep 86400;
+        done"
+  volumes:
+    - ./data/config:/app/config
+    - ./data/backups:/backups
+  environment:
+    - NODE_ENV=production
+```
 
 ### Main Tables
 

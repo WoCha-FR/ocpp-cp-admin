@@ -17,6 +17,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
   - [Node.js](#installation-nodejs)
   - [Docker](#installation-docker)
   - [Docker Compose](#docker-compose)
+  - [Bare-metal (systemd)](#déploiement-bare-metal-systemd)
 - [Variables d'environnement](#variables-denvironnement)
 - [Configuration](#configuration)
   - [Général](#général)
@@ -37,6 +38,8 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - [Journalisation](#journalisation)
 - [Internationalisation](#internationalisation)
 - [Scripts de développement](#scripts-de-développement)
+- [Base de données](#base-de-données)
+  - [Sauvegarde](#sauvegarde)
 
 ---
 
@@ -93,6 +96,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Thème clair/sombre
 - Notifications push via Service Worker
 - Point d'accès `/healthz` pour le monitoring
+- Point d'accès `/metrics` au format Prometheus (protection optionnelle par bearer token)
 
 ---
 
@@ -233,9 +237,51 @@ Consultez le fichier [`docker/README.md`](docker/README.md) pour le détail de c
 | `/app/locales-custom` | Fichiers de locale personnalisés (ajout ou surcharge de traductions) |
 Le point d'accès `/healthz` est utilisé pour le health check Docker (HTTP GET, toutes les 30s).
 
+Le point d'accès `/metrics` expose des métriques au format Prometheus (bornes, transactions, connecteurs par statut, uptime, heap). Accessible sans authentification par défaut ; définir `metrics.bearerToken` (ou `CPADMIN_METRICS_TOKEN`) pour exiger un bearer token.
+
 Au premier démarrage, si `config/config.json` n'existe pas, il est créé automatiquement depuis `config.sample.json`.
 
 L'entrypoint s'exécute en root pour copier les fichiers par défaut et corriger les permissions des volumes, puis bascule vers un utilisateur non-root dédié (`app`) via `su-exec`.
+
+### Déploiement bare-metal (systemd)
+
+Pour les serveurs sans Docker, un fichier unit systemd est fourni dans `scripts/`.
+
+**1. Créer un utilisateur dédié et déployer l'application :**
+
+```bash
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin ocpp-cp-admin
+sudo mkdir -p /opt/ocpp-cp-admin
+sudo cp -r . /opt/ocpp-cp-admin
+sudo chown -R ocpp-cp-admin:ocpp-cp-admin /opt/ocpp-cp-admin
+cd /opt/ocpp-cp-admin && sudo -u ocpp-cp-admin npm ci --omit=dev
+```
+
+**2. Configurer les variables d'environnement :**
+
+```bash
+# Copier le template et renseigner les valeurs
+sudo mkdir -p /etc/ocpp-cp-admin
+sudo cp scripts/env.example /etc/ocpp-cp-admin/env
+sudo nano /etc/ocpp-cp-admin/env
+sudo chmod 600 /etc/ocpp-cp-admin/env
+
+# Puis décommenter la ligne EnvironmentFile= dans le fichier unit :
+# EnvironmentFile=/etc/ocpp-cp-admin/env
+```
+
+Consultez [`scripts/env.example`](scripts/env.example) pour la liste complète des variables disponibles.
+
+**3. Installer et démarrer le service :**
+
+```bash
+sudo cp scripts/ocpp-cp-admin.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now ocpp-cp-admin
+
+# Consulter les logs
+journalctl -u ocpp-cp-admin -f
+```
 
 ---
 
@@ -306,6 +352,14 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_GOOGLE_AUTH_ENABLED` | `auth.google.enabled` | `true` |
 | `CPADMIN_GOOGLE_CLIENT_ID` | `auth.google.client_id` | |
 | `CPADMIN_GOOGLE_CLIENT_SECRET` | `auth.google.client_secret` | |
+
+### Métriques Prometheus
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_METRICS_TOKEN` | `metrics.bearerToken` | `mon-token-secret` |
+
+> Si non défini, `/metrics` est accessible sans authentification (adapté aux réseaux privés/Docker).
 
 > Les booléens (`true`/`false`) et les nombres sont convertis automatiquement.
 > Les secrets sont toujours traités comme des chaînes de caractères.
@@ -882,6 +936,9 @@ npm run format
 
 # Vérifier le formatage sans modifier
 npm run format:check
+
+# Sauvegarder la base de données (voir Base de données > Sauvegarde)
+npm run backup
 ```
 
 ---
@@ -891,6 +948,57 @@ npm run format:check
 L'application utilise **SQLite** avec le mode **WAL** (Write-Ahead Logging) pour de meilleures performances en concurrence.
 
 Les migrations sont exécutées automatiquement au démarrage depuis le dossier `migrations/`. La base de données est créée dans le dossier `config/` avec le nom configuré (défaut : `cpadmin.db`).
+
+### Sauvegarde
+
+Un script de sauvegarde est fourni dans `scripts/backup.js`. Il utilise l'API de sauvegarde en ligne de `better-sqlite3`, compatible WAL et sans interruption de service.
+
+```bash
+# Sauvegarde avec les paramètres par défaut (7 sauvegardes conservées dans config/backups/)
+npm run backup
+
+# Destination et rétention personnalisées
+node scripts/backup.js --backup-dir /mnt/nas/backups --keep 30
+
+# Chemin de base de données personnalisé
+node scripts/backup.js --db-path /data/cpadmin.db --backup-dir /backups
+```
+
+Les fichiers de sauvegarde sont nommés `cpadmin_YYYY-MM-DD_HH-MM-SS.db`. Les sauvegardes excédant la limite `--keep` sont supprimées automatiquement.
+
+**Procédure de restauration :**
+
+1. Arrêter l'application.
+2. Copier la sauvegarde souhaitée sur le fichier de base de données :
+   ```bash
+   cp config/backups/cpadmin_YYYY-MM-DD_HH-MM-SS.db config/cpadmin.db
+   ```
+3. Supprimer les fichiers WAL s'ils existent :
+   ```bash
+   rm -f config/cpadmin.db-shm config/cpadmin.db-wal
+   ```
+4. Redémarrer l'application.
+
+**Docker — sauvegarde planifiée (optionnel) :**
+
+Ajouter ce service dans votre `docker-compose.yml` :
+
+```yaml
+backup:
+  image: ghcr.io/wocha-fr/ocpp-cp-admin:latest
+  restart: unless-stopped
+  entrypoint: /bin/sh
+  command: >
+    -c "while true; do
+          node /app/scripts/backup.js --backup-dir /backups --keep 30;
+          sleep 86400;
+        done"
+  volumes:
+    - ./data/config:/app/config
+    - ./data/backups:/backups
+  environment:
+    - NODE_ENV=production
+```
 
 ### Tables principales
 

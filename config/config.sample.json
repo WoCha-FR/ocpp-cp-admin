@@ -75,5 +75,8 @@
       "client_id": "",
       "client_secret": ""
     }
+  },
+  "metrics": {
+    "bearerToken": ""
   }
 }

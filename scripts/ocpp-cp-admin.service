@@ -1,0 +1,45 @@
+[Unit]
+Description=OCPP Charge Point Admin (CSMS)
+Documentation=https://github.com/WoCha-FR/ocpp-cp-admin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ocpp-cp-admin
+Group=ocpp-cp-admin
+WorkingDirectory=/opt/ocpp-cp-admin
+
+# Node.js binary — adjust if using nvm or a custom install path
+ExecStart=/usr/bin/node src/server.js
+
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ocpp-cp-admin
+
+# ── Environment ─────────────────────────────────────────────────────────────
+# Deployment variables — edit /etc/ocpp-cp-admin/env or use EnvironmentFile
+Environment=NODE_ENV=production
+Environment=CPADMIN_OCPP_AUTO_ADD=true
+
+# Copy scripts/env.example to /etc/ocpp-cp-admin/env (chmod 600),
+# then uncomment the line below to load all variables from that file:
+# EnvironmentFile=/etc/ocpp-cp-admin/env
+
+# ── Resource limits ─────────────────────────────────────────────────────────
+LimitNOFILE=65536
+
+# ── Security hardening ──────────────────────────────────────────────────────
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+# Directories the app must be able to write to (logs, DB):
+ReadWritePaths=/opt/ocpp-cp-admin/logs /opt/ocpp-cp-admin/config
+ProtectHome=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

@@ -10,6 +10,8 @@ config/config.dev.json
 config/*.db
 config/*.db-shm
 config/*.db-wal
+# Backups de la base de données
+config/backups
 # Certificats SSL dans le dossier config
 config/*.crt
 config/*.key

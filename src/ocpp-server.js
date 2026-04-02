@@ -12,6 +12,25 @@ const pendingChargepoints = new Map(); // identity → { identity, remoteAddress
 const authRejectTracker = new Map(); // idTag → { count, firstTime, lastIdentity, lastCpName, lastSiteId }
 const reconnectTracker = new Map(); // identity → { count, firstTime }
 
+// ── Rate limiting sur les connexions WebSocket OCPP ──
+// Max 10 tentatives de connexion par IP sur une fenêtre de 60 secondes.
+const wsRateTracker = new Map(); // IP → timestamps[]
+const WS_RATE_MAX = 10;
+const WS_RATE_WINDOW_MS = 60 * 1000;
+
+function checkWsRateLimit(ip) {
+  const now = Date.now();
+  let attempts = wsRateTracker.get(ip) || [];
+  attempts = attempts.filter((t) => now - t < WS_RATE_WINDOW_MS);
+  if (attempts.length >= WS_RATE_MAX) {
+    wsRateTracker.set(ip, attempts);
+    return false; // rate-limited
+  }
+  attempts.push(now);
+  wsRateTracker.set(ip, attempts);
+  return true;
+}
+
 function setBroadcast(fn) {
   wsBroadcast = fn;
 }
@@ -33,6 +52,12 @@ function createOCPPServer(options = {}) {
   });
 
   server.auth((accept, reject, handshake) => {
+    const clientIp = handshake.remoteAddress || 'unknown';
+    if (!checkWsRateLimit(clientIp)) {
+      logger.warn(`OCPP WS rate limit exceeded for IP: ${clientIp}`);
+      return reject(429, 'Too many connection attempts');
+    }
+
     logger.debug(`Connection attempt: ${handshake.identity} on ${isWSS ? 'WSS' : 'WS'}`);
 
     if (!handshake.identity) {
@@ -1167,6 +1192,10 @@ function startHeartbeatWatchdog() {
         );
         disconnectChargepoint(identity);
       }
+    }
+    // Nettoyage des entrées expirées du rate limiter WS
+    for (const [ip, attempts] of wsRateTracker) {
+      if (attempts.every((t) => now - t >= WS_RATE_WINDOW_MS)) wsRateTracker.delete(ip);
     }
   }, WATCHDOG_CHECK_INTERVAL_MS);
 }

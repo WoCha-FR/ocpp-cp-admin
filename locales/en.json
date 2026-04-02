@@ -116,7 +116,10 @@
     "cpPending": "Unknown chargepoint {{identity}} pending validation",
     "diagnosticsUploaded": "Diagnostics uploaded for {{identity}}",
     "diagnosticsFailed": "Diagnostics upload failed for {{identity}}",
-    "strictModeViolation": "{{identity}}: non-compliant {{method}} response (extra fields). Disable ocpp.strictMode in the configuration."
+    "strictModeViolation": "{{identity}}: non-compliant {{method}} response (extra fields). Disable ocpp.strictMode in the configuration.",
+    "wsDisconnected": "Connection lost…",
+    "wsReconnecting": "Reconnecting in {{s}}s…",
+    "wsReconnected": "Reconnected"
   },
   "dashboard": {
     "totalChargepoints": "Total Chargepoints",
@@ -852,7 +855,8 @@
       "webui": "Web Interface",
       "ocpp": "OCPP Server",
       "notifs": "Notifications",
-      "auth": "Authentication"
+      "auth": "Authentication",
+      "metrics": "Metrics"
     },
     "colParam": "Parameter",
     "colFile": "File value",

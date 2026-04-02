@@ -167,6 +167,14 @@
       transition: background 0.3s;
     }
     .topbar h2 { font-size: 20px; font-weight: 600; }
+    .ws-status-badge {
+      font-size: 12px; padding: 3px 10px; border-radius: 12px; white-space: nowrap;
+      background: var(--warning-bg, #fff3cd); color: var(--warning-text, #856404);
+      border: 1px solid var(--warning-border, #ffc107);
+      animation: wsPulse 1.5s ease-in-out infinite;
+    }
+    .ws-status-badge.hidden { display: none; }
+    @keyframes wsPulse { 0%,100%{opacity:1} 50%{opacity:.55} }
     .content { padding: 12px; }
 
     /* ── Login ── */
@@ -693,10 +701,10 @@
     .restart-overlay-box .spinner { font-size: 2em; margin-bottom: 12px; animation: spin 1s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/i18next@26/i18next.min.js"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/i18next@26.0.1/i18next.min.js" integrity="sha384-yi7xTPk1NDxOBNIXWRD9JQjdd9BfRP4boUGJ5ze6QyVeAizzPC9ERlK1dIVnRRFU" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13" integrity="sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6" crossorigin="anonymous"></script>
   <script>
     const __supportedLangs = window.__SUPPORTED_LANGUAGES__ || ['fr'];
     const __defaultLang = window.__DEFAULT_LANG__ || 'fr';
@@ -744,7 +752,7 @@
         </div>
         <button type="submit" class="btn btn-primary btn-block" data-i18n="login.submit">Se connecter</button>
         <button type="button" class="btn btn-outline btn-block mt-2 hidden" id="btnGoogleLogin" onclick="window.location.href='/api/auth/google/login'">Google</button>
-        <p id="loginError" class="text-muted mt-2 hidden" style="color:var(--danger);text-align:center;"></p>
+        <p id="loginError" class="text-muted mt-2 hidden" style="color:var(--danger);text-align:center;" role="alert" aria-live="assertive"></p>
         <a id="forgotPasswordLink" class="forgot-link hidden" onclick="showPwdStep(1)" data-i18n="login.forgotPassword">Mot de passe oublié ?</a>
       </form>
     </div>
@@ -759,7 +767,7 @@
           <input type="email" id="forgotEmail" required autocomplete="email">
         </div>
         <button type="submit" class="btn btn-primary btn-block" data-i18n="login.forgotSubmit">Envoyer le lien</button>
-        <p id="forgotError" class="text-muted mt-2 hidden" style="color:var(--danger);text-align:center;"></p>
+        <p id="forgotError" class="text-muted mt-2 hidden" style="color:var(--danger);text-align:center;" role="alert" aria-live="assertive"></p>
         <p id="forgotSuccess" class="text-muted mt-2 hidden" style="color:var(--success);text-align:center;" data-i18n="login.forgotSuccess"></p>
       </form>
     </div>
@@ -787,7 +795,7 @@
           <input type="password" id="resetConfirmPassword" required autocomplete="new-password">
         </div>
         <button type="submit" class="btn btn-primary btn-block" data-i18n="login.resetSubmit">Réinitialiser</button>
-        <p id="resetError" class="text-muted mt-2 hidden" style="color:var(--danger);text-align:center;"></p>
+        <p id="resetError" class="text-muted mt-2 hidden" style="color:var(--danger);text-align:center;" role="alert" aria-live="assertive"></p>
       </form>
     </div>
     <!-- Step 3: Success -->
@@ -861,7 +869,7 @@
     </div>
     <div class="sidebar-footer">
       <div class="user-info" id="userInfoSidebar"></div>
-      <button class="btn btn-warning btn-sm btn-block" onclick="logout()" data-i18n="sidebar.logout">Déconnexion</button>
+      <button class="btn btn-warning btn-sm btn-block" onclick="withBtn(this, logout)" data-i18n="sidebar.logout">Déconnexion</button>
     </div>
   </aside>
 
@@ -873,6 +881,7 @@
         <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Menu">☰</button>
         <h2 id="pageTitle">Tableau de bord</h2>
       </div>
+      <span id="wsStatusBadge" class="ws-status-badge hidden" aria-live="polite"></span>
       <div id="topbarActions"></div>
     </div>
     <div id="pushPromptContainer"></div>
@@ -883,7 +892,7 @@
 </div>
 
 <!-- Modal -->
-<div class="modal-overlay" id="modalOverlay">
+<div class="modal-overlay" id="modalOverlay" role="dialog" aria-modal="true">
   <div class="modal" id="modalContent"></div>
 </div>
 
@@ -900,7 +909,7 @@
 </div>
 
 <!-- Toast -->
-<div class="toast-container" id="toastContainer"></div>
+<div class="toast-container" id="toastContainer" aria-live="polite" aria-atomic="false"></div>
 
 <script>
 // ══════════════════════════════════════
@@ -1039,7 +1048,7 @@ async function loadFlatpickrLocale(lang) {
   }
   // Charger dynamiquement
   const script = document.createElement('script');
-  script.src = `https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/${fpLocale}.js`;
+  script.src = `https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/${fpLocale}.js`;
   await new Promise((resolve, reject) => {
     script.onload = resolve;
     script.onerror = reject;
@@ -1053,6 +1062,8 @@ async function loadFlatpickrLocale(lang) {
 // ══════════════════════════════════════
 async function api(method, path, body) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  const xsrfCookie = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('XSRF-TOKEN='));
+  if (xsrfCookie) opts.headers['X-XSRF-Token'] = decodeURIComponent(xsrfCookie.slice('XSRF-TOKEN='.length));
   if (body) opts.body = JSON.stringify(body);
   const res = await fetch('/api' + path, opts);
   const data = await res.json();
@@ -1066,9 +1077,22 @@ async function api(method, path, body) {
   return data;
 }
 
+// Désactive un bouton pendant une opération async pour éviter les doubles-clics.
+// Usage dans onclick : withBtn(this, asyncFn) ou withBtn(this, () => asyncFn(args))
+async function withBtn(btn, asyncFn) {
+  if (btn && btn.disabled) return;
+  if (btn) btn.disabled = true;
+  try {
+    await asyncFn();
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function toast(message, type = 'info') {
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
+  el.setAttribute('role', type === 'error' ? 'alert' : 'status');
   message.split('\n').forEach((line, i) => {
     if (i > 0) el.appendChild(document.createElement('br'));
     el.appendChild(document.createTextNode(line));
@@ -1077,13 +1101,34 @@ function toast(message, type = 'info') {
   setTimeout(() => el.remove(), 4000);
 }
 
+let _modalPreviousFocus = null;
+const _FOCUSABLE = 'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+
 function openModal(html) {
+  _modalPreviousFocus = document.activeElement;
   document.getElementById('modalContent').innerHTML = html;
   document.getElementById('modalOverlay').classList.add('active');
+  const first = document.getElementById('modalContent').querySelector(_FOCUSABLE);
+  if (first) first.focus();
+  document.addEventListener('keydown', _modalKeyHandler);
 }
 
 function closeModal() {
   document.getElementById('modalOverlay').classList.remove('active');
+  document.removeEventListener('keydown', _modalKeyHandler);
+  if (_modalPreviousFocus) { _modalPreviousFocus.focus(); _modalPreviousFocus = null; }
+}
+
+function _modalKeyHandler(e) {
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (e.key !== 'Tab') return;
+  const focusable = Array.from(document.getElementById('modalContent').querySelectorAll(_FOCUSABLE));
+  if (!focusable.length) return;
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey ? document.activeElement === first : document.activeElement === last) {
+    (e.shiftKey ? last : first).focus();
+    e.preventDefault();
+  }
 }
 
 document.getElementById('modalOverlay').addEventListener('click', (e) => {
@@ -1326,7 +1371,7 @@ function showApp() {
   const isManager = currentUser.role !== 'admin' && (currentUser.sites || []).some(s => s.role === 'manager');
   const roleKey = currentUser.role === 'admin' ? 'admin' : (isManager ? 'manager' : 'user');
   document.getElementById('userInfoSidebar').innerHTML = `
-    ${currentUser.shortname || currentUser.useremail} <span class="role-badge role-${roleKey}">${t(`common.${roleKey}`)}</span>
+    ${escapeHtml(currentUser.shortname || currentUser.useremail)} <span class="role-badge role-${escapeAttr(roleKey)}">${t(`common.${roleKey}`)}</span>
   `;
   // Afficher/cacher menu selon rôle
   document.getElementById('navSites').classList.toggle('hidden', !canManage());
@@ -1356,10 +1401,30 @@ function showApp() {
 // ══════════════════════════════════════
 //  WEBSOCKET TEMPS RÉEL
 // ══════════════════════════════════════
+let wsReconnectDelay = 3000; // ms, doublé à chaque échec, max 30s
+const WS_RECONNECT_MAX_MS = 30000;
+let wsReconnectTimer = null;
+
+function setWsStatusBadge(text) {
+  const badge = document.getElementById('wsStatusBadge');
+  if (!badge) return;
+  if (text) {
+    badge.textContent = `⚠ ${text}`;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+    badge.textContent = '';
+  }
+}
+
 function connectWebSocket() {
   if (!currentUser) return;
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${proto}//${location.host}/ws`);
+  ws.onopen = () => {
+    wsReconnectDelay = 3000; // réinitialiser le backoff
+    setWsStatusBadge(null);  // masquer le badge
+  };
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data);
@@ -1367,7 +1432,13 @@ function connectWebSocket() {
     } catch {}
   };
   ws.onclose = () => {
-    if (currentUser) setTimeout(connectWebSocket, 3000);
+    if (!currentUser) return;
+    const delaySec = Math.round(wsReconnectDelay / 1000);
+    setWsStatusBadge(t('realTime.wsReconnecting', { s: delaySec }));
+    wsReconnectTimer = setTimeout(() => {
+      wsReconnectDelay = Math.min(wsReconnectDelay * 2, WS_RECONNECT_MAX_MS);
+      connectWebSocket();
+    }, wsReconnectDelay);
   };
 }
 
@@ -1587,7 +1658,7 @@ async function renderDashboard() {
     // Charger les KPI et graphiques pour la période sélectionnée
     await loadDashboardPeriodData(__dashboardDays);
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -1768,8 +1839,8 @@ async function renderChargepoints() {
                       <td class="text-muted">${p.password ? '•••••' : t('common.none') }</td>
                       <td class="text-muted">${formatDate(p.timestamp)}</td>
                       <td>
-                        <button class="btn btn-success btn-sm" onclick="acceptPendingChargepoint('${escapeAttr(p.identity)}')">${t('chargepoint.cpAccept')}</button>
-                        <button class="btn btn-danger btn-sm" onclick="rejectPendingChargepoint('${escapeAttr(p.identity)}')">${t('chargepoint.cpRefuse')}</button>
+                        <button class="btn btn-success btn-sm" onclick="withBtn(this, () => acceptPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpAccept')}</button>
+                        <button class="btn btn-danger btn-sm" onclick="withBtn(this, () => rejectPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpRefuse')}</button>
                       </td>
                     </tr>
                   `).join('')}
@@ -1856,7 +1927,7 @@ async function renderChargepoints() {
                 <td>
                   ${adminManage() ? `<button class="btn btn-indigo btn-sm" onclick="assignCpToSite(${cp.id}, '${cp.identity}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>` : ''}
                   ${adminManage() ? `<button class="btn btn-teal btn-sm" onclick="showEditChargepointModal(${cp.id})">${t('common.edit')}</button>` : ''}
-                  ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" onclick="deleteChargepoint(${cp.id}, '${escapeAttr(cp.identity)}')">${t('common.delete')}</button>` : ''}
+                  ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteChargepoint(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -1865,7 +1936,7 @@ async function renderChargepoints() {
       </div>
     `;
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -1889,8 +1960,8 @@ async function showCreateChargepointModal() {
   <div class="form-group"><label>${t('chargepoint.cpIdentity')}</label><input type="text" id="cpIdentity" required placeholder="Ex: CP001" /></div>
   <div class="text-muted" style="font-size:12px;margin-bottom:12px;">
     ${t('chargepoint.cpIdentityHint')}<br/>
-    ${t('chargepoint.cpWsUrl')}: ${appSettings.ocppWsUrl}
-    ${appSettings.ocppWssEnabled ? `<br/>${t('chargepoint.cpWssUrl')}: ${appSettings.ocppWssUrl}` : ''}
+    ${t('chargepoint.cpWsUrl')}: ${escapeHtml(appSettings.ocppWsUrl)}
+    ${appSettings.ocppWssEnabled ? `<br/>${t('chargepoint.cpWssUrl')}: ${escapeHtml(appSettings.ocppWssUrl)}` : ''}
   </div>
   <div class="form-group"><label>${t('common.name')}</label><input type="text" id="cpName" /></div>
   <div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('chargepoint.cpNameHint')}</div>
@@ -1912,7 +1983,7 @@ async function showCreateChargepointModal() {
   </div>
   <div class="modal-actions">
     <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="createChargepoint()">${t('common.create')}</button>
+    <button class="btn btn-primary" onclick="withBtn(this, createChargepoint)">${t('common.create')}</button>
   </div>
 `);
 }
@@ -1945,7 +2016,7 @@ async function showEditChargepointModal(id) {
   </div>
   <div class="modal-actions">
     <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="updateChargepoint(${id})">${t('common.save')}</button>
+    <button class="btn btn-primary" onclick="withBtn(this, () => updateChargepoint(${id}))">${t('common.save')}</button>
   </div>
 `);
 }
@@ -2005,7 +2076,7 @@ async function assignCpToSite(cpId, cpName, currentSiteId) {
   </div>
   <div class="modal-actions">
     <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="execAssignSite(${cpId})">${t('common.save')}</button>
+    <button class="btn btn-primary" onclick="withBtn(this, () => execAssignSite(${cpId}))">${t('common.save')}</button>
   </div>
 `);
 }
@@ -2035,7 +2106,7 @@ async function acceptPendingChargepoint(identity) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-success" onclick="execAcceptPending('${escapeAttr(identity)}')">${t('chargepoint.cpAccept')}</button>
+      <button class="btn btn-success" onclick="withBtn(this, () => execAcceptPending('${escapeAttr(identity)}'))">${t('chargepoint.cpAccept')}</button>
     </div>
   `);
 }
@@ -2136,28 +2207,28 @@ async function renderDetailTabBorne(cp) {
           <div class="cmd-subgroups">
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReboot')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'Reset', {type:'Soft'})">${t('chargepoint.cpRebootSoft')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'Reset', {type:'Hard'})">${t('chargepoint.cpRebootHard')}</button>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Soft'})">${t('chargepoint.cpRebootSoft')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Hard'})">${t('chargepoint.cpRebootHard')}</button>
             </div>
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: 0})">${t('connectors.cSetAvailable')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: 0})">${t('connectors.cSetUnavailable')}</button>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: 0})">${t('connectors.cSetAvailable')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: 0})">${t('connectors.cSetUnavailable')}</button>
             </div>
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'TriggerMessage', {requestedMessage: 'BootNotification'})">${t('chargepoint.cpBootNotification')}</button>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'TriggerMessage', {requestedMessage: 'Heartbeat'})">${t('chargepoint.cpHeartbeat')}</button>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues'})">${t('connectors.cTriggerMeter')}</button>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: 0})">${t('connectors.cTriggerStatus')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'BootNotification'})">${t('chargepoint.cpBootNotification')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'Heartbeat'})">${t('chargepoint.cpHeartbeat')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues'})">${t('connectors.cTriggerMeter')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: 0})">${t('connectors.cTriggerStatus')}</button>
             </div>
             ${adminManage() ? `
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔧 ${t('chargepoint.cpManagement')}</span>
-              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
-              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'ClearChargingProfile', {})">${t('chargepoint.cpClearChargingProfile')}</button>
-              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
-              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'GetDiagnostics', {location: '${ocppSettings.diagnosticsLocation || ''}'})">${t('chargepoint.cpGetDiagnostics')}</button>
+              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
+              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ClearChargingProfile', {})">${t('chargepoint.cpClearChargingProfile')}</button>
+              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
+              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'GetDiagnostics', {location: '${ocppSettings.diagnosticsLocation || ''}'})">${t('chargepoint.cpGetDiagnostics')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
@@ -2194,13 +2265,11 @@ async function renderDetailTabBorne(cp) {
   `;
 }
 
-async function sendCommand(cpId, method, params) {
-  try {
+async function sendCommand(event, cpId, method, params) {
+  await withBtn(event?.currentTarget, async () => {
     const result = await api('POST', `/chargepoints/${cpId}/command`, { method, params });
     toast(t('connectors.cCommandResult', { method, result: JSON.stringify(result.result) }), 'success');
-  } catch (err) {
-    toast(`${t('common.error')}: ${err.message}`, 'error');
-  }
+  });
 }
 
 // ── Onglet Connecteurs ─────────────────────────────────────────────
@@ -2227,7 +2296,7 @@ async function renderDetailTabConnectors(cp) {
               <div class="detail-section${hasError ? ' detail-section-error' : ''}">
                 <div class="detail-section-title">
                   🔌 ${t('common.connector_one')} ${c.connector_id}${escapeHtml(c.connector_name) ? ' · ' + escapeHtml(c.connector_name) : ''}
-                  ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
+                  ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
                   <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : c.cnstatus}</span>
                   ${hasError ? `<span class="badge badge-red">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}
                 </div>
@@ -2247,17 +2316,17 @@ async function renderDetailTabConnectors(cp) {
                 <div class="cmd-subgroups">
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: ${c.connector_id}})">${t('connectors.cSetAvailable')}</button>
-                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: ${c.connector_id}})">${t('connectors.cSetUnavailable')}</button>
+                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: ${c.connector_id}})">${t('connectors.cSetAvailable')}</button>
+                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: ${c.connector_id}})">${t('connectors.cSetUnavailable')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔓 ${t('connectors.cUnlock')}</span>
-                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'UnlockConnector', {connectorId: ${c.connector_id}})">${t('connectors.cUnlockConnector')}</button>
+                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'UnlockConnector', {connectorId: ${c.connector_id}})">${t('connectors.cUnlockConnector')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: ${c.connector_id}})">${t('connectors.cTriggerMeter')}</button>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: ${c.connector_id}})">${t('connectors.cTriggerStatus')}</button>
+                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: ${c.connector_id}})">${t('connectors.cTriggerMeter')}</button>
+                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: ${c.connector_id}})">${t('connectors.cTriggerStatus')}</button>
                   </div>
                 </div>
               </div>` : ''}
@@ -2288,7 +2357,7 @@ function openEditConnectorModal(id, connectorId, name, power, type) {
   </div>
   <div class="modal-actions">
     <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="saveConnector(${id})">💾 ${t('common.save')}</button>
+    <button class="btn btn-primary" onclick="withBtn(this, () => saveConnector(${id}))">💾 ${t('common.save')}</button>
   </div>
 `);
 }
@@ -2376,7 +2445,7 @@ async function renderDetailTabLogs(cp) {
           <input type="text" id="cpLogFilterAction" value="${escapeAttr(cpLogsFilters.action || '')}" placeholder="Ex: BootNotification" onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')" />
         </div>
         <button class="btn btn-outline btn-sm" onclick="resetCpLogFilters(${cp.id})">${t('common.reset')}</button>
-        ${adminManage() ? `<button class="btn btn-danger btn-sm" onclick="clearCpLogMessages(${cp.id}, '${escapeAttr(cp.identity)}')">${t('chargepoint.cpLogsDelete')}</button>` : ''}
+        ${adminManage() ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => clearCpLogMessages(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('chargepoint.cpLogsDelete')}</button>` : ''}
       </div>
     </div>
 
@@ -2457,7 +2526,7 @@ async function renderDetailTabConfig(cp) {
         <h3>⚙️ ${t('chargepoint.cpConfTitle')}</h3>
         <div class="flex-gap">
           <input type="text" id="configSearchInput" placeholder="${t('chargepoint.cpConfSearchPlaceholder')}" oninput="filterConfigTable()" style="max-width:200px;width:100%;padding:4px 8px;font-size:13px;" />
-          ${canManage() ? `<button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="refreshChargepointConfig(${cp.id})">🔄 ${t('chargepoint.cpConfRefresh')}</button>` : ''}
+          ${canManage() ? `<button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="withBtn(this, () => refreshChargepointConfig(${cp.id}))">🔄 ${t('chargepoint.cpConfRefresh')}</button>` : ''}
         </div>
       </div>
       <div id="configTableContainer">
@@ -2482,7 +2551,7 @@ async function loadChargepointConfig(cpId, isOnline) {
     }
     renderConfigTable(cpId, config, isOnline);
   } catch (err) {
-    container.innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    container.innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -2548,7 +2617,7 @@ function showEditConfigModal(cpId, key, currentValue, isOverride = false) {
     ${isOverride ? `<p class="text-muted" style="font-size:12px;">🔒 ${t('chargepoint.cpConfOverrideHint')}</p>` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="updateChargepointConfig(${cpId}, '${escapeAttr(key)}')">${t('common.save')}</button>
+      <button class="btn btn-primary" onclick="withBtn(this, () => updateChargepointConfig(${cpId}, '${escapeAttr(key)}'))">${t('common.save')}</button>
     </div>
   `);
 }
@@ -2648,7 +2717,7 @@ async function renderConnectors() {
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
             <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${t('common.connector_one')} ${c.connector_id}</div>
             ${canStart
-            ? `<button class="btn btn-success btn-block" onclick="mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id})">
+            ? `<button class="btn btn-success btn-block" onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                   ⚡ ${t('connectors.cStartCharge')}
                 </button>`
             : isCharging && c.active_transaction_id
@@ -2657,7 +2726,7 @@ async function renderConnectors() {
                       <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
                       <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
                     </div>
-                    <button class="btn btn-danger btn-block" onclick="mgrStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id})">
+                    <button class="btn btn-danger btn-block" onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                       ⏹ ${t('connectors.cStopCharge')}
                     </button>`
               : isFaulted || isUnavailable
@@ -2675,7 +2744,7 @@ async function renderConnectors() {
     }
     document.getElementById('pageContent').innerHTML = html;
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -2780,7 +2849,7 @@ async function renderUserDashboard() {
             ${isSuspended
           ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">🚫 ${t('dashboard.siteAccessSuspended')}</div>`
           : canChargeConn
-            ? `<button class="btn btn-success btn-block" onclick="userStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id})">
+            ? `<button class="btn btn-success btn-block" onclick="withBtn(this, () => userStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                   ⚡ ${t('connectors.cStartCharge')}
                 </button>`
             : isOwnCharge
@@ -2789,7 +2858,7 @@ async function renderUserDashboard() {
                     <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
                     <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
                   </div>
-                  <button class="btn btn-danger btn-block" onclick="userStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id})">
+                  <button class="btn btn-danger btn-block" onclick="withBtn(this, () => userStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                     ⏹ ${t('connectors.cStopCharge')}
                   </button>`
               : isAutoMode && isOnline
@@ -2804,7 +2873,7 @@ async function renderUserDashboard() {
     </div>
   `;
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -2974,7 +3043,7 @@ async function renderIdTags(tab) {
                 <td><div class="flex-gap">
                   ${!canEditTag(tag) ? (isAutoTag(tag) ? `<span class="badge badge-yellow" title="${t('idtags.rfVirtualHint')}">${t('idtags.rfVirtual')}</span>` : '') : `
                   <button class="btn btn-teal btn-sm" onclick="showEditIdTagModal(${tag.id})">${t('common.edit')}</button>
-                  <button class="btn btn-danger btn-sm" onclick="deleteIdTag(${tag.id}, '${escapeAttr(tag.id_tag)}')">${t('common.delete')}</button>`}
+                  <button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteIdTag(${tag.id}, '${escapeAttr(tag.id_tag)}'))">${t('common.delete')}</button>`}
                 </div></td>
               </tr>
             `).join('')}
@@ -2983,7 +3052,7 @@ async function renderIdTags(tab) {
       </div>
     `;
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -3034,7 +3103,7 @@ async function showCreateIdTagModal() {
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')}))</label><input type="text" id="tagExpiry" placeholder="${t('common.select')}" /></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="createIdTag()">${t('common.create')}</button>
+      <button class="btn btn-primary" onclick="withBtn(this, createIdTag)">${t('common.create')}</button>
     </div>
   `);
   const lc = getLocaleConfig();
@@ -3089,7 +3158,7 @@ async function showEditIdTagModal(id) {
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagExpiry" placeholder="${t('common.select')}" /></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="updateIdTag(${id})">${t('common.save')}</button>
+      <button class="btn btn-primary" onclick="withBtn(this, () => updateIdTag(${id}))">${t('common.save')}</button>
     </div>
   `);
   const lc = getLocaleConfig();
@@ -3246,7 +3315,7 @@ async function renderIdTagsEvents() {
       <button class="tab" onclick="switchIdTagsTab('tags')">🏷️ ${t('common.rfidTag')}</button>
       <button class="tab active" onclick="switchIdTagsTab('events')">🚫 ${t('idtags.rfHistoDenial')}</button>
     </div>
-    <p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    <p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -3315,7 +3384,7 @@ async function renderUsers() {
                   <button class="btn btn-indigo btn-sm" onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
                   ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
                   <button class="btn btn-teal btn-sm" onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
-                  ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id}, '${escapeAttr(u.useremail)}')">${t('common.delete')}</button>` : ''}
+                  ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteUser(${u.id}, '${escapeAttr(u.useremail)}'))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
             `}).join('')}
@@ -3324,7 +3393,7 @@ async function renderUsers() {
       </div>
     `;
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -3356,7 +3425,7 @@ async function showCreateUserModal() {
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="createUser()">${t('common.create')}</button>
+      <button class="btn btn-primary" onclick="withBtn(this, createUser)">${t('common.create')}</button>
     </div>
   `);
   // Indicateur en temps réel de la force du mot de passe
@@ -3396,7 +3465,7 @@ async function showEditUserModal(id) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="updateUser(${id})">${t('common.save')}</button>
+      <button class="btn btn-primary" onclick="withBtn(this, () => updateUser(${id}))">${t('common.save')}</button>
     </div>
   `);
   // Indicateur en temps réel de la force du mot de passe
@@ -3673,7 +3742,7 @@ async function renderTransactions() {
     flatpickr('#txFilterFrom', { ...fpOpts, defaultDate: txFilters.from || null });
     flatpickr('#txFilterTo', { ...fpOpts, defaultDate: txFilters.to || null });
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -3876,7 +3945,7 @@ async function renderMyTransactions() {
     flatpickr('#myTxFilterFrom', { ...fpOpts, defaultDate: myTxFilters.from || null });
     flatpickr('#myTxFilterTo', { ...fpOpts, defaultDate: myTxFilters.to || null });
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -4205,7 +4274,7 @@ async function renderNotifications() {
                 <strong>🔔 ${t('push.activate')}</strong>
                 <p style="margin:4px 0 0;font-size:13px;color:var(--gray-600);">${t('push.activateHint')}</p>
               </div>
-              <button class="btn btn-primary" onclick="subscribeToPush()">${t('push.btnActivate')}</button>
+              <button class="btn btn-primary" onclick="withBtn(this, subscribeToPush)">${t('push.btnActivate')}</button>
             </div>
           </div>
         `;
@@ -4217,7 +4286,7 @@ async function renderNotifications() {
                 <strong>✅ ${t('push.activated')}</strong>
                 <p style="margin:4px 0 0;font-size:13px;color:var(--gray-600);">${t('push.activatedHint')}</p>
               </div>
-              <button class="btn btn-outline btn-sm" onclick="unsubscribeFromPush()" style="color:var(--danger);border-color:var(--danger);">${t('push.btnDeactivate')}</button>
+              <button class="btn btn-outline btn-sm" onclick="withBtn(this, unsubscribeFromPush)" style="color:var(--danger);border-color:var(--danger);">${t('push.btnDeactivate')}</button>
             </div>
           </div>
         `;
@@ -4350,7 +4419,7 @@ async function renderNotifLog() {
             <option value="200" ${notifLogLimit === '200' ? 'selected' : ''}>200</option>
           </select>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="clearNotifLog()">${t('push.prefClearHistory')}</button>
+        <button class="btn btn-danger btn-sm" onclick="withBtn(this, clearNotifLog)">${t('push.prefClearHistory')}</button>
       </div>
     </div>
 
@@ -4447,7 +4516,7 @@ async function checkPushPrompt() {
         <p>${t('push.promptHint')}</p>
       </div>
       <div class="push-prompt-actions">
-        <button class="btn btn-primary btn-sm" onclick="acceptPushPrompt()">${t('push.btnActivate')}</button>
+        <button class="btn btn-primary btn-sm" onclick="withBtn(this, acceptPushPrompt)">${t('push.btnActivate')}</button>
         <button class="push-prompt-close" onclick="dismissPushPrompt()" title="${t('common.close')}">✕</button>
       </div>
     </div>
@@ -4616,7 +4685,7 @@ async function renderConfigTabApp() {
     return;
   }
 
-  const sectionOrder = ['general', 'webui', 'ocpp', 'notifs', 'auth'];
+  const sectionOrder = ['general', 'webui', 'ocpp', 'notifs', 'auth', 'metrics'];
   const bySection = {};
   for (const f of data.fields) {
     if (!bySection[f.section]) bySection[f.section] = [];
@@ -4690,7 +4759,7 @@ async function renderConfigTabChargepoints() {
       <td><input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="toggleInitConfig(${r.id}, this.checked)"></td>
       <td>
         <button class="btn btn-sm btn-secondary" onclick="showEditInitConfigModal(${r.id}, '${escapeAttr(r.key)}', '${escapeAttr(r.value)}', ${!!r.enabled})">${t('common.edit')}</button>
-        <button class="btn btn-sm btn-danger" onclick="deleteInitConfig(${r.id})">${t('common.delete')}</button>
+        <button class="btn btn-sm btn-danger" onclick="withBtn(this, () => deleteInitConfig(${r.id}))">${t('common.delete')}</button>
       </td>
     </tr>`;
   }
@@ -4710,7 +4779,7 @@ function showCreateInitConfigModal() {
     <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="initCfgValue" required /></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="createInitConfig()">${t('common.create')}</button>
+      <button class="btn btn-primary" onclick="withBtn(this, createInitConfig)">${t('common.create')}</button>
     </div>
   `);
 }
@@ -4740,7 +4809,7 @@ function showEditInitConfigModal(id, key, value, enabled) {
     <div class="form-group"><label><input type="checkbox" id="editInitCfgEnabled" ${enabled ? 'checked' : ''}> ${t('initConfig.enabled')}</label></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="updateInitConfig(${id})">${t('common.save')}</button>
+      <button class="btn btn-primary" onclick="withBtn(this, () => updateInitConfig(${id}))">${t('common.save')}</button>
     </div>
   `);
 }
@@ -5057,7 +5126,7 @@ async function renderSites() {
               </td>
               <td>
                 ${isAdmin ? `<button class="btn btn-teal btn-sm" onclick="showEditSiteModal(${s.id}, '${escapeAttr(s.sname)}', '${escapeAttr(s.address || '')}')">${t('common.edit')}</button>
-                <button class="btn btn-danger btn-sm" onclick="deleteSite(${s.id}, '${escapeAttr(s.sname)}')">${t('common.delete')}</button>` : ''}
+                <button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteSite(${s.id}, '${escapeAttr(s.sname)}'))">${t('common.delete')}</button>` : ''}
               </td>
             </tr>`;
     }).join('')}
@@ -5066,7 +5135,7 @@ async function renderSites() {
     </div>
   `;
   } catch (err) {
-    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${err.message}</p>`;
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -5077,7 +5146,7 @@ function showCreateSiteModal() {
   <div class="form-group"><label>${t('sites.siteAdress')}</label><input type="text" id="siteAddress" /></div>
   <div class="modal-actions">
     <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="createSite()">${t('common.create')}</button>
+    <button class="btn btn-primary" onclick="withBtn(this, createSite)">${t('common.create')}</button>
   </div>
 `);
 }
@@ -5089,7 +5158,7 @@ function showEditSiteModal(id, name, address) {
   <div class="form-group"><label>${t('sites.siteAdress')}</label><input type="text" id="siteAddress" value="${escapeAttr(address)}" /></div>
   <div class="modal-actions">
     <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="updateSite(${id})">${t('common.save')}</button>
+    <button class="btn btn-primary" onclick="withBtn(this, () => updateSite(${id}))">${t('common.save')}</button>
   </div>
 `);
 }

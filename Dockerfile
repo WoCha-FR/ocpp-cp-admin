@@ -24,6 +24,7 @@ COPY --chown=app:app locales ./locales
 COPY --chown=app:app migrations ./migrations
 COPY --chown=app:app public ./public
 COPY --chown=app:app config ./config
+COPY --chown=app:app scripts ./scripts
 
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 

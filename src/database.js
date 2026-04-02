@@ -138,8 +138,10 @@ function updateUser(id, data) {
 }
 
 function deleteUser(id) {
-  db.prepare('DELETE FROM user_sites WHERE user_id = ?').run(id);
-  db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  db.transaction(() => {
+    db.prepare('DELETE FROM user_sites WHERE user_id = ?').run(id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+  })();
 }
 
 // ── Users Password Resets ──
@@ -624,32 +626,35 @@ function getAllConnectorsGrouped(siteIds) {
 
 // ── Transactions ──
 function createTransaction(chargepointId, connectorId, idTag, meterStart, startTime, startSource) {
-  // Générer l'ID de transaction unique (AAJJJ + séquentiel 4 chiffres)
-  const now = new Date();
-  const yy = String(now.getFullYear()).slice(-2);
-  const startOfYear = new Date(now.getFullYear(), 0, 0);
-  const dayOfYear = Math.floor((now - startOfYear) / 86400000);
-  const base = (yy * 1000 + dayOfYear) * 10000;
-  const row = db
-    .prepare(
-      `
-    SELECT COALESCE(MAX(transaction_id), ?) + 1 AS next_id
-    FROM transactions
-    WHERE transaction_id BETWEEN ? AND ?
-  `
-    )
-    .get(base, base, base + 9999);
-  const transactionId = row.next_id;
+  return db.transaction(() => {
+    // Générer l'ID de transaction unique (AAJJJ + séquentiel 4 chiffres)
+    // Le SELECT MAX + INSERT est atomique grâce à la transaction (pas de race condition)
+    const now = new Date();
+    const yy = String(now.getFullYear()).slice(-2);
+    const startOfYear = new Date(now.getFullYear(), 0, 0);
+    const dayOfYear = Math.floor((now - startOfYear) / 86400000);
+    const base = (yy * 1000 + dayOfYear) * 10000;
+    const row = db
+      .prepare(
+        `
+      SELECT COALESCE(MAX(transaction_id), ?) + 1 AS next_id
+      FROM transactions
+      WHERE transaction_id BETWEEN ? AND ?
+    `
+      )
+      .get(base, base, base + 9999);
+    const transactionId = row.next_id;
 
-  const source = startSource || 'rfid';
-  const info = db
-    .prepare(
-      `INSERT INTO transactions
-    (chargepoint_id, connector_id, transaction_id, id_tag, meter_start, start_time, status, start_source)
-    VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)`
-    )
-    .run(chargepointId, connectorId, transactionId, idTag, meterStart, startTime, source);
-  return db.prepare('SELECT * FROM transactions WHERE id = ?').get(info.lastInsertRowid);
+    const source = startSource || 'rfid';
+    const info = db
+      .prepare(
+        `INSERT INTO transactions
+      (chargepoint_id, connector_id, transaction_id, id_tag, meter_start, start_time, status, start_source)
+      VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)`
+      )
+      .run(chargepointId, connectorId, transactionId, idTag, meterStart, startTime, source);
+    return db.prepare('SELECT * FROM transactions WHERE id = ?').get(info.lastInsertRowid);
+  })();
 }
 
 function stopTransaction(transactionId, meterStop, stopTime, reason) {

@@ -75,6 +75,12 @@ function validateSchema(...schemas) {
   ];
 }
 
+// Retourne la limite paginée (null = pas de limite si non fournie)
+function parsePagination(req, maxLimit = 200) {
+  if (!req.query.limit) return null;
+  return Math.min(Number(req.query.limit), maxLimit);
+}
+
 function generateResetToken(userId, expiresInMinutes = 30) {
   db.deleteExpiredPasswordResets();
   const token = crypto.randomBytes(32).toString('hex');
@@ -1136,6 +1142,8 @@ router.get(
     if (req.query.status) filters.status = req.query.status;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
+    const limit = parsePagination(req);
+    if (limit !== null) filters.limit = limit;
 
     const user = req.user;
     if (user.role !== 'admin') {
@@ -1429,7 +1437,8 @@ router.get(
     if (req.query.chargepoint_id) filters.chargepoint_id = Number(req.query.chargepoint_id);
     if (req.query.id_tag) filters.id_tag = req.query.id_tag;
     if (req.query.status) filters.status = req.query.status;
-    if (req.query.limit) filters.limit = Math.min(Number(req.query.limit), 500);
+    const limit = parsePagination(req);
+    if (limit !== null) filters.limit = limit;
     // Filtrer par sites accessibles
     const siteIds = getUserSiteIds(req);
     if (siteIds !== null) filters.site_ids = siteIds;
@@ -1915,7 +1924,7 @@ router.get(
   requireAuth,
   ...validateSchema(schema.NotificationsLogQuery),
   (req, res) => {
-    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const limit = parsePagination(req) ?? 50;
     res.json(db.getNotificationLog(req.user.id, limit));
   }
 );

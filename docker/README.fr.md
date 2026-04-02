@@ -277,6 +277,14 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_GOOGLE_CLIENT_ID` | `auth.google.client_id` | |
 | `CPADMIN_GOOGLE_CLIENT_SECRET` | `auth.google.client_secret` | |
 
+### Métriques Prometheus
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_METRICS_TOKEN` | `metrics.bearerToken` | `mon-token-secret` |
+
+> Si non défini, `/metrics` est accessible sans authentification (adapté aux réseaux privés/Docker).
+
 > Les booléens (`true`/`false`) et les nombres sont convertis automatiquement.
 > Les secrets sont toujours traités comme des chaînes de caractères.
 

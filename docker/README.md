@@ -277,6 +277,14 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | `CPADMIN_GOOGLE_CLIENT_ID` | `auth.google.client_id` | |
 | `CPADMIN_GOOGLE_CLIENT_SECRET` | `auth.google.client_secret` | |
 
+### Prometheus Metrics
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_METRICS_TOKEN` | `metrics.bearerToken` | `my-secret-token` |
+
+> If not set, `/metrics` is accessible without authentication (suitable for private/Docker networks).
+
 > Booleans (`true`/`false`) and numbers are automatically converted.
 > Secrets are always treated as strings.
 

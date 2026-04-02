@@ -19,9 +19,12 @@ const {
   setBroadcast,
   startHeartbeatWatchdog,
   stopHeartbeatWatchdog,
+  getConnectedClients,
+  pendingChargepoints,
 } = require('./ocpp-server');
 const routes = require('./routes');
 const notifications = require('./notifications');
+const { getMetricsText } = require('./metrics');
 
 const logWEBUI = logger.scope('WEBUI');
 const logOCPP = logger.scope('OCPP');
@@ -49,18 +52,20 @@ const app = express();
 if (config.webui.trustProxy) {
   app.set('trust proxy', config.webui.trustProxy);
 }
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
+        // 'unsafe-inline' requis : scripts inline (données i18n injectées) + 154 attributs onclick
         scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
         scriptSrcAttr: ["'unsafe-inline'"],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
         imgSrc: ["'self'", 'data:'],
-        connectSrc: ["'self'", 'ws:', 'wss:'],
+        // 'self' couvre déjà les WebSockets vers la même origine (ws:// et wss://)
+        connectSrc: ["'self'"],
         fontSrc: ["'self'"],
       },
     },
@@ -90,10 +95,47 @@ app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
 
+// ── Middleware CSRF (double-submit cookie) ──
+// Le serveur place un token XSRF-TOKEN lisible par JS.
+// Le frontend doit le renvoyer dans le header X-XSRF-Token sur chaque mutation.
+const CSRF_COOKIE = 'XSRF-TOKEN';
+const CSRF_HEADER = 'x-xsrf-token';
+const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+function readCookie(req, name) {
+  const header = req.headers.cookie || '';
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return decodeURIComponent(part.slice(eq + 1).trim());
+  }
+  return null;
+}
+
+app.use((req, res, next) => {
+  let token = readCookie(req, CSRF_COOKIE);
+  if (!token) {
+    token = crypto.randomBytes(32).toString('hex');
+    res.cookie(CSRF_COOKIE, token, {
+      httpOnly: false, // doit être lisible par le JS frontend
+      secure: uiSslEnabled,
+      sameSite: 'lax',
+      path: '/',
+    });
+  }
+  if (!CSRF_SAFE_METHODS.has(req.method)) {
+    const headerToken = req.headers[CSRF_HEADER];
+    if (!headerToken || headerToken !== token) {
+      return res.status(403).json({ error: 'csrf_invalid' });
+    }
+  }
+  next();
+});
+
 // Redirect HTTP to HTTPS si SSL activé
 if (uiSslEnabled) {
   app.use((req, res, next) => {
-    if (!req.secure && req.path !== '/healthz') {
+    if (!req.secure && req.path !== '/healthz' && req.path !== '/metrics') {
       return res.redirect(`https://${req.hostname}:${HTTPS_PORT}${req.url}`);
     }
     next();
@@ -103,9 +145,28 @@ if (uiSslEnabled) {
 // API routes
 app.use('/api', routes);
 
+// 404 pour les routes /api/* non trouvées (retourne JSON au lieu de la SPA)
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'not_found' });
+});
+
 // Liveness endpoint for container orchestrators and Docker health checks.
 app.get('/healthz', (req, res) => {
   res.status(200).json({ status: 'ok' });
+});
+
+// Prometheus metrics endpoint.
+// Protected by bearer token if config.metrics.bearerToken is set.
+app.get('/metrics', (req, res) => {
+  const metricsToken = config.metrics?.bearerToken;
+  if (metricsToken) {
+    const auth = req.headers.authorization || '';
+    if (auth !== `Bearer ${metricsToken}`) {
+      return res.status(401).set('WWW-Authenticate', 'Bearer realm="metrics"').end();
+    }
+  }
+  res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+  res.send(getMetricsText({ getConnectedClients, pendingChargepoints }, uiClients));
 });
 
 // Lire index.html une seule fois au démarrage
@@ -134,6 +195,16 @@ const finalHtml = indexHtml.replace(
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 app.get('/{*splat}', (req, res) => {
   res.type('html').send(finalHtml);
+});
+
+// ── Middleware d'erreur centralisé ──
+// Doit être déclaré après toutes les routes pour capturer next(err)
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  logWEBUI.error('Unhandled route error:', err);
+  const status = err.status || err.statusCode || 500;
+  const message = status < 500 ? err.message : 'internal_error';
+  res.status(status).json({ error: message });
 });
 
 // ── Helper : charger une paire cert/clé SSL ──

@@ -116,7 +116,10 @@
     "cpPending": "Borne inconnue {{identity}} en attente de validation",
     "diagnosticsUploaded": "Diagnostic uploadé pour {{identity}}",
     "diagnosticsFailed": "Échec de l'upload du diagnostic pour {{identity}}",
-    "strictModeViolation": "{{identity}} : réponse {{method}} non conforme OCPP (champs supplémentaires). Désactivez ocpp.strictMode dans la configuration."
+    "strictModeViolation": "{{identity}} : réponse {{method}} non conforme OCPP (champs supplémentaires). Désactivez ocpp.strictMode dans la configuration.",
+    "wsDisconnected": "Connexion perdue…",
+    "wsReconnecting": "Reconnexion dans {{s}}s…",
+    "wsReconnected": "Reconnecté"
   },
   "dashboard": {
     "totalChargepoints": "Bornes totales",
@@ -852,7 +855,8 @@
       "webui": "Interface Web",
       "ocpp": "Serveur OCPP",
       "notifs": "Notifications",
-      "auth": "Authentification"
+      "auth": "Authentification",
+      "metrics": "Métriques"
     },
     "colParam": "Paramètre",
     "colFile": "Valeur fichier",

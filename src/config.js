@@ -70,6 +70,8 @@ const ENV_OVERRIDES = [
   { env: 'CPADMIN_VAPID_SUBJECT', path: ['notifs', 'webpush', 'vapidSubject'], type: 'string' },
   { env: 'CPADMIN_PUSHOVER_ENABLED', path: ['notifs', 'pushover', 'enabled'] },
   { env: 'CPADMIN_GOOGLE_AUTH_ENABLED', path: ['auth', 'google', 'enabled'] },
+  // ── Métriques ──
+  { env: 'CPADMIN_METRICS_TOKEN', path: ['metrics', 'bearerToken'], type: 'string' },
   // ── Comportement OCPP ──
   { env: 'CPADMIN_OCPP_STRICT_MODE', path: ['ocpp', 'strictMode'] },
   { env: 'CPADMIN_OCPP_AUTO_ADD', path: ['ocpp', 'autoAddUnknownChargepoints'] },
@@ -407,6 +409,14 @@ const CONFIG_FIELDS = [
     type: 'boolean',
     required: false,
     sensitive: false,
+  },
+  // ── Métriques ──
+  {
+    key: 'metrics.bearerToken',
+    section: 'metrics',
+    type: 'string',
+    required: false,
+    sensitive: true,
   },
   // ── Auth ──
   {
