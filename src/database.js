@@ -178,7 +178,7 @@ function markUserPasswordResetAsUsed(id) {
 
 function deleteExpiredPasswordResets() {
   db.prepare(
-    'DELETE FROM users_password_resets WHERE expires_at < datetime("now") OR used = 1'
+    "DELETE FROM users_password_resets WHERE expires_at < datetime('now') OR used = 1"
   ).run();
 }
 

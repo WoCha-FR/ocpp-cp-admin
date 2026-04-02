@@ -687,10 +687,10 @@ Installez `client.pem` (contient le certificat et la clé privée) sur chaque bo
 npm start
 ```
 
-### Mode développement (rechargement automatique)
+### Mode développement
 
 ```bash
-npm run dev
+npm run start-dev
 ```
 
 L'application démarre :
@@ -922,8 +922,11 @@ Pour ajouter une langue (ex. allemand `de`) :
 # Démarrer en production
 npm start
 
-# Démarrer en développement (rechargement automatique)
-npm run dev
+# Démarrer en mode développement
+npm run start-dev
+
+# Démarrer en mode développement avec surveillance des fichiers (rechargement automatique)
+npm run start-watch
 
 # Vérifier le style de code
 npm run lint
@@ -939,6 +942,24 @@ npm run format:check
 
 # Sauvegarder la base de données (voir Base de données > Sauvegarde)
 npm run backup
+
+# Lancer les tests
+npm test
+
+# Lancer les tests en mode surveillance
+npm run test:watch
+
+# Lancer les tests avec rapport de couverture
+npm run test:coverage
+
+# Lancer les tests en mode CI (couverture + forceExit)
+npm run test:ci
+
+# Analyser les secrets dans les fichiers source
+npm run audit:secrets
+
+# Auditer les dépendances npm pour les vulnérabilités critiques
+npm run audit:deps
 ```
 
 ---

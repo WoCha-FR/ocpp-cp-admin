@@ -1,0 +1,20 @@
+module.exports = {
+  testEnvironment: 'node',
+  testMatch: ['**/tests/**/*.test.js'],
+  transform: {},
+  collectCoverageFrom: [
+    'src/**/*.js',
+    '!src/server.js',
+    '!src/ocpp-server.js',
+    '!src/logger.js',
+    '!src/i18n.js',
+    '!src/auth.js',
+    '!src/routes.js',
+    '!src/notifications.js',
+    '!src/metrics.js',
+    '!src/channels/**/*.js',
+  ],
+  coverageThreshold: { global: { lines: 40, functions: 25, branches: 25 } },
+  coverageProvider: 'v8',
+  resetModules: true,
+};

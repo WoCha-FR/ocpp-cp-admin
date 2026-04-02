@@ -3,6 +3,7 @@ node_modules/
 .vscode/
 .git/
 .gitignore
+.gitattributes
 .dockerignore
 config/config.json
 config/config.dev.json
@@ -29,6 +30,10 @@ pnpm-debug.log*
 # Test and coverage artifacts
 coverage/
 .nyc_output/
+tests/
+jest.config.cjs
+.secretlintrc.json
+.secretlintignore
 
 # Tooling caches
 .eslintcache

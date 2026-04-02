@@ -693,10 +693,10 @@ Install `client.pem` (contains both certificate and private key) on each charge 
 npm start
 ```
 
-### Development Mode (auto-reload)
+### Development Mode
 
 ```bash
-npm run dev
+npm run start-dev
 ```
 
 The application starts:
@@ -928,8 +928,11 @@ To add a language (e.g. German `de`):
 # Start in production
 npm start
 
-# Start in development (auto-reload)
-npm run dev
+# Start in development mode
+npm run start-dev
+
+# Start in development mode with file watching (auto-reload on change)
+npm run start-watch
 
 # Check code style
 npm run lint
@@ -945,6 +948,24 @@ npm run format:check
 
 # Backup the database (see Database > Backup)
 npm run backup
+
+# Run tests
+npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Run tests with coverage report
+npm run test:coverage
+
+# Run tests in CI mode (coverage + forceExit)
+npm run test:ci
+
+# Scan for secrets in source files
+npm run audit:secrets
+
+# Audit npm dependencies for high severity vulnerabilities
+npm run audit:deps
 ```
 
 ---

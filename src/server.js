@@ -161,7 +161,10 @@ app.get('/metrics', (req, res) => {
   const metricsToken = config.metrics?.bearerToken;
   if (metricsToken) {
     const auth = req.headers.authorization || '';
-    if (auth !== `Bearer ${metricsToken}`) {
+    const expected = Buffer.from(`Bearer ${metricsToken}`);
+    const actual = Buffer.from(auth);
+    const match = actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+    if (!match) {
       return res.status(401).set('WWW-Authenticate', 'Bearer realm="metrics"').end();
     }
   }

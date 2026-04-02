@@ -465,4 +465,5 @@ module.exports = {
   CONFIG_FIELDS,
   deepGet,
   deepSet,
+  castEnvValue,
 };

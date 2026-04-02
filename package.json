@@ -4,14 +4,20 @@
   "description": "OCPP 1.6 Charge Point Management System (CSMS) for operating and monitoring EV charging infrastructure.",
   "main": "src/server.js",
   "scripts": {
-    "start": "cross-env CPADMIN_OCPP_AUTO_ADD=true node src/server.js",
-    "start-dev": "cross-env NODE_ENV=development CPADMIN_OCPP_AUTO_ADD=true node src/server.js",
+    "start": "node src/server.js",
+    "start-dev": "cross-env NODE_ENV=development node src/server.js",
     "start-watch": "cross-env NODE_ENV=development node --watch src/server.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"*.json\" \"*.js\"",
     "format:check": "prettier --check \"src/**/*.js\" \"*.json\" \"*.js\"",
-    "backup": "node scripts/backup.js"
+    "backup": "node scripts/backup.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:ci": "jest --coverage --ci --forceExit",
+    "audit:secrets": "secretlint \"**/*\"",
+    "audit:deps": "npm audit --audit-level=high"
   },
   "homepage": "https://github.com/WoCha-FR/ocpp-cp-admin#readme",
   "bugs": {
@@ -60,11 +66,17 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@secretlint/secretlint-rule-preset-recommend": "^11.4.1",
     "cross-env": "^10.1.0",
     "eslint": "^10.1.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-security": "^4.0.0",
     "globals": "^17.4.0",
-    "prettier": "^3.8.1"
+    "jest": "^30.3.0",
+    "jest-environment-node": "^30.3.0",
+    "prettier": "^3.8.1",
+    "secretlint": "^11.4.1",
+    "supertest": "^7.2.2"
   },
   "overrides": {
     "ocpp-rpc": {
