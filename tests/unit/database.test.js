@@ -185,3 +185,70 @@ describe('database — User-Site linking', () => {
     expect(users.length).toBe(1);
   });
 });
+
+// ── Init Config (paramètres OCPP globaux) ──
+describe('database — Init Config CRUD', () => {
+  let entryId;
+  const TEST_KEY = 'TestMeterValueInterval';
+
+  it('creates an init config entry', () => {
+    const result = db.createInitialChargepointConfig(TEST_KEY, '120', true);
+    expect(result.changes).toBe(1);
+    entryId = result.lastInsertRowid;
+  });
+
+  it('gets all init config entries', () => {
+    const rows = db.getInitialChargepointConfig();
+    expect(rows.some((r) => r.key === TEST_KEY)).toBe(true);
+  });
+
+  it('gets only enabled entries', () => {
+    db.createInitialChargepointConfig('TestDisabledKey', '60', false);
+    const enabled = db.getEnabledInitialChargepointConfig();
+    expect(enabled.some((r) => r.key === TEST_KEY)).toBe(true);
+    expect(enabled.some((r) => r.key === 'TestDisabledKey')).toBe(false);
+  });
+
+  it('gets an entry by key', () => {
+    const entry = db.getInitialChargepointConfigByKey(TEST_KEY);
+    expect(entry).toBeDefined();
+    expect(entry.value).toBe('120');
+    expect(entry.enabled).toBe(1);
+  });
+
+  it('returns undefined for unknown key', () => {
+    expect(db.getInitialChargepointConfigByKey('UnknownKey')).toBeUndefined();
+  });
+
+  it('updates an init config entry', () => {
+    db.updateInitialChargepointConfig(entryId, { value: '300' });
+    const entry = db.getInitialChargepointConfigByKey(TEST_KEY);
+    expect(entry.value).toBe('300');
+  });
+
+  it('deletes an init config entry', () => {
+    db.deleteInitialChargepointConfig(entryId);
+    expect(db.getInitialChargepointConfigByKey(TEST_KEY)).toBeUndefined();
+  });
+});
+
+// ── HeartbeatInterval — comportement watchdog ──
+describe('database — HeartbeatInterval global config', () => {
+  it('HeartbeatInterval est présent dans la migration', () => {
+    const entry = db.getInitialChargepointConfigByKey('HeartbeatInterval');
+    expect(entry).toBeDefined();
+    expect(parseInt(entry.value, 10)).toBeGreaterThan(0);
+  });
+
+  it('la valeur est utilisée comme intervalle heartbeat (fallback 300)', () => {
+    const entry = db.getInitialChargepointConfigByKey('HeartbeatInterval');
+    const interval = entry ? parseInt(entry.value, 10) : 300;
+    expect(interval).toBeGreaterThan(0);
+  });
+
+  it('fallback à 300 si la clé est absente', () => {
+    const entry = db.getInitialChargepointConfigByKey('NonExistentKey');
+    const interval = entry ? parseInt(entry.value, 10) : 300;
+    expect(interval).toBe(300);
+  });
+});

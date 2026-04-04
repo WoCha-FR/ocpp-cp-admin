@@ -230,7 +230,7 @@ CREATE INDEX IF NOT EXISTS idx_notif_log_user ON notification_log(user_id, creat
 
 INSERT OR IGNORE INTO users (useremail, password, role, shortname) VALUES ('admin@admin.com', '$2b$10$OHSdpl41Wv4kFwtYqfmyRu2rjEzi1QI3n6W33S1gn1PVn5Ue4mTTG', 'admin', 'Admin');
 INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
-  ('HeartbeatInterval', '3600', 0),
+  ('HeartbeatInterval', '600', 1),
   ('WebSocketPingInterval', '60', 0),
   ('ConnectionTimeOut', '60', 0),
   ('StopTransactionOnEVSideDisconnect', 'true', 0),

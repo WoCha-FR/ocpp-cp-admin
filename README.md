@@ -34,6 +34,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
   - [Supported Operations](#supported-operations)
   - [Charge Point Connection](#charge-point-connection)
   - [Security Profiles](#security-profiles)
+  - [Heartbeat & Connection Monitoring](#heartbeat--connection-monitoring)
 - [Notification System](#notification-system)
 - [Logging](#logging)
 - [Internationalization](#internationalization)
@@ -92,6 +93,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Structured logging with file rotation
 
 ### Progressive Web Application (PWA)
+- Installable on desktop and mobile (Web App Manifest)
 - Responsive interface (mobile-first)
 - Light/dark theme
 - Push notifications via Service Worker
@@ -321,6 +323,7 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | Variable | JSON Config | Example |
 |---|---|---|
 | `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict OCPP 1.6 validation) |
+| `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
 
@@ -435,7 +438,7 @@ Required fields are validated before saving. The application restarts automatica
   "host": "0.0.0.0",
   "wsPort": 9000,
   "strictMode": true,
-  "heartbeatInterval": 3600,
+  "callTimeoutSeconds": 45,
   "autoAddUnknownChargepoints": false,
   "pendingUnknownChargepoints": true,
   "ocppWsUrl": "ws://ws.cpadmin.local:9000",
@@ -457,7 +460,7 @@ Required fields are validated before saving. The application restarts automatica
 | `host` | OCPP server listen address |
 | `wsPort` | WebSocket (WS) port |
 | `strictMode` | OCPP strict mode (message validation) |
-| `heartbeatInterval` | Heartbeat interval in seconds (sent to charge points on BootNotification) |
+| `callTimeoutSeconds` | Timeout in seconds waiting for a response to an OCPP call |
 | `autoAddUnknownChargepoints` | Automatically add unknown charge points that connect |
 | `pendingUnknownChargepoints` | Put unknown charge points pending admin approval |
 | `ocppWsUrl` | OCPP WebSocket URL to communicate (for charge point configuration) |
@@ -807,6 +810,22 @@ Charge points must be registered and authorized in the application to connect. U
 - **Rejected** (default behavior)
 - **Automatically added** (`autoAddUnknownChargepoints: true`)
 - **Put pending** approval (`pendingUnknownChargepoints: true`)
+
+### Heartbeat & Connection Monitoring
+
+The server uses two complementary mechanisms to detect disconnected or unresponsive charge points.
+
+#### WebSocket Ping (transport level)
+The `ocpp-rpc` library sends WebSocket ping frames to each charge point at its default interval (30 seconds). If no pong is received, the connection is terminated immediately. This detects network-level drops (lost 4G link, NAT timeout, etc.) within ~60 seconds, regardless of OCPP configuration.
+
+Activity deferral (`deferPingsOnActivity`) is enabled: if a charge point is actively sending OCPP messages (e.g. `MeterValues`), the ping is deferred until the connection goes idle, reducing unnecessary traffic on metered connections.
+
+#### Heartbeat Watchdog (application level)
+A server-side watchdog checks at regular intervals whether each connected charge point has sent a `Heartbeat` message recently. A charge point that has not sent a heartbeat within `HeartbeatInterval × 2` seconds is forcibly disconnected.
+
+The `HeartbeatInterval` is a **global system parameter** managed exclusively in *Settings → Default OCPP Configuration*. It is sent to every charge point via `ChangeConfiguration` during initialization and cannot be overridden per charge point. The watchdog always reads this value from the database so that changes take effect immediately without restarting the server.
+
+> **Default value:** 600 seconds. The effective timeout before disconnection is 1200 seconds (20 minutes).
 
 ---
 

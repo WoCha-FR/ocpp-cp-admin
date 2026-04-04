@@ -74,6 +74,7 @@ const ENV_OVERRIDES = [
   { env: 'CPADMIN_METRICS_TOKEN', path: ['metrics', 'bearerToken'], type: 'string' },
   // ── Comportement OCPP ──
   { env: 'CPADMIN_OCPP_STRICT_MODE', path: ['ocpp', 'strictMode'] },
+  { env: 'CPADMIN_OCPP_CALL_TIMEOUT', path: ['ocpp', 'callTimeoutSeconds'] },
   { env: 'CPADMIN_OCPP_AUTO_ADD', path: ['ocpp', 'autoAddUnknownChargepoints'] },
   { env: 'CPADMIN_OCPP_PENDING_UNKNOWN', path: ['ocpp', 'pendingUnknownChargepoints'] },
   // ── Configuration générale ──
@@ -236,7 +237,7 @@ const CONFIG_FIELDS = [
   { key: 'ocpp.wsPort', section: 'ocpp', type: 'number', required: true, sensitive: false },
   { key: 'ocpp.strictMode', section: 'ocpp', type: 'boolean', required: false, sensitive: false },
   {
-    key: 'ocpp.heartbeatInterval',
+    key: 'ocpp.callTimeoutSeconds',
     section: 'ocpp',
     type: 'number',
     required: false,

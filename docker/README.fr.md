@@ -239,6 +239,7 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | Variable | Config JSON | Exemple |
 |---|---|---|
 | `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (désactiver la validation stricte OCPP 1.6) |
+| `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (enregistrer automatiquement les bornes inconnues) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
 

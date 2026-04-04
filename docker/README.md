@@ -239,6 +239,7 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | Variable | JSON Config | Example |
 |---|---|---|
 | `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict OCPP 1.6 validation) |
+| `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
 

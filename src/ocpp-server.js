@@ -48,7 +48,10 @@ function createOCPPServer(options = {}) {
   const config = getConfig();
   const server = new RPCServer({
     protocols: ['ocpp1.6'],
-    strictMode: config.ocpp.strictMode,
+    strictMode: config.ocpp.strictMode ?? true,
+    deferPingsOnActivity: true,
+    callTimeoutMs: (config.ocpp.callTimeoutSeconds || 60) * 1000,
+    maxBadMessages: 10,
   });
 
   server.auth((accept, reject, handshake) => {
@@ -397,9 +400,11 @@ function createOCPPServer(options = {}) {
         logger.debug(`[InitSeq] ${identity} initialization sequence completed`);
       }, cp);
 
+      const hbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
+      const heartbeatInterval = hbConfig ? parseInt(hbConfig.value, 10) : 300;
       return {
         status: 'Accepted',
-        interval: config.ocpp.heartbeatInterval,
+        interval: heartbeatInterval,
         currentTime: new Date().toISOString(),
       };
     });
@@ -1171,15 +1176,15 @@ function trackFlapping(identity) {
 // ── Heartbeat Watchdog ──
 // Détecte les bornes connectées qui n'envoient plus de heartbeat et les déconnecte.
 const WATCHDOG_CHECK_INTERVAL_MS = 60 * 1000; // Vérification toutes les 60 secondes
-const HEARTBEAT_MISS_FACTOR = 3; // Tolérance : 3× l'intervalle de heartbeat
+const HEARTBEAT_MISS_FACTOR = 2; // Tolérance : 2× l'intervalle de heartbeat
 let heartbeatWatchdogTimer = null;
 
 function startHeartbeatWatchdog() {
-  const config = getConfig();
-  const heartbeatInterval = config.ocpp.heartbeatInterval || 300; // secondes
-  const timeoutMs = heartbeatInterval * HEARTBEAT_MISS_FACTOR * 1000;
-
   heartbeatWatchdogTimer = setInterval(() => {
+    const hbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
+    const heartbeatInterval = hbConfig ? parseInt(hbConfig.value, 10) : 300;
+    const timeoutMs = heartbeatInterval * HEARTBEAT_MISS_FACTOR * 1000;
+
     const now = Date.now();
     for (const [identity] of connectedClients) {
       const cp = db.getChargepointByIdentity(identity);

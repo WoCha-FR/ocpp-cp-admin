@@ -20,7 +20,7 @@
     "host": "0.0.0.0",
     "wsPort": 9000,
     "strictMode": true,
-    "heartbeatInterval": 3600,
+    "callTimeoutSeconds": 45,
     "autoAddUnknownChargepoints": false,
     "pendingUnknownChargepoints": true,
     "ocppWsUrl": "ws://ws.cpadmin.local:9000",

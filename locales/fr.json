@@ -495,10 +495,10 @@
     "pPushoverToken": "API Token",
     "pPushoverTokenHint": "Votre API Token Pushover",
     "pPushoverHint": "Renseignez ces informations pour recevoir des notifications via {{pushover_link}}",
-    "pTitlePassword": "Changer votre mot de passe",
     "pPwdActual": "Mot de passe actuel",
     "pPwdNew": "Nouveau mot de passe",
     "pPwdConfirmNew": "Confirmer le nouveau mot de passe",
+    "pPwdHint": "laisser vide pour ne pas changer",
     "pUpdated": "Profil mis à jour",
     "pPushoverSaved": "Paramètres Pushover enregistrés",
     "pPwdMissmatch": "Les mots de passe ne correspondent pas",
@@ -874,6 +874,8 @@
     "addTitle": "Nouvelle entrée",
     "editTitle": "Modifier l'entrée",
     "deleteConfirm": "Supprimer cette entrée de configuration ?",
-    "keyExists": "Cette clé existe déjà."
+    "keyExists": "Cette clé existe déjà.",
+    "globalOnly": "Système",
+    "globalOnlyTooltip": "Ce paramètre est géré globalement et ne peut pas être supprimé ni surchargé par borne."
   }
 }

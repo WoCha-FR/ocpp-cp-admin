@@ -495,10 +495,10 @@
     "pPushoverToken": "API Token",
     "pPushoverTokenHint": "Your Pushover API Token",
     "pPushoverHint": "Enter this information to receive notifications via {{pushover_link}}",
-    "pTitlePassword": "Change your password",
     "pPwdActual": "Current password",
     "pPwdNew": "New password",
     "pPwdConfirmNew": "Confirm new password",
+    "pPwdHint": "leave blank to keep current password",
     "pUpdated": "Profile updated",
     "pPushoverSaved": "Pushover settings saved",
     "pPwdMissmatch": "Passwords do not match",
@@ -874,6 +874,8 @@
     "addTitle": "New entry",
     "editTitle": "Edit entry",
     "deleteConfirm": "Delete this configuration entry?",
-    "keyExists": "This key already exists."
+    "keyExists": "This key already exists.",
+    "globalOnly": "System",
+    "globalOnlyTooltip": "This parameter is managed globally and cannot be deleted or overridden per chargepoint."
   }
 }

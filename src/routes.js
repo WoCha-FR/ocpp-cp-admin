@@ -1031,6 +1031,11 @@ router.put(
       return res.status(400).json({ error: 'ERR_VALUE_REQUIRED' });
     }
 
+    const GLOBAL_ONLY_KEYS = ['HeartbeatInterval'];
+    if (GLOBAL_ONLY_KEYS.includes(key)) {
+      return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
+    }
+
     try {
       const result = await callClient(client, cp.identity, 'ChangeConfiguration', {
         key,

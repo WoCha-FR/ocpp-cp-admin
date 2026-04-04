@@ -54,7 +54,7 @@
     "helmet": "^8.1.0",
     "i18next": "^26.0.3",
     "nodemailer": "^8.0.4",
-    "ocpp-rpc": "^2.2.1",
+    "ocpp-rpc": "2.1.2",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "passport-local": "^1.0.0",
@@ -77,11 +77,6 @@
     "prettier": "^3.8.1",
     "secretlint": "^11.4.1",
     "supertest": "^7.2.2"
-  },
-  "overrides": {
-    "ocpp-rpc": {
-      "ajv": "^8.18.0"
-    }
   },
   "engines": {
     "node": ">=22.0.0"
