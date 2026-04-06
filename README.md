@@ -478,6 +478,7 @@ Required fields are validated before saving. The application restarts automatica
   "authRejectWindowMinutes": 5,
   "flapThreshold": 4,
   "flapWindowMinutes": 2,
+  "refusedCooldownMinutes": 60,
   "mail": {
     "enabled": false,
     "from": "CPADMIN <noreply@cpadmin.local>",
@@ -506,6 +507,7 @@ Required fields are validated before saving. The application restarts automatica
 | `authRejectWindowMinutes` | Time window for RFID rejection counting (minutes) |
 | `flapThreshold` | Number of rapid reconnections before flapping alert |
 | `flapWindowMinutes` | Time window for flapping detection (minutes) |
+| `refusedCooldownMinutes` | Cooldown between two `chargepoint_refused` notifications for the same identity (default: 60 min) |
 | `mail.enabled` | Enable email notifications |
 | `mail.from` | Sender address |
 | `mail.transport` | SMTP transport configuration (Nodemailer) |

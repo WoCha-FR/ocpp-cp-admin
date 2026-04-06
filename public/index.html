@@ -1610,7 +1610,7 @@ async function renderDetailTabConnectors(cp) {
 
               <div class="detail-section${hasError ? ' detail-section-error' : ''}">
                 <div class="detail-section-title">
-                  🔌 ${t('common.connector_one')} ${c.connector_id}${escapeHtml(c.connector_name) ? ' · ' + escapeHtml(c.connector_name) : ''}
+                  🔌 ${t('common.connector_one')} ${c.connector_id}${c.connector_name ? ' · ' + escapeHtml(c.connector_name) : ''}
                   ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
                   <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : c.cnstatus}</span>
                   ${hasError ? `<span class="badge badge-red">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}
@@ -1619,9 +1619,9 @@ async function renderDetailTabConnectors(cp) {
                   <span class="detail-label">${t('connectors.cCounter')}</span>
                   <span class="detail-value" style="font-size:16px;font-weight:700;color:var(--primary)">${meterKwh !== null ? meterKwh + ' kWh' : '—'}</span>
                 </div>
-                <div class="detail-row"><span class="detail-label">${t('common.name')}</span><span class="detail-value">${escapeHtml(c.connector_name) || '<span class="text-muted">-</span>'}</span></div>
+                <div class="detail-row"><span class="detail-label">${t('common.name')}</span><span class="detail-value">${c.connector_name ? escapeHtml(c.connector_name) : '<span class="text-muted">-</span>'}</span></div>
                 <div class="detail-row"><span class="detail-label">${t('common.power')}</span><span class="detail-value">${c.connector_power != null ? c.connector_power + ' kW' : '<span class="text-muted">-</span>'}</span></div>
-                <div class="detail-row"><span class="detail-label">${t('connectors.cType')}</span><span class="detail-value">${escapeHtml(c.connector_type) || '<span class="text-muted">-</span>'}</span></div>
+                <div class="detail-row"><span class="detail-label">${t('connectors.cType')}</span><span class="detail-value">${c.connector_type ? escapeHtml(c.connector_type) : '<span class="text-muted">-</span>'}</span></div>
                 ${hasError ? `<div class="detail-row"><span class="detail-label">${t('common.error')}</span><span class="detail-value"><span class="badge badge-red">${escapeHtml(c.error_code)}</span></span></div>` : ''}
               </div>
 
@@ -4253,7 +4253,7 @@ async function saveConfigEditor(e) {
   // Polling jusqu'à ce que le serveur réponde
   const poll = setInterval(async () => {
     try {
-      await api('GET', '/appsettings');
+      await loadAppSettings();
       clearInterval(poll);
       overlay.remove();
       toast(t('common.save') + ' ✓', 'success');
@@ -4294,7 +4294,6 @@ async function renderProfile() {
               </div>
             </div>
             <div>
-              <h4 style="margin-bottom:16px;">${t('profile.pTitlePassword')}</h4>
               <div class="form-group">
                 <label>${t('profile.pPwdActual')}</label>
                 <input type="password" id="profileCurrentPassword" autocomplete="current-password">
@@ -4314,7 +4313,6 @@ async function renderProfile() {
               </div>
             </div>
             <div>
-              <h4 style="margin-bottom:16px;visibility:hidden;">&nbsp;</h4>
               <div class="form-group">
                 <label>${t('profile.pPwdConfirmNew')}</label>
                 <input type="password" id="profileConfirmPassword" minlength="8" autocomplete="new-password">
@@ -4530,6 +4528,7 @@ async function renderSiteUsers(siteId, siteName) {
     const data = await api('GET', `/sites/${sid}/users/stats`);
     const users = data.users;
     const managerCount = users.filter(u => u.site_role === 'manager').length;
+    const isSelfMember = users.some(u => u.id === currentUser.id);
 
     // Stats
     const totalUsers = users.length;
@@ -4624,7 +4623,10 @@ async function renderSiteUsers(siteId, siteName) {
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><h3>${t('sites.siteUsers')} (${filtered.length})</h3></div>
+        <div class="card-header">
+          <h3>${t('sites.siteUsers')} (${filtered.length})</h3>
+          ${!isSelfMember ? `<button class="btn btn-secondary btn-sm" onclick="addSelfToSite(${sid}, '${escapeAttr(sname)}')">${t('sites.siteUserAddSelf')}</button>` : ''}
+        </div>
         <table>
           <thead><tr>
             <th>${t('common.email')}</th>
@@ -4705,6 +4707,15 @@ async function addUserToSite(siteId, siteName) {
       toast(t('sites.siteUserAdded'), 'info');
     }
     closeModal();
+    renderSiteUsers();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function addSelfToSite(siteId, siteName) {
+  if (!await confirmDialog(t('sites.siteUserSelfAddConfirm', { siteName }))) return;
+  try {
+    await api('POST', `/sites/${siteId}/users`, { useremail: currentUser.useremail });
+    toast(t('sites.siteUserAdded'), 'info');
     renderSiteUsers();
   } catch (err) { toast(err.message, 'error'); }
 }

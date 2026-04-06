@@ -106,7 +106,9 @@
     "siteUserStatsSuspended_one": "Non autorisé",
     "siteUserStatsSuspended_other": "Non autorisés",
     "siteUserBackToSites": "Retour aux sites",
-    "siteUserNever": "Jamais"
+    "siteUserNever": "Jamais",
+    "siteUserAddSelf": "M'ajouter à ce site",
+    "siteUserSelfAddConfirm": "Vous ajouter en tant que membre du site \"{{siteName}}\" ?"
   },
   "realTime": {
     "cpConnected": "Borne {{identity}} connectée",

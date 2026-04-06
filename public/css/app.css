@@ -375,9 +375,9 @@
     .push-prompt-close { background: none; border: none; cursor: pointer; font-size: 18px; color: var(--text-secondary); padding: 4px; line-height: 1; }
     .push-prompt-close:hover { color: var(--text-primary); }
     .push-prompt-banner-danger { background: #fff5f5; border-color: var(--danger); }
-    .dark .push-prompt-banner-danger { background: #2d1515; }
+    [data-theme="dark"] .push-prompt-banner-danger { background: #2d1515; }
     .push-prompt-banner-warning { background: var(--warning-surface); border-color: var(--warning); }
-    .dark .push-prompt-banner-warning { background: #2d2510; }
+    [data-theme="dark"] .push-prompt-banner-warning { background: #2d2510; }
     @keyframes slideDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
     .text-muted { color: var(--text-secondary); font-size: 13px; }

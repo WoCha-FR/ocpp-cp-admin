@@ -472,6 +472,7 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
   "authRejectWindowMinutes": 5,
   "flapThreshold": 4,
   "flapWindowMinutes": 2,
+  "refusedCooldownMinutes": 60,
   "mail": {
     "enabled": false,
     "from": "CPADMIN <noreply@cpadmin.local>",
@@ -500,6 +501,7 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 | `authRejectWindowMinutes` | Fenêtre de temps pour le comptage des rejets RFID (minutes) |
 | `flapThreshold` | Nombre de reconnexions rapides d'une borne avant alerte flapping |
 | `flapWindowMinutes` | Fenêtre de temps pour la détection de flapping (minutes) |
+| `refusedCooldownMinutes` | Délai entre deux notifications `chargepoint_refused` pour la même identité (défaut : 60 min) |
 | `mail.enabled` | Activer les notifications par email |
 | `mail.from` | Adresse d'expéditeur |
 | `mail.transport` | Configuration du transport SMTP (Nodemailer) |

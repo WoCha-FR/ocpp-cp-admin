@@ -106,7 +106,9 @@
     "siteUserStatsSuspended_one": "Unauthorized",
     "siteUserStatsSuspended_other": "Unauthorized",
     "siteUserBackToSites": "Back to sites",
-    "siteUserNever": "Never"
+    "siteUserNever": "Never",
+    "siteUserAddSelf": "Add myself to this site",
+    "siteUserSelfAddConfirm": "Add yourself as a member of site \"{{siteName}}\"?"
   },
   "realTime": {
     "cpConnected": "Chargepoint {{identity}} connected",

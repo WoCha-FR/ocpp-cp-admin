@@ -46,6 +46,7 @@
     "authRejectWindowMinutes": 5,
     "flapThreshold": 4,
     "flapWindowMinutes": 2,
+    "refusedCooldownMinutes": 60,
     "mail": {
       "enabled": false,
       "from": "CPADMIN <noreply@cpadmin.local>",
