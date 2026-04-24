@@ -38,7 +38,7 @@ RUN mkdir -p /opt/defaults/config /opt/defaults/public-img \
     && sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
     && chmod +x /usr/local/bin/docker-entrypoint.sh
 
-VOLUME ["/app/config", "/app/logs", "/app/public/img", "/app/locales-custom"]
+VOLUME ["/app/config", "/app/logs"]
 
 EXPOSE 3000 3001 9000 9001
 

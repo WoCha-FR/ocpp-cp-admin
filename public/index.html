@@ -17,7 +17,7 @@
   </script>
   <link rel="stylesheet" href="/css/app.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/i18next@26.0.7/i18next.min.js" integrity="sha384-yi7xTPk1NDxOBNIXWRD9JQjdd9BfRP4boUGJ5ze6QyVeAizzPC9ERlK1dIVnRRFU" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/i18next@26.0.7/i18next.min.js" integrity="sha384-zqUp7aR0bdQG4EdnLfkne0XSGyNReJkzMm201p9blS2LiIPtLcDGIrATY0hOk7V9" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13" integrity="sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6" crossorigin="anonymous"></script>
   <script>
@@ -4295,10 +4295,6 @@ async function renderProfile() {
             </div>
             <div>
               <div class="form-group">
-                <label>${t('profile.pPwdActual')}</label>
-                <input type="password" id="profileCurrentPassword" autocomplete="current-password">
-              </div>
-              <div class="form-group">
                 <label>${t('profile.pPwdNew')}</label>
                 <input type="password" id="profileNewPassword" minlength="8" autocomplete="new-password">
                 <div class="pwd-strength-bar"><div id="profileNewPasswordStrengthFill" class="pwd-strength-bar-fill"></div></div>
@@ -4311,11 +4307,15 @@ async function renderProfile() {
                   <li id="profileNewPasswordRuleSpecial">${t('login.pwdRuleSpecial')}</li>
                 </ul>
               </div>
-            </div>
-            <div>
               <div class="form-group">
                 <label>${t('profile.pPwdConfirmNew')}</label>
                 <input type="password" id="profileConfirmPassword" minlength="8" autocomplete="new-password">
+              </div>
+            </div>
+            <div>
+              <div class="form-group">
+                <label>${t('profile.pPwdActual')}</label>
+                <input type="password" id="profileCurrentPassword" autocomplete="current-password">
               </div>
             </div>
           </div>

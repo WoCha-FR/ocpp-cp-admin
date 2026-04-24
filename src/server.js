@@ -392,7 +392,9 @@ const ocppProtocols = [];
 if (config.ocpp.v16?.enabled !== false) ocppProtocols.push('ocpp1.6');
 // Phase 3 : if (config.ocpp.v201?.enabled) ocppProtocols.push('ocpp2.0.1');
 if (ocppProtocols.length === 0) {
-  logOCPP.warn('No OCPP version enabled (v16 and v201 both disabled) — OCPP server will reject all connections');
+  logOCPP.warn(
+    'No OCPP version enabled (v16 and v201 both disabled) — OCPP server will reject all connections'
+  );
 }
 const ocppServer = createOCPPServerBase({ protocols: ocppProtocols });
 let ocppWssServer = null;
@@ -401,7 +403,9 @@ let ocppHttpsServer = null;
 async function start() {
   // Démarrer le serveur OCPP WS (toujours actif)
   await ocppServer.listen(OCPP_WS_PORT, OCPP_HOST);
-  logOCPP.info(`OCPP WS server listening on ws://${OCPP_HOST}:${OCPP_WS_PORT} [${ocppProtocols.join(', ') || 'none'}]`);
+  logOCPP.info(
+    `OCPP WS server listening on ws://${OCPP_HOST}:${OCPP_WS_PORT} [${ocppProtocols.join(', ') || 'none'}]`
+  );
   // Démarrer le serveur OCPP WSS en parallèle si SSL activé
   if (wsSslEnabled) {
     ocppWssServer = createOCPPServerBase({ protocols: ocppProtocols, isWSS: true });
@@ -410,7 +414,9 @@ async function start() {
     await new Promise((resolve, reject) => {
       ocppHttpsServer.once('error', reject);
       ocppHttpsServer.listen(OCPP_WSS_PORT, OCPP_HOST, () => {
-        logOCPP.info(`OCPP WSS server listening on wss://${OCPP_HOST}:${OCPP_WSS_PORT} [${ocppProtocols.join(', ') || 'none'}]`);
+        logOCPP.info(
+          `OCPP WSS server listening on wss://${OCPP_HOST}:${OCPP_WSS_PORT} [${ocppProtocols.join(', ') || 'none'}]`
+        );
         resolve();
       });
     });

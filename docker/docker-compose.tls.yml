@@ -168,6 +168,7 @@ services:
         echo '#!/bin/sh' > /tmp/hook.sh
         echo 'cp /dump/certs/cpadmin.local.crt /app/config/certs/rsa-server.crt' >> /tmp/hook.sh
         echo 'cp /dump/private/cpadmin.local.key /app/config/certs/rsa-server.key' >> /tmp/hook.sh
+        echo 'chmod 644 /app/config/certs/rsa-server.crt /app/config/certs/rsa-server.key' >> /tmp/hook.sh
         chmod +x /tmp/hook.sh
         mkdir -p /dump /app/config/certs
         traefik-certs-dumper file --version v3 --source /traefik/acme-rsa.json --dest /dump
@@ -191,6 +192,7 @@ services:
         echo '#!/bin/sh' > /tmp/hook.sh
         echo 'cp /dump/certs/cpadmin.local.crt /app/config/certs/ecdsa-server.crt' >> /tmp/hook.sh
         echo 'cp /dump/private/cpadmin.local.key /app/config/certs/ecdsa-server.key' >> /tmp/hook.sh
+        echo 'chmod 644 /app/config/certs/ecdsa-server.crt /app/config/certs/ecdsa-server.key' >> /tmp/hook.sh
         chmod +x /tmp/hook.sh
         mkdir -p /dump /app/config/certs
         traefik-certs-dumper file --version v3 --source /traefik/acme-ecdsa.json --dest /dump

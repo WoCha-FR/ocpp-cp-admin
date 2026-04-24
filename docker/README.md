@@ -242,6 +242,8 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
+| `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (disable OCPP 1.6 support) |
+| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (enable OCPP 2.0.1 support — in development) |
 
 ### Mail Configuration
 

@@ -98,8 +98,7 @@ function makeLoggedHandle(client, identity, chargepointId) {
       });
       try {
         const result = handler(params);
-        if (chargepointId)
-          db.addOcppMessage(chargepointId, 'csms', 'CALLRESULT', action, result);
+        if (chargepointId) db.addOcppMessage(chargepointId, 'csms', 'CALLRESULT', action, result);
         logger.debug(`Responding to ${action} from ${identity}: ${JSON.stringify(result)}`);
         broadcast('ocpp_message', {
           identity,

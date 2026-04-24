@@ -242,6 +242,8 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (enregistrer automatiquement les bornes inconnues) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
+| `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (désactiver le support OCPP 1.6) |
+| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (activer le support OCPP 2.0.1 — en cours de développement) |
 
 ### Configuration mail
 

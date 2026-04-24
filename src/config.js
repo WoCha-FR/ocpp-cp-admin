@@ -77,7 +77,7 @@ const ENV_OVERRIDES = [
   { env: 'CPADMIN_OCPP_CALL_TIMEOUT', path: ['ocpp', 'callTimeoutSeconds'] },
   { env: 'CPADMIN_OCPP_AUTO_ADD', path: ['ocpp', 'autoAddUnknownChargepoints'] },
   { env: 'CPADMIN_OCPP_PENDING_UNKNOWN', path: ['ocpp', 'pendingUnknownChargepoints'] },
-  { env: 'CPADMIN_OCPP_V16_ENABLED',  path: ['ocpp', 'v16',  'enabled'] },
+  { env: 'CPADMIN_OCPP_V16_ENABLED', path: ['ocpp', 'v16', 'enabled'] },
   { env: 'CPADMIN_OCPP_V201_ENABLED', path: ['ocpp', 'v201', 'enabled'] },
   // ── Configuration générale ──
   { env: 'CPADMIN_LOGLEVEL', path: ['loglevel'] },

@@ -147,7 +147,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 | Runtime | Node.js 22 |
 | Web framework | Express 5 |
 | Database | SQLite 3 (better-sqlite3, WAL mode) |
-| OCPP protocol | ocpp-rpc (OCPP 1.6-J) |
+| OCPP protocol | ocpp-rpc (OCPP 1.6-J, OCPP 2.0.1 ready) |
 | Authentication | Passport.js (local + Google OAuth 2.0) |
 | Password hashing | bcryptjs |
 | HTTP security | Helmet, express-rate-limit |
@@ -326,6 +326,8 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
+| `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (disable OCPP 1.6 support) |
+| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (enable OCPP 2.0.1 support — in development) |
 
 ### Mail Configuration
 
@@ -443,6 +445,8 @@ Required fields are validated before saving. The application restarts automatica
   "pendingUnknownChargepoints": true,
   "ocppWsUrl": "ws://ws.cpadmin.local:9000",
   "diagnosticsLocation": "ftp://example.com/diagnostics",
+  "v16":  { "enabled": true },
+  "v201": { "enabled": false },
   "wss": {
     "enabled": false,
     "wssPort": 9001,
@@ -465,6 +469,8 @@ Required fields are validated before saving. The application restarts automatica
 | `pendingUnknownChargepoints` | Put unknown charge points pending admin approval |
 | `ocppWsUrl` | OCPP WebSocket URL to communicate (for charge point configuration) |
 | `diagnosticsLocation` | Destination URL for diagnostics upload |
+| `v16.enabled` | Enable OCPP 1.6 support (default: `true`) — set to `false` to disable; a warning is logged and all connections are rejected if both versions are disabled |
+| `v201.enabled` | Enable OCPP 2.0.1 support (default: `false`) — **in development**, not yet fully functional |
 | `wss.enabled` | Enable WebSocket Secure (TLS) |
 | `wss.strictClientCert` | Require a valid client certificate |
 | `wss.rsa` / `ecdsa` | Server certificates for WSS (dual algorithm supported, paths relative to `config/` folder) |

@@ -492,8 +492,8 @@ function register16Handlers(client, loggedHandle) {
               stop_reason: params.reason || 'Local',
               cp_name: cpForTx ? cpForTx.cpname : null,
               cn_name:
-                connectors.find((c) => c.connector_id === stoppedTx.connector_id)
-                  ?.connector_name || null,
+                connectors.find((c) => c.connector_id === stoppedTx.connector_id)?.connector_name ||
+                null,
               site_name: cpForTx ? cpForTx.site_name : null,
             },
             { userId: tag.user_id }
@@ -631,7 +631,6 @@ function register16Handlers(client, loggedHandle) {
     }
     return {};
   });
-
 }
 
 // ── Enregistrement au chargement du module ──
