@@ -15,13 +15,14 @@ const { getConfig, getConfigDir } = require('./config');
 const db = require('./database');
 const passport = require('./auth');
 const {
-  createOCPPServer,
+  createOCPPServerBase,
   setBroadcast,
   startHeartbeatWatchdog,
   stopHeartbeatWatchdog,
   getConnectedClients,
   pendingChargepoints,
-} = require('./ocpp-server');
+} = require('./ocpp-common');
+
 const routes = require('./routes');
 const notifications = require('./notifications');
 const { getMetricsText } = require('./metrics');
@@ -40,6 +41,9 @@ const OCPP_WSS_PORT = config.ocpp.wss?.wssPort || 9001;
 const uiSslEnabled = config.webui.https && config.webui.https.enabled;
 const wsSslEnabled = config.ocpp.wss && config.ocpp.wss.enabled;
 const ocppStrictClientCert = config.ocpp.wss?.strictClientCert === true;
+// Charger les handlers — déclenche registerHandlersFn + registerCallClientImpl
+if (config.ocpp.v16?.enabled !== false) require('./ocpp-server-16');
+// Phase 3 : if (config.ocpp.v201?.enabled) require('./ocpp-server-201');
 
 // ── Initialiser la DB ──
 const sqliteDb = db.getDb();
@@ -383,25 +387,30 @@ function broadcastToUI(message) {
 // Connecter le broadcast OCPP → UI
 setBroadcast(broadcastToUI);
 
-// ── Serveur OCPP sur port séparé ──
-const ocppServer = createOCPPServer();
+// ── Serveur OCPP sur port unique ──
+const ocppProtocols = [];
+if (config.ocpp.v16?.enabled !== false) ocppProtocols.push('ocpp1.6');
+// Phase 3 : if (config.ocpp.v201?.enabled) ocppProtocols.push('ocpp2.0.1');
+if (ocppProtocols.length === 0) {
+  logOCPP.warn('No OCPP version enabled (v16 and v201 both disabled) — OCPP server will reject all connections');
+}
+const ocppServer = createOCPPServerBase({ protocols: ocppProtocols });
 let ocppWssServer = null;
 let ocppHttpsServer = null;
 
 async function start() {
   // Démarrer le serveur OCPP WS (toujours actif)
   await ocppServer.listen(OCPP_WS_PORT, OCPP_HOST);
-  logOCPP.info(`OCPP 1.6J WS server listening on ws://${OCPP_HOST}:${OCPP_WS_PORT}`);
+  logOCPP.info(`OCPP WS server listening on ws://${OCPP_HOST}:${OCPP_WS_PORT} [${ocppProtocols.join(', ') || 'none'}]`);
   // Démarrer le serveur OCPP WSS en parallèle si SSL activé
   if (wsSslEnabled) {
-    ocppWssServer = createOCPPServer({ isWSS: true });
-    setBroadcast(broadcastToUI); // connecter le broadcast aussi sur le serveur WSS
+    ocppWssServer = createOCPPServerBase({ protocols: ocppProtocols, isWSS: true });
     ocppHttpsServer = https.createServer(wsSslOptions);
     ocppHttpsServer.on('upgrade', ocppWssServer.handleUpgrade);
     await new Promise((resolve, reject) => {
       ocppHttpsServer.once('error', reject);
       ocppHttpsServer.listen(OCPP_WSS_PORT, OCPP_HOST, () => {
-        logOCPP.info(`OCPP 1.6J WSS server listening on wss://${OCPP_HOST}:${OCPP_WSS_PORT}`);
+        logOCPP.info(`OCPP WSS server listening on wss://${OCPP_HOST}:${OCPP_WSS_PORT} [${ocppProtocols.join(', ') || 'none'}]`);
         resolve();
       });
     });

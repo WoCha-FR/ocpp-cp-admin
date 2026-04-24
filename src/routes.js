@@ -13,7 +13,7 @@ const {
   disconnectChargepoint,
   pendingRemoteStarts,
   pendingChargepoints,
-} = require('./ocpp-server');
+} = require('./ocpp-common');
 const schema = require('./validationSchema');
 const notifications = require('./notifications');
 const {
@@ -825,7 +825,7 @@ router.post(
     const params = req.body.params || {};
 
     try {
-      const result = await callClient(client, cp.identity, method, params);
+      const result = await callClient(cp.identity, method, params);
       res.json({ result });
     } catch (e) {
       db.addOcppMessage(cp.id, 'chargepoint', 'CALLERROR', method, { error: e.message });
@@ -933,7 +933,7 @@ router.post(
     setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
 
     try {
-      const result = await callClient(client, cp.identity, 'RemoteStartTransaction', {
+      const result = await callClient(cp.identity, 'RemoteStartTransaction', {
         idTag,
         connectorId: Number(connector_id),
       });
@@ -971,7 +971,7 @@ router.post(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
-      const result = await callClient(client, cp.identity, 'RemoteStopTransaction', {
+      const result = await callClient(cp.identity, 'RemoteStopTransaction', {
         transactionId: Number(transaction_id),
       });
       res.json({ result });
@@ -1005,7 +1005,7 @@ router.post(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
-      const result = await callClient(client, cp.identity, 'GetConfiguration', {});
+      const result = await callClient(cp.identity, 'GetConfiguration', {});
       res.json({ result, config: db.getChargepointConfig(cp.id) });
     } catch (e) {
       errorResponse(res, 500, e.message);
@@ -1037,7 +1037,7 @@ router.put(
     }
 
     try {
-      const result = await callClient(client, cp.identity, 'ChangeConfiguration', {
+      const result = await callClient(cp.identity, 'ChangeConfiguration', {
         key,
         value: String(value),
       });
@@ -1119,7 +1119,7 @@ router.post(
       const current = db.getChargepointConfigByKey(cp.id, cfg.key);
       if (current?.is_override) continue; // override admin, on ne touche pas
       try {
-        const result = await callClient(client, cp.identity, 'ChangeConfiguration', {
+        const result = await callClient(cp.identity, 'ChangeConfiguration', {
           key: cfg.key,
           value: cfg.value,
         });
@@ -1622,7 +1622,7 @@ router.post(
     setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
 
     try {
-      const result = await callClient(client, cp.identity, 'RemoteStartTransaction', {
+      const result = await callClient(cp.identity, 'RemoteStartTransaction', {
         idTag,
         connectorId: Number(connector_id),
       });
@@ -1759,7 +1759,7 @@ router.post(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
-      const result = await callClient(client, cp.identity, 'RemoteStopTransaction', {
+      const result = await callClient(cp.identity, 'RemoteStopTransaction', {
         transactionId: Number(transaction_id),
       });
       res.json({ result });

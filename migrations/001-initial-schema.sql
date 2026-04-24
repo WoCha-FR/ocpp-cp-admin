@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS chargepoints (
   password TEXT,
   mode INTEGER(1) DEFAULT 1 CHECK(mode IN (1,2,3)),
   authorized INTEGER(1) DEFAULT 1 CHECK(authorized IN (0,1)),
+  ocpp_version TEXT NOT NULL DEFAULT '1.6', -- '1.6' ou '2.0.1'
   vendor TEXT(25),
   model TEXT(20),
   serial_number TEXT(25),
@@ -83,12 +84,24 @@ CREATE TABLE IF NOT EXISTS chargepoints (
   FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS evses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chargepoint_id INTEGER NOT NULL REFERENCES chargepoints(id),
+  evse_id INTEGER NOT NULL, -- OCPP EVSE number
+  evse_name TEXT,
+  status TEXT DEFAULT 'Available',
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE (chargepoint_id, evse_id)
+);
+
 CREATE TABLE IF NOT EXISTS connectors (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   chargepoint_id INTEGER NOT NULL,
+  evse_id INTEGER, -- NULL pour les bornes 1.6
   connector_id INTEGER NOT NULL,
   connector_name TEXT,
   cnstatus TEXT DEFAULT 'Available',
+  cnstatus_raw TEXT, -- statut brut 2.0.1 avant normalisation
   error_code TEXT DEFAULT 'NoError',
   info TEXT,
   vendor_id TEXT,
@@ -97,8 +110,7 @@ CREATE TABLE IF NOT EXISTS connectors (
   connector_power INTEGER,
   connector_type TEXT,
   updated_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE,
-  UNIQUE(chargepoint_id, connector_id)
+  FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS chargepoint_config (
@@ -113,6 +125,20 @@ CREATE TABLE IF NOT EXISTS chargepoint_config (
   UNIQUE(chargepoint_id, key)
 );
 
+CREATE TABLE IF NOT EXISTS chargepoint_variables (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  chargepoint_id INTEGER NOT NULL,
+  component      TEXT NOT NULL,
+  variable       TEXT NOT NULL,
+  attribute      TEXT NOT NULL DEFAULT 'Actual',  -- Actual | Target | MinSet | MaxSet
+  value          TEXT,
+  readonly       INTEGER DEFAULT 0,
+  is_override    INTEGER NOT NULL DEFAULT 0,
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE,
+  UNIQUE (chargepoint_id, component, variable, attribute)
+);
+
 CREATE TABLE IF NOT EXISTS chargepoint_init_config (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   key TEXT NOT NULL UNIQUE,
@@ -122,12 +148,27 @@ CREATE TABLE IF NOT EXISTS chargepoint_init_config (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS chargepoint_init_variables (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  component   TEXT NOT NULL,                    -- nom du composant OCPP 2.0.1
+  variable    TEXT NOT NULL,                    -- nom de la variable
+  attribute   TEXT NOT NULL DEFAULT 'Actual',   -- Actual | Target | MinSet | MaxSet
+  value       TEXT NOT NULL,
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (component, variable, attribute)
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  transaction_id INTEGER UNIQUE,
+  transaction_id TEXT(36) UNIQUE,
   chargepoint_id INTEGER NOT NULL,
+  evse_id INTEGER, -- référence EVSE 2.0.1
   connector_id INTEGER NOT NULL,
+  charging_state TEXT,
   id_tag TEXT,
+  id_token_type TEXT,
   start_source TEXT DEFAULT 'rfid' CHECK(start_source IN ('rfid', 'web', 'local', 'remote')),
   meter_start INTEGER,
   meter_stop INTEGER,
@@ -142,7 +183,7 @@ CREATE TABLE IF NOT EXISTS transactions (
 
 CREATE TABLE IF NOT EXISTS transactions_values (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  transaction_id INTEGER NOT NULL,
+  transaction_id TEXT(36) NOT NULL,
   energie TEXT,
   courant TEXT,
   soc TEXT,
@@ -162,7 +203,9 @@ CREATE TABLE IF NOT EXISTS ocpp_messages (
 
 CREATE TABLE IF NOT EXISTS id_tags (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  id_tag TEXT (20) NOT NULL,
+  id_tag TEXT (36) NOT NULL,
+  token_type TEXT DEFAULT 'ISO14443', -- ISO14443 | KeyCode | MacAddress…
+  group_id_token TEXT, -- groupIdToken 2.0.1
   user_id INTEGER,
   site_id INTEGER,
   active INTEGER (1) DEFAULT 1 CHECK (active IN (0, 1)),
@@ -220,6 +263,7 @@ CREATE TABLE IF NOT EXISTS notification_log (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_connectors_unique ON connectors(chargepoint_id, COALESCE(evse_id, 0), connector_id);
 CREATE INDEX IF NOT EXISTS idx_user_token ON users_password_resets(token);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_id_tag_site ON id_tags(id_tag, COALESCE(site_id, 0));
 CREATE INDEX IF NOT EXISTS idx_auth_events_cp ON id_tags_events(chargepoint_id, timestamp);
@@ -246,3 +290,45 @@ INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
   ('MinimumStatusDuration', '0', 0),
   ('ResetRetries', '3', 0),
   ('LocalAuthListEnabled', 'false', 0);
+INSERT  OR IGNORE INTO chargepoint_init_variables (component, variable, value) VALUES
+  -- OCPPCommCtrlr — Communication OCPP
+  ('OCPPCommCtrlr', 'HeartbeatInterval',       '600'),   -- secondes (0 = utiliser intervalle réseau)
+  ('OCPPCommCtrlr', 'WebSocketPingInterval',   '60'),    -- secondes
+  ('OCPPCommCtrlr', 'ResetRetries',            '3'),
+  ('OCPPCommCtrlr', 'MessageTimeout',          '30'),    -- secondes
+  ('OCPPCommCtrlr', 'MessageAttempts',         '3'),     -- was TransactionMessageAttempts
+  ('OCPPCommCtrlr', 'MessageAttemptInterval',  '60'),    -- was TransactionMessageRetryInterval
+  -- TxCtrlr — Gestion des transactions
+  ('TxCtrlr', 'EVConnectionTimeOut',           '60'),    -- secondes, was ConnectionTimeOut
+  ('TxCtrlr', 'StopTxOnEVSideDisconnect',      'true'),  -- was StopTransactionOnEVSideDisconnect
+  ('TxCtrlr', 'StopTxOnInvalidId',             'true'),  -- was StopTransactionOnInvalidId
+  ('TxCtrlr', 'TxStartPoint',                  'PowerPathClosed'),
+  ('TxCtrlr', 'TxStopPoint',                   'EVConnected'),
+  ('TxCtrlr', 'MaxEnergyOnInvalidId',          '0'),     -- Wh, 0 = désactivé
+  -- SampledDataCtrlr — Mesures périodiques
+  ('SampledDataCtrlr', 'SampledDataEnabled',              'true'),
+  ('SampledDataCtrlr', 'SampledDataTxUpdatedInterval',    '60'),   -- secondes, was MeterValueSampleInterval
+  ('SampledDataCtrlr', 'SampledDataTxUpdatedMeasurands',  'Energy.Active.Import.Register,Power.Active.Import'),
+  ('SampledDataCtrlr', 'SampledDataTxStartedMeasurands',  ''),
+  ('SampledDataCtrlr', 'SampledDataTxEndedMeasurands',    'Energy.Active.Import.Register'),
+  ('SampledDataCtrlr', 'SampledDataAlignedDataInterval',  '0'),    -- was ClockAlignedDataInterval
+  -- AuthCtrlr — Autorisation
+  ('AuthCtrlr', 'AuthorizeRemoteStart',        'false'),
+  ('AuthCtrlr', 'LocalAuthorizeOffline',       'true'),
+  ('AuthCtrlr', 'LocalPreAuthorize',           'true'),  -- was LocalPreAuthorize
+  ('AuthCtrlr', 'OfflineTxForUnknownIdEnabled','false'), -- was AllowOfflineTxForUnknownId
+  ('AuthCtrlr', 'DisableRemoteAuthorization',  'false'),
+  -- LocalAuthListCtrlr — Liste locale d'autorisation
+  ('LocalAuthListCtrlr', 'Enabled',            'false'), -- was LocalAuthListEnabled
+  -- ClockCtrlr — Horloge
+  ('ClockCtrlr', 'TimeSource',                 'Heartbeat'),
+  ('ClockCtrlr', 'TimeOffset',                 'UTC+0'),
+  -- ReservationCtrlr — Réservations
+  ('ReservationCtrlr', 'Enabled',              'false'),
+  ('ReservationCtrlr', 'NonEvseSpecific',       'false'),
+  -- SmartChargingCtrlr — Smart charging
+  ('SmartChargingCtrlr', 'Enabled',            'false'),
+  ('SmartChargingCtrlr', 'PeriodsPerSchedule', '3'),
+  ('SmartChargingCtrlr', 'Phases3to1',         'false'),
+  -- DisplayMessageCtrlr — Messages affichés
+  ('DisplayMessageCtrlr', 'Enabled',           'false');

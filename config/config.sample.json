@@ -19,6 +19,8 @@
   "ocpp": {
     "host": "0.0.0.0",
     "wsPort": 9000,
+    "v16":  { "enabled": true },
+    "v201": { "enabled": false },
     "strictMode": true,
     "callTimeoutSeconds": 45,
     "autoAddUnknownChargepoints": false,
