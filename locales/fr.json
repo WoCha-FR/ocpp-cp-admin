@@ -213,7 +213,6 @@
     "cpClearCache": "Vider le cache",
     "cpClearChargingProfile": "Vider les profils de charge",
     "cpGetDiagnostics": "Fichier diagnostics",
-    "cpReinitialize": "Relancer l'initialisation",
     "cpReinitScheduled": "L'initialisation sera relancée au prochain démarrage de la borne",
     "cpGetLocalListVersion": "Version de la liste locale",
     "cpHardware": "Matériel",
@@ -613,6 +612,14 @@
       "eDesc": "Résultat de l'upload de diagnostics d'une borne",
       "title": "Résultat upload diagnostics – {{cp_name}}",
       "body": "Le résultat est : {{status}}."
+    },
+    "init_config_result": {
+      "eLabel": "Résultat config initiale",
+      "eDesc": "Résultat de la séquence de configuration initiale d'une borne",
+      "title": "Config initiale — {{identity}}",
+      "reboot": "Redémarrage requis pour : {{keys}}",
+      "rejected": "Rejeté : {{keys}}",
+      "notSupported": "Non supporté : {{keys}}"
     },
     "duplicate_identity": {
       "eLabel": "Identité de borne en double",

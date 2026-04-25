@@ -28,7 +28,21 @@ async function callClient16(identity, method, params) {
   });
   logger.info(`Calling ${method} on ${identity} with params: ${JSON.stringify(params)}`);
 
-  const result = await client.call(method, params);
+  let result;
+  try {
+    result = await client.call(method, params);
+  } catch (err) {
+    if (cpId) db.addOcppMessage(cpId, 'chargepoint', 'CALLERROR', method, { error: err.message });
+    broadcast('ocpp_message', {
+      identity,
+      origin: 'chargepoint',
+      message_type: 'CALLERROR',
+      action: method,
+      payload: { error: err.message },
+    });
+    logger.warn(`Error response for ${method} from ${identity}: ${err.message}`);
+    throw err;
+  }
 
   if (cpId) db.addOcppMessage(cpId, 'chargepoint', 'CALLRESULT', method, result);
   broadcast('ocpp_message', {
@@ -92,25 +106,19 @@ function register16Handlers(client, loggedHandle) {
         logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
       }
 
-      let configFetched = false;
       try {
         logger.debug(
           `[InitSeq] Calling GetConfiguration on ${identity} to initialize config cache`
         );
         await callClient16(identity, 'GetConfiguration', {});
-        configFetched = true;
       } catch (e) {
         logger.warn(`[InitSeq] ${identity} GetConfiguration: ${e.message}`);
-        try {
-          logger.debug(`[InitSeq] Retrying GetConfiguration on ${identity} with key: []`);
-          await callClient16(identity, 'GetConfiguration', { key: [] });
-          configFetched = true;
-        } catch (e2) {
-          logger.warn(`[InitSeq] ${identity} GetConfiguration (fallback): ${e2.message}`);
-        }
       }
 
-      const globals = configFetched ? db.getEnabledInitialChargepointConfig() : [];
+      const globals = db.getEnabledInitialChargepointConfig();
+      const rebootKeys = [];
+      const rejectedKeys = [];
+      const notSupportedKeys = [];
       for (const cfg of globals) {
         const current = db.getChargepointConfigByKey(cp.id, cfg.key);
         if (current?.is_override) continue;
@@ -122,10 +130,25 @@ function register16Handlers(client, loggedHandle) {
           });
           if (result?.status === 'Accepted' || result?.status === 'RebootRequired') {
             db.upsertChargepointConfig(cp.id, cfg.key, cfg.value, false);
+            if (result.status === 'RebootRequired') {
+              logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: RebootRequired`);
+              rebootKeys.push(cfg.key);
+            }
+          } else if (result.status === 'Rejected') {
+            logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: Rejected`);
+            rejectedKeys.push(cfg.key);
+          } else {
+            logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: NotSupported`);
+            notSupportedKeys.push(cfg.key);
           }
         } catch (e) {
           logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: ${e.message}`);
         }
+      }
+      if (rebootKeys.length > 0 || rejectedKeys.length > 0 || notSupportedKeys.length > 0) {
+        notifications
+          .emit('init_config_result', { identity, rebootKeys, rejectedKeys, notSupportedKeys })
+          .catch(() => {});
       }
 
       db.markChargepointInitialized(cp.id);

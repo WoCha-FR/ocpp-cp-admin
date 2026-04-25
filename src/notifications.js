@@ -40,6 +40,10 @@ const EVENT_DEFINITIONS = {
     roles: ['admin'],
     defaultChannels: ['webpush'],
   },
+  init_config_result: {
+    roles: ['admin'],
+    defaultChannels: [],
+  },
   duplicate_identity: {
     roles: ['admin'],
     defaultChannels: ['webpush'],

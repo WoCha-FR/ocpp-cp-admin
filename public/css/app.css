@@ -213,7 +213,7 @@
     input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
 
     .btn {
-      display: inline-flex; align-items: center; gap: 6px;
+      display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
       padding: 8px 16px; border: none; border-radius: var(--radius);
       font-size: 14px; font-weight: 500; cursor: pointer;
       transition: all 0.15s; text-decoration: none;
@@ -338,7 +338,7 @@
     /* ── Confirm Dialog ── */
     .confirm-dialog { text-align: center; max-width: 400px; }
     .confirm-icon { font-size: 40px; margin-bottom: 12px; }
-    .confirm-message { font-size: 15px; color: var(--text-primary); margin-bottom: 0; line-height: 1.5; }
+    .confirm-message { font-size: 15px; color: var(--text-primary); margin-bottom: 0; line-height: 1.5; white-space: pre-line; }
     .confirm-dialog .modal-actions { justify-content: center; margin-top: 24px; }
 
     /* ── Toast ── */

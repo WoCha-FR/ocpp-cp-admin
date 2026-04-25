@@ -6,6 +6,7 @@ const mockDb = {
   upsertChargepoint: jest.fn(),
   addOcppMessage: jest.fn(),
   bulkUpsertChargepointConfig: jest.fn(),
+  upsertChargepointConfig: jest.fn(),
   createTransaction: jest.fn(),
   stopTransaction: jest.fn(),
   getTransactions: jest.fn(() => []),
@@ -155,6 +156,80 @@ describe('ocpp-server-16 — BootNotification', () => {
     mockDb.getInitialChargepointConfigByKey.mockReturnValue(null);
     const result = client._handlers['BootNotification']({ chargePointVendor: 'X' });
     expect(result.interval).toBe(300);
+  });
+
+  it('sends ChangeConfiguration even when GetConfiguration fails', async () => {
+    mockDb.getEnabledInitialChargepointConfig.mockReturnValue([
+      { key: 'HeartbeatInterval', value: '60' },
+    ]);
+    mockDb.getChargepointConfigByKey.mockReturnValue(null);
+
+    client.call
+      .mockResolvedValueOnce({})                             // ClearCache
+      .mockResolvedValueOnce({})                             // ClearChargingProfile
+      .mockRejectedValueOnce(new Error('Not supported'))     // GetConfiguration
+      .mockResolvedValueOnce({ status: 'Accepted' });        // ChangeConfiguration
+
+    mockConnectedClients.set('CP001', client);
+
+    client._handlers['BootNotification']({ chargePointVendor: 'X' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(client.call).toHaveBeenCalledWith('ChangeConfiguration', {
+      key: 'HeartbeatInterval',
+      value: '60',
+    });
+    expect(mockDb.upsertChargepointConfig).toHaveBeenCalledWith(1, 'HeartbeatInterval', '60', false);
+  });
+
+  it('emits init_config_result with reboot, rejected and notSupported keys grouped', async () => {
+    mockDb.getEnabledInitialChargepointConfig.mockReturnValue([
+      { key: 'KeyA', value: '1' },
+      { key: 'KeyB', value: '2' },
+      { key: 'KeyC', value: '3' },
+    ]);
+    mockDb.getChargepointConfigByKey.mockReturnValue(null);
+
+    client.call
+      .mockResolvedValueOnce({})                                  // ClearCache
+      .mockResolvedValueOnce({})                                  // ClearChargingProfile
+      .mockResolvedValueOnce({})                                  // GetConfiguration
+      .mockResolvedValueOnce({ status: 'RebootRequired' })        // KeyA
+      .mockResolvedValueOnce({ status: 'Rejected' })              // KeyB
+      .mockResolvedValueOnce({ status: 'NotSupported' });         // KeyC
+
+    mockConnectedClients.set('CP001', client);
+
+    client._handlers['BootNotification']({ chargePointVendor: 'X' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockNotifications.emit).toHaveBeenCalledTimes(1);
+    expect(mockNotifications.emit).toHaveBeenCalledWith('init_config_result', {
+      identity: 'CP001',
+      rebootKeys: ['KeyA'],
+      rejectedKeys: ['KeyB'],
+      notSupportedKeys: ['KeyC'],
+    });
+  });
+
+  it('does not emit init_config_result when all ChangeConfiguration are Accepted', async () => {
+    mockDb.getEnabledInitialChargepointConfig.mockReturnValue([
+      { key: 'KeyA', value: '1' },
+    ]);
+    mockDb.getChargepointConfigByKey.mockReturnValue(null);
+
+    client.call
+      .mockResolvedValueOnce({})                           // ClearCache
+      .mockResolvedValueOnce({})                           // ClearChargingProfile
+      .mockResolvedValueOnce({})                           // GetConfiguration
+      .mockResolvedValueOnce({ status: 'Accepted' });      // KeyA
+
+    mockConnectedClients.set('CP001', client);
+
+    client._handlers['BootNotification']({ chargePointVendor: 'X' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockNotifications.emit).not.toHaveBeenCalledWith('init_config_result', expect.anything());
   });
 });
 

@@ -57,6 +57,25 @@ function format(event, data, lang = 'fr') {
       titre: tradN('notifications.diagnostics_upload.title', { cp_name }),
       corps: tradN('notifications.diagnostics_upload.body', { status: data.status }),
     }),
+    init_config_result: () => ({
+      titre: tradN('notifications.init_config_result.title', { identity: data.identity }),
+      corps: [
+        line('notifications.init_config_result.reboot', data.rebootKeys?.length, {
+          ...opts,
+          keys: data.rebootKeys?.join(', '),
+        }),
+        line('notifications.init_config_result.rejected', data.rejectedKeys?.length, {
+          ...opts,
+          keys: data.rejectedKeys?.join(', '),
+        }),
+        line('notifications.init_config_result.notSupported', data.notSupportedKeys?.length, {
+          ...opts,
+          keys: data.notSupportedKeys?.join(', '),
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }),
     duplicate_identity: () => ({
       titre: tradN('notifications.duplicate_identity.title', { identity: data.identity }),
       corps: [

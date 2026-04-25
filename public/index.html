@@ -1243,7 +1243,7 @@ async function renderChargepoints() {
                   ${adminManage() ? `
                   <button class="btn btn-indigo btn-sm" onclick="assignCpToSite(${cp.id}, '${cp.identity}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
                   <button class="btn btn-teal btn-sm" onclick="showEditChargepointModal(${cp.id})">${t('common.edit')}</button>
-                  <button class="btn btn-orange btn-sm" onclick="reinitializeChargepoint(event,${cp.id})">${t('chargepoint.cpReinitialize')}</button>` : ''}
+                  <button class="btn btn-orange btn-sm" onclick="reinitializeChargepoint(event,${cp.id})">${t('common.reset')}</button>` : ''}
                   ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteChargepoint(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
@@ -4178,7 +4178,7 @@ async function deleteInitConfig(id) {
 
 async function cascadeAllInitConfig() {
   const ok = await confirmDialog(
-    `<strong>${t('initConfig.cascadeConfirmTitle')}</strong><p style="margin-top:8px;font-size:0.9em;color:var(--text-muted)">${t('initConfig.cascadeConfirmBody')}</p>`
+    `${t('initConfig.cascadeConfirmTitle')}\n\n${t('initConfig.cascadeConfirmBody')}`
   );
   if (!ok) return;
   let result;
