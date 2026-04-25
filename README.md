@@ -318,6 +318,13 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | `CPADMIN_LANGUAGE` | `language` | Any locale code from `locales/` folder (e.g. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `My CPO` |
 
+### Feature Activation
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_WEBUI_HTTPS_ENABLED` | `webui.https.enabled` | `true` (enable native HTTPS on the web interface) |
+| `CPADMIN_OCPP_WSS_ENABLED` | `ocpp.wss.enabled` | `true` (enable native WSS on the OCPP server) |
+
 ### OCPP Behavior
 
 | Variable | JSON Config | Example |

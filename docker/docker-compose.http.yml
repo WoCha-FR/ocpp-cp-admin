@@ -38,6 +38,8 @@ services:
       - CPADMIN_SESSION_SECRET=change-me-in-production
 
       # ── Comportement OCPP ───────────────────────────────────
+      # - CPADMIN_OCPP_V16_ENABLED=true
+      # - CPADMIN_OCPP_V201_ENABLED=false
       - CPADMIN_OCPP_STRICT_MODE=false
       - CPADMIN_OCPP_AUTO_ADD=true
       - CPADMIN_OCPP_PENDING_UNKNOWN=false
@@ -86,6 +88,7 @@ services:
       - ADDRESS=localhost
       - MIN_PORT=21000
       - MAX_PORT=21010
+      - ADDED_FLAGS= --dirlist_enable=NO --download_enable=NO --delete_enable=NO
     volumes:
       # Les fichiers de diagnostic sont directement accessibles dans ./data/ftp/ocpp/
       - ./data/ftp:/ftp/ocpp

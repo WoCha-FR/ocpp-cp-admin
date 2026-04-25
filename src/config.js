@@ -63,6 +63,7 @@ const ENV_OVERRIDES = [
     type: 'string',
   },
   // ── Activation des fonctionnalités ──
+  { env: 'CPADMIN_WEBUI_HTTPS_ENABLED', path: ['webui', 'https', 'enabled'] },
   { env: 'CPADMIN_MAIL_ENABLED', path: ['notifs', 'mail', 'enabled'] },
   { env: 'CPADMIN_MAIL_FROM', path: ['notifs', 'mail', 'from'], type: 'string' },
   { env: 'CPADMIN_MAIL_SECURE', path: ['notifs', 'mail', 'transport', 'secure'] },
@@ -79,6 +80,7 @@ const ENV_OVERRIDES = [
   { env: 'CPADMIN_OCPP_PENDING_UNKNOWN', path: ['ocpp', 'pendingUnknownChargepoints'] },
   { env: 'CPADMIN_OCPP_V16_ENABLED', path: ['ocpp', 'v16', 'enabled'] },
   { env: 'CPADMIN_OCPP_V201_ENABLED', path: ['ocpp', 'v201', 'enabled'] },
+  { env: 'CPADMIN_OCPP_WSS_ENABLED', path: ['ocpp', 'wss', 'enabled'] },
   // ── Configuration générale ──
   { env: 'CPADMIN_LOGLEVEL', path: ['loglevel'] },
   { env: 'CPADMIN_LANGUAGE', path: ['language'] },

@@ -112,7 +112,13 @@ services:
       # IMPORTANT : changer cette valeur (min. 32 caractères aléatoires)
       - CPADMIN_SESSION_SECRET=change-me-in-production
 
+      # ── Activation des fonctionnalités ──────────────────────
+      - CPADMIN_WEBUI_HTTPS_ENABLED=true
+      - CPADMIN_OCPP_WSS_ENABLED=true
+
       # ── Comportement OCPP ───────────────────────────────────
+      # - CPADMIN_OCPP_V16_ENABLED=true
+      # - CPADMIN_OCPP_V201_ENABLED=false
       - CPADMIN_OCPP_STRICT_MODE=false
       - CPADMIN_OCPP_AUTO_ADD=true
       - CPADMIN_OCPP_PENDING_UNKNOWN=false
@@ -160,5 +166,6 @@ services:
       - ADDRESS=cpadmin.example.com
       - MIN_PORT=21000
       - MAX_PORT=21010
+      - ADDED_FLAGS= --dirlist_enable=NO --download_enable=NO --delete_enable=NO
     volumes:
       - ./data/ftp:/ftp/ocpp

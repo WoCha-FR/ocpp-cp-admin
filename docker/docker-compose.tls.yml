@@ -74,7 +74,15 @@ services:
       # IMPORTANT : changer cette valeur (min. 32 caractères aléatoires)
       - CPADMIN_SESSION_SECRET=change-me-with-a-random-secret
 
+      # ── Activation des fonctionnalités ──────────────────────
+      # TLS OCPP géré par l'app (TCP passthrough Traefik)
+      - CPADMIN_OCPP_WSS_ENABLED=true
+      # UI en HTTP interne — HTTPS terminé par Traefik, ne pas activer ici
+      # - CPADMIN_WEBUI_HTTPS_ENABLED=true
+
       # ── Comportement OCPP ───────────────────────────────────
+      # - CPADMIN_OCPP_V16_ENABLED=true
+      # - CPADMIN_OCPP_V201_ENABLED=false
       - CPADMIN_OCPP_STRICT_MODE=false
       - CPADMIN_OCPP_AUTO_ADD=true
       - CPADMIN_OCPP_PENDING_UNKNOWN=false

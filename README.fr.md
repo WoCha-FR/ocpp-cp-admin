@@ -312,6 +312,13 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_LANGUAGE` | `language` | Tout code locale du dossier `locales/` (ex. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `Mon CPO` |
 
+### Activation des fonctionnalités
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_WEBUI_HTTPS_ENABLED` | `webui.https.enabled` | `true` (activer le HTTPS natif sur l'interface web) |
+| `CPADMIN_OCPP_WSS_ENABLED` | `ocpp.wss.enabled` | `true` (activer le WSS natif sur le serveur OCPP) |
+
 ### Comportement OCPP
 
 | Variable | Config JSON | Exemple |

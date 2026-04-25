@@ -76,7 +76,7 @@ docker compose -f docker/docker-compose.https.yml up -d
 
 **Prérequis :**
 - Le port 80 doit être accessible publiquement pour le challenge ACME HTTP
-- Activer `webui.https.enabled` et/ou `ocpp.wss.enabled` dans `config.json`
+- `CPADMIN_WEBUI_HTTPS_ENABLED=true` et `CPADMIN_OCPP_WSS_ENABLED=true` sont déjà définis dans le compose — aucune modification manuelle de `config.json` n'est nécessaire
 
 ---
 
@@ -159,7 +159,7 @@ docker compose -f docker/docker-compose.tls.yml up -d
 | FTP `ADDRESS=ftp.cpadmin.local` | Adresse externe pour le mode passif FTP | Oui |
 
 **Prérequis :**
-- Activer `ocpp.wss.enabled` dans `config.json`
+- `CPADMIN_OCPP_WSS_ENABLED=true` est déjà défini dans le compose — aucune modification manuelle de `config.json` n'est nécessaire
 - Les cert-dumpers alimentent automatiquement `./data/config/certs/` avec `rsa-server.crt`, `rsa-server.key`, `ecdsa-server.crt`, `ecdsa-server.key` — aucune manipulation manuelle de certificats n'est nécessaire
 
 **Security Profile 3 — authentification par certificat client :**
@@ -233,6 +233,13 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `LOG_CONSOLE` | *(pas d'équivalent JSON)* | `true` — force l'affichage des logs en console (utile pour déboguer temporairement en production) |
 | `CPADMIN_LANGUAGE` | `language` | Tout code locale du dossier `locales/` (ex. `fr`, `en`) |
 | `CPADMIN_CPO_NAME` | `cpoName` | `Mon CPO` |
+
+### Activation des fonctionnalités
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_WEBUI_HTTPS_ENABLED` | `webui.https.enabled` | `true` (activer le HTTPS natif sur l'interface web) |
+| `CPADMIN_OCPP_WSS_ENABLED` | `ocpp.wss.enabled` | `true` (activer le WSS natif sur le serveur OCPP) |
 
 ### Comportement OCPP
 
