@@ -117,7 +117,7 @@
       display: block;
     }
     .sidebar-header small { color: var(--sidebar-muted); font-size: 12px; }
-    .sidebar-nav { flex: 1; padding: 12px 0; }
+    .sidebar-nav { padding: 12px 0; overflow-y: auto; }
     .sidebar-nav a {
       display: flex; align-items: center; gap: 10px;
       padding: 10px 20px; color: var(--sidebar-muted);

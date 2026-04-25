@@ -248,7 +248,7 @@
     "cpConfSearchPlaceholder": "Search for a key...",
     "cpConfReadOnly": "Read only",
     "cpConfUpdate": "Edit configuration",
-    "cpConfRefresh": "Refresh from chargepoint",
+    "cpConfRefresh": "Refresh",
     "cpConfLoading": "Loading Configuration...",
     "cpConfGetLoading": "Fetching configuration...",
     "cpConfUpdated": "Configuration updated",
@@ -880,6 +880,14 @@
     "deleteConfirm": "Delete this configuration entry?",
     "keyExists": "This key already exists.",
     "globalOnly": "System",
-    "globalOnlyTooltip": "This parameter is managed globally and cannot be deleted or overridden per chargepoint."
+    "globalOnlyTooltip": "This parameter is managed globally and cannot be deleted or overridden per chargepoint.",
+    "cascadeBtn": "Apply to all chargepoints",
+    "cascadeConfirmTitle": "Apply configuration to all chargepoints",
+    "cascadeConfirmBody": "All currently enabled values will be sent via ChangeConfiguration to all connected chargepoints. Offline chargepoints will be re-initialized to receive the config on next boot. Values with per-chargepoint overrides will be skipped.",
+    "cascadeResultTitle": "Application result",
+    "cascadeApplied": "config(s) applied",
+    "cascadeQueued": "chargepoint(s) offline (re-initialization scheduled)",
+    "cascadeSkipped": "config(s) skipped (per-chargepoint override)",
+    "cascadeErrors": "error(s)"
   }
 }

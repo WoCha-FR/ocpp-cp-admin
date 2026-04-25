@@ -375,7 +375,7 @@ function getAllChargepoints() {
       `
     SELECT cp.*, s.sname as site_name
     FROM chargepoints cp LEFT JOIN sites s ON cp.site_id = s.id
-    ORDER BY cp.identity
+    ORDER BY s.sname, cp.cpname, cp.identity
   `
     )
     .all();
@@ -1004,8 +1004,8 @@ function getOcppMessages(filters = {}) {
     params.push(filters.message_type);
   }
   if (filters.action) {
-    query += ' AND om.action = ?';
-    params.push(filters.action);
+    query += ' AND UPPER(om.action) LIKE UPPER(?)';
+    params.push(`%${filters.action}%`);
   }
   if (filters.site_ids && filters.site_ids.length > 0) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
@@ -1438,8 +1438,8 @@ function getIdTagEvents(filters = {}) {
     params.push(filters.chargepoint_id);
   }
   if (filters.id_tag) {
-    query += ' AND ite.id_tag = ?';
-    params.push(filters.id_tag);
+    query += ' AND UPPER(ite.id_tag) LIKE UPPER(?)';
+    params.push(`%${filters.id_tag}%`);
   }
   if (filters.status) {
     query += ' AND ite.status = ?';

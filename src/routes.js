@@ -1133,6 +1133,54 @@ router.post(
   }
 );
 
+router.post('/init-config/cascade-all', requireRole('admin'), async (req, res) => {
+  const configs = db.getEnabledInitialChargepointConfig();
+  const chargepoints = db.getAllChargepoints();
+  const clients = getConnectedClients();
+
+  const applied = [];
+  const queued = [];
+  const skipped = [];
+  const errors = [];
+
+  for (const cp of chargepoints) {
+    const isOnline = clients.has(cp.identity);
+    let cpQueued = false;
+
+    for (const cfg of configs) {
+      const current = db.getChargepointConfigByKey(cp.id, cfg.key);
+      if (current?.is_override) {
+        skipped.push({ identity: cp.identity, key: cfg.key, reason: 'override' });
+        continue;
+      }
+      if (current?.value === cfg.value) continue;
+
+      if (isOnline) {
+        try {
+          const result = await callClient(cp.identity, 'ChangeConfiguration', {
+            key: cfg.key,
+            value: cfg.value,
+          });
+          if (result?.status === 'Accepted' || result?.status === 'RebootRequired') {
+            db.upsertChargepointConfig(cp.id, cfg.key, cfg.value, false, false);
+            applied.push({ identity: cp.identity, key: cfg.key });
+          } else {
+            errors.push({ identity: cp.identity, key: cfg.key, reason: result?.status });
+          }
+        } catch (e) {
+          errors.push({ identity: cp.identity, key: cfg.key, reason: e.message });
+        }
+      } else if (!cpQueued) {
+        db.resetChargepointInitialized(cp.id);
+        queued.push({ identity: cp.identity });
+        cpQueued = true;
+      }
+    }
+  }
+
+  res.json({ applied, queued, skipped, errors });
+});
+
 router.post(
   '/chargepoints/:id/reinitialize',
   requireRole('admin'),

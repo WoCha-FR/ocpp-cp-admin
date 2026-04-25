@@ -92,16 +92,25 @@ function register16Handlers(client, loggedHandle) {
         logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
       }
 
+      let configFetched = false;
       try {
         logger.debug(
           `[InitSeq] Calling GetConfiguration on ${identity} to initialize config cache`
         );
         await callClient16(identity, 'GetConfiguration', {});
+        configFetched = true;
       } catch (e) {
         logger.warn(`[InitSeq] ${identity} GetConfiguration: ${e.message}`);
+        try {
+          logger.debug(`[InitSeq] Retrying GetConfiguration on ${identity} with key: []`);
+          await callClient16(identity, 'GetConfiguration', { key: [] });
+          configFetched = true;
+        } catch (e2) {
+          logger.warn(`[InitSeq] ${identity} GetConfiguration (fallback): ${e2.message}`);
+        }
       }
 
-      const globals = db.getEnabledInitialChargepointConfig();
+      const globals = configFetched ? db.getEnabledInitialChargepointConfig() : [];
       for (const cfg of globals) {
         const current = db.getChargepointConfigByKey(cp.id, cfg.key);
         if (current?.is_override) continue;

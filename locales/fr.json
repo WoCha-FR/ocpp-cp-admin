@@ -248,7 +248,7 @@
     "cpConfSearchPlaceholder": "Rechercher une clé...",
     "cpConfReadOnly": "Lecture seule",
     "cpConfUpdate": "Modifier la configuration",
-    "cpConfRefresh": "Rafraîchir depuis la borne",
+    "cpConfRefresh": "Rafraîchir",
     "cpConfLoading": "Chargement de la configuration...",
     "cpConfGetLoading": "Récupération de la configuration...",
     "cpConfUpdated": "Configuration mise à jour",
@@ -880,6 +880,14 @@
     "deleteConfirm": "Supprimer cette entrée de configuration ?",
     "keyExists": "Cette clé existe déjà.",
     "globalOnly": "Système",
-    "globalOnlyTooltip": "Ce paramètre est géré globalement et ne peut pas être supprimé ni surchargé par borne."
+    "globalOnlyTooltip": "Ce paramètre est géré globalement et ne peut pas être supprimé ni surchargé par borne.",
+    "cascadeBtn": "Appliquer à toutes les bornes",
+    "cascadeConfirmTitle": "Appliquer la configuration à toutes les bornes",
+    "cascadeConfirmBody": "Les valeurs actuellement activées seront envoyées via ChangeConfiguration à toutes les bornes connectées. Les bornes hors ligne seront réinitialisées pour recevoir la config au prochain démarrage. Les valeurs avec override par borne seront ignorées.",
+    "cascadeResultTitle": "Résultat de l'application",
+    "cascadeApplied": "config(s) appliquée(s)",
+    "cascadeQueued": "borne(s) hors ligne (réinitialisation programmée)",
+    "cascadeSkipped": "config(s) ignorée(s) (override par borne)",
+    "cascadeErrors": "erreur(s)"
   }
 }

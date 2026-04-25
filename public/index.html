@@ -1240,8 +1240,10 @@ async function renderChargepoints() {
                 <td>${cp.model || '-'}</td>
                 <td class="text-muted">${cp.last_heartbeat ? formatDate(cp.last_heartbeat) : '-'}</td>
                 <td>
-                  ${adminManage() ? `<button class="btn btn-indigo btn-sm" onclick="assignCpToSite(${cp.id}, '${cp.identity}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>` : ''}
-                  ${adminManage() ? `<button class="btn btn-teal btn-sm" onclick="showEditChargepointModal(${cp.id})">${t('common.edit')}</button>` : ''}
+                  ${adminManage() ? `
+                  <button class="btn btn-indigo btn-sm" onclick="assignCpToSite(${cp.id}, '${cp.identity}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
+                  <button class="btn btn-teal btn-sm" onclick="showEditChargepointModal(${cp.id})">${t('common.edit')}</button>
+                  <button class="btn btn-orange btn-sm" onclick="reinitializeChargepoint(event,${cp.id})">${t('chargepoint.cpReinitialize')}</button>` : ''}
                   ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteChargepoint(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
@@ -1544,7 +1546,6 @@ async function renderDetailTabBorne(cp) {
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ClearChargingProfile', {})">${t('chargepoint.cpClearChargingProfile')}</button>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
               <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'GetDiagnostics', {location: '${ocppSettings.diagnosticsLocation || ''}'})">${t('chargepoint.cpGetDiagnostics')}</button>
-              <button class="btn btn-warning btn-sm" onclick="reinitializeChargepoint(event,${cp.id})">${t('chargepoint.cpReinitialize')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
@@ -4093,7 +4094,9 @@ async function renderConfigTabChargepoints() {
   html += `</tbody></table></div>`;
 
   document.getElementById('configTabContent').innerHTML = html;
-  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-primary btn-sm" onclick="showCreateInitConfigModal()">+ ${t('initConfig.addBtn')}</button>`;
+  document.getElementById('topbarActions').innerHTML = `
+    <button class="btn btn-secondary btn-sm" onclick="cascadeAllInitConfig()">↓ ${t('initConfig.cascadeBtn')}</button>
+    <button class="btn btn-primary btn-sm" onclick="showCreateInitConfigModal()">+ ${t('initConfig.addBtn')}</button>`;
 }
 
 // ── Init Config CRUD ──
@@ -4171,6 +4174,35 @@ async function deleteInitConfig(id) {
   } catch (err) {
     toast(err.message, 'error');
   }
+}
+
+async function cascadeAllInitConfig() {
+  const ok = await confirmDialog(
+    `<strong>${t('initConfig.cascadeConfirmTitle')}</strong><p style="margin-top:8px;font-size:0.9em;color:var(--text-muted)">${t('initConfig.cascadeConfirmBody')}</p>`
+  );
+  if (!ok) return;
+  let result;
+  try {
+    result = await api('POST', '/init-config/cascade-all');
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  const lines = [
+    `<strong>${t('initConfig.cascadeResultTitle')}</strong>`,
+    `• ${result.applied.length} ${t('initConfig.cascadeApplied')}`,
+    `• ${result.queued.length} ${t('initConfig.cascadeQueued')}`,
+    `• ${result.skipped.length} ${t('initConfig.cascadeSkipped')}`,
+    result.errors.length ? `• ${result.errors.length} ${t('initConfig.cascadeErrors')}` : null,
+  ].filter(Boolean);
+  openModal(`
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      ${lines.map(l => `<div>${l}</div>`).join('')}
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn btn-primary" onclick="closeModal()">${t('common.close')}</button>
+    </div>
+  `);
 }
 
 function buildConfigInput(f) {
