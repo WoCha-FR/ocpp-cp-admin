@@ -213,6 +213,8 @@
     "cpClearCache": "Vider le cache",
     "cpClearChargingProfile": "Vider les profils de charge",
     "cpGetDiagnostics": "Fichier diagnostics",
+    "cpReinitialize": "Relancer l'initialisation",
+    "cpReinitScheduled": "L'initialisation sera relancée au prochain démarrage de la borne",
     "cpGetLocalListVersion": "Version de la liste locale",
     "cpHardware": "Matériel",
     "cpFirmware": "Firmware",

@@ -32,13 +32,14 @@ function checkWsRateLimit(ip) {
   return true;
 }
 
-function checkRefusedNotifCooldown(identity) {
+function checkRefusedNotifCooldown(identity, reason) {
   const config = getConfig();
   const cooldownMs = ((config.notifs && config.notifs.refusedCooldownMinutes) || 60) * 60 * 1000;
   const now = Date.now();
-  const last = refusedNotifCooldown.get(identity);
+  const key = reason ? `${identity}:${reason}` : identity;
+  const last = refusedNotifCooldown.get(key);
   if (!last || now - last > cooldownMs) {
-    refusedNotifCooldown.set(identity, now);
+    refusedNotifCooldown.set(key, now);
     return true;
   }
   return false;
@@ -175,32 +176,18 @@ function createOCPPServerBase(options = {}) {
         // Pas de certificat client disponible
       }
 
-      if (!providedPassword && !hasClientCert) {
-        logger.warn(`WSS connection refused: ${handshake.identity} no authentication method`);
-        if (checkRefusedNotifCooldown(handshake.identity)) {
-          notifications
-            .emit('chargepoint_refused', {
-              identity: handshake.identity,
-              reason: 'wss_no_auth',
-            })
-            .catch(() => {});
-        }
-        return reject(
-          401,
-          'WSS requires Basic Auth (Security Profile 2) or client certificate (Security Profile 3)'
-        );
-      }
-
       if (hasClientCert) {
         logger.info(`WSS connection with client certificate: ${handshake.identity}`);
-      } else {
+      } else if (providedPassword) {
         logger.info(`WSS connection with Basic Auth: ${handshake.identity}`);
+      } else {
+        logger.debug(`WSS connection without authentication: ${handshake.identity}`);
       }
     }
 
     if (cp && !cp.authorized) {
       logger.warn(`Connection refused: charge ${handshake.identity} point not authorized`);
-      if (checkRefusedNotifCooldown(handshake.identity)) {
+      if (checkRefusedNotifCooldown(handshake.identity, 'not_authorized')) {
         notifications
           .emit('chargepoint_refused', {
             identity: handshake.identity,
@@ -248,7 +235,7 @@ function createOCPPServerBase(options = {}) {
         return reject(401, 'Charge point pending approval');
       } else {
         logger.info(`Connection refused: unknown charge point ${handshake.identity}`);
-        if (checkRefusedNotifCooldown(handshake.identity)) {
+        if (checkRefusedNotifCooldown(handshake.identity, 'unknown')) {
           notifications
             .emit('chargepoint_refused', {
               identity: handshake.identity,
@@ -263,7 +250,7 @@ function createOCPPServerBase(options = {}) {
     const dbPassword = cp.password || null;
     if (!providedPassword && dbPassword) {
       logger.warn(`Connection refused: ${handshake.identity} password required but missing`);
-      if (checkRefusedNotifCooldown(handshake.identity)) {
+      if (checkRefusedNotifCooldown(handshake.identity, 'password_required')) {
         notifications
           .emit('chargepoint_refused', {
             identity: handshake.identity,
@@ -275,7 +262,7 @@ function createOCPPServerBase(options = {}) {
     }
     if (providedPassword && !dbPassword) {
       logger.warn(`Connection refused: ${handshake.identity} password provided but not expected`);
-      if (checkRefusedNotifCooldown(handshake.identity)) {
+      if (checkRefusedNotifCooldown(handshake.identity, 'password_unexpected')) {
         notifications
           .emit('chargepoint_refused', {
             identity: handshake.identity,
@@ -287,7 +274,7 @@ function createOCPPServerBase(options = {}) {
     }
     if (providedPassword && dbPassword && !bcrypt.compareSync(providedPassword, dbPassword)) {
       logger.warn(`Connection refused: ${handshake.identity} invalid password`);
-      if (checkRefusedNotifCooldown(handshake.identity)) {
+      if (checkRefusedNotifCooldown(handshake.identity, 'invalid_password')) {
         notifications
           .emit('chargepoint_refused', {
             identity: handshake.identity,

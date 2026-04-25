@@ -54,7 +54,7 @@ const UserUpdate = {
 const Site = {
   name: {
     in: ['body'],
-    matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
+    matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_,.' ]*$/ },
     isLength: { options: { min: 5, max: 75 } },
     trim: true,
     escape: true,
@@ -63,7 +63,7 @@ const Site = {
   address: {
     in: ['body'],
     optional: { options: { values: 'falsy' } },
-    matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_,. ]*$/ },
+    matches: { options: /^[a-zA-ZÀ-Ÿ0-9\-_,.' ]*$/ },
     isLength: { options: { min: 5, max: 255 } },
     trim: true,
     escape: true,

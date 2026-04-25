@@ -1133,6 +1133,18 @@ router.post(
   }
 );
 
+router.post(
+  '/chargepoints/:id/reinitialize',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    db.resetChargepointInitialized(cp.id);
+    res.json({ ok: true });
+  }
+);
+
 // ══════════════════════════════════════
 //  TRANSACTIONS
 // ══════════════════════════════════════

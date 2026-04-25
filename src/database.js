@@ -1146,6 +1146,10 @@ function markChargepointInitialized(chargepointId) {
   db.prepare('UPDATE chargepoints SET initialized = 1 WHERE id = ?').run(chargepointId);
 }
 
+function resetChargepointInitialized(chargepointId) {
+  db.prepare('UPDATE chargepoints SET initialized = 0 WHERE id = ?').run(chargepointId);
+}
+
 // ── Id Tags ──
 function getAllIdTags() {
   const tags = db
@@ -1696,6 +1700,7 @@ module.exports = {
   updateInitialChargepointConfig,
   deleteInitialChargepointConfig,
   markChargepointInitialized,
+  resetChargepointInitialized,
   getAllIdTags,
   getIdTagById,
   getIdTagByTag,

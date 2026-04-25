@@ -213,6 +213,8 @@
     "cpClearCache": "Clear cache",
     "cpClearChargingProfile": "Clear charging profiles",
     "cpGetDiagnostics": "Diagnostics file",
+    "cpReinitialize": "Re-run initialization",
+    "cpReinitScheduled": "Initialization will re-run on next charge point boot",
     "cpGetLocalListVersion": "Local list version",
     "cpHardware": "Hardware",
     "cpFirmware": "Firmware",

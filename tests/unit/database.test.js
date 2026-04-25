@@ -232,6 +232,30 @@ describe('database — Init Config CRUD', () => {
   });
 });
 
+// ── Chargepoint initialization flags ──
+describe('database — Chargepoint initialization flags', () => {
+  let cpId;
+
+  beforeAll(() => {
+    db.upsertChargepoint('TEST-REINIT', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('TEST-REINIT').id;
+  });
+
+  it('new chargepoint starts with initialized = 0', () => {
+    expect(db.getChargepointById(cpId).initialized).toBe(0);
+  });
+
+  it('markChargepointInitialized sets initialized to 1', () => {
+    db.markChargepointInitialized(cpId);
+    expect(db.getChargepointById(cpId).initialized).toBe(1);
+  });
+
+  it('resetChargepointInitialized sets initialized back to 0', () => {
+    db.resetChargepointInitialized(cpId);
+    expect(db.getChargepointById(cpId).initialized).toBe(0);
+  });
+});
+
 // ── HeartbeatInterval — comportement watchdog ──
 describe('database — HeartbeatInterval global config', () => {
   it('HeartbeatInterval est présent dans la migration', () => {

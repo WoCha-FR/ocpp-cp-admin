@@ -77,15 +77,6 @@ function register16Handlers(client, loggedHandle) {
     setImmediate(async (cp) => {
       if (!cp || cp.initialized) return;
       try {
-        logger.debug(
-          `[InitSeq] Calling GetConfiguration on ${identity} to initialize config cache`
-        );
-        await callClient16(identity, 'GetConfiguration', {});
-      } catch (e) {
-        logger.warn(`[InitSeq] ${identity} GetConfiguration: ${e.message}`);
-      }
-
-      try {
         logger.debug(`[InitSeq] Calling ClearCache on ${identity} to clear authorization cache`);
         await callClient16(identity, 'ClearCache', {});
       } catch (e) {
@@ -99,6 +90,15 @@ function register16Handlers(client, loggedHandle) {
         await callClient16(identity, 'ClearChargingProfile', {});
       } catch (e) {
         logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
+      }
+
+      try {
+        logger.debug(
+          `[InitSeq] Calling GetConfiguration on ${identity} to initialize config cache`
+        );
+        await callClient16(identity, 'GetConfiguration', {});
+      } catch (e) {
+        logger.warn(`[InitSeq] ${identity} GetConfiguration: ${e.message}`);
       }
 
       const globals = db.getEnabledInitialChargepointConfig();

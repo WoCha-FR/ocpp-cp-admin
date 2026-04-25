@@ -17,7 +17,7 @@
   </script>
   <link rel="stylesheet" href="/css/app.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/i18next@26.0.7/i18next.min.js" integrity="sha384-zqUp7aR0bdQG4EdnLfkne0XSGyNReJkzMm201p9blS2LiIPtLcDGIrATY0hOk7V9" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/i18next@26.0.8/i18next.min.js" integrity="sha384-zqUp7aR0bdQG4EdnLfkne0XSGyNReJkzMm201p9blS2LiIPtLcDGIrATY0hOk7V9" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13" integrity="sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6" crossorigin="anonymous"></script>
   <script>
@@ -313,7 +313,7 @@ async function changeLanguage(lng) {
   translateStaticElements();
   syncLangSelectors(lng);
   if (currentUser) {
-    navigate(currentPage, true);
+    refreshCurrentPage();
     applyTheme(getPreferredTheme());
     api('PUT', '/user/profile', { langue: lng }).catch(() => { });
   }
@@ -1544,6 +1544,7 @@ async function renderDetailTabBorne(cp) {
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ClearChargingProfile', {})">${t('chargepoint.cpClearChargingProfile')}</button>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
               <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'GetDiagnostics', {location: '${ocppSettings.diagnosticsLocation || ''}'})">${t('chargepoint.cpGetDiagnostics')}</button>
+              <button class="btn btn-warning btn-sm" onclick="reinitializeChargepoint(event,${cp.id})">${t('chargepoint.cpReinitialize')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
@@ -1584,6 +1585,13 @@ async function sendCommand(event, cpId, method, params) {
   await withBtn(event?.currentTarget, async () => {
     const result = await api('POST', `/chargepoints/${cpId}/command`, { method, params });
     toast(t('connectors.cCommandResult', { method, result: JSON.stringify(result.result) }), 'success');
+  });
+}
+
+async function reinitializeChargepoint(event, id) {
+  await withBtn(event?.currentTarget, async () => {
+    await api('POST', `/chargepoints/${id}/reinitialize`);
+    toast(t('chargepoint.cpReinitScheduled'), 'success');
   });
 }
 
@@ -4386,6 +4394,7 @@ async function saveProfileForm(e) {
     document.getElementById('profileCurrentPassword').value = '';
     document.getElementById('profileNewPassword').value = '';
     document.getElementById('profileConfirmPassword').value = '';
+    updatePasswordStrength('profileNewPassword');
     toast(t('profile.pUpdated'), 'success');
     checkDefaultCredentials();
   } catch (err) {
