@@ -11,23 +11,47 @@ const {
 } = require('./ocpp-common');
 
 const OCPP16_STANDARD_KEYS = [
-  'AllowOfflineTxForUnknownId', 'AuthorizationCacheEnabled', 'AuthorizeRemoteTxRequests',
-  'BlinkRepeat', 'ClockAlignedDataInterval', 'ConnectionTimeOut',
-  'ConnectorPhaseRotation', 'ConnectorPhaseRotationMaxLength', 'GetConfigurationMaxKeys',
-  'HeartbeatInterval', 'LightIntensity', 'LocalAuthorizeOffline', 'LocalPreAuthorize',
-  'MaxEnergyOnInvalidId', 'MeterValuesAlignedData', 'MeterValuesAlignedDataMaxLength',
-  'MeterValuesSampledData', 'MeterValuesSampledDataMaxLength', 'MeterValueSampleInterval',
-  'MinimumStatusDuration', 'NumberOfConnectors', 'ResetRetries',
-  'StopTransactionOnEVSideDisconnect', 'StopTransactionOnInvalidId',
-  'StopTxnAlignedData', 'StopTxnAlignedDataMaxLength',
-  'StopTxnSampledData', 'StopTxnSampledDataMaxLength',
-  'SupportedFeatureProfiles', 'TransactionMessageAttempts',
-  'TransactionMessageRetryInterval', 'UnlockConnectorOnEVSideDisconnect',
+  'AllowOfflineTxForUnknownId',
+  'AuthorizationCacheEnabled',
+  'AuthorizeRemoteTxRequests',
+  'BlinkRepeat',
+  'ClockAlignedDataInterval',
+  'ConnectionTimeOut',
+  'ConnectorPhaseRotation',
+  'ConnectorPhaseRotationMaxLength',
+  'GetConfigurationMaxKeys',
+  'HeartbeatInterval',
+  'LightIntensity',
+  'LocalAuthorizeOffline',
+  'LocalPreAuthorize',
+  'MaxEnergyOnInvalidId',
+  'MeterValuesAlignedData',
+  'MeterValuesAlignedDataMaxLength',
+  'MeterValuesSampledData',
+  'MeterValuesSampledDataMaxLength',
+  'MeterValueSampleInterval',
+  'MinimumStatusDuration',
+  'NumberOfConnectors',
+  'ResetRetries',
+  'StopTransactionOnEVSideDisconnect',
+  'StopTransactionOnInvalidId',
+  'StopTxnAlignedData',
+  'StopTxnAlignedDataMaxLength',
+  'StopTxnSampledData',
+  'StopTxnSampledDataMaxLength',
+  'SupportedFeatureProfiles',
+  'TransactionMessageAttempts',
+  'TransactionMessageRetryInterval',
+  'UnlockConnectorOnEVSideDisconnect',
   'WebSocketPingInterval',
-  'ChargeProfileMaxStackLevel', 'ChargingScheduleAllowedChargingRateUnit',
-  'ChargingScheduleMaxPeriods', 'ConnectorSwitch3to1PhaseSupported',
+  'ChargeProfileMaxStackLevel',
+  'ChargingScheduleAllowedChargingRateUnit',
+  'ChargingScheduleMaxPeriods',
+  'ConnectorSwitch3to1PhaseSupported',
   'MaxChargingProfilesInstalled',
-  'LocalAuthListEnabled', 'LocalAuthListMaxLength', 'SendLocalListMaxLength',
+  'LocalAuthListEnabled',
+  'LocalAuthListMaxLength',
+  'SendLocalListMaxLength',
   'ReserveConnectorZeroSupported',
 ];
 
@@ -133,7 +157,9 @@ function register16Handlers(client, loggedHandle) {
         );
         await callClient16(identity, 'GetConfiguration', {});
       } catch (e) {
-        logger.warn(`[InitSeq] ${identity} GetConfiguration (all keys): ${e.message} — retrying with standard key list`);
+        logger.warn(
+          `[InitSeq] ${identity} GetConfiguration (all keys): ${e.message} — retrying with standard key list`
+        );
         try {
           await callClient16(identity, 'GetConfiguration', { key: OCPP16_STANDARD_KEYS });
         } catch (e2) {

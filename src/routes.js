@@ -1011,7 +1011,9 @@ router.post(
     } catch (e) {
       if (client.protocol !== 'ocpp2.0.1') {
         try {
-          const result = await callClient(cp.identity, 'GetConfiguration', { key: OCPP16_STANDARD_KEYS });
+          const result = await callClient(cp.identity, 'GetConfiguration', {
+            key: OCPP16_STANDARD_KEYS,
+          });
           return res.json({ result, config: db.getChargepointConfig(cp.id) });
         } catch (e2) {
           return errorResponse(res, 500, e2.message);
