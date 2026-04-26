@@ -14,6 +14,7 @@ const {
   pendingRemoteStarts,
   pendingChargepoints,
 } = require('./ocpp-common');
+const { OCPP16_STANDARD_KEYS } = require('./ocpp-server-16');
 const schema = require('./validationSchema');
 const notifications = require('./notifications');
 const {
@@ -1008,6 +1009,14 @@ router.post(
       const result = await callClient(cp.identity, 'GetConfiguration', {});
       res.json({ result, config: db.getChargepointConfig(cp.id) });
     } catch (e) {
+      if (client.protocol !== 'ocpp2.0.1') {
+        try {
+          const result = await callClient(cp.identity, 'GetConfiguration', { key: OCPP16_STANDARD_KEYS });
+          return res.json({ result, config: db.getChargepointConfig(cp.id) });
+        } catch (e2) {
+          return errorResponse(res, 500, e2.message);
+        }
+      }
       errorResponse(res, 500, e.message);
     }
   }

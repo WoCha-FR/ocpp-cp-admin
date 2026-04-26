@@ -10,6 +10,27 @@ const {
   registerHandlersFn,
 } = require('./ocpp-common');
 
+const OCPP16_STANDARD_KEYS = [
+  'AllowOfflineTxForUnknownId', 'AuthorizationCacheEnabled', 'AuthorizeRemoteTxRequests',
+  'BlinkRepeat', 'ClockAlignedDataInterval', 'ConnectionTimeOut',
+  'ConnectorPhaseRotation', 'ConnectorPhaseRotationMaxLength', 'GetConfigurationMaxKeys',
+  'HeartbeatInterval', 'LightIntensity', 'LocalAuthorizeOffline', 'LocalPreAuthorize',
+  'MaxEnergyOnInvalidId', 'MeterValuesAlignedData', 'MeterValuesAlignedDataMaxLength',
+  'MeterValuesSampledData', 'MeterValuesSampledDataMaxLength', 'MeterValueSampleInterval',
+  'MinimumStatusDuration', 'NumberOfConnectors', 'ResetRetries',
+  'StopTransactionOnEVSideDisconnect', 'StopTransactionOnInvalidId',
+  'StopTxnAlignedData', 'StopTxnAlignedDataMaxLength',
+  'StopTxnSampledData', 'StopTxnSampledDataMaxLength',
+  'SupportedFeatureProfiles', 'TransactionMessageAttempts',
+  'TransactionMessageRetryInterval', 'UnlockConnectorOnEVSideDisconnect',
+  'WebSocketPingInterval',
+  'ChargeProfileMaxStackLevel', 'ChargingScheduleAllowedChargingRateUnit',
+  'ChargingScheduleMaxPeriods', 'ConnectorSwitch3to1PhaseSupported',
+  'MaxChargingProfilesInstalled',
+  'LocalAuthListEnabled', 'LocalAuthListMaxLength', 'SendLocalListMaxLength',
+  'ReserveConnectorZeroSupported',
+];
+
 // ── Commandes CSMS → borne (OCPP 1.6) ──
 async function callClient16(identity, method, params) {
   const client = getConnectedClients().get(identity);
@@ -112,7 +133,12 @@ function register16Handlers(client, loggedHandle) {
         );
         await callClient16(identity, 'GetConfiguration', {});
       } catch (e) {
-        logger.warn(`[InitSeq] ${identity} GetConfiguration: ${e.message}`);
+        logger.warn(`[InitSeq] ${identity} GetConfiguration (all keys): ${e.message} — retrying with standard key list`);
+        try {
+          await callClient16(identity, 'GetConfiguration', { key: OCPP16_STANDARD_KEYS });
+        } catch (e2) {
+          logger.warn(`[InitSeq] ${identity} GetConfiguration (key list): ${e2.message}`);
+        }
       }
 
       const globals = db.getEnabledInitialChargepointConfig();
@@ -669,4 +695,4 @@ function register16Handlers(client, loggedHandle) {
 registerHandlersFn('1.6', register16Handlers);
 registerCallClientImpl('1.6', callClient16);
 
-module.exports = { register16Handlers, callClient16 };
+module.exports = { register16Handlers, callClient16, OCPP16_STANDARD_KEYS };

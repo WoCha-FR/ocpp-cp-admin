@@ -167,7 +167,8 @@ describe('ocpp-server-16 — BootNotification', () => {
     client.call
       .mockResolvedValueOnce({})                             // ClearCache
       .mockResolvedValueOnce({})                             // ClearChargingProfile
-      .mockRejectedValueOnce(new Error('Not supported'))     // GetConfiguration
+      .mockRejectedValueOnce(new Error('Not supported'))     // GetConfiguration {}
+      .mockResolvedValueOnce({})                             // GetConfiguration fallback (key list)
       .mockResolvedValueOnce({ status: 'Accepted' });        // ChangeConfiguration
 
     mockConnectedClients.set('CP001', client);
@@ -180,6 +181,38 @@ describe('ocpp-server-16 — BootNotification', () => {
       value: '60',
     });
     expect(mockDb.upsertChargepointConfig).toHaveBeenCalledWith(1, 'HeartbeatInterval', '60', false);
+  });
+
+  it('retries GetConfiguration with standard OCPP 1.6 key list when initial call fails', async () => {
+    client.call
+      .mockResolvedValueOnce({})                             // ClearCache
+      .mockResolvedValueOnce({})                             // ClearChargingProfile
+      .mockRejectedValueOnce(new Error('Not supported'))     // GetConfiguration {}
+      .mockResolvedValueOnce({});                            // GetConfiguration fallback
+
+    mockConnectedClients.set('CP001', client);
+    client._handlers['BootNotification']({ chargePointVendor: 'X' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(client.call).toHaveBeenCalledWith('GetConfiguration', {});
+    expect(client.call).toHaveBeenCalledWith('GetConfiguration', {
+      key: expect.arrayContaining(['SupportedFeatureProfiles', 'HeartbeatInterval', 'MeterValueSampleInterval']),
+    });
+  });
+
+  it('calls bulkUpsertChargepointConfig with configurationKey returned by fallback GetConfiguration', async () => {
+    const configKeys = [{ key: 'HeartbeatInterval', value: '300', readonly: false }];
+    client.call
+      .mockResolvedValueOnce({})                                       // ClearCache
+      .mockResolvedValueOnce({})                                       // ClearChargingProfile
+      .mockRejectedValueOnce(new Error('Not supported'))               // GetConfiguration {}
+      .mockResolvedValueOnce({ configurationKey: configKeys });        // GetConfiguration fallback
+
+    mockConnectedClients.set('CP001', client);
+    client._handlers['BootNotification']({ chargePointVendor: 'X' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(mockDb.bulkUpsertChargepointConfig).toHaveBeenCalledWith(1, configKeys);
   });
 
   it('emits init_config_result with reboot, rejected and notSupported keys grouped', async () => {
