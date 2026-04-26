@@ -330,6 +330,24 @@ describe('ocpp-server-16 — Authorize', () => {
     const result = client._handlers['Authorize']({ idTag: 'TAG_EXP' });
     expect(result.idTagInfo.expiryDate).toBe('2030-01-01T00:00:00Z');
   });
+
+  it.each(['WEB-5', 'ADMIN', 'MGR-3'])(
+    'blocks auto-tag prefix "%s" via Authorize (clone protection)',
+    (idTag) => {
+      const result = client._handlers['Authorize']({ idTag });
+      expect(result.idTagInfo.status).toBe('Blocked');
+      expect(mockDb.authorizeIdTag).not.toHaveBeenCalled();
+      expect(mockDb.addIdTagEvent).toHaveBeenCalledWith(
+        1, null, idTag, 'Blocked', 'auto_tag_rfid', 'authorize'
+      );
+    }
+  );
+
+  it('blocks auto-tag even in mode 3', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 3, site_id: 1 });
+    const result = client._handlers['Authorize']({ idTag: 'WEB-1' });
+    expect(result.idTagInfo.status).toBe('Blocked');
+  });
 });
 
 // ── StartTransaction ──
@@ -389,6 +407,34 @@ describe('ocpp-server-16 — StartTransaction', () => {
       meterStart: 0,
       timestamp: new Date().toISOString(),
     });
+    expect(result.idTagInfo.status).toBe('Accepted');
+  });
+
+  it.each(['WEB-5', 'ADMIN', 'MGR-3'])(
+    'blocks auto-tag prefix "%s" in mode 1 rfid (StartTransaction defense)',
+    (idTag) => {
+      const result = client._handlers['StartTransaction']({
+        connectorId: 1,
+        idTag,
+        meterStart: 0,
+        timestamp: new Date().toISOString(),
+      });
+      expect(result.transactionId).toBe(0);
+      expect(result.idTagInfo.status).toBe('Blocked');
+      expect(mockDb.authorizeIdTag).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not block auto-tag when source is remote (normal RemoteStart flow)', () => {
+    mockPendingRemoteStarts.set('CP001_1', { source: 'web', userId: 5 });
+    mockDb.createTransaction.mockReturnValue({ transaction_id: 200 });
+    const result = client._handlers['StartTransaction']({
+      connectorId: 1,
+      idTag: 'WEB-5',
+      meterStart: 0,
+      timestamp: new Date().toISOString(),
+    });
+    expect(result.transactionId).toBe(200);
     expect(result.idTagInfo.status).toBe('Accepted');
   });
 });

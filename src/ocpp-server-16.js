@@ -345,7 +345,7 @@ function register16Handlers(client, loggedHandle) {
         const idTag = `MGR-${cp.site_id}`;
         const existingTag = db.getIdTagByTag(idTag);
         if (!existingTag) {
-          db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null);
+          db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null, 0);
         }
         const pendingKey = `${identity}_${params.connectorId}`;
         pendingRemoteStarts.set(pendingKey, { source: 'remote', userId: null });
@@ -376,6 +376,21 @@ function register16Handlers(client, loggedHandle) {
 
   // ── Authorize ──
   loggedHandle('Authorize', (params) => {
+    const AUTO_TAG_PREFIXES = ['WEB-', 'ADMIN', 'MGR-'];
+    if (AUTO_TAG_PREFIXES.some((p) => params.idTag.startsWith(p))) {
+      if (chargepointId) {
+        db.addIdTagEvent(
+          chargepointId,
+          null,
+          params.idTag,
+          'Blocked',
+          'auto_tag_rfid',
+          'authorize'
+        );
+      }
+      return { idTagInfo: { status: 'Blocked' } };
+    }
+
     const cp = db.getChargepointByIdentity(identity);
     const siteId = cp ? cp.site_id : null;
     const authResult = db.authorizeIdTag(params.idTag, siteId);
@@ -435,10 +450,16 @@ function register16Handlers(client, loggedHandle) {
     let authStatus = 'Accepted';
     let authReason = null;
     if (cp && cp.mode === 1 && startSource === 'rfid') {
-      const siteId = cp ? cp.site_id : null;
-      const authResult = db.authorizeIdTag(params.idTag, siteId);
-      authStatus = authResult.status;
-      authReason = authResult.reason;
+      const AUTO_TAG_PREFIXES = ['WEB-', 'ADMIN', 'MGR-'];
+      if (AUTO_TAG_PREFIXES.some((p) => params.idTag.startsWith(p))) {
+        authStatus = 'Blocked';
+        authReason = 'auto_tag_rfid';
+      } else {
+        const siteId = cp ? cp.site_id : null;
+        const authResult = db.authorizeIdTag(params.idTag, siteId);
+        authStatus = authResult.status;
+        authReason = authResult.reason;
+      }
     }
     if (authStatus !== 'Accepted' && chargepointId) {
       db.addIdTagEvent(chargepointId, null, params.idTag, authStatus, authReason, 'authorize');

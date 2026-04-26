@@ -1224,12 +1224,19 @@ function getIdTagByTag(idTag, siteId) {
     .get(idTag);
 }
 
-function createIdTag(idTag, userId, siteId, description, expiryDate) {
+function createIdTag(idTag, userId, siteId, description, expiryDate, active = 1) {
   const info = db
     .prepare(
-      'INSERT INTO id_tags (id_tag, user_id, site_id, description, expiry_date) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO id_tags (id_tag, user_id, site_id, description, expiry_date, active) VALUES (?, ?, ?, ?, ?, ?)'
     )
-    .run(idTag, userId || null, siteId || null, description || null, expiryDate || null);
+    .run(
+      idTag,
+      userId || null,
+      siteId || null,
+      description || null,
+      expiryDate || null,
+      active ? 1 : 0
+    );
   return getIdTagById(info.lastInsertRowid);
 }
 

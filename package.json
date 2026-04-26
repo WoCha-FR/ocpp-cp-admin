@@ -65,7 +65,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@secretlint/secretlint-rule-preset-recommend": "^12.3.0",
+    "@secretlint/secretlint-rule-preset-recommend": "^12.3.1",
     "cross-env": "^10.1.0",
     "eslint": "^10.2.1",
     "eslint-config-prettier": "^10.1.8",
@@ -74,7 +74,7 @@
     "jest": "^30.3.0",
     "jest-environment-node": "^30.3.0",
     "prettier": "^3.8.3",
-    "secretlint": "^12.3.0",
+    "secretlint": "^12.3.1",
     "supertest": "^7.2.2"
   },
   "engines": {

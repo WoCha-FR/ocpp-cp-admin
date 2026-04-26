@@ -263,7 +263,15 @@
     "cpConfSetRebootRequired": "Configuration \"{{key}}\" modifiée. Un redémarrage de la borne est nécessaire.",
     "cpConfSetError": "La borne a refusé la modification: {{status}}",
     "cpConfOverride": "Forcé par l'admin",
-    "cpConfOverrideHint": "Cette valeur a été définie manuellement et ne sera pas écrasée par la configuration initiale globale."
+    "cpConfOverrideHint": "Cette valeur a été définie manuellement et ne sera pas écrasée par la configuration initiale globale.",
+    "cpConfGetKey": "Obtenir un paramètre",
+    "cpConfGetKeyTitle": "Obtenir un paramètre OCPP",
+    "cpConfGetKeyLabel": "Clé OCPP",
+    "cpConfGetKeyPlaceholder": "Ex : HeartbeatInterval (ou paramètre propriétaire)",
+    "cpConfGetKeyHint": "Sélectionnez un paramètre standard ou saisissez un paramètre propriétaire. La valeur sera récupérée depuis la borne via GetConfiguration.",
+    "cpConfGetKeySubmit": "Obtenir",
+    "cpConfGetKeyFound": "Paramètre récupéré : {{key}} = {{value}}",
+    "cpConfGetKeyNotFound": "Paramètre \"{{key}}\" inconnu de cette borne"
   },
   "connectors": {
     "cNoConnectors": "Aucun connecteur signalé",

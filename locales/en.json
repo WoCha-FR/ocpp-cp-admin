@@ -263,7 +263,15 @@
     "cpConfSetRebootRequired": "Configuration \"{{key}}\" updated. A chargepoint reboot is required.",
     "cpConfSetError": "The chargepoint rejected the change: {{status}}",
     "cpConfOverride": "Admin override",
-    "cpConfOverrideHint": "This value was manually set and will not be overwritten by the global initial configuration."
+    "cpConfOverrideHint": "This value was manually set and will not be overwritten by the global initial configuration.",
+    "cpConfGetKey": "Get a parameter",
+    "cpConfGetKeyTitle": "Get an OCPP parameter",
+    "cpConfGetKeyLabel": "OCPP Key",
+    "cpConfGetKeyPlaceholder": "E.g. HeartbeatInterval (or proprietary key)",
+    "cpConfGetKeyHint": "Select a standard parameter or type a proprietary one. The value will be retrieved from the chargepoint via GetConfiguration.",
+    "cpConfGetKeySubmit": "Get",
+    "cpConfGetKeyFound": "Parameter retrieved: {{key}} = {{value}}",
+    "cpConfGetKeyNotFound": "Parameter \"{{key}}\" unknown to this chargepoint"
   },
   "connectors": {
     "cNoConnectors": "No connectors reported",

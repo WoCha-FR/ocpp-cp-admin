@@ -918,14 +918,14 @@ router.post(
       idTag = `ADMIN`;
       const existingTag = db.getIdTagByTag(idTag, null);
       if (!existingTag) {
-        db.createIdTag(idTag, null, null, `Tag admin auto`, null);
+        db.createIdTag(idTag, null, null, `Tag admin auto`, null, 0);
       }
     } else {
       // Créer/récup un idTag pour manager sur ce site
       idTag = `MGR-${cp.site_id}`;
       const existingTag = db.getIdTagByTag(idTag, cp.site_id);
       if (!existingTag) {
-        db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null);
+        db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null, 0);
       }
     }
 
@@ -1019,6 +1019,34 @@ router.post(
           return errorResponse(res, 500, e2.message);
         }
       }
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+router.post(
+  '/chargepoints/:id/config/get-key',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  async (req, res) => {
+    const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
+    if (!key) return res.status(400).json({ error: 'ERR_KEY_REQUIRED' });
+
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+
+    if (!getConnectedClients().has(cp.identity))
+      return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    try {
+      const result = await callClient(cp.identity, 'GetConfiguration', { key: [key] });
+      const found = Array.isArray(result?.configurationKey) && result.configurationKey.length > 0;
+      res.json({
+        found,
+        entry: found ? result.configurationKey[0] : null,
+        unknown: result?.unknownKey ?? [],
+      });
+    } catch (e) {
       errorResponse(res, 500, e.message);
     }
   }
@@ -1681,7 +1709,8 @@ router.post(
           req.user.id,
           null,
           `Tag web auto (${req.user.shortname || req.user.useremail})`,
-          null
+          null,
+          0
         );
       }
     }

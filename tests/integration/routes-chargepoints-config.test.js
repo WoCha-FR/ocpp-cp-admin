@@ -92,6 +92,20 @@ function createApp() {
     return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
   });
 
+  // POST /api/chargepoints/:id/config/get-key — mock OCPP via options
+  app.post('/api/chargepoints/:id/config/get-key', (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
+    if (!key) return res.status(400).json({ error: 'ERR_KEY_REQUIRED' });
+    const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    // Simuler la réponse OCPP via une option injectée
+    if (!app._mockOcppGetConfig) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+    const result = app._mockOcppGetConfig(key);
+    const found = Array.isArray(result?.configurationKey) && result.configurationKey.length > 0;
+    res.json({ found, entry: found ? result.configurationKey[0] : null, unknown: result?.unknownKey ?? [] });
+  });
+
   return { app, db };
 }
 
@@ -160,5 +174,112 @@ describe('PUT /api/chargepoints/:id/config/:key — GLOBAL_ONLY_KEYS protection'
       .send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('ERR_VALUE_REQUIRED');
+  });
+});
+
+describe('POST /api/chargepoints/:id/config/get-key', () => {
+  it('returns 401 if not authenticated', async () => {
+    const agent = request.agent(app);
+    const meRes = await agent.get('/api/auth/me');
+    const csrf = decodeURIComponent(
+      ((meRes.headers['set-cookie'] || []).join('; ').match(/XSRF-TOKEN=([^;]+)/) || [])[1] || ''
+    );
+    const res = await agent
+      .post('/api/chargepoints/1/config/get-key')
+      .set('x-xsrf-token', csrf)
+      .send({ key: 'HeartbeatInterval' });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 400 ERR_KEY_REQUIRED when key is missing', async () => {
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .post('/api/chargepoints/1/config/get-key')
+      .set('x-xsrf-token', csrf)
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('ERR_KEY_REQUIRED');
+  });
+
+  it('returns 400 ERR_KEY_REQUIRED when key is empty string', async () => {
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .post('/api/chargepoints/1/config/get-key')
+      .set('x-xsrf-token', csrf)
+      .send({ key: '   ' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('ERR_KEY_REQUIRED');
+  });
+
+  it('returns 404 ERR_CHARGEPOINT_NOT_FOUND for unknown chargepoint', async () => {
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .post('/api/chargepoints/9999/config/get-key')
+      .set('x-xsrf-token', csrf)
+      .send({ key: 'HeartbeatInterval' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('ERR_CHARGEPOINT_NOT_FOUND');
+  });
+
+  it('returns 400 ERR_CHARGEPOINT_OFFLINE when chargepoint is not connected', async () => {
+    db.prepare(
+      "INSERT INTO chargepoints (identity, cpname, password) VALUES ('CP001', 'Test CP', 'pass')"
+    ).run();
+    const cp = db.prepare("SELECT id FROM chargepoints WHERE identity = 'CP001'").get();
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/config/get-key`)
+      .set('x-xsrf-token', csrf)
+      .send({ key: 'HeartbeatInterval' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('ERR_CHARGEPOINT_OFFLINE');
+  });
+
+  it('returns found=true with entry when key is known to the chargepoint', async () => {
+    db.prepare(
+      "INSERT INTO chargepoints (identity, cpname, password) VALUES ('CP002', 'Test CP 2', 'pass')"
+    ).run();
+    const cp = db.prepare("SELECT id FROM chargepoints WHERE identity = 'CP002'").get();
+    app._mockOcppGetConfig = (key) => ({
+      configurationKey: [{ key, value: '60', readonly: false }],
+      unknownKey: [],
+    });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/config/get-key`)
+      .set('x-xsrf-token', csrf)
+      .send({ key: 'HeartbeatInterval' });
+    expect(res.status).toBe(200);
+    expect(res.body.found).toBe(true);
+    expect(res.body.entry).toMatchObject({ key: 'HeartbeatInterval', value: '60' });
+    expect(res.body.unknown).toEqual([]);
+    app._mockOcppGetConfig = null;
+  });
+
+  it('returns found=false when key is unknown to the chargepoint', async () => {
+    db.prepare(
+      "INSERT INTO chargepoints (identity, cpname, password) VALUES ('CP003', 'Test CP 3', 'pass')"
+    ).run();
+    const cp = db.prepare("SELECT id FROM chargepoints WHERE identity = 'CP003'").get();
+    app._mockOcppGetConfig = (key) => ({
+      configurationKey: [],
+      unknownKey: [key],
+    });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/config/get-key`)
+      .set('x-xsrf-token', csrf)
+      .send({ key: 'ProprietaryKey' });
+    expect(res.status).toBe(200);
+    expect(res.body.found).toBe(false);
+    expect(res.body.entry).toBeNull();
+    expect(res.body.unknown).toContain('ProprietaryKey');
+    app._mockOcppGetConfig = null;
   });
 });

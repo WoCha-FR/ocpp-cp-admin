@@ -1850,6 +1850,7 @@ async function renderDetailTabConfig(cp) {
         <h3>⚙️ ${t('chargepoint.cpConfTitle')}</h3>
         <div class="flex-gap">
           <input type="text" id="configSearchInput" placeholder="${t('chargepoint.cpConfSearchPlaceholder')}" oninput="filterConfigTable()" style="max-width:200px;width:100%;padding:4px 8px;font-size:13px;" />
+          ${adminManage() ? `<button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="showGetConfigKeyModal(${cp.id}, '${escapeAttr(cp.ocpp_version || '1.6')}')">🔍 ${t('chargepoint.cpConfGetKey')}</button>` : ''}
           ${canManage() ? `<button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="withBtn(this, () => refreshChargepointConfig(${cp.id}))">🔄 ${t('chargepoint.cpConfRefresh')}</button>` : ''}
         </div>
       </div>
@@ -1944,6 +1945,41 @@ function showEditConfigModal(cpId, key, currentValue, isOverride = false) {
       <button class="btn btn-primary" onclick="withBtn(this, () => updateChargepointConfig(${cpId}, '${escapeAttr(key)}'))">${t('common.save')}</button>
     </div>
   `);
+}
+
+function showGetConfigKeyModal(cpId, ocppVersion) {
+  const keys = ocppVersion === '2.0.1' ? [] : OCPP16_STANDARD_KEYS;
+  const datalistId = `ocppKeyList_${cpId}`;
+  openModal(`
+    <h3>${t('chargepoint.cpConfGetKeyTitle')}</h3>
+    <div class="form-group">
+      <label>${t('chargepoint.cpConfGetKeyLabel')}</label>
+      <input type="text" id="getConfigKeyInput" list="${datalistId}"
+        placeholder="${t('chargepoint.cpConfGetKeyPlaceholder')}"
+        autocomplete="off" style="width:100%;" />
+      <datalist id="${datalistId}">
+        ${keys.map(k => `<option value="${escapeAttr(k)}"></option>`).join('')}
+      </datalist>
+    </div>
+    <p class="text-muted" style="font-size:12px;">${t('chargepoint.cpConfGetKeyHint')}</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" onclick="withBtn(this, () => getChargepointConfigKey(${cpId}))">${t('chargepoint.cpConfGetKeySubmit')}</button>
+    </div>
+  `);
+}
+
+async function getChargepointConfigKey(cpId) {
+  const key = document.getElementById('getConfigKeyInput')?.value?.trim();
+  if (!key) return;
+  const data = await api('POST', `/chargepoints/${cpId}/config/get-key`, { key });
+  closeModal();
+  if (data.found) {
+    toast(t('chargepoint.cpConfGetKeyFound', { key: data.entry.key, value: data.entry.value ?? '' }), 'success');
+  } else {
+    toast(t('chargepoint.cpConfGetKeyNotFound', { key }), 'info');
+  }
+  loadChargepointConfig(cpId, true);
 }
 
 async function updateChargepointConfig(cpId, key) {
@@ -4054,6 +4090,24 @@ async function renderConfigTabApp() {
 }
 
 const GLOBAL_ONLY_KEYS = ['HeartbeatInterval'];
+
+const OCPP16_STANDARD_KEYS = [
+  'AllowOfflineTxForUnknownId','AuthorizationCacheEnabled','AuthorizeRemoteTxRequests',
+  'BlinkRepeat','ClockAlignedDataInterval','ConnectionTimeOut','ConnectorPhaseRotation',
+  'ConnectorPhaseRotationMaxLength','GetConfigurationMaxKeys','HeartbeatInterval',
+  'LightIntensity','LocalAuthorizeOffline','LocalPreAuthorize','MaxEnergyOnInvalidId',
+  'MeterValuesAlignedData','MeterValuesAlignedDataMaxLength','MeterValuesSampledData',
+  'MeterValuesSampledDataMaxLength','MeterValueSampleInterval','MinimumStatusDuration',
+  'NumberOfConnectors','ResetRetries','StopTransactionOnEVSideDisconnect',
+  'StopTransactionOnInvalidId','StopTxnAlignedData','StopTxnAlignedDataMaxLength',
+  'StopTxnSampledData','StopTxnSampledDataMaxLength','SupportedFeatureProfiles',
+  'TransactionMessageAttempts','TransactionMessageRetryInterval',
+  'UnlockConnectorOnEVSideDisconnect','WebSocketPingInterval',
+  'ChargeProfileMaxStackLevel','ChargingScheduleAllowedChargingRateUnit',
+  'ChargingScheduleMaxPeriods','ConnectorSwitch3to1PhaseSupported',
+  'MaxChargingProfilesInstalled','LocalAuthListEnabled','LocalAuthListMaxLength',
+  'SendLocalListMaxLength','ReserveConnectorZeroSupported',
+];
 
 async function renderConfigTabChargepoints() {
   let rows;
