@@ -1005,22 +1005,42 @@ router.post(
     const client = getConnectedClients().get(cp.identity);
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
-    try {
-      const result = await callClient(cp.identity, 'GetConfiguration', {});
-      res.json({ result, config: db.getChargepointConfig(cp.id) });
-    } catch (e) {
-      if (client.protocol !== 'ocpp2.0.1') {
-        try {
-          const result = await callClient(cp.identity, 'GetConfiguration', {
-            key: OCPP16_STANDARD_KEYS,
-          });
-          return res.json({ result, config: db.getChargepointConfig(cp.id) });
-        } catch (e2) {
-          return errorResponse(res, 500, e2.message);
-        }
+    if (client.protocol === 'ocpp2.0.1') {
+      try {
+        const result = await callClient(cp.identity, 'GetConfiguration', {});
+        return res.json({ result, config: db.getChargepointConfig(cp.id) });
+      } catch (e) {
+        return errorResponse(res, 500, e.message);
       }
-      errorResponse(res, 500, e.message);
     }
+
+    let maxKeys = 20;
+    try {
+      const r = await callClient(cp.identity, 'GetConfiguration', { key: ['GetConfigurationMaxKeys'] });
+      const parsed = parseInt(r?.configurationKey?.[0]?.value, 10);
+      if (parsed > 0) maxKeys = parsed;
+    } catch (e) {
+      logger.warn(`[ConfigRefresh] ${cp.identity} GetConfigurationMaxKeys: ${e.message} — using default ${maxKeys}`);
+    }
+
+    if (maxKeys >= OCPP16_STANDARD_KEYS.length) {
+      try {
+        const result = await callClient(cp.identity, 'GetConfiguration', {});
+        return res.json({ result, config: db.getChargepointConfig(cp.id) });
+      } catch (e) {
+        return errorResponse(res, 500, e.message);
+      }
+    }
+
+    for (let i = 0; i < OCPP16_STANDARD_KEYS.length; i += maxKeys) {
+      const chunk = OCPP16_STANDARD_KEYS.slice(i, i + maxKeys);
+      try {
+        await callClient(cp.identity, 'GetConfiguration', { key: chunk });
+      } catch (e) {
+        logger.warn(`[ConfigRefresh] ${cp.identity} chunk [${i}..${i + maxKeys - 1}]: ${e.message}`);
+      }
+    }
+    res.json({ config: db.getChargepointConfig(cp.id) });
   }
 );
 

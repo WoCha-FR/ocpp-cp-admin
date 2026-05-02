@@ -19,7 +19,6 @@ const OCPP16_STANDARD_KEYS = [
   'ConnectionTimeOut',
   'ConnectorPhaseRotation',
   'ConnectorPhaseRotationMaxLength',
-  'GetConfigurationMaxKeys',
   'HeartbeatInterval',
   'LightIntensity',
   'LocalAuthorizeOffline',
@@ -151,19 +150,34 @@ function register16Handlers(client, loggedHandle) {
         logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
       }
 
+      let maxKeys = 20;
       try {
-        logger.debug(
-          `[InitSeq] Calling GetConfiguration on ${identity} to initialize config cache`
-        );
-        await callClient16(identity, 'GetConfiguration', {});
+        logger.debug(`[InitSeq] ${identity} GetConfiguration GetConfigurationMaxKeys`);
+        const res = await callClient16(identity, 'GetConfiguration', { key: ['GetConfigurationMaxKeys'] });
+        const parsed = parseInt(res?.configurationKey?.[0]?.value, 10);
+        if (parsed > 0) maxKeys = parsed;
       } catch (e) {
-        logger.warn(
-          `[InitSeq] ${identity} GetConfiguration (all keys): ${e.message} — retrying with standard key list`
-        );
+        logger.warn(`[InitSeq] ${identity} GetConfigurationMaxKeys: ${e.message} — using default ${maxKeys}`);
+      }
+
+      if (maxKeys >= OCPP16_STANDARD_KEYS.length) {
         try {
-          await callClient16(identity, 'GetConfiguration', { key: OCPP16_STANDARD_KEYS });
-        } catch (e2) {
-          logger.warn(`[InitSeq] ${identity} GetConfiguration (key list): ${e2.message}`);
+          logger.debug(`[InitSeq] ${identity} GetConfiguration (all keys, maxKeys=${maxKeys})`);
+          await callClient16(identity, 'GetConfiguration', {});
+        } catch (e) {
+          logger.warn(`[InitSeq] ${identity} GetConfiguration (all keys): ${e.message}`);
+        }
+      } else {
+        logger.debug(
+          `[InitSeq] ${identity} GetConfiguration paginated (maxKeys=${maxKeys}, total=${OCPP16_STANDARD_KEYS.length})`
+        );
+        for (let i = 0; i < OCPP16_STANDARD_KEYS.length; i += maxKeys) {
+          const chunk = OCPP16_STANDARD_KEYS.slice(i, i + maxKeys);
+          try {
+            await callClient16(identity, 'GetConfiguration', { key: chunk });
+          } catch (e) {
+            logger.warn(`[InitSeq] ${identity} GetConfiguration chunk [${i}..${i + maxKeys - 1}]: ${e.message}`);
+          }
         }
       }
 
