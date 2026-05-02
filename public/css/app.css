@@ -199,6 +199,10 @@
     .pwd-reset-success { text-align: center; padding: 20px 0; }
     .pwd-reset-success .success-icon { font-size: 48px; margin-bottom: 12px; }
     .pwd-reset-success p { color: var(--text-secondary); margin-bottom: 16px; }
+    .login-footer { margin-top: 20px; text-align: center; font-size: 0.75rem; color: var(--text-secondary); }
+    .login-footer a { color: var(--text-secondary); text-decoration: none; }
+    .login-footer a:hover { text-decoration: underline; }
+    .login-footer span { margin: 0 6px; }
 
     /* ── Form Elements ── */
     .form-group { margin-bottom: 16px; }

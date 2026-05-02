@@ -25,6 +25,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
   - [OCPP Server](#ocpp-server)
   - [Notifications](#notifications)
   - [Google OAuth Authentication](#google-oauth-authentication)
+  - [Legal Pages](#legal-pages)
 - [TLS Certificates](#tls-certificates)
   - [HTTPS — Web Interface](#https--web-interface)
   - [WSS — OCPP Server](#wss--ocpp-server-security-profile-2--3)
@@ -541,6 +542,41 @@ Required fields are validated before saving. The application restarts automatica
 ```
 
 When enabled, users can sign in with their Google account. The Google account is matched by email address to an existing user. The OAuth callback URL is derived from `webui.publicUrl`.
+
+---
+
+### Legal Pages
+
+The application exposes two public routes (no authentication required):
+
+| URL | Content |
+|---|---|
+| `/privacy` | Privacy policy |
+| `/terms` | Terms of use |
+
+Links to these pages are displayed at the bottom of the login page. You should register both URLs in your [Google API Console](https://console.developers.google.com/) OAuth consent screen configuration.
+
+**Default content** is provided in `public/legal/` (shipped with the application). These generic templates indicate the sections that should be customised (operator name, contact details, etc.).
+
+**Customising the content** — place your own Markdown files in `config/legal/` to override the defaults without modifying application files:
+
+```bash
+mkdir -p config/legal
+
+# Override French privacy policy
+cp public/legal/privacy.fr.md config/legal/privacy.fr.md
+# Edit config/legal/privacy.fr.md
+
+# Add a language not shipped by default (e.g. German, added via locales-custom/)
+cp public/legal/privacy.fr.md config/legal/privacy.de.md
+# Translate and edit config/legal/privacy.de.md
+```
+
+File naming convention: `{privacy|terms}.{lang}.md` (e.g. `privacy.fr.md`, `terms.en.md`).
+
+The language is resolved from the `?lang=` query parameter, then from the browser `Accept-Language` header, then from `config.language`. If no file is found for a given language, the application falls back to the default language.
+
+**Docker** — no changes required. The `config/` directory is already mounted as a volume (`./data/config:/app/config`); place your override files in `./data/config/legal/` on the host.
 
 ---
 

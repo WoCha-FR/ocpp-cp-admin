@@ -904,5 +904,9 @@
     "cascadeQueued": "borne(s) hors ligne (réinitialisation programmée)",
     "cascadeSkipped": "config(s) ignorée(s) (override par borne)",
     "cascadeErrors": "erreur(s)"
+  },
+  "legal": {
+    "privacy": "Politique de confidentialité",
+    "terms": "Conditions d'utilisation"
   }
 }

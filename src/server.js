@@ -3,6 +3,7 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const express = require('express');
+const { marked } = require('marked');
 const session = require('express-session');
 const SqliteStore = require('better-sqlite3-session-store')(session);
 const helmet = require('helmet');
@@ -197,6 +198,82 @@ const finalHtml = indexHtml.replace(
   '<script src="https://cdn.jsdelivr.net/npm/i18next',
   i18nScript + '<script src="https://cdn.jsdelivr.net/npm/i18next'
 );
+
+// ── Pages légales (publiques, sans authentification) ──
+
+function detectLegalLang(req) {
+  const query = req.query?.lang;
+  if (query && typeof query === 'string') return query.slice(0, 5);
+  const accepted = req.acceptsLanguages();
+  if (Array.isArray(accepted)) {
+    for (const l of accepted) {
+      const short = l.split('-')[0];
+      if (short && short.length === 2) return short;
+    }
+  }
+  return config.language || 'fr';
+}
+
+function resolveLegalFile(type, lang) {
+  const defaultLang = config.language || 'fr';
+  const configDir = getConfigDir();
+  const candidates = [
+    path.join(configDir, 'legal', `${type}.${lang}.md`),
+    path.join(__dirname, '..', 'public', 'legal', `${type}.${lang}.md`),
+    path.join(configDir, 'legal', `${type}.${defaultLang}.md`),
+    path.join(__dirname, '..', 'public', 'legal', `${type}.${defaultLang}.md`),
+  ];
+  return candidates.find((f) => fs.existsSync(f));
+}
+
+function wrapLegalHtml(content, lang, appName) {
+  return `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${appName}</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    body { background: var(--bg-body); color: var(--text-primary); }
+    .legal-page { max-width: 800px; margin: 40px auto; padding: 0 24px 80px; }
+    .legal-back { display: inline-block; margin-bottom: 28px; color: var(--primary); text-decoration: none; font-size: 14px; }
+    .legal-back:hover { text-decoration: underline; }
+    .legal-page h1 { font-size: 1.6rem; margin-bottom: 4px; }
+    .legal-page h2 { font-size: 1.1rem; margin-top: 2em; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    .legal-page h3 { font-size: 1rem; margin-top: 1.4em; }
+    .legal-page p, .legal-page li { line-height: 1.7; color: var(--text-primary); }
+    .legal-page ul { padding-left: 1.4em; }
+    .legal-page blockquote { border-left: 3px solid var(--border); margin: 0 0 1em; padding: 8px 16px; color: var(--text-secondary); background: var(--bg-surface); border-radius: 0 var(--radius) var(--radius) 0; }
+    .legal-page a { color: var(--primary); }
+    .legal-app { font-size: 13px; color: var(--text-secondary); margin-bottom: 32px; }
+  </style>
+</head>
+<body>
+  <div class="legal-page">
+    <a href="/" class="legal-back">&#8592; ${appName}</a>
+    <p class="legal-app">${appName}</p>
+    ${content}
+  </div>
+</body>
+</html>`;
+}
+
+app.get('/privacy', (req, res) => {
+  const lang = detectLegalLang(req);
+  const mdPath = resolveLegalFile('privacy', lang);
+  if (!mdPath) return res.status(404).send('Not found');
+  const html = marked.parse(fs.readFileSync(mdPath, 'utf8'));
+  res.type('html').send(wrapLegalHtml(html, lang, config.cpoName || 'CP Admin'));
+});
+
+app.get('/terms', (req, res) => {
+  const lang = detectLegalLang(req);
+  const mdPath = resolveLegalFile('terms', lang);
+  if (!mdPath) return res.status(404).send('Not found');
+  const html = marked.parse(fs.readFileSync(mdPath, 'utf8'));
+  res.type('html').send(wrapLegalHtml(html, lang, config.cpoName || 'CP Admin'));
+});
 
 // Servir l'UI statique (index: false pour que le catch-all serve le HTML avec i18n)
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));

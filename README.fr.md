@@ -25,6 +25,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
   - [Serveur OCPP](#serveur-ocpp)
   - [Notifications](#notifications)
   - [Authentification Google OAuth](#authentification-google-oauth)
+  - [Pages légales](#pages-légales)
 - [Certificats TLS](#certificats-tls)
   - [HTTPS — Interface Web](#https--interface-web)
   - [WSS — Serveur OCPP](#wss--serveur-ocpp-profils-de-sécurité-2--3)
@@ -535,6 +536,41 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 ```
 
 Si activé, les utilisateurs peuvent se connecter via leur compte Google. Le compte Google est associé par adresse email à un utilisateur existant. L'URL de callback OAuth est dérivée de `webui.publicUrl`.
+
+---
+
+### Pages légales
+
+L'application expose deux routes publiques (accessibles sans authentification) :
+
+| URL | Contenu |
+|---|---|
+| `/privacy` | Politique de confidentialité |
+| `/terms` | Conditions d'utilisation |
+
+Les liens vers ces pages sont affichés en bas de la page de connexion. Ces URL doivent être renseignées dans la configuration de la [console Google API](https://console.developers.google.com/) (écran de consentement OAuth).
+
+**Contenu par défaut** fourni dans `public/legal/` (livré avec l'application). Ces modèles génériques indiquent les sections à personnaliser (nom de l'opérateur, coordonnées de contact, etc.).
+
+**Personnalisation du contenu** — placez vos propres fichiers Markdown dans `config/legal/` pour remplacer les valeurs par défaut sans modifier les fichiers de l'application :
+
+```bash
+mkdir -p config/legal
+
+# Remplacer la politique de confidentialité française
+cp public/legal/privacy.fr.md config/legal/privacy.fr.md
+# Éditer config/legal/privacy.fr.md
+
+# Ajouter une langue absente par défaut (ex : allemand, ajouté via locales-custom/)
+cp public/legal/privacy.fr.md config/legal/privacy.de.md
+# Traduire et éditer config/legal/privacy.de.md
+```
+
+Convention de nommage des fichiers : `{privacy|terms}.{lang}.md` (ex : `privacy.fr.md`, `terms.en.md`).
+
+La langue est résolue dans l'ordre suivant : paramètre `?lang=`, en-tête `Accept-Language` du navigateur, puis `config.language`. Si aucun fichier n'est trouvé pour la langue demandée, l'application bascule sur la langue par défaut.
+
+**Docker** — aucune modification requise. Le dossier `config/` est déjà monté comme volume (`./data/config:/app/config`) ; placez vos fichiers de remplacement dans `./data/config/legal/` sur l'hôte.
 
 ---
 

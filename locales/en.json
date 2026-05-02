@@ -904,5 +904,9 @@
     "cascadeQueued": "chargepoint(s) offline (re-initialization scheduled)",
     "cascadeSkipped": "config(s) skipped (per-chargepoint override)",
     "cascadeErrors": "error(s)"
+  },
+  "legal": {
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Use"
   }
 }
