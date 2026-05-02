@@ -1016,11 +1016,15 @@ router.post(
 
     let maxKeys = 20;
     try {
-      const r = await callClient(cp.identity, 'GetConfiguration', { key: ['GetConfigurationMaxKeys'] });
+      const r = await callClient(cp.identity, 'GetConfiguration', {
+        key: ['GetConfigurationMaxKeys'],
+      });
       const parsed = parseInt(r?.configurationKey?.[0]?.value, 10);
       if (parsed > 0) maxKeys = parsed;
     } catch (e) {
-      logger.warn(`[ConfigRefresh] ${cp.identity} GetConfigurationMaxKeys: ${e.message} — using default ${maxKeys}`);
+      logger.warn(
+        `[ConfigRefresh] ${cp.identity} GetConfigurationMaxKeys: ${e.message} — using default ${maxKeys}`
+      );
     }
 
     if (maxKeys >= OCPP16_STANDARD_KEYS.length) {
@@ -1037,7 +1041,9 @@ router.post(
       try {
         await callClient(cp.identity, 'GetConfiguration', { key: chunk });
       } catch (e) {
-        logger.warn(`[ConfigRefresh] ${cp.identity} chunk [${i}..${i + maxKeys - 1}]: ${e.message}`);
+        logger.warn(
+          `[ConfigRefresh] ${cp.identity} chunk [${i}..${i + maxKeys - 1}]: ${e.message}`
+        );
       }
     }
     res.json({ config: db.getChargepointConfig(cp.id) });

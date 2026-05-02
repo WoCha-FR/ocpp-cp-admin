@@ -153,11 +153,15 @@ function register16Handlers(client, loggedHandle) {
       let maxKeys = 20;
       try {
         logger.debug(`[InitSeq] ${identity} GetConfiguration GetConfigurationMaxKeys`);
-        const res = await callClient16(identity, 'GetConfiguration', { key: ['GetConfigurationMaxKeys'] });
+        const res = await callClient16(identity, 'GetConfiguration', {
+          key: ['GetConfigurationMaxKeys'],
+        });
         const parsed = parseInt(res?.configurationKey?.[0]?.value, 10);
         if (parsed > 0) maxKeys = parsed;
       } catch (e) {
-        logger.warn(`[InitSeq] ${identity} GetConfigurationMaxKeys: ${e.message} — using default ${maxKeys}`);
+        logger.warn(
+          `[InitSeq] ${identity} GetConfigurationMaxKeys: ${e.message} — using default ${maxKeys}`
+        );
       }
 
       if (maxKeys >= OCPP16_STANDARD_KEYS.length) {
@@ -176,7 +180,9 @@ function register16Handlers(client, loggedHandle) {
           try {
             await callClient16(identity, 'GetConfiguration', { key: chunk });
           } catch (e) {
-            logger.warn(`[InitSeq] ${identity} GetConfiguration chunk [${i}..${i + maxKeys - 1}]: ${e.message}`);
+            logger.warn(
+              `[InitSeq] ${identity} GetConfiguration chunk [${i}..${i + maxKeys - 1}]: ${e.message}`
+            );
           }
         }
       }
