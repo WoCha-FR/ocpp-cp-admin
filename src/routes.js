@@ -1108,16 +1108,36 @@ router.put(
       });
 
       if (result.status === 'Accepted' || result.status === 'RebootRequired') {
-        // is_override = false si la valeur correspond au défaut global activé, true sinon
-        const globalCfg = db.getInitialChargepointConfigByKey(key);
-        const isOverride = !(globalCfg?.enabled && globalCfg.value === String(value));
-        db.upsertChargepointConfig(cp.id, key, String(value), false, isOverride);
+        const existing = db.getChargepointConfigByKey(cp.id, key);
+        db.upsertChargepointConfig(
+          cp.id,
+          key,
+          String(value),
+          false,
+          existing?.is_override ?? false
+        );
       }
 
       res.json({ result, status: result.status });
     } catch (e) {
       errorResponse(res, 500, e.message);
     }
+  }
+);
+
+router.patch(
+  '/chargepoints/:id/config/:key/override',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    const key = req.params.key;
+    const isOverride = req.body.is_override === true;
+    const existing = db.getChargepointConfigByKey(cp.id, key);
+    if (!existing) return res.status(404).json({ error: 'ERR_CONFIG_KEY_NOT_FOUND' });
+    db.setChargepointConfigOverride(cp.id, key, isOverride);
+    res.json({ ok: true });
   }
 );
 

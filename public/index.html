@@ -1056,7 +1056,12 @@ let chartEnergyInstance = null;
 let chartTxInstance = null;
 
 function renderDashboardCharts(data) {
-  const days = data.energyPerDay || [];
+  let days = data.energyPerDay || [];
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const lastDay = days.length > 0 ? days[days.length - 1].day : null;
+  if (lastDay && lastDay < todayStr) {
+    days = [...days, { day: todayStr, energy_kwh: 0, tx_count: 0 }];
+  }
   const lc = getLocaleConfig();
   const labels = days.map(d => {
     const dt = new Date(d.day + 'T00:00:00');
@@ -1891,7 +1896,7 @@ function renderConfigTable(cpId, config, isOnline) {
   window._cpConfigData = config;
   container.innerHTML = `
   <table id="configTable">
-    <thead><tr><th>${t('chargepoint.cpConfKey')}</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfReadOnly')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() && isOnline ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
+    <thead><tr><th>${t('chargepoint.cpConfKey')}</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfReadOnly')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
     <tbody>
       ${config.map(c => `
         <tr data-key="${escapeAttr(c.key)}">
@@ -1899,8 +1904,11 @@ function renderConfigTable(cpId, config, isOnline) {
           <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
           <td>${c.readonly ? '<span class="badge badge-yellow">' + t('common.yes') + '</span>' : '<span class="badge badge-green">' + t('common.no') + '</span>'}</td>
           <td class="text-muted">${formatDate(c.updated_at)}</td>
-          ${adminManage() && isOnline ? `<td>
-            ${GLOBAL_ONLY_KEYS.includes(c.key) ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>` : !c.readonly ? `<button class="btn btn-teal btn-sm" onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.key)}', '${escapeAttr(c.value || '')}', ${c.is_override ? 'true' : 'false'})">${t('common.edit')}</button>` : '<span class="text-muted">-</span>'}
+          ${adminManage() ? `<td style="white-space:nowrap;">
+            ${GLOBAL_ONLY_KEYS.includes(c.key)
+              ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
+              : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.key)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}<button class="btn btn-sm ${c.is_override ? 'btn-blue' : 'btn-secondary'}" onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.key)}', ${!c.is_override})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>`
+            }
           </td>` : ''}
         </tr>
       `).join('')}
@@ -1932,7 +1940,7 @@ async function refreshChargepointConfig(cpId) {
   }
 }
 
-function showEditConfigModal(cpId, key, currentValue, isOverride = false) {
+function showEditConfigModal(cpId, key, currentValue) {
   openModal(`
     <h3>${t('chargepoint.cpConfUpdate')}</h3>
     <div class="form-group">
@@ -1944,12 +1952,22 @@ function showEditConfigModal(cpId, key, currentValue, isOverride = false) {
       <input type="text" id="configNewValue" value="${escapeAttr(currentValue)}" />
     </div>
     <p class="text-muted" style="font-size:12px;">${t('chargepoint.cpConfEditHint')}</p>
-    ${isOverride ? `<p class="text-muted" style="font-size:12px;">🔒 ${t('chargepoint.cpConfOverrideHint')}</p>` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
       <button class="btn btn-primary" onclick="withBtn(this, () => updateChargepointConfig(${cpId}, '${escapeAttr(key)}'))">${t('common.save')}</button>
     </div>
   `);
+}
+
+async function toggleConfigOverride(cpId, key, isOverride) {
+  try {
+    await api('PATCH', `/chargepoints/${cpId}/config/${encodeURIComponent(key)}/override`, { is_override: isOverride });
+    toast(t(isOverride ? 'chargepoint.cpConfOverrideSetOk' : 'chargepoint.cpConfOverrideRemovedOk', { key }), 'success');
+    const cp = currentCpDetail;
+    loadChargepointConfig(cpId, cp?.online ?? false);
+  } catch (err) {
+    toast(`${t('common.error')}: ${err.message}`, 'error');
+  }
 }
 
 function showGetConfigKeyModal(cpId, ocppVersion) {
@@ -4254,10 +4272,31 @@ async function cascadeAllInitConfig() {
     `• ${result.skipped.length} ${t('initConfig.cascadeSkipped')}`,
     result.errors.length ? `• ${result.errors.length} ${t('initConfig.cascadeErrors')}` : null,
   ].filter(Boolean);
+  const errorRows = result.errors.map(e =>
+    `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
+  ).join('');
+  const queuedList = result.queued.map(q => `<li>${q.identity}</li>`).join('');
   openModal(`
     <div style="display:flex;flex-direction:column;gap:8px;">
       ${lines.map(l => `<div>${l}</div>`).join('')}
     </div>
+    ${result.errors.length ? `
+    <details open style="margin-top:12px;">
+      <summary style="cursor:pointer;font-weight:600;">${t('initConfig.cascadeErrors')} (${result.errors.length})</summary>
+      <table style="width:100%;margin-top:8px;">
+        <thead><tr>
+          <th>${t('chargepoint.cpIdentity')}</th>
+          <th>Clé</th>
+          <th>Raison</th>
+        </tr></thead>
+        <tbody>${errorRows}</tbody>
+      </table>
+    </details>` : ''}
+    ${result.queued.length ? `
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-weight:600;">${t('initConfig.cascadeQueued')} (${result.queued.length})</summary>
+      <ul style="margin-top:8px;">${queuedList}</ul>
+    </details>` : ''}
     <div class="modal-actions" style="margin-top:16px;">
       <button class="btn btn-primary" onclick="closeModal()">${t('common.close')}</button>
     </div>

@@ -15,6 +15,9 @@ config/backups
 # Certificats SSL dans le dossier config
 config/*.crt
 config/*.key
+# Pages légales personnalisées
+config/legal/*.md
+!config/legal/*.sample.md
 
 # Tests et couverture
 coverage/

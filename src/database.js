@@ -1096,6 +1096,19 @@ function getChargepointConfigByKey(chargepointId, key) {
     .get(chargepointId, key);
 }
 
+function setChargepointConfigOverride(chargepointId, key, isOverride) {
+  db.prepare(
+    `UPDATE chargepoint_config SET is_override = ?, updated_at = datetime('now')
+     WHERE chargepoint_id = ? AND key = ?`
+  ).run(isOverride ? 1 : 0, chargepointId, key);
+}
+
+function getChargepointOverrideConfigs(chargepointId) {
+  return db
+    .prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND is_override = 1')
+    .all(chargepointId);
+}
+
 function deleteChargepointConfig(chargepointId, key) {
   db.prepare('DELETE FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').run(
     chargepointId,
@@ -1699,6 +1712,8 @@ module.exports = {
   bulkUpsertChargepointConfig,
   getChargepointConfig,
   getChargepointConfigByKey,
+  setChargepointConfigOverride,
+  getChargepointOverrideConfigs,
   deleteChargepointConfig,
   getInitialChargepointConfig,
   getEnabledInitialChargepointConfig,

@@ -27,6 +27,7 @@ const mockDb = {
   getInitialChargepointConfigByKey: jest.fn(() => ({ value: '300' })),
   markChargepointInitialized: jest.fn(),
   getChargepointConfigByKey: jest.fn(),
+  getChargepointOverrideConfigs: jest.fn(() => []),
 };
 
 jest.mock('../../src/database', () => mockDb);

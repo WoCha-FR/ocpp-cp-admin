@@ -92,6 +92,20 @@ function createApp() {
     return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
   });
 
+  // PATCH /api/chargepoints/:id/config/:key/override — set/clear is_override flag
+  app.patch('/api/chargepoints/:id/config/:key/override', (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    const key = req.params.key;
+    const existing = db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').get(cp.id, key);
+    if (!existing) return res.status(404).json({ error: 'ERR_CONFIG_KEY_NOT_FOUND' });
+    const isOverride = req.body.is_override === true;
+    db.prepare(`UPDATE chargepoint_config SET is_override = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND key = ?`)
+      .run(isOverride ? 1 : 0, cp.id, key);
+    res.json({ ok: true });
+  });
+
   // POST /api/chargepoints/:id/config/get-key — mock OCPP via options
   app.post('/api/chargepoints/:id/config/get-key', (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
@@ -281,5 +295,97 @@ describe('POST /api/chargepoints/:id/config/get-key', () => {
     expect(res.body.entry).toBeNull();
     expect(res.body.unknown).toContain('ProprietaryKey');
     app._mockOcppGetConfig = null;
+  });
+});
+
+describe('PATCH /api/chargepoints/:id/config/:key/override — toggle is_override flag', () => {
+  function insertCp(db, identity = 'CPO01') {
+    db.prepare("INSERT INTO chargepoints (identity, cpname, password) VALUES (?, ?, 'pass')").run(identity, `Test ${identity}`);
+    return db.prepare('SELECT id FROM chargepoints WHERE identity = ?').get(identity);
+  }
+
+  function insertConfig(db, cpId, key, value = '60', isOverride = 0) {
+    db.prepare(
+      'INSERT INTO chargepoint_config (chargepoint_id, key, value, readonly, is_override) VALUES (?, ?, ?, 0, ?)'
+    ).run(cpId, key, value, isOverride);
+  }
+
+  it('returns 401 if not authenticated', async () => {
+    const agent = request.agent(app);
+    const meRes = await agent.get('/api/auth/me');
+    const csrf = decodeURIComponent(
+      ((meRes.headers['set-cookie'] || []).join('; ').match(/XSRF-TOKEN=([^;]+)/) || [])[1] || ''
+    );
+    const res = await agent
+      .patch('/api/chargepoints/1/config/SomeKey/override')
+      .set('x-xsrf-token', csrf)
+      .send({ is_override: true });
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 ERR_CHARGEPOINT_NOT_FOUND for unknown chargepoint', async () => {
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .patch('/api/chargepoints/9999/config/SomeKey/override')
+      .set('x-xsrf-token', csrf)
+      .send({ is_override: true });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('ERR_CHARGEPOINT_NOT_FOUND');
+  });
+
+  it('returns 404 ERR_CONFIG_KEY_NOT_FOUND when key does not exist in DB', async () => {
+    const { id: cpId } = insertCp(db);
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .patch(`/api/chargepoints/${cpId}/config/UnknownKey/override`)
+      .set('x-xsrf-token', csrf)
+      .send({ is_override: true });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('ERR_CONFIG_KEY_NOT_FOUND');
+  });
+
+  it('sets is_override=1 when is_override: true', async () => {
+    const { id: cpId } = insertCp(db, 'CPO02');
+    insertConfig(db, cpId, 'WebSocketPingInterval', '30', 0);
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .patch(`/api/chargepoints/${cpId}/config/WebSocketPingInterval/override`)
+      .set('x-xsrf-token', csrf)
+      .send({ is_override: true });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    const row = db.prepare('SELECT is_override FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').get(cpId, 'WebSocketPingInterval');
+    expect(row.is_override).toBe(1);
+  });
+
+  it('clears is_override=0 when is_override: false', async () => {
+    const { id: cpId } = insertCp(db, 'CPO03');
+    insertConfig(db, cpId, 'WebSocketPingInterval', '30', 1);
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .patch(`/api/chargepoints/${cpId}/config/WebSocketPingInterval/override`)
+      .set('x-xsrf-token', csrf)
+      .send({ is_override: false });
+    expect(res.status).toBe(200);
+    const row = db.prepare('SELECT is_override FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').get(cpId, 'WebSocketPingInterval');
+    expect(row.is_override).toBe(0);
+  });
+
+  it('does not modify value when toggling override', async () => {
+    const { id: cpId } = insertCp(db, 'CPO04');
+    insertConfig(db, cpId, 'ConnectionTimeOut', '120', 0);
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    await agent
+      .patch(`/api/chargepoints/${cpId}/config/ConnectionTimeOut/override`)
+      .set('x-xsrf-token', csrf)
+      .send({ is_override: true });
+    const row = db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').get(cpId, 'ConnectionTimeOut');
+    expect(row.value).toBe('120');
+    expect(row.is_override).toBe(1);
   });
 });

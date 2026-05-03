@@ -217,6 +217,27 @@ function register16Handlers(client, loggedHandle) {
           logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: ${e.message}`);
         }
       }
+      const overrideConfigs = db.getChargepointOverrideConfigs(cp.id);
+      for (const cfg of overrideConfigs) {
+        const current = db.getChargepointConfigByKey(cp.id, cfg.key);
+        if (current?.value === cfg.value) continue;
+        try {
+          const result = await callClient16(identity, 'ChangeConfiguration', {
+            key: cfg.key,
+            value: cfg.value,
+          });
+          if (result?.status === 'RebootRequired') {
+            rebootKeys.push(cfg.key);
+          } else if (result?.status !== 'Accepted') {
+            logger.warn(
+              `[InitSeq] ${identity} Locked ChangeConfiguration ${cfg.key}: ${result?.status}`
+            );
+          }
+        } catch (e) {
+          logger.warn(`[InitSeq] ${identity} Locked ChangeConfiguration ${cfg.key}: ${e.message}`);
+        }
+      }
+
       if (rebootKeys.length > 0 || rejectedKeys.length > 0 || notSupportedKeys.length > 0) {
         notifications
           .emit('init_config_result', { identity, rebootKeys, rejectedKeys, notSupportedKeys })
