@@ -1907,7 +1907,7 @@ function renderConfigTable(cpId, config, isOnline) {
           ${adminManage() ? `<td style="white-space:nowrap;">
             ${GLOBAL_ONLY_KEYS.includes(c.key)
               ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
-              : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.key)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}<button class="btn btn-sm ${c.is_override ? 'btn-blue' : 'btn-secondary'}" onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.key)}', ${!c.is_override})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>`
+              : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.key)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.key)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
             }
           </td>` : ''}
         </tr>
@@ -1959,12 +1959,11 @@ function showEditConfigModal(cpId, key, currentValue) {
   `);
 }
 
-async function toggleConfigOverride(cpId, key, isOverride) {
+async function toggleConfigOverride(cpId, key, isOverride, isOnline) {
   try {
     await api('PATCH', `/chargepoints/${cpId}/config/${encodeURIComponent(key)}/override`, { is_override: isOverride });
     toast(t(isOverride ? 'chargepoint.cpConfOverrideSetOk' : 'chargepoint.cpConfOverrideRemovedOk', { key }), 'success');
-    const cp = currentCpDetail;
-    loadChargepointConfig(cpId, cp?.online ?? false);
+    loadChargepointConfig(cpId, isOnline);
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
   }
@@ -4265,38 +4264,55 @@ async function cascadeAllInitConfig() {
     toast(err.message, 'error');
     return;
   }
-  const lines = [
-    `<strong>${t('initConfig.cascadeResultTitle')}</strong>`,
-    `• ${result.applied.length} ${t('initConfig.cascadeApplied')}`,
-    `• ${result.queued.length} ${t('initConfig.cascadeQueued')}`,
-    `• ${result.skipped.length} ${t('initConfig.cascadeSkipped')}`,
-    result.errors.length ? `• ${result.errors.length} ${t('initConfig.cascadeErrors')}` : null,
-  ].filter(Boolean);
-  const errorRows = result.errors.map(e =>
-    `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
-  ).join('');
-  const queuedList = result.queued.map(q => `<li>${q.identity}</li>`).join('');
-  openModal(`
-    <div style="display:flex;flex-direction:column;gap:8px;">
-      ${lines.map(l => `<div>${l}</div>`).join('')}
-    </div>
-    ${result.errors.length ? `
-    <details open style="margin-top:12px;">
-      <summary style="cursor:pointer;font-weight:600;">${t('initConfig.cascadeErrors')} (${result.errors.length})</summary>
+  const cpCol = `<th>${t('chargepoint.cpIdentity')}</th>`;
+  const keyReasonCols = `<th>Clé</th><th>Raison</th>`;
+  const sections = [
+    {
+      labelKey: 'cascadeApplied',
+      count: result.applied.length,
+      rows: null,
+    },
+    {
+      labelKey: 'cascadeQueued',
+      count: result.queued.length,
+      rows: result.queued.map(q => `<tr><td>${q.identity}</td></tr>`).join(''),
+      cols: cpCol,
+    },
+    {
+      labelKey: 'cascadeSkipped',
+      count: result.skipped.length,
+      rows: result.skipped.map(s =>
+        `<tr><td>${s.identity}</td><td><code>${s.key}</code></td><td><span class="badge">${s.reason}</span></td></tr>`
+      ).join(''),
+      cols: cpCol + keyReasonCols,
+    },
+    {
+      labelKey: 'cascadeErrors',
+      count: result.errors.length,
+      rows: result.errors.map(e =>
+        `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
+      ).join(''),
+      cols: cpCol + keyReasonCols,
+      open: true,
+    },
+  ];
+  const renderSection = ({ labelKey, count, rows, cols, open }) => {
+    const label = `• ${count} ${t(`initConfig.${labelKey}`)}`;
+    if (!count || !rows) return `<div class="${count ? '' : 'text-muted'}">${label}</div>`;
+    return `
+    <details ${open ? 'open' : ''} style="margin-top:4px;">
+      <summary style="cursor:pointer;">${label}</summary>
       <table style="width:100%;margin-top:8px;">
-        <thead><tr>
-          <th>${t('chargepoint.cpIdentity')}</th>
-          <th>Clé</th>
-          <th>Raison</th>
-        </tr></thead>
-        <tbody>${errorRows}</tbody>
+        <thead><tr>${cols}</tr></thead>
+        <tbody>${rows}</tbody>
       </table>
-    </details>` : ''}
-    ${result.queued.length ? `
-    <details style="margin-top:8px;">
-      <summary style="cursor:pointer;font-weight:600;">${t('initConfig.cascadeQueued')} (${result.queued.length})</summary>
-      <ul style="margin-top:8px;">${queuedList}</ul>
-    </details>` : ''}
+    </details>`;
+  };
+  openModal(`
+    <strong>${t('initConfig.cascadeResultTitle')}</strong>
+    <div style="display:flex;flex-direction:column;gap:4px;margin-top:8px;">
+      ${sections.map(renderSection).join('')}
+    </div>
     <div class="modal-actions" style="margin-top:16px;">
       <button class="btn btn-primary" onclick="closeModal()">${t('common.close')}</button>
     </div>
