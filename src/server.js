@@ -227,6 +227,7 @@ function resolveLegalFile(type, lang) {
 }
 
 function wrapLegalHtml(content, lang, appName) {
+  const backlink = i18next.t('login.backToLogin', { lng: lang });
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -246,12 +247,12 @@ function wrapLegalHtml(content, lang, appName) {
     .legal-page ul { padding-left: 1.4em; }
     .legal-page blockquote { border-left: 3px solid var(--border); margin: 0 0 1em; padding: 8px 16px; color: var(--text-secondary); background: var(--bg-surface); border-radius: 0 var(--radius) var(--radius) 0; }
     .legal-page a { color: var(--primary); }
-    .legal-app { font-size: 13px; color: var(--text-secondary); margin-bottom: 32px; }
+    .legal-app { font-size: 1.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 32px; }
   </style>
 </head>
 <body>
   <div class="legal-page">
-    <a href="/" class="legal-back">&#8592; ${appName}</a>
+    <a href="/" class="legal-back">&#8592; ${backlink}</a>
     <p class="legal-app">${appName}</p>
     ${content}
   </div>
