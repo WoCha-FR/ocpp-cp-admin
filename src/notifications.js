@@ -18,27 +18,27 @@ const logger = require('./logger').scope('NOTIF');
 const EVENT_DEFINITIONS = {
   server_started: {
     roles: ['admin'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   server_stopping: {
     roles: ['admin'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   pending_chargepoint: {
     roles: ['admin'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   autoadd_chargepoint: {
     roles: ['admin'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   chargepoint_refused: {
     roles: ['admin'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   diagnostics_upload: {
     roles: ['admin'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   init_config_result: {
     roles: ['admin'],
@@ -46,11 +46,11 @@ const EVENT_DEFINITIONS = {
   },
   duplicate_identity: {
     roles: ['admin'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   identity_flapping: {
     roles: ['admin'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   chargepoint_online: {
     roles: ['admin', 'manager'],
@@ -62,7 +62,7 @@ const EVENT_DEFINITIONS = {
   },
   chargepoint_heartbeat_timeout: {
     roles: ['admin', 'manager'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   connector_available: {
     roles: ['admin', 'manager'],
@@ -90,15 +90,15 @@ const EVENT_DEFINITIONS = {
   },
   transaction_started: {
     roles: ['user'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   transaction_stopped: {
     roles: ['user'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
   charge_suspended_evse: {
     roles: ['user'],
-    defaultChannels: ['webpush'],
+    defaultChannels: [],
   },
 };
 
@@ -324,8 +324,9 @@ async function sendPasswordResetEmail(user, resetLink) {
   const lng = user.langue || 'fr';
   const titre = trad('notifications.passwordReset.emailSubject', { lng });
   const corps = trad('notifications.passwordReset.emailBody', { lng, resetLink });
+  const html = trad('notifications.passwordReset.emailHtml', { lng, resetLink });
   try {
-    const result = await emailChannel.send(user, 'password_reset', {}, { titre, corps });
+    const result = await emailChannel.send(user, 'password_reset', {}, { titre, corps, html });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
       logger.error(`Password reset email failed for ${user.useremail}: ${normalized.error}`);
@@ -340,7 +341,7 @@ async function sendPasswordResetEmail(user, resetLink) {
 }
 
 /**
- * Envoie du mail de configuration du mot de passe à un utilisateur
+ * Envoie du mail de bienvenue et de configuration du mot de passe à un utilisateur
  * @param {object} user - L'utilisateur cible
  * @param {string} setupLink - Le lien de configuration du mot de passe
  */
@@ -348,8 +349,9 @@ async function sendPasswordSetupEmail(user, setupLink) {
   const lng = user.langue || 'fr';
   const titre = trad('notifications.passwordSetup.emailSubject', { lng });
   const corps = trad('notifications.passwordSetup.emailBody', { lng, setupLink });
+  const html = trad('notifications.passwordSetup.emailHtml', { lng, setupLink });
   try {
-    const result = await emailChannel.send(user, 'password_setup', {}, { titre, corps });
+    const result = await emailChannel.send(user, 'password_setup', {}, { titre, corps, html });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
       logger.error(`Password setup email failed for ${user.useremail}: ${normalized.error}`);
@@ -370,10 +372,11 @@ async function sendPasswordSetupEmail(user, setupLink) {
  */
 async function sendAddedToSiteEmail(user, site) {
   const lng = user.langue || 'fr';
-  const titre = trad('notifications.addedToSite.emailSubject', { lng });
+  const titre = trad('notifications.addedToSite.emailSubject', { lng, site_name: site.sname });
   const corps = trad('notifications.addedToSite.emailBody', { lng, site_name: site.sname });
+  const html = trad('notifications.addedToSite.emailHtml', { lng, site_name: site.sname });
   try {
-    const result = await emailChannel.send(user, 'added_to_site', {}, { titre, corps });
+    const result = await emailChannel.send(user, 'added_to_site', {}, { titre, corps, html });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
       logger.error(
@@ -398,10 +401,11 @@ async function sendAddedToSiteEmail(user, site) {
  */
 async function sendRemovedFromSiteEmail(user, site) {
   const lng = user.langue || 'fr';
-  const titre = trad('notifications.removedFromSite.emailSubject', { lng });
+  const titre = trad('notifications.removedFromSite.emailSubject', { lng, site_name: site.sname });
   const corps = trad('notifications.removedFromSite.emailBody', { lng, site_name: site.sname });
+  const html = trad('notifications.removedFromSite.emailHtml', { lng, site_name: site.sname });
   try {
-    const result = await emailChannel.send(user, 'removed_from_site', {}, { titre, corps });
+    const result = await emailChannel.send(user, 'removed_from_site', {}, { titre, corps, html });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
       logger.error(
@@ -426,10 +430,11 @@ async function sendRemovedFromSiteEmail(user, site) {
  */
 async function sendSuspendedInSiteEmail(user, site) {
   const lng = user.langue || 'fr';
-  const titre = trad('notifications.suspendedInSite.emailSubject', { lng });
+  const titre = trad('notifications.suspendedInSite.emailSubject', { lng, site_name: site.sname });
   const corps = trad('notifications.suspendedInSite.emailBody', { lng, site_name: site.sname });
+  const html = trad('notifications.suspendedInSite.emailHtml', { lng, site_name: site.sname });
   try {
-    const result = await emailChannel.send(user, 'suspended_in_site', {}, { titre, corps });
+    const result = await emailChannel.send(user, 'suspended_in_site', {}, { titre, corps, html });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
       logger.error(
@@ -454,10 +459,14 @@ async function sendSuspendedInSiteEmail(user, site) {
  */
 async function sendReactivatedInSiteEmail(user, site) {
   const lng = user.langue || 'fr';
-  const titre = trad('notifications.reactivatedInSite.emailSubject', { lng });
+  const titre = trad('notifications.reactivatedInSite.emailSubject', {
+    lng,
+    site_name: site.sname,
+  });
   const corps = trad('notifications.reactivatedInSite.emailBody', { lng, site_name: site.sname });
+  const html = trad('notifications.reactivatedInSite.emailHtml', { lng, site_name: site.sname });
   try {
-    const result = await emailChannel.send(user, 'reactivated_in_site', {}, { titre, corps });
+    const result = await emailChannel.send(user, 'reactivated_in_site', {}, { titre, corps, html });
     const normalized = normalizeChannelResult(result);
     if (!normalized.success) {
       logger.error(

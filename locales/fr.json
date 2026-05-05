@@ -578,7 +578,8 @@
       "energy": "Énergie : {{energy_kwh}} kWh",
       "duration": "Durée : {{duration}}",
       "stop_reason": "Raison : {{stop_reason}}",
-      "notifFooter": "Ce message a été envoyé automatiquement."
+      "notifFooter": "Ce message a été envoyé automatiquement.",
+      "notifFooterHtml": "<span>Ce message a été envoyé automatiquement.</span>"
     },
     "server_started": {
       "eLabel": "Démarrage du serveur",
@@ -725,30 +726,36 @@
     },
     "passwordSetup": {
       "emailSubject": "Bienvenue sur CP-Admin",
-      "emailBody": "Un compte a été créé pour vous sur le système CP-Admin. Cliquez sur le lien suivant pour définir votre mot de passe : {{setupLink}} ... Ce lien expire dans 24 heures."
+      "emailBody": "Un compte a été créé pour vous sur le système CP-Admin.\n\nCliquez sur le lien suivant pour définir votre mot de passe :\n{{setupLink}}\n\nCe lien expire dans 24 heures.",
+      "emailHtml": "<p>Un compte a été créé pour vous sur le système CP-Admin.</p><p><a href=\"{{setupLink}}\" style=\"display:inline-block;padding:10px 20px;background-color:#1976d2;color:#ffffff;text-decoration:none;border-radius:4px;font-weight:bold;\">Définir mon mot de passe</a></p><p style=\"color:#666;font-size:0.9em;\">Ce lien expire dans 24 heures.</p>"
     },
     "passwordReset": {
       "emailSubject": "CP-Admin : Réinitialisation de votre mot de passe",
-      "emailBody": "Vous avez demandé la réinitialisation ... Cliquez sur le lien suivant : {{resetLink}} ... Ce lien expire dans 30 minutes.",
+      "emailBody": "Vous avez demandé la réinitialisation de votre mot de passe.\n\nCliquez sur le lien suivant :\n{{resetLink}}\n\nCe lien expire dans 30 minutes.",
+      "emailHtml": "<p>Vous avez demandé la réinitialisation de votre mot de passe.</p><p><a href=\"{{resetLink}}\" style=\"display:inline-block;padding:10px 20px;background-color:#1976d2;color:#ffffff;text-decoration:none;border-radius:4px;font-weight:bold;\">Réinitialiser mon mot de passe</a></p><p style=\"color:#666;font-size:0.9em;\">Ce lien expire dans 30 minutes. Si vous n'êtes pas à l'origine de cette demande, ignorez ce message.</p>",
       "successMessage": "Si un compte existe avec cet email, un lien a été envoyé.",
       "invalidToken": "Le lien est invalide ou expiré.",
       "resetSuccess": "Votre mot de passe a été modifié avec succès."
     },
     "addedToSite": {
       "emailSubject": "CP-Admin : Ajouté au site {{site_name}}",
-      "emailBody": "Vous avez été ajouté au site {{site_name}}. Vous pouvez désormais recharger sur ce site."
+      "emailBody": "Vous avez été ajouté au site {{site_name}}.\n\nVous pouvez désormais recharger sur ce site.",
+      "emailHtml": "<p>Vous avez été ajouté au site <strong>{{site_name}}</strong>.<br>Vous pouvez désormais recharger sur ce site.</p>"
     },
     "removedFromSite": {
       "emailSubject": "CP-Admin : Retiré du site {{site_name}}",
-      "emailBody": "Vous avez été retiré du site {{site_name}}. Vous ne pouvez plus recharger sur ce site."
+      "emailBody": "Vous avez été retiré du site {{site_name}}.\n\nVous ne pouvez plus recharger sur ce site.",
+      "emailHtml": "<p>Vous avez été retiré du site <strong>{{site_name}}</strong>.<br>Vous ne pouvez plus recharger sur ce site.</p>"
     },
     "suspendedInSite": {
       "emailSubject": "CP-Admin : Accès suspendu sur le site {{site_name}}",
-      "emailBody": "Votre accès au site {{site_name}} a été suspendu. Vous ne pouvez plus recharger sur ce site."
+      "emailBody": "Votre accès au site {{site_name}} a été suspendu.\n\nVous ne pouvez plus recharger sur ce site.",
+      "emailHtml": "<p>Votre accès au site <strong>{{site_name}}</strong> a été suspendu.<br>Vous ne pouvez plus recharger sur ce site.</p>"
     },
     "reactivatedInSite": {
       "emailSubject": "CP-Admin : Accès réactivé sur le site {{site_name}}",
-      "emailBody": "Votre accès au site {{site_name}} a été réactivé. Vous pouvez à nouveau recharger sur ce site."
+      "emailBody": "Votre accès au site {{site_name}} a été réactivé.\n\nVous pouvez à nouveau recharger sur ce site.",
+      "emailHtml": "<p>Votre accès au site <strong>{{site_name}}</strong> a été réactivé.<br>Vous pouvez à nouveau recharger sur ce site.</p>"
     },
     "logReasons": {
       "CHANNEL_DISABLED": "Canal de notification désactivé",

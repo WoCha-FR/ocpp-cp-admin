@@ -810,7 +810,10 @@ function handleRealtimeEvent(type, data) {
   }
 }
 
+const STATIC_PAGES = new Set(['notifications', 'profile', 'configeditor', 'idtags', 'users', 'sites', 'siteusers']);
+
 function refreshCurrentPage() {
+  if (STATIC_PAGES.has(currentPage)) return;
   if (currentPage === 'chargepointdetail' && currentDetailCpId) {
     showChargepointDetail(currentDetailCpId, currentDetailTab);
   } else {
@@ -2192,7 +2195,7 @@ async function renderUserDashboard() {
     <div class="card">
       <h3 style="margin-bottom:16px;">${t('dashboard.availableCons')}: <span style="color:var(--primary)">${data.availableConnectors} / ${data.totalConnectors}</span></h3>
       ${data.connectors.length === 0 ? `<p class="text-muted" style="margin-top:8px;">${t('dashboard.noConnectorsHint')}</p>` : `
-      <div class="connector-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));">
+      <div class="connector-grid" style="grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));">
         ${data.connectors.map(c => {
       const isOnline = c.online;
       const isSuspended = !c.site_authorized;
@@ -2215,7 +2218,7 @@ async function renderUserDashboard() {
                 ? 'border-color: var(--gray-300); opacity: 0.7;'
                 : 'border-color: var(--warning);';
       return `
-          <div class="connector-card" style="text-align:left;padding:18px;${cardStyle}">
+          <div class="connector-card" style="text-align:left;padding:18px;display:flex;flex-direction:column;${cardStyle}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:4px;">
               <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;">
                 <span class="status-dot ${isOnline ? 'dot-online' : 'dot-offline'}"></span>
@@ -2226,8 +2229,9 @@ async function renderUserDashboard() {
           : `<span class="badge ${statusBadgeClass(c.cnstatus)}">${t(`connectors.status.${c.cnstatus}`)}</span>`
         }
             </div>
-            <div class="text-muted" style="margin-bottom:4px;">🧭 ${escapeHtml(c.site_name)}</div>
+            <div class="text-muted" style="margin-bottom:4px;">📍 ${escapeHtml(c.site_name)}</div>
             <div class="text-muted" style="margin-bottom:12px;">🔌 ${t('common.connector_one')} ${c.connector_id}</div>
+            <div style="margin-top:auto;">
             ${isSuspended
           ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">🚫 ${t('dashboard.siteAccessSuspended')}</div>`
           : canChargeConn
@@ -2249,6 +2253,7 @@ async function renderUserDashboard() {
                   ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">⛓️‍💥 ${t('chargepoint.cpOffline')}</div>`
                   : `<div style="text-align:center;padding:8px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>`
         }
+            </div>
           </div>`;
     }).join('')}
       </div>`}

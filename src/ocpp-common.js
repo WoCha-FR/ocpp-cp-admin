@@ -418,7 +418,7 @@ function createOCPPServerBase(options = {}) {
             'chargepoint_offline',
             {
               identity,
-              cpname: cpDisc ? cpDisc.cpname : null,
+              cp_name: cpDisc ? cpDisc.cpname : null,
               site_name: cpDisc ? cpDisc.site_name : null,
             },
             { siteId: cpDisc ? cpDisc.site_id : null }
@@ -485,6 +485,7 @@ function trackRepeatedAuthReject(idTag, identity, cp) {
             id_tag: idTag,
             count: tracker.count,
             window_minutes: Math.round(AUTH_REJECT_WINDOW_MS / 60000),
+            last_chargepoint: cp ? cp.cpname || identity : identity,
             cp_name: cp ? cp.cpname : null,
             site_name: cp ? cp.site_name : null,
           },

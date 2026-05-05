@@ -637,13 +637,13 @@ function createTransaction(chargepointId, connectorId, idTag, meterStart, startT
     const row = db
       .prepare(
         `
-      SELECT COALESCE(MAX(transaction_id), ?) + 1 AS next_id
+      SELECT CAST(COALESCE(MAX(CAST(transaction_id AS INTEGER)), ?) + 1 AS INTEGER) AS next_id
       FROM transactions
-      WHERE transaction_id BETWEEN ? AND ?
+      WHERE CAST(transaction_id AS INTEGER) BETWEEN ? AND ?
     `
       )
       .get(base, base, base + 9999);
-    const transactionId = row.next_id;
+    const transactionId = Math.round(row.next_id);
 
     const source = startSource || 'rfid';
     const info = db

@@ -631,6 +631,7 @@ function register16Handlers(client, loggedHandle) {
             'transaction_stopped',
             {
               identity,
+              connector_id: stoppedTx.connector_id,
               energy_kwh: energyKwh,
               duration,
               transaction_id: params.transactionId,
