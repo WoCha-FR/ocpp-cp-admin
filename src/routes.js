@@ -2002,7 +2002,32 @@ router.get('/notifications/preferences', requireAuth, (req, res) => {
   const prefs = db.getNotificationPreferences(req.user.id);
   const channels = notifications.getAvailableChannels();
   const subscriptions = db.getPushSubscriptions(req.user.id);
-  res.json({ events, preferences: prefs, channels, hasPushSubscription: subscriptions.length > 0 });
+
+  // Matérialiser les préférences par défaut en DB pour les événements sans entrée
+  const eventsWithPrefs = new Set(prefs.map((p) => p.event_type));
+  const missingPrefs = [];
+  for (const [eventType, eventDef] of Object.entries(events)) {
+    if (!eventsWithPrefs.has(eventType)) {
+      for (const channel of channels) {
+        missingPrefs.push({
+          event_type: eventType,
+          channel,
+          enabled: eventDef.defaultChannels.includes(channel),
+        });
+      }
+    }
+  }
+  if (missingPrefs.length > 0) {
+    db.setNotificationPreferencesBulk(req.user.id, missingPrefs);
+  }
+
+  const allPrefs = missingPrefs.length > 0 ? db.getNotificationPreferences(req.user.id) : prefs;
+  res.json({
+    events,
+    preferences: allPrefs,
+    channels,
+    hasPushSubscription: subscriptions.length > 0,
+  });
 });
 
 // Mettre à jour les préférences de notification

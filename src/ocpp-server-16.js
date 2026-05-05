@@ -524,7 +524,7 @@ function register16Handlers(client, loggedHandle) {
         params.timestamp,
         startSource
       );
-      transactionId = tx.transaction_id;
+      transactionId = parseInt(tx.transaction_id, 10);
       broadcast('transaction_start', {
         identity,
         connectorId: params.connectorId,

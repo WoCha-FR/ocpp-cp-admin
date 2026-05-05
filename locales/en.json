@@ -739,22 +739,22 @@
     },
     "addedToSite": {
       "emailSubject": "CP-Admin : Added to site {{site_name}}",
-      "emailBody": "You have been added to the site {{site_name}}.\n\nYou can now charge on this site.",
+      "emailBody": "You have been added to the site {{site_name}}.\nYou can now charge on this site.",
       "emailHtml": "<p>You have been added to the site <strong>{{site_name}}</strong>.<br>You can now charge on this site.</p>"
     },
     "removedFromSite": {
       "emailSubject": "CP-Admin : Removed from site {{site_name}}",
-      "emailBody": "You have been removed from the site {{site_name}}.\n\nYou can no longer charge on this site.",
+      "emailBody": "You have been removed from the site {{site_name}}.\nYou can no longer charge on this site.",
       "emailHtml": "<p>You have been removed from the site <strong>{{site_name}}</strong>.<br>You can no longer charge on this site.</p>"
     },
     "suspendedInSite": {
       "emailSubject": "CP-Admin : Access suspended on site {{site_name}}",
-      "emailBody": "Your access to the site {{site_name}} has been suspended.\n\nYou can no longer charge on this site.",
+      "emailBody": "Your access to the site {{site_name}} has been suspended.\nYou can no longer charge on this site.",
       "emailHtml": "<p>Your access to the site <strong>{{site_name}}</strong> has been suspended.<br>You can no longer charge on this site.</p>"
     },
     "reactivatedInSite": {
       "emailSubject": "CP-Admin : Access reactivated on site {{site_name}}",
-      "emailBody": "Your access to the site {{site_name}} has been reactivated.\n\nYou can now charge on this site.",
+      "emailBody": "Your access to the site {{site_name}} has been reactivated.\nYou can now charge on this site.",
       "emailHtml": "<p>Your access to the site <strong>{{site_name}}</strong> has been reactivated.<br>You can now charge on this site.</p>"
     },
     "logReasons": {

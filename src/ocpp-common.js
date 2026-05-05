@@ -555,14 +555,21 @@ let heartbeatWatchdogTimer = null;
 
 function startHeartbeatWatchdog() {
   heartbeatWatchdogTimer = setInterval(() => {
-    const hbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
-    const heartbeatInterval = hbConfig ? parseInt(hbConfig.value, 10) : 300;
-    const timeoutMs = heartbeatInterval * HEARTBEAT_MISS_FACTOR * 1000;
+    const initHbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
+    const initHeartbeatInterval = initHbConfig ? parseInt(initHbConfig.value, 10) : 300;
 
     const now = Date.now();
     for (const [identity] of connectedClients) {
       const cp = db.getChargepointByIdentity(identity);
       if (!cp || !cp.last_heartbeat) continue;
+
+      const cpHbConfig = cp.id ? db.getChargepointConfigByKey(cp.id, 'HeartbeatInterval') : null;
+      const heartbeatInterval =
+        cpHbConfig && cpHbConfig.value ? parseInt(cpHbConfig.value, 10) : initHeartbeatInterval;
+      const timeoutMs = heartbeatInterval * HEARTBEAT_MISS_FACTOR * 1000;
+      logger.debug(
+        `Watchdog check ${identity}: HeartbeatInterval=${heartbeatInterval}s, timeout=${timeoutMs / 1000}s`
+      );
 
       const lastHb = new Date(cp.last_heartbeat).getTime();
       if (now - lastHb > timeoutMs) {

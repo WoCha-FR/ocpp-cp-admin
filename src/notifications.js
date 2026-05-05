@@ -18,87 +18,87 @@ const logger = require('./logger').scope('NOTIF');
 const EVENT_DEFINITIONS = {
   server_started: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   server_stopping: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   pending_chargepoint: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   autoadd_chargepoint: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   chargepoint_refused: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   diagnostics_upload: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   init_config_result: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   duplicate_identity: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   identity_flapping: {
     roles: ['admin'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   chargepoint_online: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   chargepoint_offline: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   chargepoint_heartbeat_timeout: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   connector_available: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   connector_unavailable: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   connector_error: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   repeated_auth_rejected: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   site_transaction_started: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   site_transaction_stopped: {
     roles: ['admin', 'manager'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   transaction_started: {
     roles: ['user'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   transaction_stopped: {
     roles: ['user'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
   charge_suspended_evse: {
     roles: ['user'],
-    defaultChannels: [],
+    defaultChannels: ['email'],
   },
 };
 

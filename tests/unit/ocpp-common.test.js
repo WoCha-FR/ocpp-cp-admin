@@ -35,6 +35,7 @@ const mockDb = {
   getTransactions: jest.fn(() => []),
   stopTransaction: jest.fn(),
   getInitialChargepointConfigByKey: jest.fn(),
+  getChargepointConfigByKey: jest.fn(),
   addOcppMessage: jest.fn(),
 };
 
@@ -198,6 +199,7 @@ describe('ocpp-common — trackRepeatedAuthReject', () => {
 describe('ocpp-common — heartbeat watchdog', () => {
   it('starts and stops without error', () => {
     mockDb.getInitialChargepointConfigByKey.mockReturnValue({ value: '60' });
+    mockDb.getChargepointConfigByKey.mockReturnValue(null);
     ocppCommon.startHeartbeatWatchdog();
     expect(() => ocppCommon.stopHeartbeatWatchdog()).not.toThrow();
   });
