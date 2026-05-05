@@ -120,6 +120,50 @@ function createApp() {
     res.json({ found, entry: found ? result.configurationKey[0] : null, unknown: result?.unknownKey ?? [] });
   });
 
+  // POST /api/chargepoints/:id/config/refresh — mirrors real route logic, callClient injectable via app._mockRefreshCall
+  const MOCK_STANDARD_KEYS = ['Key1', 'Key2', 'Key3', 'Key4', 'Key5'];
+  app.post('/api/chargepoints/:id/config/refresh', async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (!app._mockRefreshCall) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    const config = () => db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ?').all(cp.id);
+
+    if (app._mockRefreshProtocol === 'ocpp2.0.1') {
+      try {
+        const result = await app._mockRefreshCall('GetVariables', {});
+        return res.json({ result, config: config() });
+      } catch (e) {
+        return res.status(500).json({ error: e.message });
+      }
+    }
+
+    try {
+      const result = await app._mockRefreshCall('GetConfiguration', {});
+      return res.json({ result, config: config() });
+    } catch (e) {
+      let maxKeys = 20;
+      try {
+        const r = await app._mockRefreshCall('GetConfiguration', { key: ['GetConfigurationMaxKeys'] });
+        const parsed = parseInt(r?.configurationKey?.[0]?.value, 10);
+        if (parsed > 0) maxKeys = parsed;
+      } catch (e2) {}
+
+      const standardKeys = app._mockStandardKeys || MOCK_STANDARD_KEYS;
+      let anySuccess = false;
+      for (let i = 0; i < standardKeys.length; i += maxKeys) {
+        const chunk = standardKeys.slice(i, i + maxKeys);
+        try {
+          await app._mockRefreshCall('GetConfiguration', { key: chunk });
+          anySuccess = true;
+        } catch (e2) {}
+      }
+      if (!anySuccess) return res.status(500).json({ error: 'ERR_GETCONFIGURATION_FAILED' });
+    }
+    return res.json({ config: config() });
+  });
+
   return { app, db };
 }
 
@@ -387,5 +431,120 @@ describe('PATCH /api/chargepoints/:id/config/:key/override — toggle is_overrid
     const row = db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').get(cpId, 'ConnectionTimeOut');
     expect(row.value).toBe('120');
     expect(row.is_override).toBe(1);
+  });
+});
+
+describe('POST /api/chargepoints/:id/config/refresh', () => {
+  function insertCp(db, identity) {
+    db.prepare("INSERT INTO chargepoints (identity, cpname, password) VALUES (?, ?, 'pass')").run(identity, `Test ${identity}`);
+    return db.prepare('SELECT id FROM chargepoints WHERE identity = ?').get(identity);
+  }
+
+  it('returns 401 if not authenticated', async () => {
+    const agent = request.agent(app);
+    const meRes = await agent.get('/api/auth/me');
+    const csrf = decodeURIComponent(
+      ((meRes.headers['set-cookie'] || []).join('; ').match(/XSRF-TOKEN=([^;]+)/) || [])[1] || ''
+    );
+    const res = await agent.post('/api/chargepoints/1/config/refresh').set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 404 ERR_CHARGEPOINT_NOT_FOUND for unknown chargepoint', async () => {
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.post('/api/chargepoints/9999/config/refresh').set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('ERR_CHARGEPOINT_NOT_FOUND');
+  });
+
+  it('returns 400 ERR_CHARGEPOINT_OFFLINE when chargepoint is not connected', async () => {
+    const { id: cpId } = insertCp(db, 'REF01');
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('ERR_CHARGEPOINT_OFFLINE');
+  });
+
+  it('OCPP 2.0.1: returns 200 with result when GetVariables succeeds', async () => {
+    const { id: cpId } = insertCp(db, 'REF02');
+    app._mockRefreshProtocol = 'ocpp2.0.1';
+    app._mockRefreshCall = jest.fn().mockResolvedValue({ getVariableResult: [] });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('result');
+    expect(app._mockRefreshCall).toHaveBeenCalledWith('GetVariables', {});
+  });
+
+  it('OCPP 2.0.1: returns 500 when GetVariables fails', async () => {
+    const { id: cpId } = insertCp(db, 'REF03');
+    app._mockRefreshProtocol = 'ocpp2.0.1';
+    app._mockRefreshCall = jest.fn().mockRejectedValue(new Error('timeout'));
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(500);
+  });
+
+  it('OCPP 1.6: returns 200 with result when GetConfiguration {} succeeds', async () => {
+    const { id: cpId } = insertCp(db, 'REF04');
+    app._mockRefreshCall = jest.fn().mockResolvedValue({ configurationKey: [{ key: 'HeartbeatInterval', value: '60' }] });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('result');
+    expect(app._mockRefreshCall).toHaveBeenCalledTimes(1);
+    expect(app._mockRefreshCall).toHaveBeenCalledWith('GetConfiguration', {});
+  });
+
+  it('OCPP 1.6: paginated fallback uses GetConfigurationMaxKeys when available', async () => {
+    const { id: cpId } = insertCp(db, 'REF05');
+    // 5 standard keys, maxKeys=2 → 3 chunks
+    app._mockStandardKeys = ['Key1', 'Key2', 'Key3', 'Key4', 'Key5'];
+    app._mockRefreshCall = jest.fn()
+      .mockRejectedValueOnce(new Error('not supported'))
+      .mockResolvedValueOnce({ configurationKey: [{ key: 'GetConfigurationMaxKeys', value: '2' }] })
+      .mockResolvedValue({});
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(200);
+    const paginatedCalls = app._mockRefreshCall.mock.calls.filter(
+      c => c[0] === 'GetConfiguration' && Array.isArray(c[1]?.key) && c[1].key[0] !== 'GetConfigurationMaxKeys'
+    );
+    expect(paginatedCalls.length).toBe(3);
+  });
+
+  it('OCPP 1.6: paginated fallback uses default maxKeys=20 when GetConfigurationMaxKeys fails', async () => {
+    const { id: cpId } = insertCp(db, 'REF06');
+    // 3 standard keys, maxKeys=20 → 1 chunk
+    app._mockStandardKeys = ['Key1', 'Key2', 'Key3'];
+    app._mockRefreshCall = jest.fn()
+      .mockRejectedValueOnce(new Error('not supported'))
+      .mockRejectedValueOnce(new Error('no key'))
+      .mockResolvedValue({});
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(200);
+    const paginatedCalls = app._mockRefreshCall.mock.calls.filter(
+      c => c[0] === 'GetConfiguration' && Array.isArray(c[1]?.key) && c[1].key[0] !== 'GetConfigurationMaxKeys'
+    );
+    expect(paginatedCalls.length).toBe(1);
+  });
+
+  it('OCPP 1.6: returns 500 ERR_GETCONFIGURATION_FAILED when all paginated chunks fail', async () => {
+    const { id: cpId } = insertCp(db, 'REF07');
+    app._mockStandardKeys = ['Key1', 'Key2'];
+    app._mockRefreshCall = jest.fn().mockRejectedValue(new Error('timeout'));
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe('ERR_GETCONFIGURATION_FAILED');
   });
 });

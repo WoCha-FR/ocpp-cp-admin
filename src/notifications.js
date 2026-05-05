@@ -60,6 +60,10 @@ const EVENT_DEFINITIONS = {
     roles: ['admin', 'manager'],
     defaultChannels: [],
   },
+  chargepoint_heartbeat_timeout: {
+    roles: ['admin', 'manager'],
+    defaultChannels: ['webpush'],
+  },
   connector_available: {
     roles: ['admin', 'manager'],
     defaultChannels: [],

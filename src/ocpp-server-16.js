@@ -150,28 +150,27 @@ function register16Handlers(client, loggedHandle) {
         logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
       }
 
-      let maxKeys = 20;
       try {
-        logger.debug(`[InitSeq] ${identity} GetConfiguration GetConfigurationMaxKeys`);
-        const res = await callClient16(identity, 'GetConfiguration', {
-          key: ['GetConfigurationMaxKeys'],
-        });
-        const parsed = parseInt(res?.configurationKey?.[0]?.value, 10);
-        if (parsed > 0) maxKeys = parsed;
+        logger.debug(`[InitSeq] ${identity} GetConfiguration (all keys)`);
+        await callClient16(identity, 'GetConfiguration', {});
       } catch (e) {
         logger.warn(
-          `[InitSeq] ${identity} GetConfigurationMaxKeys: ${e.message} — using default ${maxKeys}`
+          `[InitSeq] ${identity} GetConfiguration (all keys): ${e.message} — falling back to paginated`
         );
-      }
 
-      if (maxKeys >= OCPP16_STANDARD_KEYS.length) {
+        let maxKeys = 20;
         try {
-          logger.debug(`[InitSeq] ${identity} GetConfiguration (all keys, maxKeys=${maxKeys})`);
-          await callClient16(identity, 'GetConfiguration', {});
-        } catch (e) {
-          logger.warn(`[InitSeq] ${identity} GetConfiguration (all keys): ${e.message}`);
+          const res = await callClient16(identity, 'GetConfiguration', {
+            key: ['GetConfigurationMaxKeys'],
+          });
+          const parsed = parseInt(res?.configurationKey?.[0]?.value, 10);
+          if (parsed > 0) maxKeys = parsed;
+        } catch (e2) {
+          logger.warn(
+            `[InitSeq] ${identity} GetConfigurationMaxKeys: ${e2.message} — using default ${maxKeys}`
+          );
         }
-      } else {
+
         logger.debug(
           `[InitSeq] ${identity} GetConfiguration paginated (maxKeys=${maxKeys}, total=${OCPP16_STANDARD_KEYS.length})`
         );
@@ -179,9 +178,9 @@ function register16Handlers(client, loggedHandle) {
           const chunk = OCPP16_STANDARD_KEYS.slice(i, i + maxKeys);
           try {
             await callClient16(identity, 'GetConfiguration', { key: chunk });
-          } catch (e) {
+          } catch (e2) {
             logger.warn(
-              `[InitSeq] ${identity} GetConfiguration chunk [${i}..${i + maxKeys - 1}]: ${e.message}`
+              `[InitSeq] ${identity} GetConfiguration chunk [${i}..${i + maxKeys - 1}]: ${e2.message}`
             );
           }
         }

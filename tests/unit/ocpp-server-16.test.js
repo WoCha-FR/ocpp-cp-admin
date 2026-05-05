@@ -168,8 +168,9 @@ describe('ocpp-server-16 — BootNotification', () => {
     client.call
       .mockResolvedValueOnce({})                             // ClearCache
       .mockResolvedValueOnce({})                             // ClearChargingProfile
+      .mockRejectedValueOnce(new Error('Not supported'))     // GetConfiguration {} fails
       .mockResolvedValueOnce({ configurationKey: [{ key: 'GetConfigurationMaxKeys', value: '50', readonly: true }] }) // GetConfigurationMaxKeys
-      .mockRejectedValueOnce(new Error('Not supported'))     // GetConfiguration {}
+      .mockResolvedValueOnce({})                             // GetConfiguration chunk (42 keys fit in 1 chunk of 50)
       .mockResolvedValueOnce({ status: 'Accepted' });        // ChangeConfiguration
 
     mockConnectedClients.set('CP001', client);
@@ -184,26 +185,28 @@ describe('ocpp-server-16 — BootNotification', () => {
     expect(mockDb.upsertChargepointConfig).toHaveBeenCalledWith(1, 'HeartbeatInterval', '60', false);
   });
 
-  it('calls GetConfiguration without params when maxKeys >= OCPP16_STANDARD_KEYS.length', async () => {
+  it('calls GetConfiguration without params first (happy path, no pagination)', async () => {
     client.call
       .mockResolvedValueOnce({})  // ClearCache
       .mockResolvedValueOnce({})  // ClearChargingProfile
-      .mockResolvedValueOnce({ configurationKey: [{ key: 'GetConfigurationMaxKeys', value: '50', readonly: true }] }) // maxKeys=50 >= 42
       .mockResolvedValueOnce({});  // GetConfiguration {}
 
     mockConnectedClients.set('CP001', client);
     client._handlers['BootNotification']({ chargePointVendor: 'X' });
     await new Promise((resolve) => setImmediate(resolve));
 
-    expect(client.call).toHaveBeenCalledWith('GetConfiguration', { key: ['GetConfigurationMaxKeys'] });
     expect(client.call).toHaveBeenCalledWith('GetConfiguration', {});
+    const getCalls = client.call.mock.calls.filter((c) => c[0] === 'GetConfiguration');
+    expect(getCalls.length).toBe(1);
+    expect(client.call).not.toHaveBeenCalledWith('GetConfiguration', { key: ['GetConfigurationMaxKeys'] });
   });
 
-  it('paginates GetConfiguration into chunks when maxKeys < OCPP16_STANDARD_KEYS.length', async () => {
+  it('paginates GetConfiguration into chunks when GetConfiguration {} fails and maxKeys < OCPP16_STANDARD_KEYS.length', async () => {
     const maxKeys = 10;
     client.call
       .mockResolvedValueOnce({})  // ClearCache
       .mockResolvedValueOnce({})  // ClearChargingProfile
+      .mockRejectedValueOnce(new Error('Not supported'))  // GetConfiguration {} fails
       .mockResolvedValueOnce({ configurationKey: [{ key: 'GetConfigurationMaxKeys', value: String(maxKeys), readonly: true }] })
       .mockResolvedValue({});  // all pagination calls
 
@@ -212,16 +215,17 @@ describe('ocpp-server-16 — BootNotification', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     const getCalls = client.call.mock.calls.filter((c) => c[0] === 'GetConfiguration');
-    expect(getCalls[0][1]).toEqual({ key: ['GetConfigurationMaxKeys'] });
-    expect(getCalls.length).toBe(1 + Math.ceil(OCPP16_STANDARD_KEYS.length / maxKeys));
-    expect(client.call).not.toHaveBeenCalledWith('GetConfiguration', {});
+    expect(getCalls[0][1]).toEqual({});  // initial attempt (fails)
+    expect(getCalls[1][1]).toEqual({ key: ['GetConfigurationMaxKeys'] });
+    expect(getCalls.length).toBe(2 + Math.ceil(OCPP16_STANDARD_KEYS.length / maxKeys));
   });
 
-  it('falls back to default maxKeys=20 and paginates when GetConfigurationMaxKeys fails', async () => {
+  it('falls back to default maxKeys=20 and paginates when both GetConfiguration and GetConfigurationMaxKeys fail', async () => {
     client.call
       .mockResolvedValueOnce({})  // ClearCache
       .mockResolvedValueOnce({})  // ClearChargingProfile
-      .mockRejectedValueOnce(new Error('Not supported'))  // GetConfigurationMaxKeys fails
+      .mockRejectedValueOnce(new Error('Not supported'))  // GetConfiguration {} fails
+      .mockRejectedValueOnce(new Error('Not supported'))  // GetConfigurationMaxKeys also fails
       .mockResolvedValue({});  // pagination calls
 
     mockConnectedClients.set('CP001', client);
@@ -229,9 +233,9 @@ describe('ocpp-server-16 — BootNotification', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     const getCalls = client.call.mock.calls.filter((c) => c[0] === 'GetConfiguration');
-    expect(getCalls[0][1]).toEqual({ key: ['GetConfigurationMaxKeys'] });
-    expect(getCalls.length).toBe(1 + Math.ceil(OCPP16_STANDARD_KEYS.length / 20));
-    expect(client.call).not.toHaveBeenCalledWith('GetConfiguration', {});
+    expect(getCalls[0][1]).toEqual({});  // initial attempt (fails)
+    expect(getCalls[1][1]).toEqual({ key: ['GetConfigurationMaxKeys'] });  // also fails
+    expect(getCalls.length).toBe(2 + Math.ceil(OCPP16_STANDARD_KEYS.length / 20));
   });
 
   it('calls bulkUpsertChargepointConfig with configurationKey from GetConfiguration response', async () => {
@@ -239,7 +243,6 @@ describe('ocpp-server-16 — BootNotification', () => {
     client.call
       .mockResolvedValueOnce({})  // ClearCache
       .mockResolvedValueOnce({})  // ClearChargingProfile
-      .mockResolvedValueOnce({ configurationKey: [{ key: 'GetConfigurationMaxKeys', value: '50', readonly: true }] })
       .mockResolvedValueOnce({ configurationKey: configKeys });  // GetConfiguration {}
 
     mockConnectedClients.set('CP001', client);
@@ -260,7 +263,6 @@ describe('ocpp-server-16 — BootNotification', () => {
     client.call
       .mockResolvedValueOnce({})                                  // ClearCache
       .mockResolvedValueOnce({})                                  // ClearChargingProfile
-      .mockResolvedValueOnce({ configurationKey: [{ key: 'GetConfigurationMaxKeys', value: '50', readonly: true }] }) // GetConfigurationMaxKeys
       .mockResolvedValueOnce({})                                  // GetConfiguration {}
       .mockResolvedValueOnce({ status: 'RebootRequired' })        // KeyA
       .mockResolvedValueOnce({ status: 'Rejected' })              // KeyB
@@ -289,7 +291,6 @@ describe('ocpp-server-16 — BootNotification', () => {
     client.call
       .mockResolvedValueOnce({})                           // ClearCache
       .mockResolvedValueOnce({})                           // ClearChargingProfile
-      .mockResolvedValueOnce({ configurationKey: [{ key: 'GetConfigurationMaxKeys', value: '50', readonly: true }] }) // GetConfigurationMaxKeys
       .mockResolvedValueOnce({})                           // GetConfiguration {}
       .mockResolvedValueOnce({ status: 'Accepted' });      // KeyA
 

@@ -412,17 +412,19 @@ function createOCPPServerBase(options = {}) {
       });
       broadcast('chargepoint_disconnected', { identity });
       const cpDisc = db.getChargepointByIdentity(identity);
-      notifications
-        .emit(
-          'chargepoint_offline',
-          {
-            identity,
-            cpname: cpDisc ? cpDisc.cpname : null,
-            site_name: cpDisc ? cpDisc.site_name : null,
-          },
-          { siteId: cpDisc ? cpDisc.site_id : null }
-        )
-        .catch(() => {});
+      if (client._disconnectReason !== 'heartbeat_timeout') {
+        notifications
+          .emit(
+            'chargepoint_offline',
+            {
+              identity,
+              cpname: cpDisc ? cpDisc.cpname : null,
+              site_name: cpDisc ? cpDisc.site_name : null,
+            },
+            { siteId: cpDisc ? cpDisc.site_id : null }
+          )
+          .catch(() => {});
+      }
     });
   });
 
@@ -430,10 +432,11 @@ function createOCPPServerBase(options = {}) {
 }
 
 // ── Déconnexion forcée ──
-function disconnectChargepoint(identity) {
+function disconnectChargepoint(identity, reason = null) {
   const client = connectedClients.get(identity);
   if (client) {
     logger.info(`Forced disconnection (de-authorisation) for ${identity}`);
+    if (reason) client._disconnectReason = reason;
     const cp = db.getChargepointByIdentity(identity);
     if (cp) {
       const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
@@ -562,10 +565,25 @@ function startHeartbeatWatchdog() {
 
       const lastHb = new Date(cp.last_heartbeat).getTime();
       if (now - lastHb > timeoutMs) {
+        const secondsElapsed = Math.round((now - lastHb) / 1000);
+        const limitSeconds = heartbeatInterval * HEARTBEAT_MISS_FACTOR;
         logger.warn(
-          `Heartbeat timeout for ${identity}: last heartbeat ${Math.round((now - lastHb) / 1000)}s ago (limit: ${heartbeatInterval * HEARTBEAT_MISS_FACTOR}s)`
+          `Heartbeat timeout for ${identity}: last heartbeat ${secondsElapsed}s ago (limit: ${limitSeconds}s)`
         );
-        disconnectChargepoint(identity);
+        notifications
+          .emit(
+            'chargepoint_heartbeat_timeout',
+            {
+              identity,
+              cp_name: cp.cpname || identity,
+              site_name: cp.site_name || '',
+              seconds_elapsed: secondsElapsed,
+              limit_seconds: limitSeconds,
+            },
+            { siteId: cp.site_id }
+          )
+          .catch(() => {});
+        disconnectChargepoint(identity, 'heartbeat_timeout');
       }
     }
     for (const [ip, attempts] of wsRateTracker) {

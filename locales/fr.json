@@ -658,6 +658,12 @@
       "title": "Borne {{cp_name}} hors ligne",
       "body": "La borne {{cp_name}} s'est déconnectée."
     },
+    "chargepoint_heartbeat_timeout": {
+      "eLabel": "Borne morte (timeout heartbeat)",
+      "eDesc" : "Le serveur déconnecte une borne qui ne répond plus",
+      "title": "Borne morte : {{cp_name}}",
+      "body": "La borne {{cp_name}} n'a pas envoyé de heartbeat depuis {{seconds_elapsed}}s (limite : {{limit_seconds}}s). Déconnexion forcée."
+    },
     "connector_available": {
       "eLabel": "Connecteur disponible",
       "eDesc" : "Un connecteur passe en état Available après une indisponibilité ou un défaut",
@@ -796,6 +802,7 @@
     "ERR_CONNECTOR_NOT_FOUND": "Connecteur non trouvé",
     "ERR_TOO_MANY_REQUESTS": "Trop de demandes, veuillez réessayer plus tard.",
     "ERR_INVALID_RESET_TOKEN": "Le lien de réinitialisation est invalide ou expiré.",
+    "ERR_GETCONFIGURATION_FAILED": "Échec de la récupération de la configuration de la borne",
     "VALIDATION_USER_EMAIL_INVALID": "Adresse e-mail invalide.",
     "VALIDATION_USER_SHORTNAME": "Le nom doit faire 2-50 caractères.",
     "VALIDATION_USER_PASSWORD": "Le mot de passe doit faire 8-50 caractères et contenir des majuscules, minuscules, chiffres et symboles.",

@@ -121,6 +121,19 @@ function format(event, data, lang = 'fr') {
         .filter(Boolean)
         .join('\n'),
     }),
+    chargepoint_heartbeat_timeout: () => ({
+      titre: tradN('notifications.chargepoint_heartbeat_timeout.title', { cp_name }),
+      corps: [
+        tradN('notifications.chargepoint_heartbeat_timeout.body', {
+          cp_name,
+          seconds_elapsed: data.seconds_elapsed,
+          limit_seconds: data.limit_seconds,
+        }),
+        line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }),
     connector_available: () => ({
       titre: tradN('notifications.connector_available.title', { cp_name }),
       corps: [

@@ -658,6 +658,12 @@
       "title": "Charge point {{cp_name}} offline",
       "body": "Charge point {{cp_name}} has disconnected."
     },
+    "chargepoint_heartbeat_timeout": {
+      "eLabel": "Dead chargepoint (heartbeat timeout)",
+      "eDesc" : "The server disconnects a chargepoint that is no longer responding",
+      "title": "Dead chargepoint: {{cp_name}}",
+      "body": "Charge point {{cp_name}} has not sent a heartbeat for {{seconds_elapsed}}s (limit: {{limit_seconds}}s). Forced disconnection."
+    },
     "connector_available": {
       "eLabel": "Connector available",
       "eDesc" : "A connector becomes Available after being unavailable or faulted",
@@ -796,6 +802,7 @@
     "ERR_CONNECTOR_NOT_FOUND": "Connector not found",
     "ERR_TOO_MANY_REQUESTS": "Too many requests, please try again later.",
     "ERR_INVALID_RESET_TOKEN": "The reset link is invalid or expired.",
+    "ERR_GETCONFIGURATION_FAILED": "Failed to retrieve configuration from charge point",
     "VALIDATION_USER_EMAIL_INVALID": "Invalid email address.",
     "VALIDATION_USER_SHORTNAME": "Name must be 2-50 characters.",
     "VALIDATION_USER_PASSWORD": "Password must be 8-50 characters and contain uppercase, lowercase, digits, and symbols.",

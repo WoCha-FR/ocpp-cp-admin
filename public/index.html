@@ -1323,7 +1323,7 @@ async function showEditChargepointModal(id) {
   <h3>${t('chargepoint.cpModifTitle')}</h3>
   <div class="form-group"><label>${t('chargepoint.cpIdentity')}</label><input type="text" id="editIdentity" value="${escapeAttr(cp.identity)}" /></div>
   <div class="form-group"><label>${t('common.name')}</label><input type="text" id="editName" value="${escapeAttr(cp.cpname || '')}" /></div>
-  <div class="form-group"><label>${t('common.password')}</label><input type="text" id="editPassword" value="${escapeAttr(cp.password || '')}" /></div>
+  <div class="form-group"><label>${t('common.password')}</label><input type="password" id="editPassword" ${cp.password ? 'placeholder="••••••••"' : ''} /></div>
   <div class="form-group">
     <label>${t('chargepoint.cpModeCharge')}</label>
     <select id="editMode">
@@ -4273,10 +4273,13 @@ async function cascadeAllInitConfig() {
       rows: null,
     },
     {
-      labelKey: 'cascadeQueued',
-      count: result.queued.length,
-      rows: result.queued.map(q => `<tr><td>${q.identity}</td></tr>`).join(''),
-      cols: cpCol,
+      labelKey: 'cascadeErrors',
+      count: result.errors.length,
+      rows: result.errors.map(e =>
+        `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
+      ).join(''),
+      cols: cpCol + keyReasonCols,
+      open: true,
     },
     {
       labelKey: 'cascadeSkipped',
@@ -4287,18 +4290,15 @@ async function cascadeAllInitConfig() {
       cols: cpCol + keyReasonCols,
     },
     {
-      labelKey: 'cascadeErrors',
-      count: result.errors.length,
-      rows: result.errors.map(e =>
-        `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
-      ).join(''),
-      cols: cpCol + keyReasonCols,
-      open: true,
+      labelKey: 'cascadeQueued',
+      count: result.queued.length,
+      rows: result.queued.map(q => `<tr><td>${q.identity}</td></tr>`).join(''),
+      cols: cpCol,
     },
   ];
   const renderSection = ({ labelKey, count, rows, cols, open }) => {
-    const label = `• ${count} ${t(`initConfig.${labelKey}`)}`;
-    if (!count || !rows) return `<div class="${count ? '' : 'text-muted'}">${label}</div>`;
+    const label = `${count} ${t(`initConfig.${labelKey}`)}`;
+    if (!count || !rows) return `<div>${label}</div>`;
     return `
     <details ${open ? 'open' : ''} style="margin-top:4px;">
       <summary style="cursor:pointer;">${label}</summary>

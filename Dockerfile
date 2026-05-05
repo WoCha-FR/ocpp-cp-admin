@@ -1,4 +1,4 @@
-FROM node:22-alpine3.22
+FROM node:22-alpine3.23
 
 LABEL org.opencontainers.image.title="ocpp-cp-admin" \
       org.opencontainers.image.description="Administration and monitoring dashboard for OCPP charge points" \

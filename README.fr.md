@@ -78,7 +78,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - **Email** (SMTP via Nodemailer)
 - **Web Push** (notifications navigateur via Service Worker)
 - **Pushover** (notifications push mobiles)
-- 21 types d'événements avec filtrage par rôle
+- 22 types d'événements avec filtrage par rôle
 - Préférences par utilisateur et par canal
 
 ### Tableau de bord et analytique
@@ -870,6 +870,8 @@ Un watchdog côté serveur vérifie périodiquement si chaque borne connectée a
 
 `HeartbeatInterval` est un **paramètre système global** géré exclusivement dans *Paramètres → Configuration OCPP par défaut*. Il est envoyé à chaque borne via `ChangeConfiguration` lors de l'initialisation et ne peut pas être surchargé par borne. Le watchdog relit cette valeur en base de données à chaque cycle, de sorte qu'une modification prend effet immédiatement sans redémarrage du serveur.
 
+Lorsqu'une borne est déconnectée par le watchdog, une notification **Borne morte (timeout heartbeat)** est envoyée aux admins et managers (web push par défaut, email en option). La notification générique *borne hors ligne* est supprimée dans ce cas pour éviter les doublons.
+
 > **Valeur par défaut :** 600 secondes. Le timeout effectif avant déconnexion est de 1200 secondes (20 minutes).
 
 ---
@@ -903,6 +905,7 @@ L'application propose un système d'alertes piloté par les événements.
 | Événement | Description |
 |---|---|
 | Borne en ligne / hors ligne | Changement d'état de connexion d'une borne |
+| **Borne morte (timeout heartbeat)** | Déconnexion forcée côté serveur d'une borne qui ne répond plus |
 | Connecteur disponible / indisponible | Changement de statut d'un connecteur |
 | Erreur connecteur | Erreur signalée par un connecteur |
 | Rejets d'autorisation répétés | Seuil de rejets atteint pour un badge |

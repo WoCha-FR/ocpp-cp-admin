@@ -78,7 +78,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - **Email** (SMTP via Nodemailer)
 - **Web Push** (browser notifications via Service Worker)
 - **Pushover** (mobile push notifications)
-- 21 event types with role-based filtering
+- 22 event types with role-based filtering
 - Per-user and per-channel preferences
 
 ### Dashboard and Analytics
@@ -876,6 +876,8 @@ A server-side watchdog checks at regular intervals whether each connected charge
 
 The `HeartbeatInterval` is a **global system parameter** managed exclusively in *Settings → Default OCPP Configuration*. It is sent to every charge point via `ChangeConfiguration` during initialization and cannot be overridden per charge point. The watchdog always reads this value from the database so that changes take effect immediately without restarting the server.
 
+When a charge point is disconnected by the watchdog, a **Dead charge point (heartbeat timeout)** notification is sent to admins and managers (web push by default, email optionally). The generic *charge point offline* notification is suppressed in this case to avoid duplicate alerts.
+
 > **Default value:** 600 seconds. The effective timeout before disconnection is 1200 seconds (20 minutes).
 
 ---
@@ -909,6 +911,7 @@ The application provides an event-driven alert system.
 | Event | Description |
 |---|---|
 | Charge point online / offline | Connection state change |
+| **Dead charge point (heartbeat timeout)** | Server-side forced disconnection of a non-responsive charge point |
 | Connector available / unavailable | Connector status change |
 | Connector error | Error reported by a connector |
 | Repeated authorization rejections | Rejection threshold reached for a badge |

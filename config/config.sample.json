@@ -24,7 +24,7 @@
     "strictMode": true,
     "callTimeoutSeconds": 45,
     "autoAddUnknownChargepoints": false,
-    "pendingUnknownChargepoints": true,
+    "pendingUnknownChargepoints": false,
     "ocppWsUrl": "ws://ws.cpadmin.local:9000",
     "diagnosticsLocation": "ftp://ftp.cpadmin.local/diagnostics",
     "wss": {

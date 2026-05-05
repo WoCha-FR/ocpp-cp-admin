@@ -1007,43 +1007,48 @@ router.post(
 
     if (client.protocol === 'ocpp2.0.1') {
       try {
-        const result = await callClient(cp.identity, 'GetConfiguration', {});
+        const result = await callClient(cp.identity, 'GetVariables', {});
         return res.json({ result, config: db.getChargepointConfig(cp.id) });
       } catch (e) {
         return errorResponse(res, 500, e.message);
       }
     }
 
-    let maxKeys = 20;
     try {
-      const r = await callClient(cp.identity, 'GetConfiguration', {
-        key: ['GetConfigurationMaxKeys'],
-      });
-      const parsed = parseInt(r?.configurationKey?.[0]?.value, 10);
-      if (parsed > 0) maxKeys = parsed;
+      const result = await callClient(cp.identity, 'GetConfiguration', {});
+      return res.json({ result, config: db.getChargepointConfig(cp.id) });
     } catch (e) {
       logger.warn(
-        `[ConfigRefresh] ${cp.identity} GetConfigurationMaxKeys: ${e.message} — using default ${maxKeys}`
+        `[ConfigRefresh] ${cp.identity} GetConfiguration: ${e.message} — falling back to paginated`
       );
-    }
 
-    if (maxKeys >= OCPP16_STANDARD_KEYS.length) {
+      let maxKeys = 20;
       try {
-        const result = await callClient(cp.identity, 'GetConfiguration', {});
-        return res.json({ result, config: db.getChargepointConfig(cp.id) });
-      } catch (e) {
-        return errorResponse(res, 500, e.message);
-      }
-    }
-
-    for (let i = 0; i < OCPP16_STANDARD_KEYS.length; i += maxKeys) {
-      const chunk = OCPP16_STANDARD_KEYS.slice(i, i + maxKeys);
-      try {
-        await callClient(cp.identity, 'GetConfiguration', { key: chunk });
-      } catch (e) {
+        const r = await callClient(cp.identity, 'GetConfiguration', {
+          key: ['GetConfigurationMaxKeys'],
+        });
+        const parsed = parseInt(r?.configurationKey?.[0]?.value, 10);
+        if (parsed > 0) maxKeys = parsed;
+      } catch (e2) {
         logger.warn(
-          `[ConfigRefresh] ${cp.identity} chunk [${i}..${i + maxKeys - 1}]: ${e.message}`
+          `[ConfigRefresh] ${cp.identity} GetConfigurationMaxKeys: ${e2.message} — using default ${maxKeys}`
         );
+      }
+
+      let anySuccess = false;
+      for (let i = 0; i < OCPP16_STANDARD_KEYS.length; i += maxKeys) {
+        const chunk = OCPP16_STANDARD_KEYS.slice(i, i + maxKeys);
+        try {
+          await callClient(cp.identity, 'GetConfiguration', { key: chunk });
+          anySuccess = true;
+        } catch (e2) {
+          logger.warn(
+            `[ConfigRefresh] ${cp.identity} chunk [${i}..${i + maxKeys - 1}]: ${e2.message}`
+          );
+        }
+      }
+      if (!anySuccess) {
+        return errorResponse(res, 500, 'ERR_GETCONFIGURATION_FAILED');
       }
     }
     res.json({ config: db.getChargepointConfig(cp.id) });
