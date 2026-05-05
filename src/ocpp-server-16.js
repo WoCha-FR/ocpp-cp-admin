@@ -288,7 +288,7 @@ function register16Handlers(client, loggedHandle) {
         params.vendorId || null,
         params.vendorErrorCode || null
       );
-      if (params.connectorId !== 0 && !cp.has_connector0 && cp.cpstatus === 'Unavailable') {
+      if (params.connectorId !== 0 && cp.cpstatus === 'Unavailable') {
         const allConnectors = db.getConnectorsByChargepoint(cp.id);
         const derivedStatus = allConnectors.some((c) => c.cnstatus !== 'Unavailable')
           ? 'Available'
@@ -358,14 +358,14 @@ function register16Handlers(client, loggedHandle) {
           )
           .catch(() => {});
       }
-      if (params.connectorId > 0 && params.status === 'SuspendedEVSE') {
+      if (params.connectorId > 0 && params.status === 'SuspendedEV') {
         const activeTx = db
           .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
           .find((t) => t.connector_id === params.connectorId);
         if (activeTx && activeTx.tag_user_id && activeTx.energy > 0) {
           notifications
             .emit(
-              'charge_suspended_evse',
+              'charge_suspended_ev',
               {
                 identity,
                 connector_id: params.connectorId,

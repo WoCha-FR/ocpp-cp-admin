@@ -96,7 +96,7 @@ const EVENT_DEFINITIONS = {
     roles: ['user'],
     defaultChannels: ['email'],
   },
-  charge_suspended_evse: {
+  charge_suspended_ev: {
     roles: ['user'],
     defaultChannels: ['email'],
   },

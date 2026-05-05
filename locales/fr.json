@@ -717,7 +717,7 @@
       "title": "Recharge terminée – {{cp_name}}",
       "body": "Votre recharge est terminée sur la borne {{cp_name}}."
     },
-    "charge_suspended_evse": {
+    "charge_suspended_ev": {
       "eLabel": "Véhicule chargé",
       "eDesc" : "Le véhicule à atteint sa charge cible, vous pouvez débrancher",
       "title": "Véhicule chargé – {{cp_name}}",

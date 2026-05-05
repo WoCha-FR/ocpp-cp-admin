@@ -33,7 +33,7 @@ function getPushoverMeta(event, _data) {
     site_transaction_stopped: { priority: 0 },
     transaction_started: { priority: 0 },
     transaction_stopped: { priority: 0 },
-    charge_suspended_evse: { priority: 0 },
+    charge_suspended_ev: { priority: 0 },
   };
   return meta[event] || { priority: 0 };
 }

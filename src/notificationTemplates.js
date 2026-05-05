@@ -252,17 +252,17 @@ function format(event, data, lang = 'fr') {
         .filter(Boolean)
         .join('\n'),
     }),
-    charge_suspended_evse: () => ({
-      titre: tradN('notifications.charge_suspended_evse.title', { cp_name }),
+    charge_suspended_ev: () => ({
+      titre: tradN('notifications.charge_suspended_ev.title', { cp_name }),
       corps: [
-        tradN('notifications.charge_suspended_evse.body', { cp_name }),
+        tradN('notifications.charge_suspended_ev.body', { cp_name }),
         tradN('notifications.common.connector', { connector_id: data.connector_id, cn_name }),
         line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
         line('notifications.common.energy', data.energy_kwh, {
           ...opts,
           energy_kwh: data.energy_kwh,
         }),
-        tradN('notifications.charge_suspended_evse.unplug'),
+        tradN('notifications.charge_suspended_ev.unplug'),
       ]
         .filter(Boolean)
         .join('\n'),

@@ -717,7 +717,7 @@
       "title": "Charging stopped – {{cp_name}}",
       "body": "Your charging session has ended on charge point {{cp_name}}."
     },
-    "charge_suspended_evse": {
+    "charge_suspended_ev": {
       "eLabel": "Vehicle charged",
       "eDesc" : "The vehicle has reached its target charge, you can unplug it.",
       "title": "Vehicle charged – {{cp_name}}",

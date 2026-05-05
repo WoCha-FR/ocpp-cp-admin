@@ -633,6 +633,56 @@ describe('ocpp-server-16 — DataTransfer', () => {
   });
 });
 
+// ── StatusNotification ──
+describe('ocpp-server-16 — StatusNotification', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 0 });
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('updates cpstatus and has_connector0 for connectorId=0', () => {
+    client._handlers['StatusNotification']({ connectorId: 0, status: 'Unavailable', errorCode: 'NoError' });
+    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith(
+      'CP001', 'Unavailable', true,
+      expect.objectContaining({ error_code: 'NoError' })
+    );
+    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith('CP001', { has_connector0: 1 });
+  });
+
+  it('derives cpstatus from connectors when cpstatus=Unavailable and connector0 absent', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Unavailable', has_connector0: 0 });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([{ cnstatus: 'Available' }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError' });
+    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', 'Available', true);
+  });
+
+  it('derives cpstatus from connectors even when has_connector0=1 (regression: CP shows Unavailable but connector is Available)', () => {
+    // Scenario: CP sent connector0=Unavailable first, then connector1=Available
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Unavailable', has_connector0: 1 });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([{ cnstatus: 'Available' }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError' });
+    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', 'Available', true);
+  });
+
+  it('keeps cpstatus=Unavailable when all connectors are Unavailable and has_connector0=1', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Unavailable', has_connector0: 1 });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([{ cnstatus: 'Unavailable' }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Unavailable', errorCode: 'NoError' });
+    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', 'Unavailable', true);
+  });
+
+  it('does not derive cpstatus when cpstatus is not Unavailable', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1 });
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
+    expect(mockDb.updateChargepointStatus).not.toHaveBeenCalled();
+  });
+});
+
 // ── DiagnosticsStatusNotification ──
 describe('ocpp-server-16 — DiagnosticsStatusNotification', () => {
   let client;

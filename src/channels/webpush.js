@@ -65,7 +65,7 @@ function getPushMeta(event, data) {
     },
     transaction_started: { icon: '▶️', tag: `tx-start-${data.transaction_id}` },
     transaction_stopped: { icon: '🏁', tag: `tx-stop-${data.transaction_id}` },
-    charge_suspended_evse: { icon: '⏸️', tag: `suspended-${data.identity}-${data.connector_id}` },
+    charge_suspended_ev: { icon: '⏸️', tag: `suspended-${data.identity}-${data.connector_id}` },
   };
   return meta[event] || { icon: '📨', tag: `generic-${Date.now()}` };
 }
