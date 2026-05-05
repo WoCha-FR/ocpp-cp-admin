@@ -288,12 +288,16 @@ function register16Handlers(client, loggedHandle) {
         params.vendorId || null,
         params.vendorErrorCode || null
       );
-      if (params.connectorId !== 0 && cp.cpstatus === 'Unavailable') {
-        const allConnectors = db.getConnectorsByChargepoint(cp.id);
-        const derivedStatus = allConnectors.some((c) => c.cnstatus !== 'Unavailable')
-          ? 'Available'
-          : 'Unavailable';
-        db.updateChargepointStatus(identity, derivedStatus, true);
+      if (params.connectorId !== 0) {
+        if (cp.cpstatus === 'Unavailable') {
+          const allConnectors = db.getConnectorsByChargepoint(cp.id);
+          const derivedStatus = allConnectors.some((c) => c.cnstatus !== 'Unavailable')
+            ? 'Available'
+            : 'Unavailable';
+          db.updateChargepointStatus(identity, derivedStatus, true);
+        } else {
+          db.updateChargepointStatus(identity, undefined, true);
+        }
       }
       const updatedCp = db.getChargepointByIdentity(identity);
       const connectors = db.getConnectorsByChargepoint(cp.id);

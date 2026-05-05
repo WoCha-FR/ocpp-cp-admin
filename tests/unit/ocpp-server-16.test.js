@@ -676,10 +676,10 @@ describe('ocpp-server-16 — StatusNotification', () => {
     expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', 'Unavailable', true);
   });
 
-  it('does not derive cpstatus when cpstatus is not Unavailable', () => {
+  it('updates last_heartbeat without changing cpstatus when cpstatus is not Unavailable', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1 });
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
-    expect(mockDb.updateChargepointStatus).not.toHaveBeenCalled();
+    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', undefined, true);
   });
 });
 

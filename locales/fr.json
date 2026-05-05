@@ -363,7 +363,8 @@
       "expiredtag": "Tag expiré",
       "wrongsite": "Mauvais site",
       "usernotauthorized": "Utilisateur non autorisé",
-      "usernotlinked": "Utilisateur non lié au site"
+      "usernotlinked": "Utilisateur non lié au site",
+      "autotagrfid": "Duplication Tag Virtuel"
     }
   },
   "users": {

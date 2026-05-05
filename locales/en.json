@@ -363,7 +363,8 @@
       "expiredtag": "Expired tag",
       "wrongsite": "Wrong site",
       "usernotauthorized": "User not authorized",
-      "usernotlinked": "User not linked to site"
+      "usernotlinked": "User not linked to site",
+      "autotagrfid": "Virtual Tag Duplication"
     }
   },
   "users": {
