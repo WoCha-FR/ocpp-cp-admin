@@ -616,6 +616,22 @@ describe('ocpp-server-16 — MeterValues', () => {
     });
     expect(mockDb.updateChargepointMeterValue).toHaveBeenCalledWith(1, 2000);
   });
+
+  it('returns {} and skips DB update for unknown transactionId', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue(null);
+    const result = client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 99999,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [{ measurand: 'Power.Active.Import', value: '3.5', unit: 'kW' }],
+        },
+      ],
+    });
+    expect(result).toEqual({});
+    expect(mockDb.updateTransactionPowerEnergy).not.toHaveBeenCalled();
+  });
 });
 
 // ── DataTransfer ──

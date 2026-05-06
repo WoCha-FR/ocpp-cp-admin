@@ -707,6 +707,15 @@ function register16Handlers(client, loggedHandle) {
       }
 
       if (params.transactionId) {
+        // Transaction connue ?
+        const tx = db.getTransactionByTransactionId(params.transactionId);
+        if (!tx) {
+          logger.warn(
+            `Received MeterValues for unknown transaction ${params.transactionId} from ${identity}`
+          );
+          return {};
+        }
+        // Oui, on traite le meter value
         db.updateTransactionPowerEnergy(
           params.transactionId,
           powerW !== null ? Math.round(powerW) : null,
