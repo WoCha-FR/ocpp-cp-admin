@@ -276,6 +276,7 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e)
 let currentUser = null;
 let currentPage = 'dashboard';
 let currentDetailCpId = null;
+let currentDetailCpIdentity = null;
 let ws = null;
 let appSettings = new Proxy({}, {
   set(target, key, value) {
@@ -762,34 +763,53 @@ function connectWebSocket() {
   };
 }
 
+function shouldRefreshDetail(eventType, cpIdentity, cpId) {
+  if (currentPage !== 'chargepointdetail') return true;
+  const isOurCp = (cpIdentity && cpIdentity === currentDetailCpIdentity)
+    || (cpId && cpId === currentDetailCpId);
+  if (!isOurCp) return false;
+  const tabEvents = {
+    infos:        ['chargepoint_update', 'status_update', 'chargepoint_heartbeat', 'chargepoint_connected', 'chargepoint_disconnected', 'transaction_start', 'transaction_stop'],
+    connecteurs:  ['status_update', 'chargepoint_connected', 'chargepoint_disconnected', 'meter_values'],
+    transactions: ['transaction_start', 'transaction_stop'],
+    logs:         [],
+    config:       [],
+  };
+  return (tabEvents[currentDetailTab] || []).includes(eventType);
+}
+
 function handleRealtimeEvent(type, data) {
   switch (type) {
     case 'chargepoint_connected':
       toast(t('realTime.cpConnected', { identity: data.identity }), 'success');
-      refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_connected', data.identity, null)) refreshCurrentPage();
       break;
     case 'chargepoint_disconnected':
       toast(t('realTime.cpDisconnected', { identity: data.identity }), 'error');
-      refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_disconnected', data.identity, null)) refreshCurrentPage();
       break;
     case 'chargepoint_update':
+      if (shouldRefreshDetail('chargepoint_update', data.identity, data.id)) refreshCurrentPage();
+      break;
     case 'status_update':
+      if (shouldRefreshDetail('status_update', data.chargepoint?.identity, data.chargepoint?.id)) refreshCurrentPage();
+      break;
     case 'chargepoint_heartbeat':
-      refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_heartbeat', data.identity, null)) refreshCurrentPage();
       break;
     case 'transaction_start':
       toast(t('realTime.transactionStarted', { identity: data.identity, connectorId: data.connectorId }), 'info');
-      refreshCurrentPage();
+      if (shouldRefreshDetail('transaction_start', data.identity, null)) refreshCurrentPage();
       break;
     case 'transaction_stop':
       toast(t('realTime.transactionStopped', { identity: data.identity }), 'info');
-      refreshCurrentPage();
+      if (shouldRefreshDetail('transaction_stop', data.identity, null)) refreshCurrentPage();
       break;
     case 'meter_values':
-      refreshCurrentPage();
+      if (shouldRefreshDetail('meter_values', data.identity, null)) refreshCurrentPage();
       break;
     case 'ocpp_message':
-      if (currentPage === 'chargepointdetail' && currentDetailTab === 'logs') refreshCurrentPage();
+      if (currentPage === 'chargepointdetail' && currentDetailTab === 'logs' && data.identity === currentDetailCpIdentity) refreshCurrentPage();
       break;
     case 'chargepoint_config_update':
       // Ne pas rafraîchir toute la page, juste la config si on est sur le détail
@@ -1474,6 +1494,7 @@ async function showChargepointDetail(id, tab) {
   });
   try {
     const cp = await api('GET', `/chargepoints/${id}`);
+    currentDetailCpIdentity = cp.identity;
 
     document.getElementById('pageTitle').textContent = cp.identity;
     document.getElementById('topbarActions').innerHTML = `<button class="btn btn-secondary" onclick="navigate('chargepoints')">← ${t('chargepoint.cpBtnReturn')}</button>`;
