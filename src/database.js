@@ -1652,6 +1652,116 @@ function getAuthorizedUsersBySite(siteId) {
   return rows;
 }
 
+// ── Charging Profiles ──
+function createChargingProfile(data) {
+  const {
+    chargepoint_id,
+    profile_id,
+    connector_id = 0,
+    evse_id = null,
+    stack_level = 0,
+    profile_purpose,
+    profile_kind,
+    recurrency_kind = null,
+    valid_from = null,
+    valid_to = null,
+    charging_rate_unit = 'W',
+    schedule_json,
+    ocpp_version = '1.6',
+  } = data;
+  const result = db
+    .prepare(
+      `
+    INSERT INTO charging_profiles
+      (chargepoint_id, profile_id, connector_id, evse_id, stack_level,
+       profile_purpose, profile_kind, recurrency_kind, valid_from, valid_to,
+       charging_rate_unit, schedule_json, ocpp_version, status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')
+  `
+    )
+    .run(
+      chargepoint_id,
+      profile_id,
+      connector_id,
+      evse_id,
+      stack_level,
+      profile_purpose,
+      profile_kind,
+      recurrency_kind,
+      valid_from,
+      valid_to,
+      charging_rate_unit,
+      typeof schedule_json === 'string' ? schedule_json : JSON.stringify(schedule_json),
+      ocpp_version
+    );
+  return result.lastInsertRowid;
+}
+
+function getChargingProfiles(chargepointId, filters = {}) {
+  const conditions = ['chargepoint_id = ?'];
+  const params = [chargepointId];
+  if (filters.connector_id !== undefined) {
+    conditions.push('connector_id = ?');
+    params.push(filters.connector_id);
+  }
+  if (filters.profile_purpose) {
+    conditions.push('profile_purpose = ?');
+    params.push(filters.profile_purpose);
+  }
+  if (filters.status) {
+    conditions.push('status = ?');
+    params.push(filters.status);
+  }
+  return db
+    .prepare(
+      `SELECT * FROM charging_profiles WHERE ${conditions.join(' AND ')} ORDER BY stack_level, connector_id`
+    )
+    .all(...params);
+}
+
+function getChargingProfileById(id) {
+  return db.prepare('SELECT * FROM charging_profiles WHERE id = ?').get(id);
+}
+
+function updateChargingProfileStatus(id, status) {
+  db.prepare(
+    `UPDATE charging_profiles SET status = ?, updated_at = datetime('now') WHERE id = ?`
+  ).run(status, id);
+}
+
+function deleteChargingProfileById(id) {
+  db.prepare('DELETE FROM charging_profiles WHERE id = ?').run(id);
+}
+
+function clearChargingProfilesByFilter(chargepointId, filters = {}) {
+  const conditions = ['chargepoint_id = ?'];
+  const params = [chargepointId];
+  if (filters.profile_id !== undefined) {
+    conditions.push('profile_id = ?');
+    params.push(filters.profile_id);
+  }
+  if (filters.connector_id !== undefined) {
+    conditions.push('connector_id = ?');
+    params.push(filters.connector_id);
+  }
+  if (filters.profile_purpose) {
+    conditions.push('profile_purpose = ?');
+    params.push(filters.profile_purpose);
+  }
+  if (filters.stack_level !== undefined) {
+    conditions.push('stack_level = ?');
+    params.push(filters.stack_level);
+  }
+  db.prepare(`DELETE FROM charging_profiles WHERE ${conditions.join(' AND ')}`).run(...params);
+}
+
+function getNextProfileId(chargepointId) {
+  const row = db
+    .prepare('SELECT MAX(profile_id) AS max_id FROM charging_profiles WHERE chargepoint_id = ?')
+    .get(chargepointId);
+  return (row?.max_id ?? 0) + 1;
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -1756,4 +1866,11 @@ module.exports = {
   getUsersBySiteRole,
   getAllManagers,
   getAuthorizedUsersBySite,
+  createChargingProfile,
+  getChargingProfiles,
+  getChargingProfileById,
+  updateChargingProfileStatus,
+  deleteChargingProfileById,
+  clearChargingProfilesByFilter,
+  getNextProfileId,
 };

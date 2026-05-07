@@ -142,10 +142,17 @@ function register16Handlers(client, loggedHandle) {
       }
 
       try {
-        logger.debug(
-          `[InitSeq] Calling ClearChargingProfile on ${identity} to clear charging profiles`
-        );
-        await callClient16(identity, 'ClearChargingProfile', {});
+        const existingProfiles = db.getChargingProfiles(cp.id);
+        if (existingProfiles.length === 0) {
+          logger.debug(
+            `[InitSeq] Calling ClearChargingProfile on ${identity} to clear charging profiles`
+          );
+          await callClient16(identity, 'ClearChargingProfile', {});
+        } else {
+          logger.debug(
+            `[InitSeq] ${identity} has ${existingProfiles.length} managed profile(s) — skipping ClearChargingProfile`
+          );
+        }
       } catch (e) {
         logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
       }

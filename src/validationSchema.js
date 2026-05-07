@@ -663,6 +663,130 @@ const NotificationsLogQuery = {
   },
 };
 
+const CreateChargingProfile = {
+  connector_id: {
+    in: ['body'],
+    isInt: { options: { min: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_CONNECTOR_ID',
+  },
+  stack_level: {
+    in: ['body'],
+    optional: { options: { values: 'falsy' } },
+    isInt: { options: { min: 0, max: 99 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_STACK_LEVEL',
+  },
+  profile_purpose: {
+    in: ['body'],
+    isIn: { options: [['ChargePointMaxProfile', 'TxDefaultProfile', 'ChargingStationMaxProfile']] },
+    errorMessage: 'VALIDATION_PROFILE_PURPOSE',
+  },
+  profile_kind: {
+    in: ['body'],
+    isIn: { options: [['Absolute', 'Recurring', 'Relative']] },
+    errorMessage: 'VALIDATION_PROFILE_KIND',
+  },
+  recurrency_kind: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isIn: { options: [['Daily', 'Weekly']] },
+    errorMessage: 'VALIDATION_RECURRENCY_KIND',
+  },
+  valid_from: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isISO8601: true,
+    errorMessage: 'VALIDATION_DATE_FROM',
+  },
+  valid_to: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isISO8601: true,
+    errorMessage: 'VALIDATION_DATE_TO',
+  },
+  charging_rate_unit: {
+    in: ['body'],
+    isIn: { options: [['W', 'A']] },
+    errorMessage: 'VALIDATION_CHARGING_RATE_UNIT',
+  },
+  schedule_periods: {
+    in: ['body'],
+    isArray: { options: { min: 1, max: 99 } },
+    errorMessage: 'VALIDATION_SCHEDULE_PERIODS',
+  },
+  'schedule_periods.*.startPeriod': {
+    in: ['body'],
+    isInt: { options: { min: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_PERIOD_START',
+  },
+  'schedule_periods.*.limit': {
+    in: ['body'],
+    isFloat: { options: { min: 0 } },
+    toFloat: true,
+    errorMessage: 'VALIDATION_PERIOD_LIMIT',
+  },
+  'schedule_periods.*.numberPhases': {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isInt: { options: { min: 1, max: 3 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_PERIOD_PHASES',
+  },
+};
+
+const ClearChargingProfileFilter = {
+  profile_id: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_PROFILE_ID',
+  },
+  connector_id: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isInt: { options: { min: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_CONNECTOR_ID',
+  },
+  profile_purpose: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isIn: { options: [['ChargePointMaxProfile', 'TxDefaultProfile', 'ChargingStationMaxProfile']] },
+    errorMessage: 'VALIDATION_PROFILE_PURPOSE',
+  },
+  stack_level: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isInt: { options: { min: 0, max: 99 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_STACK_LEVEL',
+  },
+};
+
+const GetCompositeSchedule = {
+  connector_id: {
+    in: ['body'],
+    isInt: { options: { min: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_CONNECTOR_ID',
+  },
+  duration: {
+    in: ['body'],
+    isInt: { options: { min: 1 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_DURATION',
+  },
+  charging_rate_unit: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isIn: { options: [['W', 'A']] },
+    errorMessage: 'VALIDATION_CHARGING_RATE_UNIT',
+  },
+};
+
 module.exports = {
   User,
   UserUpdate,
@@ -699,4 +823,7 @@ module.exports = {
   PushUnsubscribe,
   PendingChargepointIdentity,
   NotificationsLogQuery,
+  CreateChargingProfile,
+  ClearChargingProfileFilter,
+  GetCompositeSchedule,
 };

@@ -28,6 +28,7 @@ const mockDb = {
   markChargepointInitialized: jest.fn(),
   getChargepointConfigByKey: jest.fn(),
   getChargepointOverrideConfigs: jest.fn(() => []),
+  getChargingProfiles: jest.fn(() => []),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -183,6 +184,36 @@ describe('ocpp-server-16 — BootNotification', () => {
       value: '60',
     });
     expect(mockDb.upsertChargepointConfig).toHaveBeenCalledWith(1, 'HeartbeatInterval', '60', false);
+  });
+
+  it('skips ClearChargingProfile when chargepoint has managed profiles in DB', async () => {
+    mockDb.getChargingProfiles.mockReturnValue([{ id: 1, profile_id: 10 }]);
+
+    client.call
+      .mockResolvedValueOnce({})  // ClearCache
+      .mockResolvedValueOnce({});  // GetConfiguration {} (no ClearChargingProfile slot)
+
+    mockConnectedClients.set('CP001', client);
+    client._handlers['BootNotification']({ chargePointVendor: 'X' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(client.call).not.toHaveBeenCalledWith('ClearChargingProfile', expect.anything());
+    expect(client.call).toHaveBeenCalledWith('GetConfiguration', {});
+  });
+
+  it('sends ClearChargingProfile when chargepoint has no profiles in DB', async () => {
+    mockDb.getChargingProfiles.mockReturnValue([]);
+
+    client.call
+      .mockResolvedValueOnce({})  // ClearCache
+      .mockResolvedValueOnce({})  // ClearChargingProfile
+      .mockResolvedValueOnce({});  // GetConfiguration {}
+
+    mockConnectedClients.set('CP001', client);
+    client._handlers['BootNotification']({ chargePointVendor: 'X' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(client.call).toHaveBeenCalledWith('ClearChargingProfile', {});
   });
 
   it('calls GetConfiguration without params first (happy path, no pagination)', async () => {

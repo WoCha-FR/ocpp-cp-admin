@@ -256,6 +256,106 @@ describe('database — Chargepoint initialization flags', () => {
   });
 });
 
+// ── Charging Profiles ──
+describe('database — Charging Profiles CRUD', () => {
+  let cpId;
+  let profileDbId;
+
+  const baseProfile = {
+    connector_id: 0,
+    stack_level: 0,
+    profile_purpose: 'ChargePointMaxProfile',
+    profile_kind: 'Absolute',
+    charging_rate_unit: 'W',
+    schedule_json: JSON.stringify({
+      chargingRateUnit: 'W',
+      chargingSchedulePeriod: [{ startPeriod: 0, limit: 11000 }],
+    }),
+  };
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-PROFILE-TEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-PROFILE-TEST').id;
+  });
+
+  it('getNextProfileId returns 1 when no profiles exist', () => {
+    expect(db.getNextProfileId(cpId)).toBe(1);
+  });
+
+  it('createChargingProfile inserts and returns a numeric id', () => {
+    profileDbId = db.createChargingProfile({ chargepoint_id: cpId, profile_id: 1, ...baseProfile });
+    expect(typeof profileDbId).toBe('number');
+    expect(profileDbId).toBeGreaterThan(0);
+  });
+
+  it('getNextProfileId increments after insert', () => {
+    expect(db.getNextProfileId(cpId)).toBe(2);
+  });
+
+  it('getChargingProfileById returns the inserted profile with Pending status', () => {
+    const p = db.getChargingProfileById(profileDbId);
+    expect(p).toBeDefined();
+    expect(p.profile_purpose).toBe('ChargePointMaxProfile');
+    expect(p.status).toBe('Pending');
+    expect(p.chargepoint_id).toBe(cpId);
+  });
+
+  it('getChargingProfiles returns list for chargepoint', () => {
+    const list = db.getChargingProfiles(cpId);
+    expect(list.length).toBeGreaterThanOrEqual(1);
+    expect(list[0].chargepoint_id).toBe(cpId);
+  });
+
+  it('getChargingProfiles filters by profile_purpose', () => {
+    db.createChargingProfile({ chargepoint_id: cpId, profile_id: 2, ...baseProfile, profile_purpose: 'TxDefaultProfile' });
+    const list = db.getChargingProfiles(cpId, { profile_purpose: 'ChargePointMaxProfile' });
+    expect(list.every((p) => p.profile_purpose === 'ChargePointMaxProfile')).toBe(true);
+  });
+
+  it('getChargingProfiles filters by connector_id', () => {
+    db.createChargingProfile({ chargepoint_id: cpId, profile_id: 3, ...baseProfile, connector_id: 1 });
+    const list = db.getChargingProfiles(cpId, { connector_id: 0 });
+    expect(list.every((p) => p.connector_id === 0)).toBe(true);
+  });
+
+  it('updateChargingProfileStatus changes status to Accepted', () => {
+    db.updateChargingProfileStatus(profileDbId, 'Accepted');
+    expect(db.getChargingProfileById(profileDbId).status).toBe('Accepted');
+  });
+
+  it('updateChargingProfileStatus changes status to Rejected', () => {
+    db.updateChargingProfileStatus(profileDbId, 'Rejected');
+    expect(db.getChargingProfileById(profileDbId).status).toBe('Rejected');
+  });
+
+  it('deleteChargingProfileById removes the profile', () => {
+    const tempId = db.createChargingProfile({ chargepoint_id: cpId, profile_id: 99, ...baseProfile });
+    db.deleteChargingProfileById(tempId);
+    expect(db.getChargingProfileById(tempId)).toBeUndefined();
+  });
+
+  it('clearChargingProfilesByFilter removes by profile_purpose', () => {
+    expect(db.getChargingProfiles(cpId, { profile_purpose: 'TxDefaultProfile' }).length).toBeGreaterThan(0);
+    db.clearChargingProfilesByFilter(cpId, { profile_purpose: 'TxDefaultProfile' });
+    expect(db.getChargingProfiles(cpId, { profile_purpose: 'TxDefaultProfile' }).length).toBe(0);
+  });
+
+  it('clearChargingProfilesByFilter with no filter removes all profiles for the chargepoint', () => {
+    expect(db.getChargingProfiles(cpId).length).toBeGreaterThan(0);
+    db.clearChargingProfilesByFilter(cpId);
+    expect(db.getChargingProfiles(cpId).length).toBe(0);
+  });
+
+  it('ON DELETE CASCADE removes profiles when chargepoint is deleted', () => {
+    db.upsertChargepoint('CP-CASCADE-TEST', { cpstatus: 'Available', connected: 0 });
+    const cascadeCp = db.getChargepointByIdentity('CP-CASCADE-TEST');
+    db.createChargingProfile({ chargepoint_id: cascadeCp.id, profile_id: 1, ...baseProfile });
+    expect(db.getChargingProfiles(cascadeCp.id).length).toBe(1);
+    db.deleteChargepoint(cascadeCp.id);
+    expect(db.getChargingProfiles(cascadeCp.id).length).toBe(0);
+  });
+});
+
 // ── HeartbeatInterval — comportement watchdog ──
 describe('database — HeartbeatInterval global config', () => {
   it('HeartbeatInterval est présent dans la migration', () => {

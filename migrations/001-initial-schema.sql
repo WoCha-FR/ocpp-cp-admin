@@ -160,6 +160,26 @@ CREATE TABLE IF NOT EXISTS chargepoint_init_variables (
   UNIQUE (component, variable, attribute)
 );
 
+CREATE TABLE IF NOT EXISTS charging_profiles (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  chargepoint_id      INTEGER NOT NULL REFERENCES chargepoints(id) ON DELETE CASCADE,
+  profile_id          INTEGER NOT NULL,           -- chargingProfileId (OCPP)
+  connector_id        INTEGER NOT NULL DEFAULT 0, -- 0 = borne entière (1.6) / null = CS (2.0.1)
+  evse_id             INTEGER,                    -- OCPP 2.0.1 seulement
+  stack_level         INTEGER NOT NULL DEFAULT 0,
+  profile_purpose     TEXT NOT NULL,              -- ChargePointMaxProfile | TxDefaultProfile (1.6) | ChargingStationMaxProfile | TxDefaultProfile (2.0.1)
+  profile_kind        TEXT NOT NULL,              -- Absolute | Recurring | Relative
+  recurrency_kind     TEXT,                       -- Daily | Weekly
+  valid_from          TEXT,                       -- ISO datetime
+  valid_to            TEXT,                       -- ISO datetime
+  charging_rate_unit  TEXT NOT NULL DEFAULT 'W',  -- W | A
+  schedule_json       TEXT NOT NULL,              -- JSON complet du chargingSchedule (ou tableau pour 2.0.1)
+  ocpp_version        TEXT NOT NULL DEFAULT '1.6',
+  status              TEXT NOT NULL DEFAULT 'Pending', -- Pending | Accepted | Rejected
+  created_at          TEXT DEFAULT (datetime('now')),
+  updated_at          TEXT DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   transaction_id TEXT(36) UNIQUE,
@@ -271,6 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_auth_events_tag ON id_tags_events(id_tag);
 CREATE INDEX IF NOT EXISTS idx_notif_prefs_user ON notification_preferences(user_id);
 CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_notif_log_user ON notification_log(user_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_charging_profiles_cp ON charging_profiles(chargepoint_id, connector_id, stack_level);
 
 INSERT OR IGNORE INTO users (useremail, password, role, shortname) VALUES ('admin@admin.com', '$2b$10$OHSdpl41Wv4kFwtYqfmyRu2rjEzi1QI3n6W33S1gn1PVn5Ue4mTTG', 'admin', 'Admin');
 INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
@@ -290,7 +311,7 @@ INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
   ('MinimumStatusDuration', '0', 0),
   ('ResetRetries', '3', 0),
   ('LocalAuthListEnabled', 'false', 0);
-INSERT  OR IGNORE INTO chargepoint_init_variables (component, variable, value) VALUES
+INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, value) VALUES
   -- OCPPCommCtrlr — Communication OCPP
   ('OCPPCommCtrlr', 'HeartbeatInterval',       '600'),   -- secondes (0 = utiliser intervalle réseau)
   ('OCPPCommCtrlr', 'WebSocketPingInterval',   '60'),    -- secondes

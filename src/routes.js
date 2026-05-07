@@ -10,6 +10,7 @@ const db = require('./database');
 const {
   getConnectedClients,
   callClient,
+  broadcast,
   disconnectChargepoint,
   pendingRemoteStarts,
   pendingChargepoints,
@@ -830,6 +831,276 @@ router.post(
       res.json({ result });
     } catch (e) {
       db.addOcppMessage(cp.id, 'chargepoint', 'CALLERROR', method, { error: e.message });
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+// ── Charging Profiles ──
+router.get(
+  '/chargepoints/:id/charging-profiles',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    res.json(db.getChargingProfiles(cp.id));
+  }
+);
+
+router.post(
+  '/chargepoints/:id/charging-profiles',
+  requireManager,
+  ...validateSchema(schema.IdParam, schema.CreateChargingProfile),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    const {
+      connector_id = 0,
+      stack_level = 0,
+      profile_purpose,
+      profile_kind,
+      recurrency_kind,
+      valid_from,
+      valid_to,
+      charging_rate_unit = 'W',
+      schedule_periods,
+    } = req.body;
+
+    const profile_id = db.getNextProfileId(cp.id);
+    const chargingSchedule = {
+      chargingRateUnit: charging_rate_unit,
+      chargingSchedulePeriod: schedule_periods.map((p) => {
+        const period = { startPeriod: p.startPeriod, limit: p.limit };
+        if (p.numberPhases != null) period.numberPhases = p.numberPhases;
+        return period;
+      }),
+    };
+
+    const dbId = db.createChargingProfile({
+      chargepoint_id: cp.id,
+      profile_id,
+      connector_id,
+      stack_level,
+      profile_purpose,
+      profile_kind,
+      recurrency_kind: recurrency_kind || null,
+      valid_from: valid_from || null,
+      valid_to: valid_to || null,
+      charging_rate_unit,
+      schedule_json: chargingSchedule,
+    });
+
+    const csChargingProfiles = {
+      chargingProfileId: profile_id,
+      stackLevel: stack_level,
+      chargingProfilePurpose: profile_purpose,
+      chargingProfileKind: profile_kind,
+      chargingSchedule,
+    };
+    if (recurrency_kind) csChargingProfiles.recurrencyKind = recurrency_kind;
+    if (valid_from) csChargingProfiles.validFrom = valid_from;
+    if (valid_to) csChargingProfiles.validTo = valid_to;
+
+    try {
+      const result = await callClient(cp.identity, 'SetChargingProfile', {
+        connectorId: connector_id,
+        csChargingProfiles,
+      });
+      const status = result?.status ?? 'Rejected';
+      db.updateChargingProfileStatus(dbId, status);
+      broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      res.json({ status, id: dbId });
+    } catch (e) {
+      db.deleteChargingProfileById(dbId);
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+router.post(
+  '/chargepoints/:id/charging-profiles/clear',
+  requireManager,
+  ...validateSchema(schema.IdParam, schema.ClearChargingProfileFilter),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    const { profile_id, connector_id, profile_purpose, stack_level } = req.body;
+
+    const ocppParams = {};
+    if (profile_id != null) ocppParams.id = profile_id;
+    if (connector_id != null) ocppParams.connectorId = connector_id;
+    if (profile_purpose) ocppParams.chargingProfilePurpose = profile_purpose;
+    if (stack_level != null) ocppParams.stackLevel = stack_level;
+
+    try {
+      const result = await callClient(cp.identity, 'ClearChargingProfile', ocppParams);
+      if (result?.status === 'Accepted') {
+        const filters = {};
+        if (profile_id != null) filters.profile_id = profile_id;
+        if (connector_id != null) filters.connector_id = connector_id;
+        if (profile_purpose) filters.profile_purpose = profile_purpose;
+        if (stack_level != null) filters.stack_level = stack_level;
+        db.clearChargingProfilesByFilter(cp.id, filters);
+        broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      }
+      res.json({ status: result?.status ?? 'Unknown' });
+    } catch (e) {
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+router.post(
+  '/chargepoints/:id/charging-profiles/push-all',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    const profiles = db.getChargingProfiles(cp.id);
+
+    try {
+      await callClient(cp.identity, 'ClearChargingProfile', {});
+    } catch (e) {
+      return errorResponse(res, 500, e.message);
+    }
+
+    let accepted = 0,
+      rejected = 0,
+      errors = 0;
+    for (const p of profiles) {
+      let chargingSchedule;
+      try {
+        chargingSchedule = JSON.parse(p.schedule_json);
+      } catch {
+        chargingSchedule = {};
+      }
+
+      const csChargingProfiles = {
+        chargingProfileId: p.profile_id,
+        stackLevel: p.stack_level,
+        chargingProfilePurpose: p.profile_purpose,
+        chargingProfileKind: p.profile_kind,
+        chargingSchedule,
+      };
+      if (p.recurrency_kind) csChargingProfiles.recurrencyKind = p.recurrency_kind;
+      if (p.valid_from) csChargingProfiles.validFrom = p.valid_from;
+      if (p.valid_to) csChargingProfiles.validTo = p.valid_to;
+
+      try {
+        const result = await callClient(cp.identity, 'SetChargingProfile', {
+          connectorId: p.connector_id,
+          csChargingProfiles,
+        });
+        const status = result?.status ?? 'Rejected';
+        db.updateChargingProfileStatus(p.id, status);
+        status === 'Accepted' ? accepted++ : rejected++;
+      } catch {
+        errors++;
+      }
+    }
+
+    broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+    res.json({ sent: profiles.length, accepted, rejected, errors });
+  }
+);
+
+router.post(
+  '/chargepoints/:id/charging-profiles/composite-schedule',
+  requireManager,
+  ...validateSchema(schema.IdParam, schema.GetCompositeSchedule),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    const { connector_id, duration, charging_rate_unit } = req.body;
+    const ocppParams = { connectorId: connector_id, duration };
+    if (charging_rate_unit) ocppParams.chargingRateUnit = charging_rate_unit;
+
+    try {
+      const result = await callClient(cp.identity, 'GetCompositeSchedule', ocppParams);
+      res.json(result);
+    } catch (e) {
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+router.delete(
+  '/chargepoints/:id/charging-profiles/:profileDbId',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    const profileDbId = Number(req.params.profileDbId);
+    if (!profileDbId) return res.status(400).json({ error: 'VALIDATION_ID' });
+    const profile = db.getChargingProfileById(profileDbId);
+    if (!profile || profile.chargepoint_id !== cp.id) {
+      return res.status(404).json({ error: 'ERR_PROFILE_NOT_FOUND' });
+    }
+
+    try {
+      const result = await callClient(cp.identity, 'ClearChargingProfile', {
+        id: profile.profile_id,
+      });
+      if (result?.status === 'Accepted') {
+        db.deleteChargingProfileById(profileDbId);
+        broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      }
+      res.json({ status: result?.status ?? 'Unknown' });
+    } catch (e) {
       errorResponse(res, 500, e.message);
     }
   }
