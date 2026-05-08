@@ -787,6 +787,36 @@ const GetCompositeSchedule = {
   },
 };
 
+const CreateReservation = {
+  connector_id: {
+    in: ['body'],
+    isInt: { options: { min: 1 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_CONNECTOR_ID',
+  },
+  id_tag: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 1, max: 20 } },
+    trim: true,
+    errorMessage: 'VALIDATION_ID_TAG',
+  },
+  expiry_date: {
+    in: ['body'],
+    isISO8601: true,
+    errorMessage: 'VALIDATION_EXPIRY_DATE',
+  },
+};
+
+const ReservationIdParam = {
+  reservationId: {
+    in: ['params'],
+    isInt: { options: { min: 1 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_ID',
+  },
+};
+
 module.exports = {
   User,
   UserUpdate,
@@ -826,4 +856,6 @@ module.exports = {
   CreateChargingProfile,
   ClearChargingProfileFilter,
   GetCompositeSchedule,
+  CreateReservation,
+  ReservationIdParam,
 };

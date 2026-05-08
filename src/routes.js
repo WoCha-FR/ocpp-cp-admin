@@ -1106,6 +1106,104 @@ router.delete(
   }
 );
 
+// ── Reservations ──
+router.get(
+  '/chargepoints/:id/reservations',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    res.json(db.getReservationsByChargepoint(cp.id));
+  }
+);
+
+router.post(
+  '/chargepoints/:id/reservations',
+  requireManager,
+  ...validateSchema(schema.IdParam, schema.CreateReservation),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (!cp.feat_reservation)
+      return res.status(400).json({ error: 'ERR_RESERVATION_NOT_SUPPORTED' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    const { connector_id, id_tag, expiry_date } = req.body;
+    const reservation_id = db.getNextReservationId(cp.id);
+
+    try {
+      const result = await callClient(cp.identity, 'ReserveNow', {
+        connectorId: connector_id,
+        expiryDate: expiry_date,
+        idTag: id_tag,
+        reservationId: reservation_id,
+      });
+      const status = result?.status ?? 'Rejected';
+      if (status !== 'Accepted') return res.status(422).json({ status });
+      const id = db.createReservation({
+        chargepoint_id: cp.id,
+        connector_id,
+        reservation_id,
+        id_tag,
+        expiry_date,
+        created_by: req.user.id,
+      });
+      broadcast('reservation_updated', { chargepoint_id: cp.id });
+      res.status(201).json({ status, id });
+    } catch (e) {
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+router.delete(
+  '/reservations/:reservationId',
+  requireManager,
+  ...validateSchema(schema.ReservationIdParam),
+  async (req, res) => {
+    const reservation = db.getReservationById(Number(req.params.reservationId));
+    if (!reservation) return res.status(404).json({ error: 'ERR_RESERVATION_NOT_FOUND' });
+    const cp = db.getChargepointById(reservation.chargepoint_id);
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    try {
+      const result = await callClient(cp.identity, 'CancelReservation', {
+        reservationId: reservation.reservation_id,
+      });
+      const status = result?.status ?? 'Rejected';
+      if (status === 'Accepted') {
+        db.updateReservationStatus(reservation.id, 'Cancelled');
+        broadcast('reservation_updated', { chargepoint_id: cp.id });
+      }
+      res.json({ status });
+    } catch (e) {
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
 // ══════════════════════════════════════
 //  CONNECTEURS (vue globale)
 // ══════════════════════════════════════

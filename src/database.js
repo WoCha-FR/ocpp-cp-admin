@@ -520,7 +520,7 @@ function updateChargepointStatus(identity, status, connected, extras) {
       values.push(extras.vendor_error_code || null);
     }
   }
-  updates.push("last_heartbeat = datetime('now')");
+  updates.push("last_heartbeat = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')");
   values.push(identity);
   db.prepare(`UPDATE chargepoints SET ${updates.join(', ')} WHERE identity = ?`).run(...values);
   return getChargepointByIdentity(identity);
@@ -1762,6 +1762,61 @@ function getNextProfileId(chargepointId) {
   return (row?.max_id ?? 0) + 1;
 }
 
+// ── Reservations ──
+function getNextReservationId(chargepointId) {
+  const row = db
+    .prepare(
+      "SELECT MAX(reservation_id) AS max_id FROM reservations WHERE chargepoint_id = ? AND status NOT IN ('Cancelled','Expired','Fulfilled')"
+    )
+    .get(chargepointId);
+  return (row?.max_id ?? 0) + 1;
+}
+
+function createReservation({
+  chargepoint_id,
+  connector_id = null,
+  evse_id = null,
+  reservation_id,
+  id_tag,
+  expiry_date,
+  created_by,
+}) {
+  const result = db
+    .prepare(
+      'INSERT INTO reservations (chargepoint_id, connector_id, evse_id, reservation_id, id_tag, expiry_date, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    )
+    .run(chargepoint_id, connector_id, evse_id, reservation_id, id_tag, expiry_date, created_by);
+  return result.lastInsertRowid;
+}
+
+function getReservationsByChargepoint(chargepointId) {
+  return db
+    .prepare(
+      'SELECT r.*, u.shortname AS created_by_name FROM reservations r LEFT JOIN users u ON r.created_by = u.id WHERE r.chargepoint_id = ? ORDER BY r.created_at DESC'
+    )
+    .all(chargepointId);
+}
+
+function getReservationById(id) {
+  return db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+}
+
+function updateReservationStatus(id, status) {
+  db.prepare('UPDATE reservations SET status = ? WHERE id = ?').run(status, id);
+}
+
+function activateReservationByConnector(chargepointId, connectorId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Active' WHERE chargepoint_id = ? AND connector_id = ? AND status = 'Pending'"
+  ).run(chargepointId, connectorId);
+}
+
+function expireReservationByConnector(chargepointId, connectorId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Expired' WHERE chargepoint_id = ? AND connector_id = ? AND status IN ('Pending','Active')"
+  ).run(chargepointId, connectorId);
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -1873,4 +1928,11 @@ module.exports = {
   deleteChargingProfileById,
   clearChargingProfilesByFilter,
   getNextProfileId,
+  getNextReservationId,
+  createReservation,
+  getReservationsByChargepoint,
+  getReservationById,
+  updateReservationStatus,
+  activateReservationByConnector,
+  expireReservationByConnector,
 };

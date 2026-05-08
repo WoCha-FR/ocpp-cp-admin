@@ -774,6 +774,7 @@ function shouldRefreshDetail(eventType, cpIdentity, cpId) {
     transactions: ['transaction_start', 'transaction_stop'],
     logs:         [],
     profiles:     ['chargepoint_connected', 'chargepoint_disconnected'],
+    reservations: ['chargepoint_connected', 'chargepoint_disconnected'],
     config:       ['chargepoint_connected', 'chargepoint_disconnected'],
   };
   return (tabEvents[currentDetailTab] || []).includes(eventType);
@@ -817,6 +818,9 @@ function handleRealtimeEvent(type, data) {
       break;
     case 'charging_profile_updated':
       if (currentPage === 'chargepointdetail' && currentDetailTab === 'profiles' && data.chargepoint_id == currentDetailCpId) loadChargingProfiles(data.chargepoint_id);
+      break;
+    case 'reservation_updated':
+      if (currentPage === 'chargepointdetail' && currentDetailTab === 'reservations' && data.chargepoint_id == currentDetailCpId) loadReservations(data.chargepoint_id);
       break;
     case 'pending_chargepoint':
       if (currentUser && currentUser.role === 'admin') {
@@ -1510,6 +1514,7 @@ async function showChargepointDetail(id, tab) {
         <button class="tab ${currentDetailTab === 'transactions' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'transactions')">⚡ ${t('navigation.transactions')}</button>
         <button class="tab ${currentDetailTab === 'logs' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'logs')">📨 ${t('chargepoint.cpLogsTitle')}</button>
         <button class="tab ${currentDetailTab === 'profiles' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'profiles')">📊 ${t('chargepoint.cpProfilesTitle')}</button>
+        ${cp.feat_reservation ? `<button class="tab ${currentDetailTab === 'reservations' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'reservations')">🗓 ${t('chargepoint.cpReservationsTitle')}</button>` : ''}
         ${adminManage() ? `<button class="tab ${currentDetailTab === 'config' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'config')">⚙️ ${t('chargepoint.cpConfTitle')}</button>` : ''}
       </div>
       <div class="card">
@@ -1534,6 +1539,8 @@ async function showChargepointDetail(id, tab) {
       await renderDetailTabLogs(cp);
     } else if (currentDetailTab === 'profiles') {
       await renderDetailTabChargingProfiles(cp);
+    } else if (currentDetailTab === 'reservations') {
+      await renderDetailTabReservations(cp);
     }
   } catch (err) {
     toast(err.message, 'error');
@@ -1986,6 +1993,143 @@ async function loadChargingProfiles(cpId) {
     `;
   } catch (err) {
     container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+// ── Onglet Réservations ─────────────────────────────────────────────
+async function renderDetailTabReservations(cp) {
+  document.getElementById('detailTabContent').innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <h3>🗓 ${t('chargepoint.cpReservationsTitle')}</h3>
+        ${canManage() ? `
+        <button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="showCreateReservationModal(${cp.id})">+ ${t('chargepoint.cpReservationsNew')}</button>
+        ` : ''}
+      </div>
+      ${!cp.feat_reservation ? `<div style="margin:8px 16px;padding:10px 14px;background:var(--warning-surface);border-left:4px solid var(--warning);border-radius:4px;font-size:13px">⚠️ ${t('chargepoint.cpReservationsNoSupport')}</div>` : ''}
+      <div id="reservationsTableContainer">
+        <p class="text-muted" style="padding:12px 16px">${t('chargepoint.cpReservationsLoading')}</p>
+      </div>
+    </div>
+  `;
+  await loadReservations(cp.id);
+}
+
+async function loadReservations(cpId) {
+  const container = document.getElementById('reservationsTableContainer');
+  if (!container) return;
+  try {
+    const reservations = await api('GET', `/chargepoints/${cpId}/reservations`);
+    if (reservations.length === 0) {
+      container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('chargepoint.cpReservationsNone')}</p>`;
+      return;
+    }
+    const reservationBadgeClass = (s) => s === 'Active' || s === 'Fulfilled' ? 'badge-green' : s === 'Pending' ? 'badge-yellow' : 'badge-gray';
+    container.innerHTML = `
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr>
+            <th>${t('chargepoint.cpReservationConnector')}</th>
+            <th>idTag</th>
+            <th>${t('chargepoint.cpReservationExpiry')}</th>
+            <th>${t('common.status')}</th>
+            <th>${t('chargepoint.cpReservationCreatedBy')}</th>
+            <th>${t('common.date')}</th>
+            ${canManage() ? `<th>${t('common.actions')}</th>` : ''}
+          </tr></thead>
+          <tbody>
+            ${reservations.map(r => `
+              <tr>
+                <td>${r.connector_id}</td>
+                <td>${escapeHtml(r.id_tag)}</td>
+                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.expiry_date)}</td>
+                <td><span class="badge ${reservationBadgeClass(r.status)}">${r.status}</span></td>
+                <td class="text-muted" style="font-size:12px">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
+                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.created_at)}</td>
+                ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (err) {
+    container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function showCreateReservationModal(cpId) {
+  let connectors = [], tags = [];
+  try {
+    [connectors, tags] = await Promise.all([
+      api('GET', `/chargepoints/${cpId}`).then(cp => cp.connectors || []),
+      api('GET', '/id-tags'),
+    ]);
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  const isAutoTag = (tag) => tag.id_tag === 'ADMIN' || tag.id_tag.startsWith('MGR-') || tag.id_tag.startsWith('WEB-');
+  const visibleTags = tags.filter(tag => !isAutoTag(tag) && tag.active);
+  const minExpiry = new Date(Date.now() + 60000);
+  openModal(`
+    <h2>🗓 ${t('chargepoint.cpReservationsNew')}</h2>
+    <div class="form-group">
+      <label>${t('chargepoint.cpReservationConnector')}</label>
+      <select id="resConnectorId">
+        ${connectors.filter(c => c.connector_id > 0).map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>${t('chargepoint.cpReservationIdTag')}</label>
+      <select id="resIdTag">
+        ${visibleTags.map(tag => `<option value="${escapeHtml(tag.id_tag)}">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>${t('chargepoint.cpReservationExpiry')}</label>
+      <input type="text" id="resExpiry"/>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" id="resSubmitBtn" onclick="withBtn(this, () => submitCreateReservation(${cpId}))">${t('common.save')}</button>
+    </div>
+  `);
+  const lc = getLocaleConfig();
+  flatpickr('#resExpiry', {
+    enableTime: true,
+    dateFormat: 'Z',
+    altInput: true,
+    altFormat: lc.dateTimeFormat,
+    time_24hr: true,
+    locale: lc.flatpickrLocale,
+    minDate: minExpiry,
+    defaultDate: minExpiry,
+  });
+}
+
+async function submitCreateReservation(cpId) {
+  const connector_id = Number(document.getElementById('resConnectorId').value);
+  const id_tag = document.getElementById('resIdTag').value;
+  const expiry_date = new Date(document.getElementById('resExpiry').value).toISOString();
+  const result = await api('POST', `/chargepoints/${cpId}/reservations`, { connector_id, id_tag, expiry_date });
+  if (result.status === 'Accepted') {
+    closeModal();
+    toast(t('chargepoint.cpReservationCreated'), 'success');
+    await loadReservations(cpId);
+  } else {
+    toast(t('chargepoint.cpReservationRejected', { status: result.status }), 'error');
+  }
+}
+
+async function cancelReservation(cpId, reservationId) {
+  if (!confirm(t('chargepoint.cpReservationCancelConfirm'))) return;
+  const result = await api('DELETE', `/reservations/${reservationId}`);
+  if (result.status === 'Accepted') {
+    toast(t('chargepoint.cpReservationCancelled'), 'success');
+    await loadReservations(cpId);
+  } else {
+    toast(t('chargepoint.cpReservationRejected', { status: result.status }), 'error');
   }
 }
 

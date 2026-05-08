@@ -29,6 +29,8 @@ const mockDb = {
   getChargepointConfigByKey: jest.fn(),
   getChargepointOverrideConfigs: jest.fn(() => []),
   getChargingProfiles: jest.fn(() => []),
+  activateReservationByConnector: jest.fn(),
+  expireReservationByConnector: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -727,6 +729,66 @@ describe('ocpp-server-16 — StatusNotification', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1 });
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
     expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', undefined, true);
+  });
+});
+
+// ── StatusNotification — reservation sync ──
+describe('ocpp-server-16 — StatusNotification reservation sync', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('calls activateReservationByConnector when status=Reserved and feat_reservation=true', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 1,
+    });
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Reserved', errorCode: 'NoError' });
+    expect(mockDb.activateReservationByConnector).toHaveBeenCalledWith(1, 1);
+    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+  });
+
+  it.each(['Available', 'Faulted', 'Unavailable', 'Finishing'])(
+    'calls expireReservationByConnector when status=%s and feat_reservation=true',
+    (status) => {
+      mockDb.getChargepointByIdentity.mockReturnValue({
+        id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 1,
+      });
+      client._handlers['StatusNotification']({ connectorId: 1, status, errorCode: 'NoError' });
+      expect(mockDb.expireReservationByConnector).toHaveBeenCalledWith(1, 1);
+      expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
+    }
+  );
+
+  it('does not call reservation functions when feat_reservation is falsy', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 0,
+    });
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Reserved', errorCode: 'NoError' });
+    expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+  });
+
+  it('does not call reservation functions for connectorId=0', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Unavailable', has_connector0: 0, feat_reservation: 1,
+    });
+    client._handlers['StatusNotification']({ connectorId: 0, status: 'Reserved', errorCode: 'NoError' });
+    expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+  });
+
+  it('does not call reservation functions for status=Charging (not in trigger list)', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 1,
+    });
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
+    expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
   });
 });
 

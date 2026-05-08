@@ -180,6 +180,19 @@ CREATE TABLE IF NOT EXISTS charging_profiles (
   updated_at          TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS reservations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chargepoint_id INTEGER NOT NULL REFERENCES chargepoints(id) ON DELETE CASCADE,
+  connector_id INTEGER,           -- OCPP 1.6 : connectorId (NULL si 2.0.1)
+  evse_id INTEGER,                -- OCPP 2.0.1 : evseId (NULL si 1.6)
+  reservation_id INTEGER NOT NULL,
+  id_tag TEXT NOT NULL,
+  expiry_date TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'Pending',
+  created_at TEXT DEFAULT (datetime('now')),
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   transaction_id TEXT(36) UNIQUE,

@@ -42,6 +42,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - [Scripts de développement](#scripts-de-développement)
 - [Base de données](#base-de-données)
   - [Sauvegarde](#sauvegarde)
+  - [Tables principales](#tables-principales)
 
 ---
 
@@ -73,6 +74,18 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Création et gestion de badges (ID Tags)
 - Génération automatique de tags web pour les démarrages à distance
 - Suivi des expirations et des rejets d'autorisation
+
+### Profils de charge (Charging Profiles)
+- Création et application de profils de charge sur les bornes via `SetChargingProfile`
+- Types supportés : `ChargePointMaxProfile` (limite globale de la borne) et `TxDefaultProfile` (profil par défaut de transaction)
+- Planification périodique (hebdomadaire) ou relative avec puissance configurable par plage horaire
+- Effacement ciblé ou global des profils via `ClearChargingProfile`
+- Synchronisation à la reconnexion de la borne : les profils existants sont ré-appliqués automatiquement
+
+### Réservations de connecteurs
+- Réservation d'un connecteur pour un badge RFID donné via `ReserveNow` OCPP 1.6
+- Annulation à la demande via `CancelReservation`
+- Expiration automatique des réservations détectée par `StatusNotification`
 
 ### Notifications multi-canaux
 - **Email** (SMTP via Nodemailer)
@@ -826,6 +839,10 @@ L'application implémente le protocole OCPP 1.6-J (JSON sur WebSocket) pour la c
 | **RemoteStopTransaction** | Arrêter une session de charge à distance |
 | **GetConfiguration** | Récupérer la configuration de la borne |
 | **ChangeConfiguration** | Modifier un paramètre de configuration |
+| **SetChargingProfile** | Appliquer un profil de charge sur un connecteur |
+| **ClearChargingProfile** | Effacer un ou plusieurs profils de charge |
+| **ReserveNow** | Réserver un connecteur pour un badge RFID |
+| **CancelReservation** | Annuler une réservation existante |
 
 Une interface de commande générique permet d'envoyer n'importe quelle commande OCPP via l'API.
 
@@ -1108,6 +1125,8 @@ backup:
 | `transactions_values` | Données de comptage temps réel |
 | `ocpp_messages` | Journal des messages OCPP |
 | `users_password_resets` | Jetons de réinitialisation de mot de passe |
+| `charging_profiles` | Profils de charge appliqués sur les bornes |
+| `reservations` | Réservations de connecteurs actives et historiques |
 
 ---
 

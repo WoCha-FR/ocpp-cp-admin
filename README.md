@@ -74,6 +74,18 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Automatic web tag generation for remote starts
 - Expiration and authorization rejection tracking
 
+### Charging Profiles
+- Create and apply charging profiles on charge points via `SetChargingProfile`
+- Supported purposes: `ChargePointMaxProfile` (global station power cap) and `TxDefaultProfile` (default transaction profile)
+- Periodic (weekly) or relative scheduling with configurable power per time slot
+- Targeted or full profile clearing via `ClearChargingProfile`
+- Automatic re-application of managed profiles on charge point reconnection
+
+### Connector Reservations
+- Reserve a connector for a given RFID badge via OCPP 1.6 `ReserveNow`
+- On-demand cancellation via `CancelReservation`
+- Automatic expiration detection from `StatusNotification`
+
 ### Multi-Channel Notifications
 - **Email** (SMTP via Nodemailer)
 - **Web Push** (browser notifications via Service Worker)
@@ -832,6 +844,10 @@ The application implements the OCPP 1.6-J protocol (JSON over WebSocket) for com
 | **RemoteStopTransaction** | Stop a charging session remotely |
 | **GetConfiguration** | Retrieve charge point configuration |
 | **ChangeConfiguration** | Modify a configuration parameter |
+| **SetChargingProfile** | Apply a charging profile on a connector |
+| **ClearChargingProfile** | Clear one or more charging profiles |
+| **ReserveNow** | Reserve a connector for an RFID badge |
+| **CancelReservation** | Cancel an existing reservation |
 
 A generic command interface allows sending any OCPP command through the API.
 
@@ -1114,6 +1130,8 @@ backup:
 | `transactions_values` | Real-time metering data |
 | `ocpp_messages` | OCPP message log |
 | `users_password_resets` | Password reset tokens |
+| `charging_profiles` | Charging profiles applied to charge points |
+| `reservations` | Active and historical connector reservations |
 
 ---
 

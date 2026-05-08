@@ -356,6 +356,130 @@ describe('database — Charging Profiles CRUD', () => {
   });
 });
 
+// ── Reservations ──
+describe('database — Reservations CRUD', () => {
+  let cpId, userId;
+
+  const EXPIRY = '2030-01-01T12:00:00Z';
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-RESV-TEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-RESV-TEST').id;
+    const user = db.createUser('resv@example.com', 'Str0ng!Pass', 'user', 'ResvUser');
+    userId = user.id;
+  });
+
+  afterAll(() => {
+    db.deleteUser(userId);
+  });
+
+  it('getNextReservationId returns 1 when no active reservations', () => {
+    expect(db.getNextReservationId(cpId)).toBe(1);
+  });
+
+  it('createReservation inserts and returns a numeric id', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 1,
+      reservation_id: 1,
+      id_tag: 'TAG001',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    expect(typeof id).toBe('number');
+    expect(id).toBeGreaterThan(0);
+  });
+
+  it('getNextReservationId increments after a Pending reservation', () => {
+    expect(db.getNextReservationId(cpId)).toBe(2);
+  });
+
+  it('getReservationsByChargepoint returns inserted reservation with created_by_name', () => {
+    const rows = db.getReservationsByChargepoint(cpId);
+    expect(rows.length).toBe(1);
+    expect(rows[0].id_tag).toBe('TAG001');
+    expect(rows[0].status).toBe('Pending');
+    expect(rows[0].created_by_name).toBe('ResvUser');
+  });
+
+  it('getReservationById returns the row', () => {
+    const rows = db.getReservationsByChargepoint(cpId);
+    const resv = db.getReservationById(rows[0].id);
+    expect(resv).toBeDefined();
+    expect(resv.id_tag).toBe('TAG001');
+  });
+
+  it('getReservationById returns undefined for unknown id', () => {
+    expect(db.getReservationById(99999)).toBeUndefined();
+  });
+
+  it('activateReservationByConnector sets Pending → Active', () => {
+    const rows = db.getReservationsByChargepoint(cpId);
+    const id = rows[0].id;
+    db.activateReservationByConnector(cpId, 1);
+    expect(db.getReservationById(id).status).toBe('Active');
+  });
+
+  it('getNextReservationId still increments when reservation is Active', () => {
+    expect(db.getNextReservationId(cpId)).toBe(2);
+  });
+
+  it('updateReservationStatus changes status to Cancelled', () => {
+    const rows = db.getReservationsByChargepoint(cpId);
+    const id = rows[0].id;
+    db.updateReservationStatus(id, 'Cancelled');
+    expect(db.getReservationById(id).status).toBe('Cancelled');
+  });
+
+  it('getNextReservationId resets to 1 when only Cancelled reservations exist', () => {
+    expect(db.getNextReservationId(cpId)).toBe(1);
+  });
+
+  it('expireReservationByConnector sets Pending/Active → Expired', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 2,
+      reservation_id: 1,
+      id_tag: 'TAG002',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.expireReservationByConnector(cpId, 2);
+    expect(db.getReservationById(id).status).toBe('Expired');
+  });
+
+  it('expireReservationByConnector also expires Active reservations', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 3,
+      reservation_id: 2,
+      id_tag: 'TAG003',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 3);
+    expect(db.getReservationById(id).status).toBe('Active');
+    db.expireReservationByConnector(cpId, 3);
+    expect(db.getReservationById(id).status).toBe('Expired');
+  });
+
+  it('ON DELETE CASCADE removes reservations when chargepoint is deleted', () => {
+    db.upsertChargepoint('CP-RESV-CASCADE', { cpstatus: 'Available', connected: 0 });
+    const cascadeCp = db.getChargepointByIdentity('CP-RESV-CASCADE');
+    db.createReservation({
+      chargepoint_id: cascadeCp.id,
+      connector_id: 1,
+      reservation_id: 1,
+      id_tag: 'TAGX',
+      expiry_date: EXPIRY,
+      created_by: null,
+    });
+    expect(db.getReservationsByChargepoint(cascadeCp.id).length).toBe(1);
+    db.deleteChargepoint(cascadeCp.id);
+    expect(db.getReservationsByChargepoint(cascadeCp.id).length).toBe(0);
+  });
+});
+
 // ── HeartbeatInterval — comportement watchdog ──
 describe('database — HeartbeatInterval global config', () => {
   it('HeartbeatInterval est présent dans la migration', () => {

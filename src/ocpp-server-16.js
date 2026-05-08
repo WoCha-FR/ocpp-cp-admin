@@ -296,6 +296,13 @@ function register16Handlers(client, loggedHandle) {
         params.vendorErrorCode || null
       );
       if (params.connectorId !== 0) {
+        if (cp.feat_reservation) {
+          if (params.status === 'Reserved') {
+            db.activateReservationByConnector(cp.id, params.connectorId);
+          } else if (['Available', 'Faulted', 'Unavailable', 'Finishing'].includes(params.status)) {
+            db.expireReservationByConnector(cp.id, params.connectorId);
+          }
+        }
         if (cp.cpstatus === 'Unavailable') {
           const allConnectors = db.getConnectorsByChargepoint(cp.id);
           const derivedStatus = allConnectors.some((c) => c.cnstatus !== 'Unavailable')
