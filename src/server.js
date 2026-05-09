@@ -211,9 +211,10 @@ const indexHtmlWithNoncePlaceholder = indexHtml.replace(
 );
 
 // Préparer le HTML final avec les traductions injectées (une seule fois, mis en cache)
+// Inject near <head> so it is independent from script tag formatting (nonce/SRI/order).
 const finalHtmlTemplate = indexHtmlWithNoncePlaceholder.replace(
-  '<script src="https://cdn.jsdelivr.net/npm/i18next',
-  i18nScript + '<script src="https://cdn.jsdelivr.net/npm/i18next'
+  '<head>',
+  `<head>\n  ${i18nScript}`
 );
 
 // ── Pages légales (publiques, sans authentification) ──

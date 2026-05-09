@@ -354,6 +354,11 @@ function getLocaleConfig() {
   return cfg || { dateFns: 'fr-FR', dateFormat: 'd/m/Y', dateTimeFormat: 'd/m/Y H:i' };
 }
 
+function getFlatpickrLocaleOption(localeConfig = getLocaleConfig()) {
+  const localeKey = localeConfig?.flatpickrLocale;
+  if (!localeKey || localeKey === 'default') return flatpickr.l10ns.default;
+  return flatpickr.l10ns[localeKey] || flatpickr.l10ns.default;
+}
 async function loadFlatpickrLocale(lang) {
   const lc = getLocaleConfig();
   const fpLocale = lc.flatpickrLocale;
@@ -2116,7 +2121,7 @@ async function showCreateReservationModal(cpId) {
     altInput: true,
     altFormat: lc.dateTimeFormat,
     time_24hr: true,
-    locale: lc.flatpickrLocale,
+    locale: getFlatpickrLocaleOption(lc),
     minDate: minExpiry,
     defaultDate: minExpiry,
   });
@@ -2295,7 +2300,7 @@ async function showCreateProfileModal(cpId, isOnline) {
   `);
   // Init flatpickr on date fields
   const lc = getLocaleConfig();
-  const fpOpts = { enableTime: true, dateFormat: 'Z', altInput: true, altFormat: lc.dateTimeFormat, time_24hr: true, locale: lc.flatpickrLocale };
+  const fpOpts = { enableTime: true, dateFormat: 'Z', altInput: true, altFormat: lc.dateTimeFormat, time_24hr: true, locale: getFlatpickrLocaleOption(lc) };
   flatpickr('#cp_valid_from', fpOpts);
   flatpickr('#cp_valid_to', fpOpts);
   // Init conditional display
@@ -3119,7 +3124,7 @@ async function showCreateIdTagModal() {
     altInput: true,
     altFormat: lc.dateTimeFormat,
     time_24hr: true,
-    locale: lc.flatpickrLocale
+    locale: getFlatpickrLocaleOption(lc)
   });
 }
 
@@ -3174,7 +3179,7 @@ async function showEditIdTagModal(id) {
     altInput: true,
     altFormat: lc.dateTimeFormat,
     time_24hr: true,
-    locale: lc.flatpickrLocale,
+    locale: getFlatpickrLocaleOption(lc),
     defaultDate: tag.expiry_date || null
   });
 }
@@ -3742,7 +3747,7 @@ async function renderTransactions() {
       dateFormat: 'Y-m-d',
       altInput: true,
       altFormat: lc.dateFormat,
-      locale: lc.flatpickrLocale,
+      locale: getFlatpickrLocaleOption(lc),
       defaultDate: null,
       onChange: function () { applyTxFilters(); }
     };
@@ -3945,7 +3950,7 @@ async function renderMyTransactions() {
       dateFormat: 'Y-m-d',
       altInput: true,
       altFormat: lc.dateFormat,
-      locale: lc.flatpickrLocale,
+      locale: getFlatpickrLocaleOption(lc),
       defaultDate: null,
       onChange: function () { applyMyTxFilters(); }
     };
@@ -5625,6 +5630,8 @@ function callByName(name, args) {
 function parseLiteral(token, ctx) {
   const tkn = token.trim();
   if (tkn === 'this') return ctx.el;
+  if (tkn === 'this.value') return ctx.el?.value;
+  if (tkn === 'this.checked') return Boolean(ctx.el?.checked);
   if (tkn === 'event') return ctx.event;
   if (tkn === 'true') return true;
   if (tkn === 'false') return false;
@@ -5707,6 +5714,12 @@ function runDataHandler(code, el, event) {
       withBtn(el, () => runCallExpression(inner, ctx));
       continue;
     }
+    const withBtnDirectMatch = stmt.match(/^withBtn\(this,\s*([A-Za-z_$][\w$]*)\)$/);
+    if (withBtnDirectMatch) {
+      const fnName = withBtnDirectMatch[1];
+      withBtn(el, () => callByName(fnName, []));
+      continue;
+    }
     runCallExpression(stmt, ctx);
   }
   return shouldReturnFalse ? false : undefined;
@@ -5743,4 +5756,5 @@ loadAppSettings();
 </script>
 </body>
 </html>
+
 
