@@ -1533,7 +1533,7 @@ async function showChargepointDetail(id, tab) {
         <button class="tab ${currentDetailTab === 'transactions' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'transactions')">⚡ ${t('navigation.transactions')}</button>
         <button class="tab ${currentDetailTab === 'logs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'logs')">📨 ${t('chargepoint.cpLogsTitle')}</button>
         <button class="tab ${currentDetailTab === 'profiles' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'profiles')">📊 ${t('chargepoint.cpProfilesTitle')}</button>
-        ${cp.feat_reservation ? `<button class="tab ${currentDetailTab === 'reservations' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'reservations')">🗓 ${t('chargepoint.cpReservationsTitle')}</button>` : ''}
+        <button class="tab ${currentDetailTab === 'reservations' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'reservations')">🗓 ${t('chargepoint.cpReservationsTitle')}</button>
         ${adminManage() ? `<button class="tab ${currentDetailTab === 'config' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'config')">⚙️ ${t('chargepoint.cpConfTitle')}</button>` : ''}
       </div>
       <div class="card">

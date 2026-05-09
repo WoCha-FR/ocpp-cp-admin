@@ -4,7 +4,6 @@ const User = {
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_USER_EMAIL_INVALID',
   },
   password: {
@@ -19,7 +18,6 @@ const User = {
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 2, max: 50 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_USER_SHORTNAME',
   },
 };
@@ -30,7 +28,6 @@ const UserUpdate = {
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_USER_EMAIL_INVALID',
   },
   shortname: {
@@ -38,7 +35,6 @@ const UserUpdate = {
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 2, max: 50 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_USER_SHORTNAME',
   },
   password: {
@@ -57,7 +53,6 @@ const Site = {
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_,.' ]*$/ },
     isLength: { options: { min: 5, max: 75 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_SITE_NAME',
   },
   address: {
@@ -66,7 +61,6 @@ const Site = {
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9\-_,.' ]*$/ },
     isLength: { options: { min: 5, max: 255 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_SITE_ADDRESS',
   },
 };
@@ -77,7 +71,6 @@ const UserSite = {
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_USER_EMAIL_INVALID',
   },
 };
@@ -88,7 +81,6 @@ const ChargePoint = {
     matches: { options: /^[A-Z0-9-_]*$/ },
     isLength: { options: { min: 5, max: 45 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_CHARGEPOINT_IDENTITY',
   },
   name: {
@@ -97,7 +89,6 @@ const ChargePoint = {
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 5, max: 75 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_CHARGEPOINT_NAME',
   },
   password: {
@@ -138,7 +129,6 @@ const ConnectorDetails = {
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 1, max: 50 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_CONNECTOR_NAME',
   },
   connector_power: {
@@ -150,7 +140,6 @@ const ConnectorDetails = {
     in: ['body'],
     matches: { options: /^[a-zA-Z0-9-_ ]*$/ },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_CONNECTOR_TYPE',
   },
 };
@@ -170,7 +159,6 @@ const IdTag = {
     optional: { options: { values: 'falsy' } },
     isLength: { options: { min: 1, max: 255 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_IDTAG_DESCRIPTION',
   },
   expiry_date: {
@@ -189,7 +177,6 @@ const UserProfile = {
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_USER_EMAIL_INVALID',
   },
   shortname: {
@@ -198,7 +185,6 @@ const UserProfile = {
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
     isLength: { options: { min: 2, max: 50 } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_USER_SHORTNAME',
   },
   currentPassword: {
@@ -246,7 +232,6 @@ const ForgotPassword = {
     isEmail: { options: { allow_ip_domain: false } },
     normalizeEmail: { options: { gmail_remove_dots: false } },
     trim: true,
-    escape: true,
     errorMessage: 'VALIDATION_USER_EMAIL_INVALID',
   },
 };
