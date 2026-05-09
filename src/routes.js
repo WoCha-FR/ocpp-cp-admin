@@ -233,8 +233,8 @@ if (googleAuthEnabled) {
 const forgotPasswordLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5,
-  // Use the library helper for IP fallback to keep IPv6 handling safe.
-  keyGenerator: (req) => req.body?.useremail || ipKeyGenerator(req.ip),
+  // Limit by requester IP to avoid targeted account lockout via useremail keying.
+  keyGenerator: ipKeyGenerator,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'ERR_TOO_MANY_REQUESTS' },
@@ -360,8 +360,13 @@ router.get('/sites', requireAuth, (req, res) => {
 });
 
 router.get('/sites/:id', requireAuth, ...validateSchema(schema.IdParam), (req, res) => {
-  const site = db.getSiteById(Number(req.params.id));
+  const siteId = Number(req.params.id);
+  const site = db.getSiteById(siteId);
   if (!site) return res.status(404).json({ error: 'ERR_SITE_NOT_FOUND' });
+  const siteIds = getUserSiteIds(req);
+  if (siteIds !== null && !siteIds.includes(siteId)) {
+    return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
+  }
   res.json(site);
 });
 
@@ -603,7 +608,7 @@ router.put(
       return res.status(400).json({ error: result.array().map((e) => e.msg) });
     }
     const data = matchedData(req);
-    data.role = req.body.role; // role n'est pas dans le schéma de validation, on le prend directement depuis req.body
+    data.role = req.body.role; // role validated by schema.UserRole; kept explicit for readability
     try {
       const targetId = Number(req.params.id);
       const target = db.getUserById(targetId);
@@ -1838,6 +1843,13 @@ router.get('/id-tags', requireManager, (req, res) => {
 router.get('/id-tags/:id', requireManager, ...validateSchema(schema.IdParam), (req, res) => {
   const tag = db.getIdTagById(Number(req.params.id));
   if (!tag) return res.status(404).json({ error: 'ERR_TAG_NOT_FOUND' });
+  if (req.user.role !== 'admin') {
+    const managedSiteIds = getUserManagedSiteIds(req);
+    // Managers can access global tags (no site_id) or tags from managed sites only.
+    if (managedSiteIds !== null && tag.site_id && !managedSiteIds.includes(tag.site_id)) {
+      return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+    }
+  }
   res.json(tag);
 });
 
@@ -2446,7 +2458,7 @@ router.post(
   (req, res) => {
     const { endpoint } = req.body;
     if (endpoint) {
-      db.deletePushSubscription(endpoint);
+      db.deletePushSubscriptionByUser(req.user.id, endpoint);
     } else {
       db.deletePushSubscriptionsByUser(req.user.id);
     }

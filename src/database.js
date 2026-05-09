@@ -1559,6 +1559,13 @@ function deletePushSubscription(endpoint) {
   db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint);
 }
 
+function deletePushSubscriptionByUser(userId, endpoint) {
+  db.prepare('DELETE FROM push_subscriptions WHERE user_id = ? AND endpoint = ?').run(
+    userId,
+    endpoint
+  );
+}
+
 function deletePushSubscriptionsByUser(userId) {
   db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(userId);
 }
@@ -1913,6 +1920,7 @@ module.exports = {
   getPushSubscriptions,
   savePushSubscription,
   deletePushSubscription,
+  deletePushSubscriptionByUser,
   deletePushSubscriptionsByUser,
   addNotificationLog,
   getNotificationLog,

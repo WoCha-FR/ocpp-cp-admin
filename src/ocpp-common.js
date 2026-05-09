@@ -161,7 +161,9 @@ function createOCPPServerBase(options = {}) {
       return reject(400, 'Missing identity');
     }
     if (!OCPP_IDENTITY_RE.test(handshake.identity)) {
-      logger.warn(`Connection refused: invalid charge point identity format "${handshake.identity}"`);
+      logger.warn(
+        `Connection refused: invalid charge point identity format "${handshake.identity}"`
+      );
       return reject(400, 'Invalid identity format');
     }
 

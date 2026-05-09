@@ -69,7 +69,11 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         // Inline event handlers migrated to delegated data handlers.
-        scriptSrc: ["'self'", 'https://cdn.jsdelivr.net', (req, res) => `'nonce-${res.locals.cspNonce}'`],
+        scriptSrc: [
+          "'self'",
+          'https://cdn.jsdelivr.net',
+          (req, res) => `'nonce-${res.locals.cspNonce}'`,
+        ],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
         imgSrc: ["'self'", 'data:'],
         // 'self' couvre déjà les WebSockets vers la même origine (ws:// et wss://)
@@ -201,7 +205,10 @@ for (const lng of SUPPORTED_LANGUAGES) {
 const i18nScript = `<script nonce="__CSP_NONCE__">window.__I18N__=${JSON.stringify(i18nResources)};window.__SUPPORTED_LANGUAGES__=${JSON.stringify(SUPPORTED_LANGUAGES)};window.__DEFAULT_LANG__=${JSON.stringify(defaultLang)};window.__LANGUAGE_LABELS__=${JSON.stringify(languageLabels)};</script>`;
 
 // Apply CSP nonce placeholder to all script tags in the base HTML template.
-const indexHtmlWithNoncePlaceholder = indexHtml.replace(/<script\b/g, '<script nonce="__CSP_NONCE__"');
+const indexHtmlWithNoncePlaceholder = indexHtml.replace(
+  /<script\b/g,
+  '<script nonce="__CSP_NONCE__"'
+);
 
 // Préparer le HTML final avec les traductions injectées (une seule fois, mis en cache)
 const finalHtmlTemplate = indexHtmlWithNoncePlaceholder.replace(

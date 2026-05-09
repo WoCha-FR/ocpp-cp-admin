@@ -89,7 +89,12 @@ const OCPP16_ERROR_CODES = new Set([
 function sanitizeText(value, maxLen) {
   if (value == null) return null;
   const normalized = String(value)
-    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .split('')
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 32 && code !== 127;
+    })
+    .join('')
     .replace(/[<>]/g, '')
     .trim();
   if (!normalized) return null;
