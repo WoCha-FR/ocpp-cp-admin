@@ -156,6 +156,22 @@ describe('ocpp-server-16 — BootNotification', () => {
     expect(result.currentTime).toBeDefined();
   });
 
+  it('sanitizes BootNotification text fields before persisting', () => {
+    client._handlers['BootNotification']({
+      chargePointVendor: '<img src=x onerror=alert(1)>Vendor',
+      chargePointModel: 'M' + 'X'.repeat(80),
+      meterType: '  \u0000Bad<Type>  ',
+    });
+    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+      'CP001',
+      expect.objectContaining({
+        vendor: 'img src=x onerror=alert(1',
+        model: 'M' + 'X'.repeat(19),
+        meter_type: 'BadType',
+      })
+    );
+  });
+
   it('uses default 300s interval when config not found', () => {
     mockDb.getInitialChargepointConfigByKey.mockReturnValue(null);
     const result = client._handlers['BootNotification']({ chargePointVendor: 'X' });
@@ -701,6 +717,35 @@ describe('ocpp-server-16 — StatusNotification', () => {
       expect.objectContaining({ error_code: 'NoError' })
     );
     expect(mockDb.upsertChargepoint).toHaveBeenCalledWith('CP001', { has_connector0: 1 });
+  });
+
+  it('sanitizes StatusNotification fields before DB writes and notifications', () => {
+    client._handlers['StatusNotification']({
+      connectorId: 1,
+      status: 'InvalidStatus',
+      errorCode: 'BadCode',
+      info: '<script>alert(1)</script>',
+      vendorId: '  \u0001Vendor<id> ',
+      vendorErrorCode: '<err>',
+    });
+    expect(mockDb.upsertConnector).toHaveBeenCalledWith(
+      1,
+      1,
+      'Unavailable',
+      'OtherError',
+      'scriptalert(1)/script',
+      'Vendorid',
+      'err'
+    );
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'connector_error',
+      expect.objectContaining({
+        status: 'Unavailable',
+        error_code: 'OtherError',
+        info: 'scriptalert(1)/script',
+      }),
+      expect.any(Object)
+    );
   });
 
   it('derives cpstatus from connectors when cpstatus=Unavailable and connector0 absent', () => {

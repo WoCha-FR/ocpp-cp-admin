@@ -17,6 +17,7 @@ const refusedNotifCooldown = new Map();
 const wsRateTracker = new Map();
 const WS_RATE_MAX = 10;
 const WS_RATE_WINDOW_MS = 60 * 1000;
+const OCPP_IDENTITY_RE = /^[A-Z0-9_-]{5,45}$/;
 
 // ── Utilitaires ──
 function checkWsRateLimit(ip) {
@@ -158,6 +159,10 @@ function createOCPPServerBase(options = {}) {
 
     if (!handshake.identity) {
       return reject(400, 'Missing identity');
+    }
+    if (!OCPP_IDENTITY_RE.test(handshake.identity)) {
+      logger.warn(`Connection refused: invalid charge point identity format "${handshake.identity}"`);
+      return reject(400, 'Invalid identity format');
     }
 
     let cp = db.getChargepointByIdentity(handshake.identity);

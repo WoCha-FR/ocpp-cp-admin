@@ -95,6 +95,22 @@ describe('ocpp-common — getConnectedClients', () => {
   });
 });
 
+// ── createOCPPServerBase auth validation ──
+describe('ocpp-common — createOCPPServerBase auth', () => {
+  it('rejects invalid identity format before DB checks', () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'cp<script>',
+      remoteAddress: '127.0.0.1',
+    });
+    expect(reject).toHaveBeenCalledWith(400, 'Invalid identity format');
+    expect(accept).not.toHaveBeenCalled();
+    expect(mockDb.getChargepointByIdentity).not.toHaveBeenCalled();
+  });
+});
+
 // ── registerHandlersFn / registerCallClientImpl ──
 describe('ocpp-common — register helpers', () => {
   it('registers 1.6 and 2.0.1 handler fns without error', () => {

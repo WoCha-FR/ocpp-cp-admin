@@ -54,6 +54,53 @@ const OCPP16_STANDARD_KEYS = [
   'ReserveConnectorZeroSupported',
 ];
 
+const OCPP16_CONNECTOR_STATUSES = new Set([
+  'Available',
+  'Preparing',
+  'Charging',
+  'SuspendedEVSE',
+  'SuspendedEV',
+  'Finishing',
+  'Reserved',
+  'Unavailable',
+  'Faulted',
+]);
+
+const OCPP16_ERROR_CODES = new Set([
+  'ConnectorLockFailure',
+  'EVCommunicationError',
+  'GroundFailure',
+  'HighTemperature',
+  'InternalError',
+  'LocalListConflict',
+  'NoError',
+  'OtherError',
+  'OverCurrentFailure',
+  'OverVoltage',
+  'PowerMeterFailure',
+  'PowerSwitchFailure',
+  'ReaderFailure',
+  'ResetFailure',
+  'StrongRiderFailure',
+  'UnderVoltage',
+  'WeakSignal',
+]);
+
+function sanitizeText(value, maxLen) {
+  if (value == null) return null;
+  const normalized = String(value)
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/[<>]/g, '')
+    .trim();
+  if (!normalized) return null;
+  return normalized.slice(0, maxLen);
+}
+
+function sanitizeEnum(value, allowed, fallback) {
+  if (typeof value !== 'string') return fallback;
+  return allowed.has(value) ? value : fallback;
+}
+
 // ── Commandes CSMS → borne (OCPP 1.6) ──
 async function callClient16(identity, method, params) {
   const client = getConnectedClients().get(identity);
@@ -116,15 +163,24 @@ function register16Handlers(client, loggedHandle) {
 
   // ── BootNotification ──
   loggedHandle('BootNotification', (params) => {
+    const safeVendor = sanitizeText(params.chargePointVendor, 25);
+    const safeModel = sanitizeText(params.chargePointModel, 20);
+    const safeSerial = sanitizeText(params.chargePointSerialNumber, 25);
+    const safeFirmware = sanitizeText(params.firmwareVersion, 50);
+    const safeIccid = sanitizeText(params.iccid, 20);
+    const safeImsi = sanitizeText(params.imsi, 20);
+    const safeMeterSn = sanitizeText(params.meterSerialNumber, 25);
+    const safeMeterType = sanitizeText(params.meterType, 25);
+
     db.upsertChargepoint(identity, {
-      vendor: params.chargePointVendor || null,
-      model: params.chargePointModel || null,
-      serial_number: params.chargePointSerialNumber || null,
-      firmware_version: params.firmwareVersion || null,
-      iccid: params.iccid || null,
-      imsi: params.imsi || null,
-      meter_sn: params.meterSerialNumber || null,
-      meter_type: params.meterType || null,
+      vendor: safeVendor,
+      model: safeModel,
+      serial_number: safeSerial,
+      firmware_version: safeFirmware,
+      iccid: safeIccid,
+      imsi: safeImsi,
+      meter_sn: safeMeterSn,
+      meter_type: safeMeterType,
       cpstatus: 'Available',
       connected: 1,
     });
@@ -275,12 +331,18 @@ function register16Handlers(client, loggedHandle) {
   loggedHandle('StatusNotification', (params) => {
     const cp = db.getChargepointByIdentity(identity);
     if (cp) {
+      const safeStatus = sanitizeEnum(params.status, OCPP16_CONNECTOR_STATUSES, 'Unavailable');
+      const safeErrorCode = sanitizeEnum(params.errorCode, OCPP16_ERROR_CODES, 'OtherError');
+      const safeInfo = sanitizeText(params.info, 255);
+      const safeVendorId = sanitizeText(params.vendorId, 255);
+      const safeVendorErrorCode = sanitizeText(params.vendorErrorCode, 255);
+
       if (params.connectorId === 0) {
-        db.updateChargepointStatus(identity, params.status, true, {
-          error_code: params.errorCode,
-          error_info: params.info,
-          vendor_id: params.vendorId || null,
-          vendor_error_code: params.vendorErrorCode || null,
+        db.updateChargepointStatus(identity, safeStatus, true, {
+          error_code: safeErrorCode,
+          error_info: safeInfo,
+          vendor_id: safeVendorId,
+          vendor_error_code: safeVendorErrorCode,
         });
         db.upsertChargepoint(identity, { has_connector0: 1 });
       }
@@ -289,17 +351,17 @@ function register16Handlers(client, loggedHandle) {
       db.upsertConnector(
         cp.id,
         params.connectorId,
-        params.status,
-        params.errorCode,
-        params.info,
-        params.vendorId || null,
-        params.vendorErrorCode || null
+        safeStatus,
+        safeErrorCode,
+        safeInfo,
+        safeVendorId,
+        safeVendorErrorCode
       );
       if (params.connectorId !== 0) {
         if (cp.feat_reservation) {
-          if (params.status === 'Reserved') {
+          if (safeStatus === 'Reserved') {
             db.activateReservationByConnector(cp.id, params.connectorId);
-          } else if (['Available', 'Faulted', 'Unavailable', 'Finishing'].includes(params.status)) {
+          } else if (['Available', 'Faulted', 'Unavailable', 'Finishing'].includes(safeStatus)) {
             db.expireReservationByConnector(cp.id, params.connectorId);
           }
         }
@@ -317,7 +379,7 @@ function register16Handlers(client, loggedHandle) {
       const connectors = db.getConnectorsByChargepoint(cp.id);
       broadcast('status_update', { chargepoint: updatedCp, connectors });
       if (
-        params.status === 'Available' &&
+        safeStatus === 'Available' &&
         (previousStatus === 'Unavailable' || previousStatus === 'Faulted')
       ) {
         notifications
@@ -336,7 +398,7 @@ function register16Handlers(client, loggedHandle) {
           )
           .catch(() => {});
       }
-      if (params.status === 'Unavailable') {
+      if (safeStatus === 'Unavailable') {
         notifications
           .emit(
             'connector_unavailable',
@@ -353,9 +415,9 @@ function register16Handlers(client, loggedHandle) {
           )
           .catch(() => {});
       }
-      if (params.status === 'Faulted' || (params.errorCode && params.errorCode !== 'NoError')) {
+      if (safeStatus === 'Faulted' || safeErrorCode !== 'NoError') {
         logger.warn(
-          `Connector error on ${identity} #${params.connectorId}: status=${params.status} errorCode=${params.errorCode}`
+          `Connector error on ${identity} #${params.connectorId}: status=${safeStatus} errorCode=${safeErrorCode}`
         );
         notifications
           .emit(
@@ -363,9 +425,9 @@ function register16Handlers(client, loggedHandle) {
             {
               identity,
               connector_id: params.connectorId,
-              status: params.status,
-              error_code: params.errorCode,
-              info: params.info || null,
+              status: safeStatus,
+              error_code: safeErrorCode,
+              info: safeInfo || null,
               cp_name: updatedCp ? updatedCp.cpname : null,
               cn_name:
                 connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
@@ -376,7 +438,7 @@ function register16Handlers(client, loggedHandle) {
           )
           .catch(() => {});
       }
-      if (params.connectorId > 0 && params.status === 'SuspendedEV') {
+      if (params.connectorId > 0 && safeStatus === 'SuspendedEV') {
         const activeTx = db
           .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
           .find((t) => t.connector_id === params.connectorId);
@@ -399,7 +461,7 @@ function register16Handlers(client, loggedHandle) {
             .catch(() => {});
         }
       }
-      if (cp.mode === 2 && params.connectorId > 0 && params.status === 'Preparing') {
+      if (cp.mode === 2 && params.connectorId > 0 && safeStatus === 'Preparing') {
         const idTag = `MGR-${cp.site_id}`;
         const existingTag = db.getIdTagByTag(idTag);
         if (!existingTag) {

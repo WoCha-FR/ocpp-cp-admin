@@ -30,7 +30,21 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const url = event.notification.data?.url || '/';
+  const rawUrl = event.notification.data?.url || '/';
+  let safeUrl = '/';
+  try {
+    const parsed = new URL(rawUrl, self.location.origin);
+    // Autoriser uniquement des URL same-origin, http(s) et chemin absolu.
+    if (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
+      parsed.origin === self.location.origin &&
+      parsed.pathname.startsWith('/')
+    ) {
+      safeUrl = parsed.pathname + parsed.search + parsed.hash;
+    }
+  } catch {
+    safeUrl = '/';
+  }
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
@@ -42,7 +56,7 @@ self.addEventListener('notificationclick', (event) => {
       }
       // Sinon ouvrir une nouvelle fenêtre
       if (clients.openWindow) {
-        return clients.openWindow(url);
+        return clients.openWindow(safeUrl);
       }
     })
   );

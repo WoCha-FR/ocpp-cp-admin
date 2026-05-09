@@ -59,19 +59,26 @@ if (config.webui.trustProxy) {
 }
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        // 'unsafe-inline' requis : scripts inline (données i18n injectées) + 154 attributs onclick
-        scriptSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
-        scriptSrcAttr: ["'unsafe-inline'"],
+        // Inline event handlers migrated to delegated data handlers.
+        scriptSrc: ["'self'", 'https://cdn.jsdelivr.net', (req, res) => `'nonce-${res.locals.cspNonce}'`],
         styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
         imgSrc: ["'self'", 'data:'],
         // 'self' couvre déjà les WebSockets vers la même origine (ws:// et wss://)
         connectSrc: ["'self'"],
         fontSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        frameAncestors: ["'none'"],
+        formAction: ["'self'"],
       },
     },
   })
@@ -191,10 +198,13 @@ for (const lng of SUPPORTED_LANGUAGES) {
   const label = i18next.t('language_label', { lng });
   languageLabels[lng] = label && label !== 'language_label' ? label : `🌐 ${lng.toUpperCase()}`;
 }
-const i18nScript = `<script>window.__I18N__=${JSON.stringify(i18nResources)};window.__SUPPORTED_LANGUAGES__=${JSON.stringify(SUPPORTED_LANGUAGES)};window.__DEFAULT_LANG__=${JSON.stringify(defaultLang)};window.__LANGUAGE_LABELS__=${JSON.stringify(languageLabels)};</script>`;
+const i18nScript = `<script nonce="__CSP_NONCE__">window.__I18N__=${JSON.stringify(i18nResources)};window.__SUPPORTED_LANGUAGES__=${JSON.stringify(SUPPORTED_LANGUAGES)};window.__DEFAULT_LANG__=${JSON.stringify(defaultLang)};window.__LANGUAGE_LABELS__=${JSON.stringify(languageLabels)};</script>`;
+
+// Apply CSP nonce placeholder to all script tags in the base HTML template.
+const indexHtmlWithNoncePlaceholder = indexHtml.replace(/<script\b/g, '<script nonce="__CSP_NONCE__"');
 
 // Préparer le HTML final avec les traductions injectées (une seule fois, mis en cache)
-const finalHtml = indexHtml.replace(
+const finalHtmlTemplate = indexHtmlWithNoncePlaceholder.replace(
   '<script src="https://cdn.jsdelivr.net/npm/i18next',
   i18nScript + '<script src="https://cdn.jsdelivr.net/npm/i18next'
 );
@@ -279,7 +289,7 @@ app.get('/terms', (req, res) => {
 // Servir l'UI statique (index: false pour que le catch-all serve le HTML avec i18n)
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 app.get('/{*splat}', (req, res) => {
-  res.type('html').send(finalHtml);
+  res.type('html').send(finalHtmlTemplate.replaceAll('__CSP_NONCE__', res.locals.cspNonce));
 });
 
 // ── Middleware d'erreur centralisé ──

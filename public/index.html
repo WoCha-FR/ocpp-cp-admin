@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
@@ -48,7 +48,7 @@
 <!-- Login Page -->
 <div id="loginPage" class="login-container" style="position:relative;">
   <div class="login-lang">
-    <select id="loginLangSelect" class="lang-select" onchange="changeLanguage(this.value)"></select>
+    <select id="loginLangSelect" class="lang-select" data-onchange="changeLanguage(this.value)"></select>
   </div>
   <div class="login-card">
     <img src="logo-400.png" alt="CPAdmin" style="display:block;max-width:100%;height:auto;margin:0 auto 16px;">
@@ -66,14 +66,14 @@
           <input type="password" id="loginPassword" required autocomplete="current-password">
         </div>
         <button type="submit" class="btn btn-primary btn-block" data-i18n="login.submit">Se connecter</button>
-        <button type="button" class="btn btn-outline btn-block mt-2 hidden" id="btnGoogleLogin" onclick="window.location.href='/api/auth/google/login'">Google</button>
+        <button type="button" class="btn btn-outline btn-block mt-2 hidden" id="btnGoogleLogin" data-onclick="window.location.href='/api/auth/google/login'">Google</button>
         <p id="loginError" class="text-muted mt-2 hidden" style="color:var(--danger);text-align:center;" role="alert" aria-live="assertive"></p>
-        <a id="forgotPasswordLink" class="forgot-link hidden" onclick="showPwdStep(1)" data-i18n="login.forgotPassword">Mot de passe oublié ?</a>
+        <a id="forgotPasswordLink" class="forgot-link hidden" data-onclick="showPwdStep(1)" data-i18n="login.forgotPassword">Mot de passe oublié ?</a>
       </form>
     </div>
     <!-- Step 1: Forgot password (email) -->
     <div id="pwdStep1" class="pwd-reset-step">
-      <a class="back-to-login" onclick="showPwdStep(0)">← <span data-i18n="login.backToLogin">Retour à la connexion</span></a>
+      <a class="back-to-login" data-onclick="showPwdStep(0)">← <span data-i18n="login.backToLogin">Retour à la connexion</span></a>
       <h2 style="text-align:center;margin-bottom:8px;font-size:18px;" data-i18n="login.forgotTitle">Mot de passe oublié</h2>
       <p style="text-align:center;color:var(--text-secondary);font-size:13px;margin-bottom:20px;" data-i18n="login.forgotSubtitle">Saisissez votre adresse e-mail pour recevoir un lien de réinitialisation.</p>
       <form id="forgotForm">
@@ -88,7 +88,7 @@
     </div>
     <!-- Step 2: Reset password (new password) -->
     <div id="pwdStep2" class="pwd-reset-step">
-      <a class="back-to-login" onclick="showPwdStep(0)">← <span data-i18n="login.backToLogin">Retour à la connexion</span></a>
+      <a class="back-to-login" data-onclick="showPwdStep(0)">← <span data-i18n="login.backToLogin">Retour à la connexion</span></a>
       <h2 style="text-align:center;margin-bottom:8px;font-size:18px;" data-i18n="login.resetTitle">Nouveau mot de passe</h2>
       <p style="text-align:center;color:var(--text-secondary);font-size:13px;margin-bottom:20px;" data-i18n="login.resetSubtitle">Choisissez un nouveau mot de passe sécurisé.</p>
       <form id="resetForm">
@@ -118,14 +118,14 @@
       <div class="pwd-reset-success">
         <div class="success-icon">✅</div>
         <p data-i18n="login.resetSuccess">Votre mot de passe a été réinitialisé avec succès.</p>
-        <button class="btn btn-primary btn-block" onclick="showPwdStep(0)" data-i18n="login.resetSuccessBtn">Se connecter</button>
+        <button class="btn btn-primary btn-block" data-onclick="showPwdStep(0)" data-i18n="login.resetSuccessBtn">Se connecter</button>
       </div>
     </div>
   </div>
   <div class="login-footer">
-    <a href="/privacy" target="_blank" data-i18n="legal.privacy">Politique de confidentialité</a>
+    <a href="/privacy" target="_blank" rel="noopener noreferrer" data-i18n="legal.privacy">Politique de confidentialité</a>
     <span aria-hidden="true">·</span>
-    <a href="/terms" target="_blank" data-i18n="legal.terms">Conditions d'utilisation</a>
+    <a href="/terms" target="_blank" rel="noopener noreferrer" data-i18n="legal.terms">Conditions d'utilisation</a>
   </div>
 </div>
 
@@ -137,68 +137,68 @@
       <h1>🏢 <span data-setting="cpoName"></span></h1>
     </div>
     <nav class="sidebar-nav">
-      <a onclick="navigate('dashboard')" data-page="dashboard" class="active">
+      <a data-onclick="navigate('dashboard')" data-page="dashboard" class="active">
         <span class="icon">📊</span> <span data-i18n="navigation.dashboard">Tableau de bord</span>
       </a>
-      <a onclick="navigate('sites')" data-page="sites" id="navSites" class="hidden">
+      <a data-onclick="navigate('sites')" data-page="sites" id="navSites" class="hidden">
         <span class="icon">🏠</span> <span data-i18n="navigation.sites">Sites</span>
       </a>
-      <a onclick="navigate('chargepoints')" data-page="chargepoints" id="navChargePoints" class="hidden">
+      <a data-onclick="navigate('chargepoints')" data-page="chargepoints" id="navChargePoints" class="hidden">
         <span class="icon">🔋</span> <span data-i18n="navigation.chargepoints">Bornes</span>
       </a>
-      <a onclick="navigate('connectors')" data-page="connectors" id="navConnectors" class="hidden">
+      <a data-onclick="navigate('connectors')" data-page="connectors" id="navConnectors" class="hidden">
         <span class="icon">🪢</span> <span data-i18n="navigation.connectors">Connecteurs</span>
       </a>
-      <a onclick="navigate('idtags')" data-page="idtags" id="navIdTags" class="hidden">
+      <a data-onclick="navigate('idtags')" data-page="idtags" id="navIdTags" class="hidden">
         <span class="icon">🏷️</span> <span data-i18n="navigation.idTags">Tags RFID</span>
       </a>
-      <a onclick="navigate('transactions')" data-page="transactions" id="navTransactions" class="hidden">
+      <a data-onclick="navigate('transactions')" data-page="transactions" id="navTransactions" class="hidden">
         <span class="icon">💳</span> <span data-i18n="navigation.transactions">Transactions</span>
       </a>
-      <a onclick="navigate('users')" data-page="users" id="navUsers" class="hidden">
+      <a data-onclick="navigate('users')" data-page="users" id="navUsers" class="hidden">
         <span class="icon">👥</span> <span data-i18n="navigation.users">Utilisateurs</span>
       </a>
       <div class="nav-divider" id="navUserDivider"></div>
       <span class="nav-divider-label" id="navUserDividerLabel" data-i18n="navigation.userSpace">Mon espace</span>
-      <a onclick="navigate('mycharge')" data-page="mycharge" id="navMyCharge" class="hidden">
+      <a data-onclick="navigate('mycharge')" data-page="mycharge" id="navMyCharge" class="hidden">
         <span class="icon">⚡</span> <span data-i18n="navigation.myCharge">Ma recharge</span>
       </a>
-      <a onclick="navigate('mytransactions')" data-page="mytransactions" id="navMyTransactions">
+      <a data-onclick="navigate('mytransactions')" data-page="mytransactions" id="navMyTransactions">
         <span class="icon">📒</span> <span data-i18n="navigation.myTransactions">Mes Transactions</span>
       </a>
-      <a onclick="navigate('profile')" data-page="profile" id="navProfile">
+      <a data-onclick="navigate('profile')" data-page="profile" id="navProfile">
         <span class="icon">👤</span> <span data-i18n="navigation.myProfile">Mon profil</span>
       </a>
-      <a onclick="navigate('notifications')" data-page="notifications" id="navNotifications">
+      <a data-onclick="navigate('notifications')" data-page="notifications" id="navNotifications">
         <span class="icon">🔔</span> <span data-i18n="navigation.myNotifications">Mes Notifications</span>
       </a>
       <div class="nav-divider hidden" id="navAdminDivider"></div>
       <span class="nav-divider-label hidden" id="navAdminDividerLabel" data-i18n="navigation.adminSpace">Administration</span>
-      <a onclick="navigate('configeditor')" data-page="configeditor" id="navConfigEditor" class="hidden">
+      <a data-onclick="navigate('configeditor')" data-page="configeditor" id="navConfigEditor" class="hidden">
         <span class="icon">⚙️</span> <span data-i18n="navigation.configEditor">Configuration</span>
       </a>
     </nav>
     <div style="padding: 4px 0; border-top: 1px solid var(--sidebar-border);">
-      <button class="theme-toggle" onclick="toggleTheme()" title="Changer le thème">
+      <button class="theme-toggle" data-onclick="toggleTheme()" title="Changer le thème">
         <span class="icon" id="themeIcon">🌙</span>
         <span id="themeLabel">Thème sombre</span>
       </button>
     </div>
     <div class="sidebar-lang">
-      <select id="sidebarLangSelect" class="lang-select" onchange="changeLanguage(this.value)"></select>
+      <select id="sidebarLangSelect" class="lang-select" data-onchange="changeLanguage(this.value)"></select>
     </div>
     <div class="sidebar-footer">
       <div class="user-info" id="userInfoSidebar"></div>
-      <button class="btn btn-warning btn-sm btn-block" onclick="withBtn(this, logout)" data-i18n="sidebar.logout">Déconnexion</button>
+      <button class="btn btn-warning btn-sm btn-block" data-onclick="withBtn(this, logout)" data-i18n="sidebar.logout">Déconnexion</button>
     </div>
   </aside>
 
-  <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
+  <div class="sidebar-overlay" id="sidebarOverlay" data-onclick="closeSidebar()"></div>
 
   <div class="main">
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:10px;">
-        <button class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()" aria-label="Menu">☰</button>
+        <button class="hamburger" id="hamburgerBtn" data-onclick="toggleSidebar()" aria-label="Menu">☰</button>
         <h2 id="pageTitle">Tableau de bord</h2>
       </div>
       <span id="wsStatusBadge" class="ws-status-badge hidden" aria-live="polite"></span>
@@ -367,15 +367,9 @@ async function loadFlatpickrLocale(lang) {
     flatpickr.localize(flatpickr.l10ns[fpLocale]);
     return;
   }
-  // Charger dynamiquement
-  const script = document.createElement('script');
-  script.src = `https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/${fpLocale}.js`;
-  await new Promise((resolve, reject) => {
-    script.onload = resolve;
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-  flatpickr.localize(flatpickr.l10ns[fpLocale]);
+  // Sécurité: éviter le chargement dynamique de script tiers sans SRI.
+  // Fallback temporaire sur la locale par défaut si non préchargée.
+  flatpickr.localize(flatpickr.l10ns.default);
 }
 
 // ══════════════════════════════════════
@@ -395,7 +389,27 @@ async function api(method, path, body) {
     const code = data.error || 'ERR_INTERNAL';
     throw new Error(translateError(code, data.params));
   }
-  return data;
+  return sanitizeApiPayload(data);
+}
+
+function sanitizeApiString(value) {
+  // Frontend safety net: neutralize HTML-significant chars and strip control chars.
+  return String(value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function sanitizeApiPayload(value) {
+  if (value == null) return value;
+  if (typeof value === 'string') return sanitizeApiString(value);
+  if (Array.isArray(value)) return value.map(sanitizeApiPayload);
+  if (typeof value === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = sanitizeApiPayload(v);
+    return out;
+  }
+  return value;
 }
 
 // Désactive un bouton pendant une opération async pour éviter les doubles-clics.
@@ -629,7 +643,7 @@ document.getElementById('resetForm').addEventListener('submit', async (e) => {
     errEl.classList.remove('hidden');
     return;
   }
-  if (checkPasswordStrength(newPwd) < 4) {
+  if (checkPasswordStrength(newPwd).score < 4) {
     errEl.textContent = t('login.resetPasswordWeak');
     errEl.classList.remove('hidden');
     return;
@@ -965,10 +979,10 @@ async function renderDashboard() {
       <div class="kpi-period-bar">
         <span class="kpi-period-label">${t('dashboard.kpiPeriodLabel')}</span>
         <div class="kpi-period-selector">
-          <button class="kpi-period-btn" data-days="7" onclick="changeDashboardPeriod(7)">7${t('dashboard.kpiDays')}</button>
-          <button class="kpi-period-btn active" data-days="30" onclick="changeDashboardPeriod(30)">30${t('dashboard.kpiDays')}</button>
-          <button class="kpi-period-btn" data-days="90" onclick="changeDashboardPeriod(90)">90${t('dashboard.kpiDays')}</button>
-          <button class="kpi-period-btn" data-days="365" onclick="changeDashboardPeriod(365)">12${t('dashboard.kpiMonths')}</button>
+          <button class="kpi-period-btn" data-days="7" data-onclick="changeDashboardPeriod(7)">7${t('dashboard.kpiDays')}</button>
+          <button class="kpi-period-btn active" data-days="30" data-onclick="changeDashboardPeriod(30)">30${t('dashboard.kpiDays')}</button>
+          <button class="kpi-period-btn" data-days="90" data-onclick="changeDashboardPeriod(90)">90${t('dashboard.kpiDays')}</button>
+          <button class="kpi-period-btn" data-days="365" data-onclick="changeDashboardPeriod(365)">12${t('dashboard.kpiMonths')}</button>
         </div>
       </div>
 
@@ -993,10 +1007,10 @@ async function renderDashboard() {
           <tbody>
             ${transactions.map(tx => `
               <tr>
-                <td>${tx.chargepoint_name && tx.chargepoint_name !== tx.chargepoint_identity ? `${tx.chargepoint_identity} - ${escapeHtml(tx.chargepoint_name)}` : tx.chargepoint_identity}</td>
+                <td>${tx.chargepoint_name && tx.chargepoint_name !== tx.chargepoint_identity ? `${escapeHtml(tx.chargepoint_identity)} - ${escapeHtml(tx.chargepoint_name)}` : escapeHtml(tx.chargepoint_identity)}</td>
                 <td>${tx.connector_id}</td>
                 <td>${cleanIdTag(tx.id_tag) || '-'}</td>
-                <td>${tx.tag_username ? `<span class="badge badge-blue">${tx.tag_username}</span>` : '-'}</td>
+                <td>${tx.tag_username ? `<span class="badge badge-blue">${escapeHtml(tx.tag_username)}</span>` : '-'}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
                 <td>${formatDate(tx.start_time)}</td>
                 <td>${tx.meter_start != null ? (tx.meter_start / 1000).toFixed(2) + ' kWh' : '-'}</td>
@@ -1169,7 +1183,7 @@ let cpListFilters = { site_id: '', mode: '', cpstatus: '', online: '' };
 async function renderChargepoints() {
   const isAdmin = currentUser.role === 'admin';
   document.getElementById('topbarActions').innerHTML = isAdmin
-    ? `<button class="btn btn-primary" onclick="showCreateChargepointModal()">+ ${t('chargepoint.cpBtnAdd')}</button>`
+    ? `<button class="btn btn-primary" data-onclick="showCreateChargepointModal()">+ ${t('chargepoint.cpBtnAdd')}</button>`
     : '';
 
   try {
@@ -1195,8 +1209,8 @@ async function renderChargepoints() {
                       <td class="text-muted">${p.password ? '•••••' : t('common.none') }</td>
                       <td class="text-muted">${formatDate(p.timestamp)}</td>
                       <td>
-                        <button class="btn btn-success btn-sm" onclick="withBtn(this, () => acceptPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpAccept')}</button>
-                        <button class="btn btn-danger btn-sm" onclick="withBtn(this, () => rejectPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpRefuse')}</button>
+                        <button class="btn btn-success btn-sm" data-onclick="withBtn(this, () => acceptPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpAccept')}</button>
+                        <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => rejectPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpRefuse')}</button>
                       </td>
                     </tr>
                   `).join('')}
@@ -1229,34 +1243,34 @@ async function renderChargepoints() {
         <div class="msg-filters">
           <div class="form-group">
             <label>${t('common.site_one')}</label>
-            <select id="cpFilterSite" onchange="applyCpListFilters()">
+            <select id="cpFilterSite" data-onchange="applyCpListFilters()">
               <option value="">${t('filters.all')}</option>
               ${uniqueSites.map(([id, name]) => `<option value="${id}" ${cpListFilters.site_id === String(id) ? 'selected' : ''}>${name}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label>${t('chargepoint.cpModeCharge')}</label>
-            <select id="cpFilterMode" onchange="applyCpListFilters()">
+            <select id="cpFilterMode" data-onchange="applyCpListFilters()">
               <option value="">${t('filters.all')}</option>
               ${uniqueModes.map(m => `<option value="${m}" ${cpListFilters.mode === String(m) ? 'selected' : ''}>${filterCpMode(m)}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label>${t('common.status')}</label>
-            <select id="cpFilterStatus" onchange="applyCpListFilters()">
+            <select id="cpFilterStatus" data-onchange="applyCpListFilters()">
               <option value="">${t('filters.all')}</option>
               ${uniqueStatuses.map(s => `<option value="${s}" ${cpListFilters.cpstatus === s ? 'selected' : ''}>${s}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label>${t('filters.connection')}</label>
-            <select id="cpFilterOnline" onchange="applyCpListFilters()">
+            <select id="cpFilterOnline" data-onchange="applyCpListFilters()">
               <option value="">${t('filters.allf')}</option>
               <option value="1" ${cpListFilters.online === '1' ? 'selected' : ''}>${t('filters.online')}</option>
               <option value="0" ${cpListFilters.online === '0' ? 'selected' : ''}>${t('connectors.status.Offline')}</option>
             </select>
           </div>
-          <button class="btn btn-outline btn-sm" onclick="resetCpListFilters()">${t('common.reset')}</button>
+          <button class="btn btn-outline btn-sm" data-onclick="resetCpListFilters()">${t('common.reset')}</button>
         </div>
       </div>
       <div class="card">
@@ -1269,23 +1283,23 @@ async function renderChargepoints() {
           <tbody>
             ${filtered.map(cp => `
               <tr>
-                <td>${cp.site_name || `<span class="text-muted">${t('chargepoint.cpNotAssigned')}</span>`}</td>
+                <td>${cp.site_name ? escapeHtml(cp.site_name) : `<span class="text-muted">${t('chargepoint.cpNotAssigned')}</span>`}</td>
                 <td>
                   <span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span>
-                  <a href="#" onclick="showChargepointDetail(${cp.id});return false;" class="cp-identity-link">${cp.identity}</a>
+                  <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>
                 </td>
-                <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' ? `${t('common.unknown')}` : cp.cpstatus}</span>`}</td>
-                <td>${cp.cpname || '-'}</td>
+                <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' ? `${t('common.unknown')}` : escapeHtml(cp.cpstatus || '-')}</span>`}</td>
+                <td>${cp.cpname ? escapeHtml(cp.cpname) : '-'}</td>
                 <td>${dashboardCpMode(cp.mode)}</td>
-                <td>${cp.vendor || '-'}</td>
-                <td>${cp.model || '-'}</td>
+                <td>${cp.vendor ? escapeHtml(cp.vendor) : '-'}</td>
+                <td>${cp.model ? escapeHtml(cp.model) : '-'}</td>
                 <td class="text-muted">${cp.last_heartbeat ? formatDate(cp.last_heartbeat) : '-'}</td>
                 <td>
                   ${adminManage() ? `
-                  <button class="btn btn-indigo btn-sm" onclick="assignCpToSite(${cp.id}, '${cp.identity}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
-                  <button class="btn btn-teal btn-sm" onclick="showEditChargepointModal(${cp.id})">${t('common.edit')}</button>
-                  <button class="btn btn-orange btn-sm" onclick="reinitializeChargepoint(event,${cp.id})">${t('common.reset')}</button>` : ''}
-                  ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteChargepoint(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('common.delete')}</button>` : ''}
+                  <button class="btn btn-indigo btn-sm" data-onclick="assignCpToSite(${Number(cp.id) || 0}, '${escapeAttr(cp.identity)}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
+                  <button class="btn btn-teal btn-sm" data-onclick="showEditChargepointModal(${Number(cp.id) || 0})">${t('common.edit')}</button>
+                  <button class="btn btn-orange btn-sm" data-onclick="reinitializeChargepoint(event,${Number(cp.id) || 0})">${t('common.reset')}</button>` : ''}
+                  ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteChargepoint(${Number(cp.id) || 0}, '${escapeAttr(cp.identity)}'))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -1336,12 +1350,12 @@ async function showCreateChargepointModal() {
   <div class="form-group">
     <label>${t('common.site_one')}</label>
     <select id="cpSiteId">
-      ${sites.map(s => `<option value="${s.id}">${s.sname}</option>`).join('')}
+      ${sites.map(s => `<option value="${s.id}">${escapeHtml(s.sname)}</option>`).join('')}
     </select>
   </div>
   <div class="modal-actions">
-    <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="withBtn(this, createChargepoint)">${t('common.create')}</button>
+    <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+    <button class="btn btn-primary" data-onclick="withBtn(this, createChargepoint)">${t('common.create')}</button>
   </div>
 `);
 }
@@ -1366,15 +1380,15 @@ async function showEditChargepointModal(id) {
   <div class="form-group">
     <label>${t('common.site_one')}</label>
     <select id="editSiteId">
-      ${sites.map(s => `<option value="${s.id}" ${s.id === cp.site_id ? 'selected' : ''}>${s.sname}</option>`).join('')}
+      ${sites.map(s => `<option value="${s.id}" ${s.id === cp.site_id ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
     </select>
   </div>
   <div class="form-group">
     <label><input type="checkbox" id="editAuthorized" ${cp.authorized ? 'checked' : ''} /> ${t('chargepoint.cpAuthorized')}</label>
   </div>
   <div class="modal-actions">
-    <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="withBtn(this, () => updateChargepoint(${id}))">${t('common.save')}</button>
+    <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+    <button class="btn btn-primary" data-onclick="withBtn(this, () => updateChargepoint(${id}))">${t('common.save')}</button>
   </div>
 `);
 }
@@ -1429,12 +1443,12 @@ async function assignCpToSite(cpId, cpName, currentSiteId) {
   <div class="form-group">
     <label>${t('common.site_one')}</label>
     <select id="assignSiteSelect">
-      ${sites.map(s => `<option value="${s.id}" ${s.id === currentSiteId ? 'selected' : ''}>${s.sname}</option>`).join('')}
+      ${sites.map(s => `<option value="${s.id}" ${s.id === currentSiteId ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
     </select>
   </div>
   <div class="modal-actions">
-    <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="withBtn(this, () => execAssignSite(${cpId}))">${t('common.save')}</button>
+    <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+    <button class="btn btn-primary" data-onclick="withBtn(this, () => execAssignSite(${cpId}))">${t('common.save')}</button>
   </div>
 `);
 }
@@ -1459,12 +1473,12 @@ async function acceptPendingChargepoint(identity) {
     <div class="form-group">
       <label>${t('common.site_one')}</label>
       <select id="acceptSiteSelect">
-        ${sites.map(s => `<option value="${s.id}">${s.sname}</option>`).join('')}
+        ${sites.map(s => `<option value="${s.id}">${escapeHtml(s.sname)}</option>`).join('')}
       </select>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-success" onclick="withBtn(this, () => execAcceptPending('${escapeAttr(identity)}'))">${t('chargepoint.cpAccept')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-success" data-onclick="withBtn(this, () => execAcceptPending('${escapeAttr(identity)}'))">${t('chargepoint.cpAccept')}</button>
     </div>
   `);
 }
@@ -1505,22 +1519,22 @@ async function showChargepointDetail(id, tab) {
     currentDetailCpIdentity = cp.identity;
 
     document.getElementById('pageTitle').textContent = cp.identity;
-    document.getElementById('topbarActions').innerHTML = `<button class="btn btn-secondary" onclick="navigate('chargepoints')">← ${t('chargepoint.cpBtnReturn')}</button>`;
+    document.getElementById('topbarActions').innerHTML = `<button class="btn btn-secondary" data-onclick="navigate('chargepoints')">← ${t('chargepoint.cpBtnReturn')}</button>`;
 
     document.getElementById('pageContent').innerHTML = `
       <div class="tabs">
-        <button class="tab ${currentDetailTab === 'infos' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'infos')">ℹ️ ${t('common.chargepoint_one')}</button>
-        <button class="tab ${currentDetailTab === 'connecteurs' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'connecteurs')">🔌 ${t('common.connector_other')}</button>
-        <button class="tab ${currentDetailTab === 'transactions' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'transactions')">⚡ ${t('navigation.transactions')}</button>
-        <button class="tab ${currentDetailTab === 'logs' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'logs')">📨 ${t('chargepoint.cpLogsTitle')}</button>
-        <button class="tab ${currentDetailTab === 'profiles' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'profiles')">📊 ${t('chargepoint.cpProfilesTitle')}</button>
-        ${cp.feat_reservation ? `<button class="tab ${currentDetailTab === 'reservations' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'reservations')">🗓 ${t('chargepoint.cpReservationsTitle')}</button>` : ''}
-        ${adminManage() ? `<button class="tab ${currentDetailTab === 'config' ? 'active' : ''}" onclick="switchDetailTab(${id}, 'config')">⚙️ ${t('chargepoint.cpConfTitle')}</button>` : ''}
+        <button class="tab ${currentDetailTab === 'infos' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'infos')">ℹ️ ${t('common.chargepoint_one')}</button>
+        <button class="tab ${currentDetailTab === 'connecteurs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'connecteurs')">🔌 ${t('common.connector_other')}</button>
+        <button class="tab ${currentDetailTab === 'transactions' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'transactions')">⚡ ${t('navigation.transactions')}</button>
+        <button class="tab ${currentDetailTab === 'logs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'logs')">📨 ${t('chargepoint.cpLogsTitle')}</button>
+        <button class="tab ${currentDetailTab === 'profiles' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'profiles')">📊 ${t('chargepoint.cpProfilesTitle')}</button>
+        ${cp.feat_reservation ? `<button class="tab ${currentDetailTab === 'reservations' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'reservations')">🗓 ${t('chargepoint.cpReservationsTitle')}</button>` : ''}
+        ${adminManage() ? `<button class="tab ${currentDetailTab === 'config' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'config')">⚙️ ${t('chargepoint.cpConfTitle')}</button>` : ''}
       </div>
       <div class="card">
         <div class="card-header">
-          <h3><span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span> ${cp.cpname && cp.cpname !== cp.identity ? `${cp.identity} - ${escapeHtml(cp.cpname)}` : cp.identity} (${cp.site_name || t('chargepoint.cpNotAssigned')})</h3>
-          <span class="badge ${!cp.online && cp.cpstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' ? t('common.unknown') : cp.cpstatus}</span>
+          <h3><span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span> ${cp.cpname && cp.cpname !== cp.identity ? `${escapeHtml(cp.identity)} - ${escapeHtml(cp.cpname)}` : escapeHtml(cp.identity)} (${cp.site_name ? escapeHtml(cp.site_name) : t('chargepoint.cpNotAssigned')})</h3>
+          <span class="badge ${!cp.online && cp.cpstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' ? t('common.unknown') : escapeHtml(cp.cpstatus || '-')}</span>
         </div>
       </div>
       <div id="detailTabContent"></div>
@@ -1572,48 +1586,48 @@ async function renderDetailTabBorne(cp) {
           <div class="cmd-subgroups">
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReboot')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Soft'})">${t('chargepoint.cpRebootSoft')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Hard'})">${t('chargepoint.cpRebootHard')}</button>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Soft'})">${t('chargepoint.cpRebootSoft')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Hard'})">${t('chargepoint.cpRebootHard')}</button>
             </div>
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: 0})">${t('connectors.cSetAvailable')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: 0})">${t('connectors.cSetUnavailable')}</button>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: 0})">${t('connectors.cSetAvailable')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: 0})">${t('connectors.cSetUnavailable')}</button>
             </div>
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'BootNotification'})">${t('chargepoint.cpBootNotification')}</button>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'Heartbeat'})">${t('chargepoint.cpHeartbeat')}</button>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: 0})">${t('connectors.cTriggerMeter')}</button>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: 0})">${t('connectors.cTriggerStatus')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'BootNotification'})">${t('chargepoint.cpBootNotification')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'Heartbeat'})">${t('chargepoint.cpHeartbeat')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: 0})">${t('connectors.cTriggerMeter')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: 0})">${t('connectors.cTriggerStatus')}</button>
             </div>
             ${adminManage() ? `
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔧 ${t('chargepoint.cpManagement')}</span>
-              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
-              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
-              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'GetDiagnostics', {location: '${ocppSettings.diagnosticsLocation || ''}'})">${t('chargepoint.cpGetDiagnostics')}</button>
+              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
+              <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
+              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetDiagnostics', {location: '${ocppSettings.diagnosticsLocation || ''}'})">${t('chargepoint.cpGetDiagnostics')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
         <div class="detail-section">
           <div class="detail-section-title">🆔 ${t('chargepoint.cpHardware')}</div>
-          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpVendor')}</span><span class="detail-value">${cp.vendor || '-'}</span></div>
-          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpModel')}</span><span class="detail-value">${cp.model || '-'}</span></div>
-          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpSerial')}</span><span class="detail-value">${cp.serial_number || '-'}</span></div>
-          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpFirmware')}</span><span class="detail-value">${cp.firmware_version || '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpVendor')}</span><span class="detail-value">${cp.vendor ? escapeHtml(cp.vendor) : '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpModel')}</span><span class="detail-value">${cp.model ? escapeHtml(cp.model) : '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpSerial')}</span><span class="detail-value">${cp.serial_number ? escapeHtml(cp.serial_number) : '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpFirmware')}</span><span class="detail-value">${cp.firmware_version ? escapeHtml(cp.firmware_version) : '-'}</span></div>
         </div>
         <div class="detail-section">
           <div class="detail-section-title">📡 ${t('chargepoint.cpCommunication')}</div>
-          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpIccid')}</span><span class="detail-value">${cp.iccid || '-'}</span></div>
-          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpImsi')}</span><span class="detail-value">${cp.imsi || '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpIccid')}</span><span class="detail-value">${cp.iccid ? escapeHtml(cp.iccid) : '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpImsi')}</span><span class="detail-value">${cp.imsi ? escapeHtml(cp.imsi) : '-'}</span></div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpWss')}</span><span class="detail-value">${cp.connected_wss ? `<span class="badge badge-green">${t('common.yes')}</span>` : `<span class="badge badge-red">${t('common.no')}</span>`}</span></div>
-          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpEndpoint')}</span><span class="detail-value">${cp.endpoint_address || '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpEndpoint')}</span><span class="detail-value">${cp.endpoint_address ? escapeHtml(cp.endpoint_address) : '-'}</span></div>
         </div>
         <div class="detail-section">
           <div class="detail-section-title">🔌 ${t('connectors.cCounter')}</div>
-          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpSerial')}</span><span class="detail-value">${cp.meter_sn || '-'}</span></div>
-          <div class="detail-row"><span class="detail-label">${t('filters.type')}</span><span class="detail-value">${cp.meter_type || '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpSerial')}</span><span class="detail-value">${cp.meter_sn ? escapeHtml(cp.meter_sn) : '-'}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('filters.type')}</span><span class="detail-value">${cp.meter_type ? escapeHtml(cp.meter_type) : '-'}</span></div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpConfValue')}</span><span class="detail-value">${cp.meter_value != null ? (cp.meter_value / 1000).toFixed(2) + ' kWh' : '-'}</span></div>
         </div>
         <div class="detail-section">
@@ -1667,8 +1681,8 @@ async function renderDetailTabConnectors(cp) {
               <div class="detail-section${hasError ? ' detail-section-error' : ''}">
                 <div class="detail-section-title">
                   🔌 ${t('common.connector_one')} ${c.connector_id}${c.connector_name ? ' · ' + escapeHtml(c.connector_name) : ''}
-                  ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
-                  <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : c.cnstatus}</span>
+                  ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
+                  <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : escapeHtml(c.cnstatus || '-')}</span>
                   ${hasError ? `<span class="badge badge-red">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}
                 </div>
                 <div class="detail-row">
@@ -1687,17 +1701,17 @@ async function renderDetailTabConnectors(cp) {
                 <div class="cmd-subgroups">
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: ${c.connector_id}})">${t('connectors.cSetAvailable')}</button>
-                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: ${c.connector_id}})">${t('connectors.cSetUnavailable')}</button>
+                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: ${c.connector_id}})">${t('connectors.cSetAvailable')}</button>
+                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: ${c.connector_id}})">${t('connectors.cSetUnavailable')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔓 ${t('connectors.cUnlock')}</span>
-                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'UnlockConnector', {connectorId: ${c.connector_id}})">${t('connectors.cUnlockConnector')}</button>
+                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', {connectorId: ${c.connector_id}})">${t('connectors.cUnlockConnector')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: ${c.connector_id}})">${t('connectors.cTriggerMeter')}</button>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: ${c.connector_id}})">${t('connectors.cTriggerStatus')}</button>
+                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: ${c.connector_id}})">${t('connectors.cTriggerMeter')}</button>
+                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: ${c.connector_id}})">${t('connectors.cTriggerStatus')}</button>
                   </div>
                 </div>
               </div>` : ''}
@@ -1727,8 +1741,8 @@ function openEditConnectorModal(id, connectorId, name, power, type) {
     </select>
   </div>
   <div class="modal-actions">
-    <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="withBtn(this, () => saveConnector(${id}))">💾 ${t('common.save')}</button>
+    <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+    <button class="btn btn-primary" data-onclick="withBtn(this, () => saveConnector(${id}))">💾 ${t('common.save')}</button>
   </div>
 `);
 }
@@ -1762,7 +1776,7 @@ async function renderDetailTabTransactions(cp) {
               <td>${tx.transaction_id}</td>
               <td>${tx.connector_id}</td>
               <td>${cleanIdTag(tx.id_tag) || '-'}</td>
-              <td>${tx.tag_username ? `<span class="badge badge-blue">${tx.tag_username}</span>` : '<span class="text-muted">-</span>'}</td>
+              <td>${tx.tag_username ? `<span class="badge badge-blue">${escapeHtml(tx.tag_username)}</span>` : '<span class="text-muted">-</span>'}</td>
               <td>${formatStartSource(tx.start_source)}</td>
               <td>${formatDate(tx.start_time)}</td>
               <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
@@ -1796,7 +1810,7 @@ async function renderDetailTabLogs(cp) {
       <div class="msg-filters">
         <div class="form-group">
           <label>${t('filters.origin')}</label>
-          <select id="cpLogFilterOrigin" onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')">
+          <select id="cpLogFilterOrigin" data-onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')">
             <option value="">${t('filters.allf')}</option>
             <option value="chargepoint" ${cpLogsFilters.origin === 'chargepoint' ? 'selected' : ''}>${t('common.chargepoint_one')}</option>
             <option value="csms" ${cpLogsFilters.origin === 'csms' ? 'selected' : ''}>CSMS</option>
@@ -1804,7 +1818,7 @@ async function renderDetailTabLogs(cp) {
         </div>
         <div class="form-group">
           <label>${t('filters.type')}</label>
-          <select id="cpLogFilterMsgType" onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')">
+          <select id="cpLogFilterMsgType" data-onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')">
             <option value="">${t('filters.all')}</option>
             <option value="CALL" ${cpLogsFilters.message_type === 'CALL' ? 'selected' : ''}>CALL</option>
             <option value="CALLRESULT" ${cpLogsFilters.message_type === 'CALLRESULT' ? 'selected' : ''}>CALLRESULT</option>
@@ -1813,10 +1827,10 @@ async function renderDetailTabLogs(cp) {
         </div>
         <div class="form-group">
           <label>${t('chargepoint.cpLogsOperation')}</label>
-          <input type="text" id="cpLogFilterAction" value="${escapeAttr(cpLogsFilters.action || '')}" placeholder="Ex: BootNotification" onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')" />
+          <input type="text" id="cpLogFilterAction" value="${escapeAttr(cpLogsFilters.action || '')}" placeholder="Ex: BootNotification" data-onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')" />
         </div>
-        <button class="btn btn-outline btn-sm" onclick="resetCpLogFilters(${cp.id})">${t('common.reset')}</button>
-        ${adminManage() ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => clearCpLogMessages(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('chargepoint.cpLogsDelete')}</button>` : ''}
+        <button class="btn btn-outline btn-sm" data-onclick="resetCpLogFilters(${cp.id})">${t('common.reset')}</button>
+        ${adminManage() ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => clearCpLogMessages(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('chargepoint.cpLogsDelete')}</button>` : ''}
       </div>
     </div>
 
@@ -1832,7 +1846,7 @@ async function renderDetailTabLogs(cp) {
               <td><span class="badge ${m.origin === 'chargepoint' ? 'badge-chargepoint' : 'badge-csms'}">${m.origin === 'chargepoint' ? `← ${t('common.chargepoint_one')}` : `→ ${t('common.csms')}`}</span></td>
               <td><span class="badge badge-${m.message_type.toLowerCase()}">${m.message_type}</span></td>
               <td class="msg-payload">${m.action || '-'}</td>
-              <td class="msg-payload" title="${t('chargepoint.cpLogsMsgHint')}" onclick="showPayloadDetail(this)">${escapeHtml(m.payload || '{}')}</td>
+              <td class="msg-payload" title="${t('chargepoint.cpLogsMsgHint')}" data-onclick="showPayloadDetail(this)">${escapeHtml(m.payload || '{}')}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1849,7 +1863,7 @@ function showPayloadDetail(el) {
     <h3>${t('chargepoint.cpLogsMsgDetails')}</h3>
     <pre style="background:var(--gray-50);padding:16px;border-radius:var(--radius);overflow:auto;max-height:60vh;font-size:13px;">${escapeHtml(JSON.stringify(parsed, null, 2))}</pre>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.close')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.close')}</button>
     </div>
   `);
   } catch {
@@ -1857,7 +1871,7 @@ function showPayloadDetail(el) {
     <h3>${t('chargepoint.cpLogsMsgDetails')}</h3>
     <pre style="background:var(--gray-50);padding:16px;border-radius:var(--radius);overflow:auto;max-height:60vh;font-size:13px;">${escapeHtml(el.textContent)}</pre>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.close')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.close')}</button>
     </div>
   `);
   }
@@ -1900,9 +1914,9 @@ async function renderDetailTabChargingProfiles(cp) {
         <h3>📊 ${t('chargepoint.cpProfilesTitle')}</h3>
         ${canManage() ? `
         <div class="flex-gap">
-          <button class="btn btn-danger btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="withBtn(this, () => resetChargingProfiles(${cp.id}))">🗑 ${t('chargepoint.cpResetProfilesBtn')}</button>
-          <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="withBtn(this, () => pushAllProfiles(${cp.id}))">🔄 ${t('chargepoint.cpPushAllBtn')}</button>
-          <button class="btn btn-primary btn-sm" onclick="showCreateProfileModal(${cp.id}, ${cp.online ? 1 : 0})">+ ${t('chargepoint.cpProfilesNew')}</button>
+          <button class="btn btn-danger btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="withBtn(this, () => resetChargingProfiles(${cp.id}))">🗑 ${t('chargepoint.cpResetProfilesBtn')}</button>
+          <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="withBtn(this, () => pushAllProfiles(${cp.id}))">🔄 ${t('chargepoint.cpPushAllBtn')}</button>
+          <button class="btn btn-primary btn-sm" data-onclick="showCreateProfileModal(${cp.id}, ${cp.online ? 1 : 0})">+ ${t('chargepoint.cpProfilesNew')}</button>
         </div>
         ` : ''}
       </div>
@@ -1935,7 +1949,7 @@ async function renderDetailTabChargingProfiles(cp) {
             <option value="A">A</option>
           </select>
         </div>
-        <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="withBtn(this, () => getCompositeSchedule(${cp.id}))">${t('chargepoint.cpCompScheduleCalc')}</button>
+        <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="withBtn(this, () => getCompositeSchedule(${cp.id}))">${t('chargepoint.cpCompScheduleCalc')}</button>
       </div>
       <div id="compScheduleResult" style="padding:0 16px 12px"></div>
     </div>
@@ -1981,9 +1995,9 @@ async function loadChargingProfiles(cpId) {
                 <td class="text-muted" style="font-size:12px;white-space:nowrap">${p.valid_from ? formatDate(p.valid_from) : ''}${p.valid_from && p.valid_to ? ' → ' : ''}${p.valid_to ? formatDate(p.valid_to) : ''}</td>
                 <td><span class="badge ${p.status === 'Accepted' ? 'badge-green' : p.status === 'Rejected' ? 'badge-red' : 'badge-yellow'}">${p.status}</span></td>
                 ${canManage() ? `<td style="white-space:nowrap">
-                  <button class="btn btn-secondary btn-sm" onclick="showProfileDetail(${p.id})">${t('common.view')}</button>
-                  <button class="btn btn-teal btn-sm" onclick="showCopyProfileModal(${cpId}, ${p.id})">${t('chargepoint.cpProfileCopyBtn')}</button>
-                  <button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteChargingProfile(${cpId}, ${p.id}))">${t('common.delete')}</button>
+                  <button class="btn btn-secondary btn-sm" data-onclick="showProfileDetail(${p.id})">${t('common.view')}</button>
+                  <button class="btn btn-teal btn-sm" data-onclick="showCopyProfileModal(${cpId}, ${p.id})">${t('chargepoint.cpProfileCopyBtn')}</button>
+                  <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteChargingProfile(${cpId}, ${p.id}))">${t('common.delete')}</button>
                 </td>` : ''}
               </tr>
             `).join('')}
@@ -2003,7 +2017,7 @@ async function renderDetailTabReservations(cp) {
       <div class="card-header">
         <h3>🗓 ${t('chargepoint.cpReservationsTitle')}</h3>
         ${canManage() ? `
-        <button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="showCreateReservationModal(${cp.id})">+ ${t('chargepoint.cpReservationsNew')}</button>
+        <button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="showCreateReservationModal(${cp.id})">+ ${t('chargepoint.cpReservationsNew')}</button>
         ` : ''}
       </div>
       ${!cp.feat_reservation ? `<div style="margin:8px 16px;padding:10px 14px;background:var(--warning-surface);border-left:4px solid var(--warning);border-radius:4px;font-size:13px">⚠️ ${t('chargepoint.cpReservationsNoSupport')}</div>` : ''}
@@ -2046,7 +2060,7 @@ async function loadReservations(cpId) {
                 <td><span class="badge ${reservationBadgeClass(r.status)}">${r.status}</span></td>
                 <td class="text-muted" style="font-size:12px">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
                 <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.created_at)}</td>
-                ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}
+                ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}
               </tr>
             `).join('')}
           </tbody>
@@ -2091,8 +2105,8 @@ async function showCreateReservationModal(cpId) {
       <input type="text" id="resExpiry"/>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" id="resSubmitBtn" onclick="withBtn(this, () => submitCreateReservation(${cpId}))">${t('common.save')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" id="resSubmitBtn" data-onclick="withBtn(this, () => submitCreateReservation(${cpId}))">${t('common.save')}</button>
     </div>
   `);
   const lc = getLocaleConfig();
@@ -2174,7 +2188,7 @@ function showProfileDetail(profileDbId) {
       </table>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.close')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.close')}</button>
     </div>
   `);
 }
@@ -2219,14 +2233,14 @@ async function showCreateProfileModal(cpId, isOnline) {
     <h2>${t('chargepoint.cpProfileCreateTitle')}</h2>
     <div class="form-group">
       <label>${t('chargepoint.cpProfilePurpose')}</label>
-      <select id="cp_purpose" onchange="onProfilePurposeChange()">
+      <select id="cp_purpose" data-onchange="onProfilePurposeChange()">
         <option value="ChargePointMaxProfile">${t('chargepoint.cpProfilePurposeMax')}</option>
         <option value="TxDefaultProfile">${t('chargepoint.cpProfilePurposeTxDefault')}</option>
       </select>
     </div>
     <div class="form-group">
       <label>${t('chargepoint.cpProfileKind')}</label>
-      <select id="cp_kind" onchange="onProfileKindChange()">
+      <select id="cp_kind" data-onchange="onProfileKindChange()">
         <option value="Absolute">Absolute</option>
         <option value="Recurring">Recurring</option>
       </select>
@@ -2270,13 +2284,13 @@ async function showCreateProfileModal(cpId, isOnline) {
         <div class="form-group" style="margin:0;flex:1"><label style="font-size:12px">${t('chargepoint.cpProfileStartPeriod')}</label><input type="number" class="period-start" value="0" min="0"/></div>
         <div class="form-group" style="margin:0;flex:1"><label style="font-size:12px">${t('chargepoint.cpProfileLimit')}</label><input type="number" class="period-limit" step="any" min="0"/></div>
         <div class="form-group" style="margin:0;flex:1"><label style="font-size:12px">${t('chargepoint.cpProfilePhases')}</label><input type="number" class="period-phases" min="1" max="3" placeholder="—"/></div>
-        <button class="btn btn-danger btn-sm" onclick="removePeriodRow(this)" style="margin-bottom:0;flex-shrink:0">✕</button>
+        <button class="btn btn-danger btn-sm" data-onclick="removePeriodRow(this)" style="margin-bottom:0;flex-shrink:0">✕</button>
       </div>
     </div>
-    <button class="btn btn-secondary btn-sm" onclick="addPeriodRow()" style="margin-bottom:16px">+ ${t('chargepoint.cpProfileAddPeriod')}</button>
+    <button class="btn btn-secondary btn-sm" data-onclick="addPeriodRow()" style="margin-bottom:16px">+ ${t('chargepoint.cpProfileAddPeriod')}</button>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" ${!isOnline ? 'disabled' : ''} onclick="withBtn(this, () => submitCreateProfile(${cpId}))">${t('common.create')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" ${!isOnline ? 'disabled' : ''} data-onclick="withBtn(this, () => submitCreateProfile(${cpId}))">${t('common.create')}</button>
     </div>
   `);
   // Init flatpickr on date fields
@@ -2318,7 +2332,7 @@ function addPeriodRow() {
     <div class="form-group" style="margin:0;flex:1"><label style="font-size:12px">${t('chargepoint.cpProfileStartPeriod')}</label><input type="number" class="period-start" min="0"/></div>
     <div class="form-group" style="margin:0;flex:1"><label style="font-size:12px">${t('chargepoint.cpProfileLimit')}</label><input type="number" class="period-limit" step="any" min="0"/></div>
     <div class="form-group" style="margin:0;flex:1"><label style="font-size:12px">${t('chargepoint.cpProfilePhases')}</label><input type="number" class="period-phases" min="1" max="3" placeholder="—"/></div>
-    <button class="btn btn-danger btn-sm" onclick="removePeriodRow(this)" style="margin-bottom:0;flex-shrink:0">✕</button>
+    <button class="btn btn-danger btn-sm" data-onclick="removePeriodRow(this)" style="margin-bottom:0;flex-shrink:0">✕</button>
   `;
   container.appendChild(div);
 }
@@ -2370,8 +2384,8 @@ async function showCopyProfileModal(cpId, profileDbId) {
     <p style="font-size:13px;color:var(--color-text-muted,#666);margin-bottom:12px">Profil #${p.profile_id} — ${p.profile_purpose} (${p.profile_kind})</p>
     <div id="copyTargetList"><p class="text-muted">${t('chargepoint.cpProfilesLoading')}</p></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" id="btnCopyProfile" disabled onclick="withBtn(this, () => executeCopyProfile(${cpId}, ${profileDbId}))">${t('chargepoint.cpProfileCopyBtn')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" id="btnCopyProfile" disabled data-onclick="withBtn(this, () => executeCopyProfile(${cpId}, ${profileDbId}))">${t('chargepoint.cpProfileCopyBtn')}</button>
     </div>
   `);
   try {
@@ -2387,7 +2401,7 @@ async function showCopyProfileModal(cpId, profileDbId) {
       <div style="max-height:240px;overflow-y:auto;border:1px solid var(--color-border,#e0e0e0);border-radius:4px">
         ${eligible.map(cp => `
           <label style="display:flex;gap:10px;align-items:center;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--color-border,#e0e0e0)">
-            <input type="radio" name="copyTarget" value="${cp.id}" onchange="document.getElementById('btnCopyProfile').disabled=false"/>
+            <input type="radio" name="copyTarget" value="${cp.id}" data-onchange="document.getElementById('btnCopyProfile').disabled=false"/>
             <span>
               <strong>${escapeHtml(cp.cpname || cp.identity)}</strong>
               <span class="text-muted" style="font-size:12px"> — ${escapeHtml(cp.site_name || '')}</span>
@@ -2452,7 +2466,7 @@ async function getCompositeSchedule(cpId) {
     }
     resultEl.innerHTML = `
       <div style="display:flex;justify-content:flex-end;margin-bottom:4px">
-        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('compScheduleResult').innerHTML=''">${t('common.hide')}</button>
+        <button class="btn btn-secondary btn-sm" data-onclick="document.getElementById('compScheduleResult').innerHTML=''">${t('common.hide')}</button>
       </div>
       <pre style="font-size:12px;overflow-x:auto;background:var(--gray-50);padding:12px;border-radius:4px;margin-top:0">${escapeHtml(JSON.stringify(result, null, 2))}</pre>`;
   } catch (err) {
@@ -2467,9 +2481,9 @@ async function renderDetailTabConfig(cp) {
       <div class="card-header">
         <h3>⚙️ ${t('chargepoint.cpConfTitle')}</h3>
         <div class="flex-gap">
-          <input type="text" id="configSearchInput" placeholder="${t('chargepoint.cpConfSearchPlaceholder')}" oninput="filterConfigTable()" style="max-width:200px;width:100%;padding:4px 8px;font-size:13px;" />
-          ${adminManage() ? `<button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="showGetConfigKeyModal(${cp.id}, '${escapeAttr(cp.ocpp_version || '1.6')}')">🔍 ${t('chargepoint.cpConfGetKey')}</button>` : ''}
-          ${canManage() ? `<button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} onclick="withBtn(this, () => refreshChargepointConfig(${cp.id}))">🔄 ${t('chargepoint.cpConfRefresh')}</button>` : ''}
+          <input type="text" id="configSearchInput" placeholder="${t('chargepoint.cpConfSearchPlaceholder')}" data-oninput="filterConfigTable()" style="max-width:200px;width:100%;padding:4px 8px;font-size:13px;" />
+          ${adminManage() ? `<button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="showGetConfigKeyModal(${cp.id}, '${escapeAttr(cp.ocpp_version || '1.6')}')">🔍 ${t('chargepoint.cpConfGetKey')}</button>` : ''}
+          ${canManage() ? `<button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="withBtn(this, () => refreshChargepointConfig(${cp.id}))">🔄 ${t('chargepoint.cpConfRefresh')}</button>` : ''}
         </div>
       </div>
       <div id="configTableContainer">
@@ -2515,7 +2529,7 @@ function renderConfigTable(cpId, config, isOnline) {
           ${adminManage() ? `<td style="white-space:nowrap;">
             ${GLOBAL_ONLY_KEYS.includes(c.key)
               ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
-              : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.key)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.key)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
+              : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.key)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.key)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
             }
           </td>` : ''}
         </tr>
@@ -2561,8 +2575,8 @@ function showEditConfigModal(cpId, key, currentValue) {
     </div>
     <p class="text-muted" style="font-size:12px;">${t('chargepoint.cpConfEditHint')}</p>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="withBtn(this, () => updateChargepointConfig(${cpId}, '${escapeAttr(key)}'))">${t('common.save')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => updateChargepointConfig(${cpId}, '${escapeAttr(key)}'))">${t('common.save')}</button>
     </div>
   `);
 }
@@ -2593,8 +2607,8 @@ function showGetConfigKeyModal(cpId, ocppVersion) {
     </div>
     <p class="text-muted" style="font-size:12px;">${t('chargepoint.cpConfGetKeyHint')}</p>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="withBtn(this, () => getChargepointConfigKey(${cpId}))">${t('chargepoint.cpConfGetKeySubmit')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => getChargepointConfigKey(${cpId}))">${t('chargepoint.cpConfGetKeySubmit')}</button>
     </div>
   `);
 }
@@ -2696,7 +2710,7 @@ async function renderConnectors() {
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:4px;">
               <div style="min-width:0;overflow:hidden;text-overflow:ellipsis;">
                 <span class="status-dot ${isOnline ? 'dot-online' : 'dot-offline'}"></span>
-                <strong><a href="#" onclick="showChargepointDetail(${c.chargepoint_id});return false;" style="color:inherit;text-decoration:none;">${escapeHtml(c.chargepoint_name || c.chargepoint_identity)}</a></strong>
+                <strong><a href="#" data-onclick="showChargepointDetail(${c.chargepoint_id});return false;" style="color:inherit;text-decoration:none;">${escapeHtml(c.chargepoint_name || c.chargepoint_identity)}</a></strong>
               </div>
               <div style="flex-shrink:0;">${!isOnline
             ? `<span class="badge badge-red">${t('connectors.status.Offline')}</span>`
@@ -2707,7 +2721,7 @@ async function renderConnectors() {
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
             <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${t('common.connector_one')} ${c.connector_id}</div>
             ${canStart
-            ? `<button class="btn btn-success btn-block" onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+            ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                   ⚡ ${t('connectors.cStartCharge')}
                 </button>`
             : isCharging && c.active_transaction_id
@@ -2716,7 +2730,7 @@ async function renderConnectors() {
                       <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
                       <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
                     </div>
-                    <button class="btn btn-danger btn-block" onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                    <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                       ⏹ ${t('connectors.cStopCharge')}
                     </button>`
               : isFaulted || isUnavailable
@@ -2840,7 +2854,7 @@ async function renderUserDashboard() {
             ${isSuspended
           ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">🚫 ${t('dashboard.siteAccessSuspended')}</div>`
           : canChargeConn
-            ? `<button class="btn btn-success btn-block" onclick="withBtn(this, () => userStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+            ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => userStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                   ⚡ ${t('connectors.cStartCharge')}
                 </button>`
             : isOwnCharge
@@ -2849,7 +2863,7 @@ async function renderUserDashboard() {
                     <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
                     <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
                   </div>
-                  <button class="btn btn-danger btn-block" onclick="withBtn(this, () => userStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                  <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => userStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                     ⏹ ${t('connectors.cStopCharge')}
                   </button>`
               : isAutoMode && isOnline
@@ -2934,7 +2948,7 @@ async function renderIdTags(tab) {
   idTagsActiveTab = tab || 'tags';
   const isAdmin = currentUser.role === 'admin';
   const managedSiteIds = isAdmin ? null : (currentUser.sites || []).filter(s => s.role === 'manager').map(s => s.site_id);
-  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-primary" onclick="showCreateIdTagModal()">+ ${t('idtags.rfBtnAdd')}</button>`;
+  document.getElementById('topbarActions').innerHTML = `<button class="btn btn-primary" data-onclick="showCreateIdTagModal()">+ ${t('idtags.rfBtnAdd')}</button>`;
 
   if (idTagsActiveTab === 'events') {
     return renderIdTagsEvents();
@@ -2973,15 +2987,15 @@ async function renderIdTags(tab) {
 
     document.getElementById('pageContent').innerHTML = `
       <div class="tabs">
-        <button class="tab ${idTagsActiveTab === 'tags' ? 'active' : ''}" onclick="switchIdTagsTab('tags')">🏷️ ${t('common.rfidTag')}</button>
-        <button class="tab ${idTagsActiveTab === 'events' ? 'active' : ''}" onclick="switchIdTagsTab('events')">🚫 ${t('idtags.rfHistoDenial')}</button>
+        <button class="tab ${idTagsActiveTab === 'tags' ? 'active' : ''}" data-onclick="switchIdTagsTab('tags')">🏷️ ${t('common.rfidTag')}</button>
+        <button class="tab ${idTagsActiveTab === 'events' ? 'active' : ''}" data-onclick="switchIdTagsTab('events')">🚫 ${t('idtags.rfHistoDenial')}</button>
       </div>
       <div class="card card-filters">
         <div class="card-header"><h3>🔍 ${t('filters.filter')}${activeFilterCount ? ` (${t('filters.nbfilter', {count: activeFilterCount})})` : ''}</h3></div>
         <div class="msg-filters">
           <div class="form-group">
             <label>${t('common.status')}</label>
-            <select id="idTagFilterStatus" onchange="applyIdTagsFilters()">
+            <select id="idTagFilterStatus" data-onchange="applyIdTagsFilters()">
               <option value="">${t('filters.all')}</option>
               <option value="1" ${idTagsFilters.status === '1' ? 'selected' : ''}>${t('filters.active')}</option>
               <option value="0" ${idTagsFilters.status === '0' ? 'selected' : ''}>${t('filters.inactive')}</option>
@@ -2989,7 +3003,7 @@ async function renderIdTags(tab) {
           </div>
           <div class="form-group">
             <label>${t('common.site_one')}</label>
-            <select id="idTagFilterSite" onchange="applyIdTagsFilters()">
+            <select id="idTagFilterSite" data-onchange="applyIdTagsFilters()">
               <option value="">${t('filters.noFilter')}</option>
               <option value="all_sites" ${idTagsFilters.site_id === 'all_sites' ? 'selected' : ''}>${t('filters.all')}</option>
               ${uniqueSites.map(([id, name]) => `<option value="${id}" ${idTagsFilters.site_id === String(id) ? 'selected' : ''}>${name}</option>`).join('')}
@@ -2997,20 +3011,20 @@ async function renderIdTags(tab) {
           </div>
           <div class="form-group">
             <label>${t('common.user')}</label>
-            <select id="idTagFilterUser" onchange="applyIdTagsFilters()">
+            <select id="idTagFilterUser" data-onchange="applyIdTagsFilters()">
               <option value="">${t('filters.all')}</option>
               ${uniqueUsers.map(([id, name]) => `<option value="${id}" ${idTagsFilters.user === String(id) ? 'selected' : ''}>${name}</option>`).join('')}
             </select>
           </div>
           ${isAdmin ? `<div class="form-group">
             <label>${t('filters.type')}</label>
-            <select id="idTagFilterAuto" onchange="applyIdTagsFilters()">
+            <select id="idTagFilterAuto" data-onchange="applyIdTagsFilters()">
               <option value="">${t('filters.all')}</option>
               <option value="0" ${idTagsFilters.auto === '0' ? 'selected' : ''}>${t('idtags.rfPhysical')}</option>
               <option value="1" ${idTagsFilters.auto === '1' ? 'selected' : ''}>${t('idtags.rfVirtual')}</option>
             </select>
           </div>` : ''}
-          <button class="btn btn-outline btn-sm" onclick="resetIdTagsFilters()">${t('common.reset')}</button>
+          <button class="btn btn-outline btn-sm" data-onclick="resetIdTagsFilters()">${t('common.reset')}</button>
         </div>
       </div>
       <div class="card">
@@ -3034,8 +3048,8 @@ async function renderIdTags(tab) {
                 <td class="text-muted">${formatDate(tag.created_at)}</td>
                 <td><div class="flex-gap">
                   ${!canEditTag(tag) ? (isAutoTag(tag) ? `<span class="badge badge-yellow" title="${t('idtags.rfVirtualHint')}">${t('idtags.rfVirtual')}</span>` : '') : `
-                  <button class="btn btn-teal btn-sm" onclick="showEditIdTagModal(${tag.id})">${t('common.edit')}</button>
-                  <button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteIdTag(${tag.id}, '${escapeAttr(tag.id_tag)}'))">${t('common.delete')}</button>`}
+                  <button class="btn btn-teal btn-sm" data-onclick="showEditIdTagModal(${tag.id})">${t('common.edit')}</button>
+                  <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteIdTag(${tag.id}, '${escapeAttr(tag.id_tag)}'))">${t('common.delete')}</button>`}
                 </div></td>
               </tr>
             `).join('')}
@@ -3074,7 +3088,7 @@ async function showCreateIdTagModal() {
       <label>${t('common.user')} (${t('idtags.rfOptionnal')})</label>
       <select id="tagUserId">
         <option value="">${t('idtags.rfUserNone')}</option>
-        ${users.map(u => `<option value="${u.id}">${u.shortname || u.useremail}</option>`).join('')}
+        ${users.map(u => `<option value="${u.id}">${escapeHtml(u.shortname || u.useremail)}</option>`).join('')}
       </select>
     </div>`;
   }
@@ -3087,15 +3101,15 @@ async function showCreateIdTagModal() {
       <label>${t('common.site_one')}${isAdmin ? '' : ` (${t('idtags.rfRequired')})`}</label>
       <select id="tagSiteId">
         ${isAdmin ? `<option value="">${t('idtags.rfAllSites')}</option>` : ''}
-        ${availableSites.map(s => `<option value="${s.id}">${s.sname}</option>`).join('')}
+        ${availableSites.map(s => `<option value="${s.id}">${escapeHtml(s.sname)}</option>`).join('')}
       </select>
     </div>
     ${isAdmin ? `<div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfAllSitesHint')}</div>` : ''}
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="tagDescription" placeholder="${t('idtags.rfDescriptionHint')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')}))</label><input type="text" id="tagExpiry" placeholder="${t('common.select')}" /></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="withBtn(this, createIdTag)">${t('common.create')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, createIdTag)">${t('common.create')}</button>
     </div>
   `);
   const lc = getLocaleConfig();
@@ -3124,7 +3138,7 @@ async function showEditIdTagModal(id) {
       <label>${t('common.user')} (${t('idtags.rfOptionnal')})</label>
       <select id="editTagUserId">
         <option value="">${t('idtags.rfUserNone')}</option>
-        ${users.map(u => `<option value="${u.id}" ${u.id === tag.user_id ? 'selected' : ''}>${u.shortname || u.useremail}</option>`).join('')}
+        ${users.map(u => `<option value="${u.id}" ${u.id === tag.user_id ? 'selected' : ''}>${escapeHtml(u.shortname || u.useremail)}</option>`).join('')}
       </select>
     </div>`;
   }
@@ -3143,14 +3157,14 @@ async function showEditIdTagModal(id) {
       <label>${t('common.site_one')}${isAdmin ? '' : ` (${t('idtags.rfRequired')})`}</label>
       <select id="editTagSiteId">
         ${isAdmin ? `<option value="">${t('idtags.rfAllSites')}</option>` : ''}
-        ${availableSites.map(s => `<option value="${s.id}" ${s.id === tag.site_id ? 'selected' : ''}>${s.sname}</option>`).join('')}
+        ${availableSites.map(s => `<option value="${s.id}" ${s.id === tag.site_id ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
       </select>
     </div>
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagDescription" value="${escapeAttr(tag.description || '')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagExpiry" placeholder="${t('common.select')}" /></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="withBtn(this, () => updateIdTag(${id}))">${t('common.save')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => updateIdTag(${id}))">${t('common.save')}</button>
     </div>
   `);
   const lc = getLocaleConfig();
@@ -3239,15 +3253,15 @@ async function renderIdTagsEvents() {
 
     document.getElementById('pageContent').innerHTML = `
     <div class="tabs">
-      <button class="tab ${idTagsActiveTab === 'tags' ? 'active' : ''}" onclick="switchIdTagsTab('tags')">🏷️ ${t('common.rfidTag')}</button>
-      <button class="tab ${idTagsActiveTab === 'events' ? 'active' : ''}" onclick="switchIdTagsTab('events')">🚫 ${t('idtags.rfHistoDenial')}</button>
+      <button class="tab ${idTagsActiveTab === 'tags' ? 'active' : ''}" data-onclick="switchIdTagsTab('tags')">🏷️ ${t('common.rfidTag')}</button>
+      <button class="tab ${idTagsActiveTab === 'events' ? 'active' : ''}" data-onclick="switchIdTagsTab('events')">🚫 ${t('idtags.rfHistoDenial')}</button>
     </div>
     <div class="card card-filters">
       <div class="card-header"><h3>🔍 ${t('filters.filter')}${activeFilterCount ? ` (${t('filters.nbfilter', { count: activeFilterCount })})` : ''}</h3></div>
       <div class="msg-filters">
         <div class="form-group">
           <label>${t('idtags.rfResponse')}</label>
-          <select id="evtFilterStatus" onchange="applyIdTagsEventsFilters()">
+          <select id="evtFilterStatus" data-onchange="applyIdTagsEventsFilters()">
             <option value="">${t('filters.all')}</option>
             <option value="Blocked" ${idTagsEventsFilters.status === 'Blocked' ? 'selected' : ''}>${t('idtags.rfRespBlocked')}</option>
             <option value="Expired" ${idTagsEventsFilters.status === 'Expired' ? 'selected' : ''}>${t('idtags.rfRespExpired')}</option>
@@ -3257,25 +3271,25 @@ async function renderIdTagsEvents() {
         </div>
         <div class="form-group">
           <label>${t('common.chargepoint_one')}</label>
-          <select id="evtFilterCp" onchange="applyIdTagsEventsFilters()">
+          <select id="evtFilterCp" data-onchange="applyIdTagsEventsFilters()">
             <option value="">${t('filters.allf')}</option>
             ${uniqueCps.map(([id, name]) => `<option value="${id}" ${idTagsEventsFilters.chargepoint === String(id) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
           <label>${t('idtags.rfTagIdent')}</label>
-          <input type="text" id="evtFilterTag" value="${escapeAttr(idTagsEventsFilters.id_tag)}" placeholder="${t('idtags.rfHistoSearchTag')}" onchange="applyIdTagsEventsFilters()" />
+          <input type="text" id="evtFilterTag" value="${escapeAttr(idTagsEventsFilters.id_tag)}" placeholder="${t('idtags.rfHistoSearchTag')}" data-onchange="applyIdTagsEventsFilters()" />
         </div>
         <div class="form-group">
           <label>${t('idtags.rfHistoLimit')}</label>
-          <select id="evtFilterLimit" onchange="applyIdTagsEventsFilters()">
+          <select id="evtFilterLimit" data-onchange="applyIdTagsEventsFilters()">
             <option value="50" ${idTagsEventsFilters.limit === '50' ? 'selected' : ''}>50</option>
             <option value="100" ${idTagsEventsFilters.limit === '100' ? 'selected' : ''}>100</option>
             <option value="200" ${idTagsEventsFilters.limit === '200' ? 'selected' : ''}>200</option>
             <option value="500" ${idTagsEventsFilters.limit === '500' ? 'selected' : ''}>500</option>
           </select>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="resetIdTagsEventsFilters()">${t('common.reset')}</button>
+        <button class="btn btn-outline btn-sm" data-onclick="resetIdTagsEventsFilters()">${t('common.reset')}</button>
       </div>
     </div>
     <div class="card">
@@ -3304,8 +3318,8 @@ async function renderIdTagsEvents() {
   } catch (err) {
     document.getElementById('pageContent').innerHTML = `
     <div class="tabs">
-      <button class="tab" onclick="switchIdTagsTab('tags')">🏷️ ${t('common.rfidTag')}</button>
-      <button class="tab active" onclick="switchIdTagsTab('events')">🚫 ${t('idtags.rfHistoDenial')}</button>
+      <button class="tab" data-onclick="switchIdTagsTab('tags')">🏷️ ${t('common.rfidTag')}</button>
+      <button class="tab active" data-onclick="switchIdTagsTab('events')">🚫 ${t('idtags.rfHistoDenial')}</button>
     </div>
     <p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
@@ -3349,7 +3363,7 @@ async function renderUsers() {
   if (currentUser.role !== 'admin') return navigate('dashboard');
 
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-primary" onclick="showCreateUserModal()">+ ${t('users.uBtnAdd')}</button>`;
+    `<button class="btn btn-primary" data-onclick="showCreateUserModal()">+ ${t('users.uBtnAdd')}</button>`;
 
   try {
     const users = await api('GET', '/users');
@@ -3367,17 +3381,17 @@ async function renderUsers() {
               const canDelete = !isSelf && !isLastAdmin;
               return `
               <tr>
-                <td style="font-weight:500">${u.useremail}</td>
-                <td>${u.shortname || '<span class="text-muted">-</span>'}</td>
+                <td style="font-weight:500">${escapeHtml(u.useremail)}</td>
+                <td>${u.shortname ? escapeHtml(u.shortname) : '<span class="text-muted">-</span>'}</td>
                 <td>${formatRoleColumn(u)}</td>
                 <td>${formatUserSites(u.sites)}</td>
                 <td class="text-muted">${formatDate(u.created_at)}</td>
                 <td class="text-muted">${u.last_login ? formatDate(u.last_login) : '<span class="text-muted">-</span>'}</td>
                 <td>
-                  <button class="btn btn-indigo btn-sm" onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
-                  ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
-                  <button class="btn btn-teal btn-sm" onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
-                  ${canDelete ? `<button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteUser(${u.id}, '${escapeAttr(u.useremail)}'))">${t('common.delete')}</button>` : ''}
+                  <button class="btn btn-indigo btn-sm" data-onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
+                  ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
+                  <button class="btn btn-teal btn-sm" data-onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
+                  ${canDelete ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteUser(${u.id}, '${escapeAttr(u.useremail)}'))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
             `}).join('')}
@@ -3417,8 +3431,8 @@ async function showCreateUserModal() {
       </select>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="withBtn(this, createUser)">${t('common.create')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, createUser)">${t('common.create')}</button>
     </div>
   `);
   // Indicateur en temps réel de la force du mot de passe
@@ -3457,8 +3471,8 @@ async function showEditUserModal(id) {
       ${isLastAdmin ? `<small class="text-muted">${t('apiErrors.ERR_CANNOT_DEMOTE_LAST_ADMIN')}</small>` : ''}
     </div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="withBtn(this, () => updateUser(${id}))">${t('common.save')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => updateUser(${id}))">${t('common.save')}</button>
     </div>
   `);
   // Indicateur en temps réel de la force du mot de passe
@@ -3553,7 +3567,7 @@ async function showUserSitesModal(id) {
       <div id="editSitesList">
         ${sites.map(s => `
           <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px;">
-            <input type="checkbox" id="siteChk_${s.id}" value="${s.id}" ${userSiteMap[s.id] ? 'checked' : ''} onchange="onSiteCheckChange(${s.id})" />
+            <input type="checkbox" id="siteChk_${s.id}" value="${s.id}" ${userSiteMap[s.id] ? 'checked' : ''} data-onchange="onSiteCheckChange(${s.id})" />
             <input type="hidden" id="siteAuth_${s.id}" value="${userSiteMap[s.id] ? userSiteMap[s.id].authorized : 1}" />
             <label for="siteChk_${s.id}" style="flex:1;margin:0;">${escapeHtml(s.sname)}</label>
             ${isAdmin ? '' : `
@@ -3566,8 +3580,8 @@ async function showUserSitesModal(id) {
       </div>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.close')}</button>
-      <button class="btn btn-primary" onclick="saveUserSites(${id})">${t('common.save')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.close')}</button>
+      <button class="btn btn-primary" data-onclick="saveUserSites(${id})">${t('common.save')}</button>
     </div>
   `);
 }
@@ -3603,7 +3617,7 @@ let txFilters = {};
 
 async function renderTransactions() {
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-primary" onclick="exportTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
+    `<button class="btn btn-primary" data-onclick="exportTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
     const [sites, chargepoints] = await Promise.all([
       api('GET', '/sites'),
@@ -3664,21 +3678,21 @@ async function renderTransactions() {
         <div class="msg-filters">
           <div class="form-group">
             <label>${t('common.site_one')}</label>
-            <select id="txFilterSite" onchange="onTxSiteChange()">
+            <select id="txFilterSite" data-onchange="onTxSiteChange()">
               <option value="">${t('filters.all')}</option>
               ${sites.map(s => `<option value="${s.id}" ${txFilters.site_id == s.id ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label>${t('common.chargepoint_one')}</label>
-            <select id="txFilterCp" onchange="applyTxFilters()">
+            <select id="txFilterCp" data-onchange="applyTxFilters()">
               <option value="">${t('filters.allf')}</option>
               ${filteredCps.map(cp => `<option value="${cp.id}" ${txFilters.chargepoint_id == cp.id ? 'selected' : ''}>${escapeHtml(cp.name || cp.identity)}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label>${t('common.status')}</label>
-            <select id="txFilterStatus" onchange="applyTxFilters()">
+            <select id="txFilterStatus" data-onchange="applyTxFilters()">
               <option value="">${t('filters.all')}</option>
               <option value="Active" ${txFilters.status === 'Active' ? 'selected' : ''}>${t('transac.inProgress')}</option>
               <option value="Completed" ${txFilters.status === 'Completed' ? 'selected' : ''}>${t('transac.completed')}</option>
@@ -3692,7 +3706,7 @@ async function renderTransactions() {
             <label>${t('filters.dateTo')}</label>
             <input type="text" id="txFilterTo" placeholder="${t('common.select')}" />
           </div>
-          <button class="btn btn-outline btn-sm" onclick="resetTxFilters()">${t('common.reset')}</button>
+          <button class="btn btn-outline btn-sm" data-onclick="resetTxFilters()">${t('common.reset')}</button>
         </div>
       </div>
 
@@ -3705,8 +3719,8 @@ async function renderTransactions() {
             ${transactions.map(tx => `
               <tr>
                 <td>${tx.transaction_id}</td>
-                <td>${tx.chargepoint_name && tx.chargepoint_name !== tx.chargepoint_identity ? `${tx.chargepoint_identity} - ${escapeHtml(tx.chargepoint_name)}` : tx.chargepoint_identity}</td>
-                <td>${tx.site_name || '-'}</td>
+                <td>${tx.chargepoint_name && tx.chargepoint_name !== tx.chargepoint_identity ? `${escapeHtml(tx.chargepoint_identity)} - ${escapeHtml(tx.chargepoint_name)}` : escapeHtml(tx.chargepoint_identity)}</td>
+                <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
                 <td>${tx.connector_id}</td>
                 <td>${cleanIdTag(tx.id_tag) || '-'}</td>
                 <td>${formatTxUser(tx)}</td>
@@ -3716,7 +3730,7 @@ async function renderTransactions() {
                 <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${formatTxStatus(tx.status)}</td>
                 <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
-                <td>${tx.has_values ? `<a href="#" onclick="showTransactionDetail(${tx.transaction_id}, 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail(${tx.transaction_id}, 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -3802,7 +3816,7 @@ function myTxKpiCompare(current, previous) {
 
 async function renderMyTransactions() {
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-primary" onclick="exportMyTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
+    `<button class="btn btn-primary" data-onclick="exportMyTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
     const queryParams = new URLSearchParams();
     if (myTxFilters.status) queryParams.set('status', myTxFilters.status);
@@ -3870,7 +3884,7 @@ async function renderMyTransactions() {
       <div class="msg-filters">
         <div class="form-group">
           <label>${t('common.status')}</label>
-          <select id="myTxFilterStatus" onchange="applyMyTxFilters()">
+          <select id="myTxFilterStatus" data-onchange="applyMyTxFilters()">
             <option value="">${t('filters.all')}</option>
             <option value="Active" ${myTxFilters.status === 'Active' ? 'selected' : ''}>${t('transac.inProgress')}</option>
             <option value="Completed" ${myTxFilters.status === 'Completed' ? 'selected' : ''}>${t('transac.completed')}</option>
@@ -3884,7 +3898,7 @@ async function renderMyTransactions() {
           <label>${t('filters.dateTo')}</label>
           <input type="text" id="myTxFilterTo" placeholder="${t('common.select')}" />
         </div>
-        <button class="btn btn-outline btn-sm" onclick="resetMyTxFilters()">${t('common.reset')}</button>
+        <button class="btn btn-outline btn-sm" data-onclick="resetMyTxFilters()">${t('common.reset')}</button>
       </div>
     </div>
     <div class="card">
@@ -3919,7 +3933,7 @@ async function renderMyTransactions() {
               <td>${duration}</td>
               <td>${formatTxStatus(tx.status)}</td>
               <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
-              <td>${tx.has_values ? `<a href="#" onclick="showTransactionDetail(${tx.transaction_id}, 'mytransactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+              <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail(${tx.transaction_id}, 'mytransactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -4011,7 +4025,7 @@ async function showTransactionDetail(transactionId, lastPage) {
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === lastPage));
 
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-secondary" onclick="navigate('${lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
+    `<button class="btn btn-secondary" data-onclick="navigate('${lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
 
   document.getElementById('pageContent').innerHTML = `
     <div class="chart-grid" style="grid-template-columns: 1fr;">
@@ -4050,7 +4064,7 @@ function refreshTransactionDetail() {
   document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: txDetailContext.transactionId });
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === txDetailContext.lastPage));
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-secondary" onclick="navigate('${txDetailContext.lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
+    `<button class="btn btn-secondary" data-onclick="navigate('${txDetailContext.lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
 
   document.getElementById('pageContent').innerHTML = `
     <div class="chart-grid" style="grid-template-columns: 1fr;">
@@ -4267,7 +4281,7 @@ async function renderNotifications() {
                 <strong>🔔 ${t('push.activate')}</strong>
                 <p style="margin:4px 0 0;font-size:13px;color:var(--gray-600);">${t('push.activateHint')}</p>
               </div>
-              <button class="btn btn-primary" onclick="withBtn(this, subscribeToPush)">${t('push.btnActivate')}</button>
+              <button class="btn btn-primary" data-onclick="withBtn(this, subscribeToPush)">${t('push.btnActivate')}</button>
             </div>
           </div>
         `;
@@ -4279,7 +4293,7 @@ async function renderNotifications() {
                 <strong>✅ ${t('push.activated')}</strong>
                 <p style="margin:4px 0 0;font-size:13px;color:var(--gray-600);">${t('push.activatedHint')}</p>
               </div>
-              <button class="btn btn-outline btn-sm" onclick="withBtn(this, unsubscribeFromPush)" style="color:var(--danger);border-color:var(--danger);">${t('push.btnDeactivate')}</button>
+              <button class="btn btn-outline btn-sm" data-onclick="withBtn(this, unsubscribeFromPush)" style="color:var(--danger);border-color:var(--danger);">${t('push.btnDeactivate')}</button>
             </div>
           </div>
         `;
@@ -4289,12 +4303,12 @@ async function renderNotifications() {
     document.getElementById('pageContent').innerHTML = `
     ${pushSection}
     <div class="card">
-      <div class="card-header" style="cursor:pointer;" onclick="toggleNotifPrefs()">
+      <div class="card-header" style="cursor:pointer;" data-onclick="toggleNotifPrefs()">
         <h3>⚙️ ${t('push.prefTitle')} <span id="notifPrefsToggle" style="font-size:12px;">▶</span></h3>
       </div>
       <div id="notifPrefsContent" class="hidden">
       <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px;">${t('push.prefHint')}</p>
-      <form id="notifPrefsForm" onsubmit="saveNotificationPrefs(event)">
+      <form id="notifPrefsForm" data-onsubmit="saveNotificationPrefs(event)">
         <table>
           <thead>
             <tr>
@@ -4324,14 +4338,14 @@ async function renderNotifications() {
         ${eventKeys.length > 0 ? `
           <div style="margin-top:16px;display:flex;gap:8px;">
             <button type="submit" class="btn btn-primary">${t('common.save')}</button>
-            <button type="button" class="btn btn-outline btn-sm" onclick="renderNotifications()">${t('common.cancel')}</button>
+            <button type="button" class="btn btn-outline btn-sm" data-onclick="renderNotifications()">${t('common.cancel')}</button>
           </div>
         ` : ''}
       </form>
       </div>
     </div>
     <div class="card" style="margin-top:16px;">
-      <div class="card-header" style="cursor:pointer;" onclick="toggleNotifLog()">
+      <div class="card-header" style="cursor:pointer;" data-onclick="toggleNotifLog()">
         <h3>📋 ${t('push.prefHistory')} <span id="notifLogToggle" style="font-size:12px;">▶</span></h3>
       </div>
       <div id="notifLogContent" class="hidden"></div>
@@ -4404,7 +4418,7 @@ async function renderNotifLog() {
       <div class="msg-filters">
         <div class="form-group">
           <label>${t('push.prefHistoLimit')}</label>
-          <select id="notifLogLimit" onchange="onNotifLogLimitChange()">
+          <select id="notifLogLimit" data-onchange="onNotifLogLimitChange()">
             <option value="10" ${notifLogLimit === '10' ? 'selected' : ''}>10</option>
             <option value="30" ${notifLogLimit === '30' ? 'selected' : ''}>30</option>
             <option value="50" ${notifLogLimit === '50' ? 'selected' : ''}>50</option>
@@ -4412,7 +4426,7 @@ async function renderNotifLog() {
             <option value="200" ${notifLogLimit === '200' ? 'selected' : ''}>200</option>
           </select>
         </div>
-        <button class="btn btn-danger btn-sm" onclick="withBtn(this, clearNotifLog)">${t('push.prefClearHistory')}</button>
+        <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, clearNotifLog)">${t('push.prefClearHistory')}</button>
       </div>
     </div>
 
@@ -4509,8 +4523,8 @@ async function checkPushPrompt() {
         <p>${t('push.promptHint')}</p>
       </div>
       <div class="push-prompt-actions">
-        <button class="btn btn-primary btn-sm" onclick="withBtn(this, acceptPushPrompt)">${t('push.btnActivate')}</button>
-        <button class="push-prompt-close" onclick="dismissPushPrompt()" title="${t('common.close')}">✕</button>
+        <button class="btn btn-primary btn-sm" data-onclick="withBtn(this, acceptPushPrompt)">${t('push.btnActivate')}</button>
+        <button class="push-prompt-close" data-onclick="dismissPushPrompt()" title="${t('common.close')}">✕</button>
       </div>
     </div>
   `;
@@ -4551,7 +4565,7 @@ async function checkSitePrompt() {
         <p>${t('sitePrompt.promptHint')}</p>
       </div>
       <div class="push-prompt-actions">
-        <button class="btn btn-primary btn-sm" onclick="navigate('sites'); showCreateSiteModal()">${t('sitePrompt.btnCreate')}</button>
+        <button class="btn btn-primary btn-sm" data-onclick="navigate('sites'); showCreateSiteModal()">${t('sitePrompt.btnCreate')}</button>
       </div>
     </div>
   `;
@@ -4578,7 +4592,7 @@ async function checkDefaultCredentials() {
         <p>${t('credentialsPrompt.promptHint')}</p>
       </div>
       <div class="push-prompt-actions">
-        <button class="btn btn-primary btn-sm" onclick="navigate('profile')">${t('credentialsPrompt.btnFix')}</button>
+        <button class="btn btn-primary btn-sm" data-onclick="navigate('profile')">${t('credentialsPrompt.btnFix')}</button>
       </div>
     </div>
   `;
@@ -4651,8 +4665,8 @@ async function renderConfigEditor() {
 
   const html = `
     <div class="tabs">
-      <button class="tab ${currentConfigTab === 'app' ? 'active' : ''}" onclick="switchConfigTab('app')">${t('configEditor.tabApp')}</button>
-      <button class="tab ${currentConfigTab === 'chargepoints' ? 'active' : ''}" onclick="switchConfigTab('chargepoints')">${t('configEditor.tabChargepoints')}</button>
+      <button class="tab ${currentConfigTab === 'app' ? 'active' : ''}" data-onclick="switchConfigTab('app')">${t('configEditor.tabApp')}</button>
+      <button class="tab ${currentConfigTab === 'chargepoints' ? 'active' : ''}" data-onclick="switchConfigTab('chargepoints')">${t('configEditor.tabChargepoints')}</button>
     </div>
     <div id="configTabContent"></div>`;
   document.getElementById('pageContent').innerHTML = html;
@@ -4688,7 +4702,7 @@ async function renderConfigTabApp() {
   let html = `<div class="alert" style="background:var(--warning-bg,#fef9c3);color:var(--warning-text,#854d0e);border:1px solid var(--warning-border,#fde047);border-radius:6px;padding:10px 14px;margin-bottom:16px;">
     ⚠️ ${t('configEditor.restartWarning')}
   </div>
-  <form id="configEditorForm" onsubmit="saveConfigEditor(event)">`;
+  <form id="configEditorForm" data-onsubmit="saveConfigEditor(event)">`;
 
   for (const section of sectionOrder) {
     const fields = bySection[section];
@@ -4770,10 +4784,10 @@ async function renderConfigTabChargepoints() {
     html += `<tr>
       <td><code>${escapeHtml(r.key)}</code>${isGlobalOnly ? ` <span class="badge badge-blue" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>` : ''}</td>
       <td>${escapeHtml(r.value)}</td>
-      <td><input type="checkbox" ${r.enabled || isGlobalOnly ? 'checked' : ''} ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : `onchange="toggleInitConfig(${r.id}, this.checked)"`}></td>
+      <td><input type="checkbox" ${r.enabled || isGlobalOnly ? 'checked' : ''} ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : `data-onchange="toggleInitConfig(${r.id}, this.checked)"`}></td>
       <td>
-        <button class="btn btn-sm btn-secondary" onclick="showEditInitConfigModal(${r.id}, '${escapeAttr(r.key)}', '${escapeAttr(r.value)}', ${!!r.enabled}, ${isGlobalOnly})">${t('common.edit')}</button>
-        ${isGlobalOnly ? '' : `<button class="btn btn-sm btn-danger" onclick="withBtn(this, () => deleteInitConfig(${r.id}))">${t('common.delete')}</button>`}
+        <button class="btn btn-sm btn-secondary" data-onclick="showEditInitConfigModal(${r.id}, '${escapeAttr(r.key)}', '${escapeAttr(r.value)}', ${!!r.enabled}, ${isGlobalOnly})">${t('common.edit')}</button>
+        ${isGlobalOnly ? '' : `<button class="btn btn-sm btn-danger" data-onclick="withBtn(this, () => deleteInitConfig(${r.id}))">${t('common.delete')}</button>`}
       </td>
     </tr>`;
   }
@@ -4782,8 +4796,8 @@ async function renderConfigTabChargepoints() {
 
   document.getElementById('configTabContent').innerHTML = html;
   document.getElementById('topbarActions').innerHTML = `
-    <button class="btn btn-secondary btn-sm" onclick="cascadeAllInitConfig()">↓ ${t('initConfig.cascadeBtn')}</button>
-    <button class="btn btn-primary btn-sm" onclick="showCreateInitConfigModal()">+ ${t('initConfig.addBtn')}</button>`;
+    <button class="btn btn-secondary btn-sm" data-onclick="cascadeAllInitConfig()">↓ ${t('initConfig.cascadeBtn')}</button>
+    <button class="btn btn-primary btn-sm" data-onclick="showCreateInitConfigModal()">+ ${t('initConfig.addBtn')}</button>`;
 }
 
 // ── Init Config CRUD ──
@@ -4794,8 +4808,8 @@ function showCreateInitConfigModal() {
     <div class="form-group"><label>${t('initConfig.key')}</label><input type="text" id="initCfgKey" required /></div>
     <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="initCfgValue" required /></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="withBtn(this, createInitConfig)">${t('common.create')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, createInitConfig)">${t('common.create')}</button>
     </div>
   `);
 }
@@ -4824,8 +4838,8 @@ function showEditInitConfigModal(id, key, value, enabled, isGlobalOnly = false) 
     <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="editInitCfgValue" value="${escapeAttr(value)}" required /></div>
     <div class="form-group"><label><input type="checkbox" id="editInitCfgEnabled" checked ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : ''}> ${t('initConfig.enabled')}</label></div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="withBtn(this, () => updateInitConfig(${id}))">${t('common.save')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => updateInitConfig(${id}))">${t('common.save')}</button>
     </div>
   `);
 }
@@ -4925,7 +4939,7 @@ async function cascadeAllInitConfig() {
       ${sections.map(renderSection).join('')}
     </div>
     <div class="modal-actions" style="margin-top:16px;">
-      <button class="btn btn-primary" onclick="closeModal()">${t('common.close')}</button>
+      <button class="btn btn-primary" data-onclick="closeModal()">${t('common.close')}</button>
     </div>
   `);
 }
@@ -4947,7 +4961,7 @@ function buildConfigInput(f) {
   if (f.sensitive) {
     return `<div style="display:flex;gap:4px;align-items:center;">
       <input type="password" id="${id}" data-key="${escapeAttr(f.key)}" data-type="string" ${req} value="${escapeAttr(String(val ?? ''))}" class="form-control form-control-sm">
-      <button type="button" class="btn btn-sm btn-secondary" onclick="const i=document.getElementById('${id}');i.type=i.type==='password'?'text':'password'">👁</button>
+      <button type="button" class="btn btn-sm btn-secondary" data-onclick="const i=document.getElementById('${id}');i.type=i.type==='password'?'text':'password'">👁</button>
     </div>`;
   }
   return `<input type="text" id="${id}" data-key="${escapeAttr(f.key)}" data-type="string" ${req} value="${escapeAttr(String(val ?? ''))}" class="form-control form-control-sm">`;
@@ -5040,7 +5054,7 @@ async function renderProfile() {
         <div class="card-header">
           <h3>${t('profile.pTitle')}</h3>
         </div>
-        <form id="profileForm" onsubmit="saveProfileForm(event)">
+        <form id="profileForm" data-onsubmit="saveProfileForm(event)">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 32px;">
             <div>
               <div class="form-group">
@@ -5094,7 +5108,7 @@ async function renderProfile() {
         <div class="card-header">
           <h3>${t('profile.pTitlePushover')}</h3>
         </div>
-        <form id="pushoverForm" onsubmit="savePushover(event)">
+        <form id="pushoverForm" data-onsubmit="savePushover(event)">
           <div class="form-group">
             <label>${t('profile.pPushoverUser')}</label>
             <input type="text" id="profilePushUser" value="${escapeAttr(profile.ntif_pushuser || '')}" placeholder="${t('profile.pPushoverUserHint')}" autocomplete="off">
@@ -5178,7 +5192,7 @@ async function renderSites() {
   const isAdmin = currentUser.role === 'admin';
   const isManager = canManage();
   document.getElementById('topbarActions').innerHTML = isAdmin
-    ? `<button class="btn btn-primary" onclick="showCreateSiteModal()">+ ${t('sites.siteBtnAdd')}</button>`
+    ? `<button class="btn btn-primary" data-onclick="showCreateSiteModal()">+ ${t('sites.siteBtnAdd')}</button>`
     : '';
   try {
     const sites = await api('GET', '/sites');
@@ -5194,16 +5208,16 @@ async function renderSites() {
       const isManagedSite = isAdmin || (currentUser.sites || []).some(us => us.site_id === s.id && us.role === 'manager');
       return `
             <tr>
-              <td style="font-weight:500">${s.sname}</td>
-              <td>${s.address || '-'}</td>
+              <td style="font-weight:500">${escapeHtml(s.sname)}</td>
+              <td>${s.address ? escapeHtml(s.address) : '-'}</td>
               <td>${cpCount}</td>
               <td class="text-muted">${formatDate(s.created_at)}</td>
               <td>
-                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" onclick="renderSiteUsers(${s.id}, '${escapeAttr(s.sname)}')">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
+                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, '${escapeAttr(s.sname)}')">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>
               <td>
-                ${isAdmin ? `<button class="btn btn-teal btn-sm" onclick="showEditSiteModal(${s.id}, '${escapeAttr(s.sname)}', '${escapeAttr(s.address || '')}')">${t('common.edit')}</button>
-                <button class="btn btn-danger btn-sm" onclick="withBtn(this, () => deleteSite(${s.id}, '${escapeAttr(s.sname)}'))">${t('common.delete')}</button>` : ''}
+                ${isAdmin ? `<button class="btn btn-teal btn-sm" data-onclick="showEditSiteModal(${s.id}, '${escapeAttr(s.sname)}', '${escapeAttr(s.address || '')}')">${t('common.edit')}</button>
+                <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteSite(${s.id}, '${escapeAttr(s.sname)}'))">${t('common.delete')}</button>` : ''}
               </td>
             </tr>`;
     }).join('')}
@@ -5222,8 +5236,8 @@ function showCreateSiteModal() {
   <div class="form-group"><label>${t('sites.siteName')}</label><input type="text" id="siteName" required /></div>
   <div class="form-group"><label>${t('sites.siteAdress')}</label><input type="text" id="siteAddress" /></div>
   <div class="modal-actions">
-    <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="withBtn(this, createSite)">${t('common.create')}</button>
+    <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+    <button class="btn btn-primary" data-onclick="withBtn(this, createSite)">${t('common.create')}</button>
   </div>
 `);
 }
@@ -5234,8 +5248,8 @@ function showEditSiteModal(id, name, address) {
   <div class="form-group"><label>${t('sites.siteName')}</label><input type="text" id="siteName" value="${escapeAttr(name)}" required /></div>
   <div class="form-group"><label>${t('sites.siteAdress')}</label><input type="text" id="siteAddress" value="${escapeAttr(address)}" /></div>
   <div class="modal-actions">
-    <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-    <button class="btn btn-primary" onclick="withBtn(this, () => updateSite(${id}))">${t('common.save')}</button>
+    <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+    <button class="btn btn-primary" data-onclick="withBtn(this, () => updateSite(${id}))">${t('common.save')}</button>
   </div>
 `);
 }
@@ -5287,8 +5301,8 @@ async function renderSiteUsers(siteId, siteName) {
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === 'sites'));
 
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-secondary" onclick="navigate('sites')">← ${t('sites.siteUserBackToSites')}</button>
-     <button class="btn btn-primary" onclick="showAddUserToSiteModal(${sid}, '${escapeAttr(sname)}')">+ ${t('sites.siteUserAdd')}</button>`;
+    `<button class="btn btn-secondary" data-onclick="navigate('sites')">← ${t('sites.siteUserBackToSites')}</button>
+     <button class="btn btn-primary" data-onclick="showAddUserToSiteModal(${sid}, '${escapeAttr(sname)}')">+ ${t('sites.siteUserAdd')}</button>`;
 
   try {
     const data = await api('GET', `/sites/${sid}/users/stats`);
@@ -5331,12 +5345,12 @@ async function renderSiteUsers(siteId, siteName) {
           : `<span class="badge badge-green">${t('common.yes')}</span>`;
         const actions = `
           ${isSuspended
-            ? `<button class="btn btn-sm" style="background:var(--success);color:#fff;" onclick="toggleUserSiteAuth(${u.id}, ${sid}, 1, '${escapeAttr(sname)}')">${t('sites.siteUserUnsuspend')}</button>`
-            : `<button class="btn btn-sm" style="background:var(--warning);color:#fff;" onclick="toggleUserSiteAuth(${u.id}, ${sid}, 0, '${escapeAttr(sname)}')">${t('sites.siteUserSuspend')}</button>`}
-          ${!isSelf ? `<button class="btn btn-lime btn-sm" onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
-          ${!isSelf && !isGlobalAdmin && !isManager ? `<button class="btn btn-indigo btn-sm" onclick="toggleUserSiteRole(${u.id}, ${sid}, 'manager', '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteUserPromote')}</button>` : ''}
-          ${!isSelf && !isGlobalAdmin && isManager && !isLastManager ? `<button class="btn btn-indigo btn-sm" style="background:var(--orange);color:#fff;" onclick="toggleUserSiteRole(${u.id}, ${sid}, 'user', '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteUserDemote')}</button>` : ''}
-          ${!isSelf && !isLastManager ? `<button class="btn btn-danger btn-sm" onclick="removeUserFromSite(${u.id}, ${sid}, '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteBtnRemove')}</button>` : ''}
+            ? `<button class="btn btn-sm" style="background:var(--success);color:#fff;" data-onclick="toggleUserSiteAuth(${u.id}, ${sid}, 1, '${escapeAttr(sname)}')">${t('sites.siteUserUnsuspend')}</button>`
+            : `<button class="btn btn-sm" style="background:var(--warning);color:#fff;" data-onclick="toggleUserSiteAuth(${u.id}, ${sid}, 0, '${escapeAttr(sname)}')">${t('sites.siteUserSuspend')}</button>`}
+          ${!isSelf ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
+          ${!isSelf && !isGlobalAdmin && !isManager ? `<button class="btn btn-indigo btn-sm" data-onclick="toggleUserSiteRole(${u.id}, ${sid}, 'manager', '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteUserPromote')}</button>` : ''}
+          ${!isSelf && !isGlobalAdmin && isManager && !isLastManager ? `<button class="btn btn-indigo btn-sm" style="background:var(--orange);color:#fff;" data-onclick="toggleUserSiteRole(${u.id}, ${sid}, 'user', '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteUserDemote')}</button>` : ''}
+          ${!isSelf && !isLastManager ? `<button class="btn btn-danger btn-sm" data-onclick="removeUserFromSite(${u.id}, ${sid}, '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteBtnRemove')}</button>` : ''}
         `;
         return `
         <tr>
@@ -5365,7 +5379,7 @@ async function renderSiteUsers(siteId, siteName) {
         <div class="msg-filters">
           <div class="form-group">
             <label>${t('sites.siteUserFilterRole')}</label>
-            <select id="suFilterRole" onchange="applySiteUsersFilters()">
+            <select id="suFilterRole" data-onchange="applySiteUsersFilters()">
               <option value="">${t('filters.all')}</option>
               <option value="manager" ${roleFilter === 'manager' ? 'selected' : ''}>${t('common.manager')}</option>
               <option value="user" ${roleFilter === 'user' ? 'selected' : ''}>${t('common.user')}</option>
@@ -5373,7 +5387,7 @@ async function renderSiteUsers(siteId, siteName) {
           </div>
           <div class="form-group">
             <label>${t('sites.siteUserFilterStatus')}</label>
-            <select id="suFilterStatus" onchange="applySiteUsersFilters()">
+            <select id="suFilterStatus" data-onchange="applySiteUsersFilters()">
               <option value="">${t('filters.all')}</option>
               <option value="authorized" ${statusFilter === 'authorized' ? 'selected' : ''}>${t('sites.siteUserFilterAuthorized')}</option>
               <option value="suspended" ${statusFilter === 'suspended' ? 'selected' : ''}>${t('sites.siteUserFilterUnauthorized')}</option>
@@ -5381,17 +5395,17 @@ async function renderSiteUsers(siteId, siteName) {
           </div>
           <div class="form-group">
             <label>${t('sites.siteUserFilterSearch')}</label>
-            <input type="text" id="suFilterSearch" value="${escapeAttr(siteUsersFilters.search || '')}" oninput="applySiteUsersFilters()" placeholder="email@..." />
+            <input type="text" id="suFilterSearch" value="${escapeAttr(siteUsersFilters.search || '')}" data-oninput="applySiteUsersFilters()" placeholder="email@..." />
           </div>
           <div class="form-group" style="align-self:flex-end;">
-            <button class="btn btn-secondary btn-sm" onclick="resetSiteUsersFilters()">${t('common.reset')}</button>
+            <button class="btn btn-secondary btn-sm" data-onclick="resetSiteUsersFilters()">${t('common.reset')}</button>
           </div>
         </div>
       </div>
       <div class="card">
         <div class="card-header">
           <h3>${t('sites.siteUsers')} (${filtered.length})</h3>
-          ${!isSelfMember ? `<button class="btn btn-secondary btn-sm" onclick="addSelfToSite(${sid}, '${escapeAttr(sname)}')">${t('sites.siteUserAddSelf')}</button>` : ''}
+          ${!isSelfMember ? `<button class="btn btn-secondary btn-sm" data-onclick="addSelfToSite(${sid}, '${escapeAttr(sname)}')">${t('sites.siteUserAddSelf')}</button>` : ''}
         </div>
         <table>
           <thead><tr>
@@ -5434,8 +5448,8 @@ function showAddUserToSiteModal(siteId, siteName) {
     <div class="form-group"><label>${t('common.email')}</label><input type="email" id="siteUserEmail" required placeholder="email@email.fr" /></div>
     <p class="text-muted" style="font-size:12px;margin-bottom:8px;">${t('sites.siteUserPwdHint')}</p>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" onclick="addUserToSite(${siteId}, '${escapeAttr(siteName)}')">${t('common.add')}</button>
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="addUserToSite(${siteId}, '${escapeAttr(siteName)}')">${t('common.add')}</button>
     </div>
   `);
 }
@@ -5571,13 +5585,157 @@ function formatDuree(minutes) {
   return `${h}${t('common.unitHours')}${m.toString().padStart(2, '0')}${t('common.unitMinutes')}`;
 }
 function escapeAttr(str) {
-  return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function splitTopLevel(str, sep) {
+  const out = [];
+  let cur = '';
+  let depth = 0;
+  let quote = null;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    const prev = i > 0 ? str[i - 1] : '';
+    if (quote) {
+      cur += ch;
+      if (ch === quote && prev !== '\\') quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+    if (ch === '(' || ch === '[' || ch === '{') { depth++; cur += ch; continue; }
+    if (ch === ')' || ch === ']' || ch === '}') { depth = Math.max(0, depth - 1); cur += ch; continue; }
+    if (ch === sep && depth === 0) { out.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+function callByName(name, args) {
+  const fn = window[name];
+  if (typeof fn !== 'function') throw new Error(`Unknown handler: ${name}`);
+  return fn(...args);
+}
+
+function parseLiteral(token, ctx) {
+  const tkn = token.trim();
+  if (tkn === 'this') return ctx.el;
+  if (tkn === 'event') return ctx.event;
+  if (tkn === 'true') return true;
+  if (tkn === 'false') return false;
+  if (tkn === 'null') return null;
+  if (/^-?\d+(\.\d+)?$/.test(tkn)) return Number(tkn);
+  if ((tkn.startsWith("'") && tkn.endsWith("'")) || (tkn.startsWith('"') && tkn.endsWith('"'))) {
+    return tkn.slice(1, -1).replace(/\\'/g, "'").replace(/\\"/g, '"');
+  }
+  if (tkn.startsWith('{') && tkn.endsWith('}')) {
+    const obj = {};
+    const body = tkn.slice(1, -1).trim();
+    if (!body) return obj;
+    for (const part of splitTopLevel(body, ',')) {
+      const idx = part.indexOf(':');
+      if (idx === -1) continue;
+      const rawKey = part.slice(0, idx).trim();
+      const key = rawKey.replace(/^['"]|['"]$/g, '');
+      const val = part.slice(idx + 1);
+      obj[key] = parseLiteral(val, ctx);
+    }
+    return obj;
+  }
+  return tkn;
+}
+
+function parseArgs(argStr, ctx) {
+  if (!argStr.trim()) return [];
+  return splitTopLevel(argStr, ',').map(a => parseLiteral(a, ctx));
+}
+
+function runCallExpression(expr, ctx) {
+  const m = expr.trim().match(/^([A-Za-z_$][\w$]*)\(([\s\S]*)\)$/);
+  if (!m) throw new Error(`Unsupported expression: ${expr}`);
+  const fnName = m[1];
+  const args = parseArgs(m[2], ctx);
+  return callByName(fnName, args);
+}
+
+function runDataHandler(code, el, event) {
+  if (!code) return undefined;
+  const ctx = { el, event };
+  let shouldReturnFalse = false;
+  const statements = splitTopLevel(String(code), ';');
+  for (const stmtRaw of statements) {
+    const stmt = stmtRaw.trim();
+    if (!stmt) continue;
+    if (stmt === 'return false') { shouldReturnFalse = true; continue; }
+    if (stmt.startsWith('window.location.href=')) {
+      const rhs = stmt.slice('window.location.href='.length);
+      window.location.href = parseLiteral(rhs, ctx);
+      continue;
+    }
+    if (stmt.startsWith('document.getElementById(')) {
+      const toggle = stmt.match(/^document\.getElementById\((['"][^'"]+['"])\)\.disabled\s*=\s*(true|false)$/);
+      const clearHtml = stmt.match(/^document\.getElementById\((['"][^'"]+['"])\)\.innerHTML\s*=\s*(['"]{2})$/);
+      if (toggle) {
+        const id = parseLiteral(toggle[1], ctx);
+        const node = document.getElementById(id);
+        if (node) node.disabled = toggle[2] === 'true';
+        continue;
+      }
+      if (clearHtml) {
+        const id = parseLiteral(clearHtml[1], ctx);
+        const node = document.getElementById(id);
+        if (node) node.innerHTML = '';
+        continue;
+      }
+    }
+    if (stmt.startsWith("const i=document.getElementById(")) {
+      const mm = stmt.match(/^const i=document\.getElementById\((['"][^'"]+['"])\)$/);
+      if (mm) { ctx.i = document.getElementById(parseLiteral(mm[1], ctx)); continue; }
+    }
+    if (stmt === "i.type=i.type==='password'?'text':'password'") {
+      if (ctx.i) ctx.i.type = ctx.i.type === 'password' ? 'text' : 'password';
+      continue;
+    }
+    const withBtnMatch = stmt.match(/^withBtn\(this,\s*\(\)\s*=>\s*([\s\S]+)\)$/);
+    if (withBtnMatch) {
+      const inner = withBtnMatch[1].trim();
+      withBtn(el, () => runCallExpression(inner, ctx));
+      continue;
+    }
+    runCallExpression(stmt, ctx);
+  }
+  return shouldReturnFalse ? false : undefined;
+}
+
+function bindDelegatedDataHandlers() {
+  const exec = (attr, event, pre) => {
+    const el = event.target.closest(`[${attr}]`);
+    if (!el) return;
+    if (pre) pre(el, event);
+    const result = runDataHandler(el.getAttribute(attr), el, event);
+    if (result === false) event.preventDefault();
+  };
+
+  document.addEventListener('click', (event) => {
+    exec('data-onclick', event, (el, e) => {
+      if (el.tagName === 'A') e.preventDefault();
+    });
+  });
+  document.addEventListener('change', (event) => exec('data-onchange', event));
+  document.addEventListener('input', (event) => exec('data-oninput', event));
+  document.addEventListener('submit', (event) => exec('data-onsubmit', event));
 }
 function escapeHtml(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 // Initialize selectors with current language
 syncLangSelectors(__currentLang);
+bindDelegatedDataHandlers();
 // ── Init ──
 loadFlatpickrLocale(__currentLang);
 checkAuth();
@@ -5585,3 +5743,4 @@ loadAppSettings();
 </script>
 </body>
 </html>
+
