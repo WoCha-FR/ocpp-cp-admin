@@ -83,4 +83,19 @@ describe('config — castEnvValue', () => {
   it('returns string when value is blank', () => {
     expect(castEnvValue('  ', 'auto')).toBe('  ');
   });
+
+  it('splits csv-array into array of trimmed strings', () => {
+    expect(castEnvValue('connector_available,connector_unavailable', 'csv-array')).toEqual([
+      'connector_available',
+      'connector_unavailable',
+    ]);
+  });
+
+  it('csv-array trims whitespace and filters empty strings', () => {
+    expect(castEnvValue(' a , , b ', 'csv-array')).toEqual(['a', 'b']);
+  });
+
+  it('csv-array with single value returns single-element array', () => {
+    expect(castEnvValue('server_started', 'csv-array')).toEqual(['server_started']);
+  });
 });

@@ -371,6 +371,12 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 |---|---|---|
 | `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
 
+### Désactivation par défaut d'événements
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_NOTIF_DISABLED_EVENTS` | `notifs.defaultDisabledEvents` | `connector_available,connector_unavailable` |
+
 ### Configuration Google Auth
 
 | Variable | Config JSON | Exemple |
@@ -535,6 +541,7 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 | `webpush.enabled` | Activer les notifications Web Push |
 | `webpush.vapid*` | Clés VAPID pour Web Push (à générer) |
 | `pushover.enabled` | Activer les notifications Pushover |
+| `defaultDisabledEvents` | Événements désactivés par défaut pour les utilisateurs sans préférences enregistrées (liste comma via env) |
 
 ### Authentification Google OAuth
 
@@ -936,6 +943,8 @@ L'application propose un système d'alertes piloté par les événements.
 | Charge suspendue (EVSE) | La borne a suspendu la charge |
 
 Chaque utilisateur peut configurer ses préférences de notification (quels événements recevoir et sur quels canaux) via les paramètres de l'application.
+
+> **Comportement par défaut :** Les utilisateurs n'ayant jamais configuré leurs préférences reçoivent tous les événements applicables à leur rôle par **email** (si le SMTP est configuré). Ce comportement peut être restreint en listant des événements dans `notifs.defaultDisabledEvents` (config.json) ou `CPADMIN_NOTIF_DISABLED_EVENTS` (env). Les utilisateurs peuvent toujours surcharger ces défauts dans leur profil.
 
 ---
 

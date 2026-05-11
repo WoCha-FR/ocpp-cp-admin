@@ -70,7 +70,8 @@
     },
     "pushover": {
       "enabled": false
-    }
+    },
+    "defaultDisabledEvents": []
   },
   "auth": {
     "google": {

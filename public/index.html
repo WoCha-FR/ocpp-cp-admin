@@ -17,7 +17,7 @@
   </script>
   <link rel="stylesheet" href="/css/app.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/i18next@26.0.9/i18next.min.js" integrity="sha384-zqUp7aR0bdQG4EdnLfkne0XSGyNReJkzMm201p9blS2LiIPtLcDGIrATY0hOk7V9" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/i18next@26.1.0/i18next.min.js" integrity="sha384-u9Lno28ZWcetjYvw0ZPd9denWYeXoDKRTjmqMr989WT3F2gVOGDSYnOyy5nMqcQr" crossorigin="anonymous"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
   <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13" integrity="sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6" crossorigin="anonymous"></script>
   <script>
@@ -424,6 +424,8 @@ async function withBtn(btn, asyncFn) {
   if (btn) btn.disabled = true;
   try {
     await asyncFn();
+  } catch (err) {
+    toast(err.message, 'error');
   } finally {
     if (btn) btn.disabled = false;
   }

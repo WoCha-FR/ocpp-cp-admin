@@ -1,3 +1,4 @@
+const { getConfig } = require('./config');
 const db = require('./database');
 const { format } = require('./notificationTemplates');
 const { trad } = require('./i18n');
@@ -101,6 +102,18 @@ const EVENT_DEFINITIONS = {
     defaultChannels: ['email'],
   },
 };
+
+function applyDefaultDisabledEvents(eventDefs, disabled) {
+  for (const eventName of disabled) {
+    if (eventDefs[eventName]) {
+      eventDefs[eventName].defaultChannels = [];
+    } else {
+      logger.warn(`notifs.defaultDisabledEvents: unknown event "${eventName}"`);
+    }
+  }
+}
+
+applyDefaultDisabledEvents(EVENT_DEFINITIONS, getConfig().notifs?.defaultDisabledEvents ?? []);
 
 // Canaux de notification enregistrés
 const channels = new Map();
@@ -498,4 +511,5 @@ module.exports = {
   sendSuspendedInSiteEmail,
   sendReactivatedInSiteEmail,
   EVENT_DEFINITIONS,
+  applyDefaultDisabledEvents,
 };

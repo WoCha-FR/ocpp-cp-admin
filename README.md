@@ -376,6 +376,12 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 |---|---|---|
 | `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
 
+### Notification Defaults
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_NOTIF_DISABLED_EVENTS` | `notifs.defaultDisabledEvents` | `connector_available,connector_unavailable` |
+
 ### Google Auth Configuration
 
 | Variable | JSON Config | Example |
@@ -540,6 +546,7 @@ Required fields are validated before saving. The application restarts automatica
 | `webpush.enabled` | Enable Web Push notifications |
 | `webpush.vapid*` | VAPID keys for Web Push (to be generated) |
 | `pushover.enabled` | Enable Pushover notifications |
+| `defaultDisabledEvents` | Events disabled by default for users with no saved preferences (comma-separated list via env) |
 
 ### Google OAuth Authentication
 
@@ -941,6 +948,8 @@ The application provides an event-driven alert system.
 | Charge suspended (EVSE) | The charge point has suspended charging |
 
 Each user can configure their notification preferences (which events to receive and on which channels) through the application settings.
+
+> **Default behavior:** Users who have never configured their preferences receive all events applicable to their role via **email** (if SMTP is configured). This default can be partially restricted by listing events in `notifs.defaultDisabledEvents` (config.json) or `CPADMIN_NOTIF_DISABLED_EVENTS` (env). Users can always override these defaults in their profile.
 
 ---
 

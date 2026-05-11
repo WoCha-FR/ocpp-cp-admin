@@ -279,6 +279,12 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 |---|---|---|
 | `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
 
+### Notification Defaults
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_NOTIF_DISABLED_EVENTS` | `notifs.defaultDisabledEvents` | `connector_available,connector_unavailable` |
+
 ### Google Auth Configuration
 
 | Variable | JSON Config | Example |

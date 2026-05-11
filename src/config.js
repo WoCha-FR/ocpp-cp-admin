@@ -70,6 +70,11 @@ const ENV_OVERRIDES = [
   { env: 'CPADMIN_WEBPUSH_ENABLED', path: ['notifs', 'webpush', 'enabled'] },
   { env: 'CPADMIN_VAPID_SUBJECT', path: ['notifs', 'webpush', 'vapidSubject'], type: 'string' },
   { env: 'CPADMIN_PUSHOVER_ENABLED', path: ['notifs', 'pushover', 'enabled'] },
+  {
+    env: 'CPADMIN_NOTIF_DISABLED_EVENTS',
+    path: ['notifs', 'defaultDisabledEvents'],
+    type: 'csv-array',
+  },
   { env: 'CPADMIN_GOOGLE_AUTH_ENABLED', path: ['auth', 'google', 'enabled'] },
   // ── Métriques ──
   { env: 'CPADMIN_METRICS_TOKEN', path: ['metrics', 'bearerToken'], type: 'string' },
@@ -89,6 +94,11 @@ const ENV_OVERRIDES = [
 
 function castEnvValue(raw, type) {
   if (type === 'string') return raw;
+  if (type === 'csv-array')
+    return raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   if (raw === 'true') return true;
   if (raw === 'false') return false;
   const num = Number(raw);

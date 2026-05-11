@@ -1136,8 +1136,7 @@ router.post(
   async (req, res) => {
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
-    if (!cp.feat_reservation)
-      return res.status(400).json({ error: 'ERR_RESERVATION_NOT_SUPPORTED' });
+
     if (req.user.role !== 'admin') {
       const managedIds = getUserManagedSiteIds(req);
       if (managedIds !== null && !managedIds.includes(cp.site_id)) {

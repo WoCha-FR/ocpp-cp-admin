@@ -279,6 +279,12 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 |---|---|---|
 | `CPADMIN_PUSHOVER_ENABLED` | `notifs.pushover.enabled` | `true` |
 
+### Désactivation par défaut d'événements
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_NOTIF_DISABLED_EVENTS` | `notifs.defaultDisabledEvents` | `connector_available,connector_unavailable` |
+
 ### Configuration Google Auth
 
 | Variable | Config JSON | Exemple |
