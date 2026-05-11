@@ -2529,6 +2529,11 @@ router.put('/configeditor', requireRole('admin'), (req, res) => {
     } else if (field.type === 'number') {
       casted = Number(value);
       if (Number.isNaN(casted)) continue;
+    } else if (field.type === 'csv-array') {
+      casted = String(value ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
     } else {
       casted = value == null ? null : String(value);
     }

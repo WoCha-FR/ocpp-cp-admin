@@ -398,11 +398,10 @@ async function api(method, path, body) {
 }
 
 function sanitizeApiString(value) {
-  // Frontend safety net: neutralize HTML-significant chars and strip control chars.
+  // Frontend safety net: strip control chars only.
+  // HTML escaping must happen at render time (escapeHtml/escapeAttr/textContent).
   return String(value)
-    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
 }
 
 function sanitizeApiPayload(value) {
@@ -2080,18 +2079,24 @@ async function loadReservations(cpId) {
 }
 
 async function showCreateReservationModal(cpId) {
-  let connectors = [], tags = [];
+  let cp, connectors = [], tags = [];
   try {
-    [connectors, tags] = await Promise.all([
-      api('GET', `/chargepoints/${cpId}`).then(cp => cp.connectors || []),
+    [cp, tags] = await Promise.all([
+      api('GET', `/chargepoints/${cpId}`),
       api('GET', '/id-tags'),
     ]);
+    connectors = cp.connectors || [];
   } catch (err) {
     toast(err.message, 'error');
     return;
   }
   const isAutoTag = (tag) => tag.id_tag === 'ADMIN' || tag.id_tag.startsWith('MGR-') || tag.id_tag.startsWith('WEB-');
-  const visibleTags = tags.filter(tag => !isAutoTag(tag) && tag.active);
+  const tagMatchesSite = (tag) => {
+    if (tag.site_id) return tag.site_id === cp.site_id;
+    if (tag.user_id && tag.user_sites) return tag.user_sites.some(s => s.site_id === cp.site_id);
+    return !tag.user_id;
+  };
+  const visibleTags = tags.filter(tag => !isAutoTag(tag) && tag.active && tagMatchesSite(tag));
   const minExpiry = new Date(Date.now() + 60000);
   openModal(`
     <h2>🗓 ${t('chargepoint.cpReservationsNew')}</h2>
@@ -2104,7 +2109,7 @@ async function showCreateReservationModal(cpId) {
     <div class="form-group">
       <label>${t('chargepoint.cpReservationIdTag')}</label>
       <select id="resIdTag">
-        ${visibleTags.map(tag => `<option value="${escapeHtml(tag.id_tag)}">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}</option>`).join('')}
+        ${visibleTags.map(tag => `<option value="${escapeHtml(tag.id_tag)}">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}${tag.description ? ' — ' + escapeHtml(tag.description) : ''}</option>`).join('')}
       </select>
     </div>
     <div class="form-group">
@@ -4964,6 +4969,10 @@ function buildConfigInput(f) {
   if (f.type === 'select') {
     const opts = (f.choices || []).map(c => `<option value="${escapeAttr(c)}" ${val === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
     return `<select id="${id}" data-key="${escapeAttr(f.key)}" data-type="select" ${req} class="form-control form-control-sm">${opts}</select>`;
+  }
+  if (f.type === 'csv-array') {
+    const displayVal = Array.isArray(val) ? val.join(', ') : String(val ?? '');
+    return `<input type="text" id="${id}" data-key="${escapeAttr(f.key)}" data-type="csv-array" ${req} value="${escapeAttr(displayVal)}" class="form-control form-control-sm" placeholder="event1, event2">`;
   }
   if (f.sensitive) {
     return `<div style="display:flex;gap:4px;align-items:center;">

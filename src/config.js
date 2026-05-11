@@ -425,6 +425,13 @@ const CONFIG_FIELDS = [
     required: false,
     sensitive: false,
   },
+  {
+    key: 'notifs.defaultDisabledEvents',
+    section: 'notifs',
+    type: 'csv-array',
+    required: false,
+    sensitive: false,
+  },
   // ── Métriques ──
   {
     key: 'metrics.bearerToken',
