@@ -363,12 +363,10 @@ function register16Handlers(client, loggedHandle) {
         safeVendorErrorCode
       );
       if (params.connectorId !== 0) {
-        if (cp.feat_reservation) {
-          if (safeStatus === 'Reserved') {
-            db.activateReservationByConnector(cp.id, params.connectorId);
-          } else if (['Available', 'Faulted', 'Unavailable', 'Finishing'].includes(safeStatus)) {
-            db.expireReservationByConnector(cp.id, params.connectorId);
-          }
+        if (safeStatus === 'Reserved') {
+          db.activateReservationByConnector(cp.id, params.connectorId);
+        } else if (['Available', 'Faulted', 'Unavailable', 'Finishing'].includes(safeStatus)) {
+          db.expireReservationByConnector(cp.id, params.connectorId);
         }
         if (cp.cpstatus === 'Unavailable') {
           const allConnectors = db.getConnectorsByChargepoint(cp.id);

@@ -319,7 +319,7 @@ async function changeLanguage(lng) {
   translateStaticElements();
   syncLangSelectors(lng);
   if (currentUser) {
-    refreshCurrentPage();
+    refreshCurrentPage(true);
     applyTheme(getPreferredTheme());
     api('PUT', '/user/profile', { langue: lng }).catch(() => { });
   }
@@ -861,8 +861,8 @@ function handleRealtimeEvent(type, data) {
 
 const STATIC_PAGES = new Set(['notifications', 'profile', 'configeditor', 'idtags', 'users', 'sites', 'siteusers']);
 
-function refreshCurrentPage() {
-  if (STATIC_PAGES.has(currentPage)) return;
+function refreshCurrentPage(force = false) {
+  if (!force && STATIC_PAGES.has(currentPage)) return;
   if (currentPage === 'chargepointdetail' && currentDetailCpId) {
     showChargepointDetail(currentDetailCpId, currentDetailTab);
   } else {
