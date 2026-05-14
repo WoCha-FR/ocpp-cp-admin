@@ -1829,7 +1829,7 @@ function getExpiredActiveReservations(graceSeconds) {
     .prepare(
       `SELECT r.*, cp.identity FROM reservations r
        JOIN chargepoints cp ON r.chargepoint_id = cp.id
-       WHERE r.expiry_date < datetime('now', ?)
+       WHERE datetime(r.expiry_date) < datetime('now', ?)
        AND r.status IN ('Pending', 'Active')`
     )
     .all(`-${graceSeconds} seconds`);

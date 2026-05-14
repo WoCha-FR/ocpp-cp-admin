@@ -593,6 +593,22 @@ describe('database — getExpiredActiveReservations', () => {
     db.updateReservationStatus(id, 'Cancelled');
   });
 
+  it('handles ISO 8601 format with T and Z (as sent by the frontend)', () => {
+    // toISOString() produces '2020-01-01T12:00:00.000Z' — SQLite must normalise via datetime()
+    const isoDate = new Date('2020-01-01T12:00:00.000Z').toISOString();
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 8,
+      reservation_id: 17,
+      id_tag: 'EXPTAG8',
+      expiry_date: isoDate,
+      created_by: userId,
+    });
+    const rows = db.getExpiredActiveReservations(GRACE_S);
+    expect(rows.some((r) => r.id === id)).toBe(true);
+    db.updateReservationStatus(id, 'Cancelled');
+  });
+
   it('does not return reservation still within grace period', () => {
     const id = db.createReservation({
       chargepoint_id: cpId,

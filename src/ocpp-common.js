@@ -622,6 +622,7 @@ let reservationCleanupTimer = null;
 function startReservationCleanupWatchdog() {
   reservationCleanupTimer = setInterval(async () => {
     const expired = db.getExpiredActiveReservations(RESERVATION_GRACE_SECONDS);
+    logger.debug(`Reservation cleanup: ${expired.length} expired reservation(s) to process`);
     for (const reservation of expired) {
       if (!connectedClients.has(reservation.identity)) continue;
       try {
