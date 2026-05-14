@@ -614,6 +614,48 @@ function stopHeartbeatWatchdog() {
   }
 }
 
+// ── Reservation Cleanup Watchdog ──
+const RESERVATION_CLEANUP_INTERVAL_MS = 60 * 1000;
+const RESERVATION_GRACE_SECONDS = 60;
+let reservationCleanupTimer = null;
+
+function startReservationCleanupWatchdog() {
+  reservationCleanupTimer = setInterval(async () => {
+    const expired = db.getExpiredActiveReservations(RESERVATION_GRACE_SECONDS);
+    for (const reservation of expired) {
+      if (!connectedClients.has(reservation.identity)) continue;
+      try {
+        const result = await callClient(reservation.identity, 'CancelReservation', {
+          reservationId: reservation.reservation_id,
+        });
+        const status = result?.status ?? 'Rejected';
+        if (status === 'Accepted') {
+          db.updateReservationStatus(reservation.id, 'Expired');
+          broadcast('reservation_updated', { chargepoint_id: reservation.chargepoint_id });
+          logger.info(
+            `Reservation ${reservation.reservation_id} auto-expired on ${reservation.identity}`
+          );
+        } else {
+          logger.warn(
+            `CancelReservation rejected for reservation ${reservation.reservation_id} on ${reservation.identity}: ${status}`
+          );
+        }
+      } catch (e) {
+        logger.error(
+          `Failed to cancel expired reservation ${reservation.reservation_id} on ${reservation.identity}: ${e.message}`
+        );
+      }
+    }
+  }, RESERVATION_CLEANUP_INTERVAL_MS);
+}
+
+function stopReservationCleanupWatchdog() {
+  if (reservationCleanupTimer) {
+    clearInterval(reservationCleanupTimer);
+    reservationCleanupTimer = null;
+  }
+}
+
 module.exports = {
   createOCPPServerBase,
   setBroadcast,
@@ -626,6 +668,8 @@ module.exports = {
   trackRepeatedAuthReject,
   startHeartbeatWatchdog,
   stopHeartbeatWatchdog,
+  startReservationCleanupWatchdog,
+  stopReservationCleanupWatchdog,
   pendingRemoteStarts,
   pendingChargepoints,
 };

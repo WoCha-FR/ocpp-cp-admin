@@ -37,6 +37,8 @@ const mockDb = {
   getInitialChargepointConfigByKey: jest.fn(),
   getChargepointConfigByKey: jest.fn(),
   addOcppMessage: jest.fn(),
+  getExpiredActiveReservations: jest.fn(() => []),
+  updateReservationStatus: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -223,6 +225,101 @@ describe('ocpp-common — heartbeat watchdog', () => {
   it('stopHeartbeatWatchdog is idempotent', () => {
     expect(() => ocppCommon.stopHeartbeatWatchdog()).not.toThrow();
     expect(() => ocppCommon.stopHeartbeatWatchdog()).not.toThrow();
+  });
+});
+
+// ── startReservationCleanupWatchdog / stopReservationCleanupWatchdog ──
+describe('ocpp-common — reservation cleanup watchdog', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+    mockDb.getExpiredActiveReservations.mockReturnValue([]);
+  });
+
+  afterEach(() => {
+    ocppCommon.stopReservationCleanupWatchdog();
+    jest.useRealTimers();
+  });
+
+  it('starts and stops without error', () => {
+    ocppCommon.startReservationCleanupWatchdog();
+    expect(() => ocppCommon.stopReservationCleanupWatchdog()).not.toThrow();
+  });
+
+  it('stopReservationCleanupWatchdog is idempotent', () => {
+    expect(() => ocppCommon.stopReservationCleanupWatchdog()).not.toThrow();
+    expect(() => ocppCommon.stopReservationCleanupWatchdog()).not.toThrow();
+  });
+
+  it('sends CancelReservation and marks Expired when chargepoint is connected', async () => {
+    const reservation = { id: 7, reservation_id: 42, chargepoint_id: 99, identity: 'CP-CLEANUP' };
+    mockDb.getExpiredActiveReservations.mockReturnValue([reservation]);
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('1.6', impl);
+    ocppCommon.getConnectedClients().set('CP-CLEANUP', {});
+
+    ocppCommon.startReservationCleanupWatchdog();
+    await jest.advanceTimersByTimeAsync(60000);
+
+    expect(impl).toHaveBeenCalledWith('CP-CLEANUP', 'CancelReservation', { reservationId: 42 });
+    expect(mockDb.updateReservationStatus).toHaveBeenCalledWith(7, 'Expired');
+  });
+
+  it('does not mark Expired when CancelReservation is rejected', async () => {
+    const reservation = { id: 8, reservation_id: 43, chargepoint_id: 99, identity: 'CP-CLEANUP' };
+    mockDb.getExpiredActiveReservations.mockReturnValue([reservation]);
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Rejected' });
+    ocppCommon.registerCallClientImpl('1.6', impl);
+    ocppCommon.getConnectedClients().set('CP-CLEANUP', {});
+
+    ocppCommon.startReservationCleanupWatchdog();
+    await jest.advanceTimersByTimeAsync(60000);
+
+    expect(mockDb.updateReservationStatus).not.toHaveBeenCalled();
+  });
+
+  it('skips offline chargepoints without calling callClient', async () => {
+    const reservation = { id: 9, reservation_id: 44, chargepoint_id: 99, identity: 'CP-OFFLINE' };
+    mockDb.getExpiredActiveReservations.mockReturnValue([reservation]);
+    const impl = jest.fn();
+    ocppCommon.registerCallClientImpl('1.6', impl);
+
+    ocppCommon.startReservationCleanupWatchdog();
+    await jest.advanceTimersByTimeAsync(60000);
+
+    expect(impl).not.toHaveBeenCalled();
+    expect(mockDb.updateReservationStatus).not.toHaveBeenCalled();
+  });
+
+  it('swallows callClient errors without crashing the interval', async () => {
+    const reservation = { id: 10, reservation_id: 45, chargepoint_id: 99, identity: 'CP-ERR' };
+    mockDb.getExpiredActiveReservations.mockReturnValue([reservation]);
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+    const impl = jest.fn().mockRejectedValue(new Error('network timeout'));
+    ocppCommon.registerCallClientImpl('1.6', impl);
+    ocppCommon.getConnectedClients().set('CP-ERR', {});
+
+    ocppCommon.startReservationCleanupWatchdog();
+    await expect(jest.advanceTimersByTimeAsync(60000)).resolves.not.toThrow();
+    expect(mockDb.updateReservationStatus).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts reservation_updated on successful cancel', async () => {
+    const fn = jest.fn();
+    ocppCommon.setBroadcast(fn);
+    const reservation = { id: 11, reservation_id: 46, chargepoint_id: 55, identity: 'CP-BCAST' };
+    mockDb.getExpiredActiveReservations.mockReturnValue([reservation]);
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+    ocppCommon.registerCallClientImpl('1.6', jest.fn().mockResolvedValue({ status: 'Accepted' }));
+    ocppCommon.getConnectedClients().set('CP-BCAST', {});
+
+    ocppCommon.startReservationCleanupWatchdog();
+    await jest.advanceTimersByTimeAsync(60000);
+
+    expect(fn).toHaveBeenCalledWith(
+      JSON.stringify({ type: 'reservation_updated', data: { chargepoint_id: 55 } })
+    );
   });
 });
 

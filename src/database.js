@@ -1824,6 +1824,17 @@ function expireReservationByConnector(chargepointId, connectorId) {
   ).run(chargepointId, connectorId);
 }
 
+function getExpiredActiveReservations(graceSeconds) {
+  return db
+    .prepare(
+      `SELECT r.*, cp.identity FROM reservations r
+       JOIN chargepoints cp ON r.chargepoint_id = cp.id
+       WHERE r.expiry_date < datetime('now', ?)
+       AND r.status IN ('Pending', 'Active')`
+    )
+    .all(`-${graceSeconds} seconds`);
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -1943,4 +1954,5 @@ module.exports = {
   updateReservationStatus,
   activateReservationByConnector,
   expireReservationByConnector,
+  getExpiredActiveReservations,
 };

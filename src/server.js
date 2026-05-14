@@ -20,6 +20,8 @@ const {
   setBroadcast,
   startHeartbeatWatchdog,
   stopHeartbeatWatchdog,
+  startReservationCleanupWatchdog,
+  stopReservationCleanupWatchdog,
   getConnectedClients,
   pendingChargepoints,
 } = require('./ocpp-common');
@@ -532,6 +534,9 @@ async function start() {
   // Démarrer le watchdog de heartbeat
   startHeartbeatWatchdog();
   logOCPP.info('Heartbeat watchdog started');
+  // Démarrer le scheduler de nettoyage des réservations expirées non libérées
+  startReservationCleanupWatchdog();
+  logOCPP.info('Reservation cleanup watchdog started');
   // Emission d'une notification de démarrage
   notifications.emit('server_started', {});
 }
@@ -561,8 +566,9 @@ async function gracefulShutdown(signal) {
   }, TIMEOUT);
 
   try {
-    // 0. Arrêter le watchdog de heartbeat et la surveillance des certificats
+    // 0. Arrêter les watchdogs et la surveillance des certificats
     stopHeartbeatWatchdog();
+    stopReservationCleanupWatchdog();
     for (const p of watchedCertPaths) fs.unwatchFile(p);
     if (certReloadTimer) clearTimeout(certReloadTimer);
     await notifications.emit('server_stopping', { signal });

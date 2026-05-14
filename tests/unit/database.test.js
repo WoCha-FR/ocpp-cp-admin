@@ -480,6 +480,134 @@ describe('database — Reservations CRUD', () => {
   });
 });
 
+// ── getExpiredActiveReservations ──
+describe('database — getExpiredActiveReservations', () => {
+  let cpId, userId;
+
+  const PAST = '2020-01-01 12:00:00';
+  const FUTURE = '2030-01-01 12:00:00';
+  const GRACE_S = 60;
+  // 10 years of grace → datetime('now', '-315360000 seconds') ≈ year 2016
+  // so PAST (2020) does NOT satisfy expiry_date < 2016 → not returned
+  const LARGE_GRACE_S = 315360000;
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-EXPIRY-TEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-EXPIRY-TEST').id;
+    const user = db.createUser('expiry@example.com', 'Str0ng!Pass', 'user', 'ExpiryUser');
+    userId = user.id;
+  });
+
+  afterAll(() => {
+    db.deleteUser(userId);
+  });
+
+  it('returns empty when no reservations exist', () => {
+    expect(db.getExpiredActiveReservations(GRACE_S)).toEqual([]);
+  });
+
+  it('returns Pending reservation with past expiry', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 1,
+      reservation_id: 10,
+      id_tag: 'EXPTAG1',
+      expiry_date: PAST,
+      created_by: userId,
+    });
+    const rows = db.getExpiredActiveReservations(GRACE_S);
+    expect(rows.some((r) => r.id === id && r.status === 'Pending')).toBe(true);
+    db.updateReservationStatus(id, 'Cancelled');
+  });
+
+  it('returns Active reservation with past expiry', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 2,
+      reservation_id: 11,
+      id_tag: 'EXPTAG2',
+      expiry_date: PAST,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 2);
+    const rows = db.getExpiredActiveReservations(GRACE_S);
+    expect(rows.some((r) => r.id === id && r.status === 'Active')).toBe(true);
+    db.updateReservationStatus(id, 'Cancelled');
+  });
+
+  it('does not return reservation with future expiry', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 3,
+      reservation_id: 12,
+      id_tag: 'EXPTAG3',
+      expiry_date: FUTURE,
+      created_by: userId,
+    });
+    const rows = db.getExpiredActiveReservations(GRACE_S);
+    expect(rows.some((r) => r.id === id)).toBe(false);
+    db.updateReservationStatus(id, 'Cancelled');
+  });
+
+  it('does not return already-Expired reservation', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 4,
+      reservation_id: 13,
+      id_tag: 'EXPTAG4',
+      expiry_date: PAST,
+      created_by: userId,
+    });
+    db.updateReservationStatus(id, 'Expired');
+    const rows = db.getExpiredActiveReservations(GRACE_S);
+    expect(rows.some((r) => r.id === id)).toBe(false);
+  });
+
+  it('does not return Cancelled reservation', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 5,
+      reservation_id: 14,
+      id_tag: 'EXPTAG5',
+      expiry_date: PAST,
+      created_by: userId,
+    });
+    db.updateReservationStatus(id, 'Cancelled');
+    const rows = db.getExpiredActiveReservations(GRACE_S);
+    expect(rows.some((r) => r.id === id)).toBe(false);
+  });
+
+  it('includes identity from chargepoints join', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 6,
+      reservation_id: 15,
+      id_tag: 'EXPTAG6',
+      expiry_date: PAST,
+      created_by: userId,
+    });
+    const rows = db.getExpiredActiveReservations(GRACE_S);
+    const row = rows.find((r) => r.id === id);
+    expect(row).toBeDefined();
+    expect(row.identity).toBe('CP-EXPIRY-TEST');
+    db.updateReservationStatus(id, 'Cancelled');
+  });
+
+  it('does not return reservation still within grace period', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 7,
+      reservation_id: 16,
+      id_tag: 'EXPTAG7',
+      expiry_date: PAST,
+      created_by: userId,
+    });
+    const rows = db.getExpiredActiveReservations(LARGE_GRACE_S);
+    expect(rows.some((r) => r.id === id)).toBe(false);
+    db.updateReservationStatus(id, 'Cancelled');
+  });
+});
+
 // ── HeartbeatInterval — comportement watchdog ──
 describe('database — HeartbeatInterval global config', () => {
   it('HeartbeatInterval est présent dans la migration', () => {
