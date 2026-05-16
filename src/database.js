@@ -527,18 +527,31 @@ function updateChargepointStatus(identity, status, connected, extras) {
 }
 
 // ── Connectors ──
-function upsertConnector(chargepointId, connectorId, status, errorCode, info, vendorId, vendorEC) {
+function upsertConnector(
+  chargepointId,
+  connectorId,
+  status,
+  errorCode,
+  info,
+  vendorId,
+  vendorEC,
+  evse_id = null,
+  cnstatus_raw = null
+) {
   // Le connecteur 0 représente la borne elle-même, ses données sont stockées dans la table chargepoints
   if (connectorId === 0) return null;
+  const rawStatus = cnstatus_raw !== null ? cnstatus_raw : status;
   const existing = db
     .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
     .get(chargepointId, connectorId);
   if (existing) {
     db.prepare(
-      `UPDATE connectors SET cnstatus = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
+      `UPDATE connectors SET cnstatus = ?, cnstatus_raw = ?, evse_id = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
       WHERE chargepoint_id = ? AND connector_id = ?`
     ).run(
       status,
+      rawStatus,
+      evse_id,
       errorCode || 'NoError',
       info || null,
       vendorId || null,
@@ -548,11 +561,13 @@ function upsertConnector(chargepointId, connectorId, status, errorCode, info, ve
     );
   } else {
     db.prepare(
-      'INSERT INTO connectors (chargepoint_id, connector_id, cnstatus, error_code, info, vendor_id, vendor_error_code) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO connectors (chargepoint_id, connector_id, cnstatus, cnstatus_raw, evse_id, error_code, info, vendor_id, vendor_error_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
       chargepointId,
       connectorId,
       status,
+      rawStatus,
+      evse_id,
       errorCode || 'NoError',
       info || null,
       vendorId || null,
@@ -606,8 +621,9 @@ function getAllConnectorsGrouped(siteIds) {
            cp.cpname as chargepoint_name, cp.connected, cp.cpstatus as cp_status,
            cp.mode,
            s.sname as site_name, s.id as site_id,
-           CAST(t.transaction_id AS INTEGER) as active_transaction_id, t.id_tag as active_id_tag,
-           t.power as active_power, t.energy as active_energy
+           t.transaction_id as active_transaction_id, t.id_tag as active_id_tag,
+           t.power as active_power, t.energy as active_energy,
+           c.evse_id, t.charging_state as active_charging_state
     FROM connectors c
     JOIN chargepoints cp ON c.chargepoint_id = cp.id
     LEFT JOIN sites s ON cp.site_id = s.id
@@ -625,46 +641,83 @@ function getAllConnectorsGrouped(siteIds) {
 }
 
 // ── Transactions ──
-function createTransaction(chargepointId, connectorId, idTag, meterStart, startTime, startSource) {
+function createTransaction(
+  chargepointId,
+  connectorId,
+  idTag,
+  meterStart,
+  startTime,
+  startSource,
+  {
+    transactionId: providedId = null,
+    evse_id = null,
+    charging_state = null,
+    id_token_type = 'ISO14443',
+  } = {}
+) {
   return db.transaction(() => {
-    // Générer l'ID de transaction unique (AAJJJ + séquentiel 4 chiffres)
-    // Le SELECT MAX + INSERT est atomique grâce à la transaction (pas de race condition)
-    const now = new Date();
-    const yy = String(now.getFullYear()).slice(-2);
-    const startOfYear = new Date(now.getFullYear(), 0, 0);
-    const dayOfYear = Math.floor((now - startOfYear) / 86400000);
-    const base = (yy * 1000 + dayOfYear) * 10000;
-    const row = db
-      .prepare(
-        `
-      SELECT CAST(COALESCE(MAX(CAST(transaction_id AS INTEGER)), ?) + 1 AS INTEGER) AS next_id
-      FROM transactions
-      WHERE CAST(transaction_id AS INTEGER) BETWEEN ? AND ?
-    `
-      )
-      .get(base, base, base + 9999);
-    const transactionId = Math.round(row.next_id);
+    let transactionId;
+    if (providedId !== null) {
+      transactionId = String(providedId);
+    } else {
+      // Générer l'ID de transaction unique (AAJJJ + séquentiel 4 chiffres)
+      // Le SELECT MAX + INSERT est atomique grâce à la transaction (pas de race condition)
+      const now = new Date();
+      const yy = String(now.getFullYear()).slice(-2);
+      const startOfYear = new Date(now.getFullYear(), 0, 0);
+      const dayOfYear = Math.floor((now - startOfYear) / 86400000);
+      const base = (yy * 1000 + dayOfYear) * 10000;
+      const row = db
+        .prepare(
+          `
+        SELECT CAST(COALESCE(MAX(CAST(transaction_id AS INTEGER)), ?) + 1 AS INTEGER) AS next_id
+        FROM transactions
+        WHERE CAST(transaction_id AS INTEGER) BETWEEN ? AND ?
+      `
+        )
+        .get(base, base, base + 9999);
+      transactionId = String(Math.round(row.next_id));
+    }
 
     const source = startSource || 'rfid';
     const info = db
       .prepare(
         `INSERT INTO transactions
-      (chargepoint_id, connector_id, transaction_id, id_tag, meter_start, start_time, status, start_source)
-      VALUES (?, ?, ?, ?, ?, ?, 'Active', ?)`
+      (chargepoint_id, connector_id, transaction_id, id_tag, meter_start, start_time, status, start_source, evse_id, charging_state, id_token_type)
+      VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?)`
       )
-      .run(chargepointId, connectorId, transactionId, idTag, meterStart, startTime, source);
+      .run(
+        chargepointId,
+        connectorId,
+        transactionId,
+        idTag,
+        meterStart,
+        startTime,
+        source,
+        evse_id,
+        charging_state,
+        id_token_type
+      );
     return db.prepare('SELECT * FROM transactions WHERE id = ?').get(info.lastInsertRowid);
   })();
 }
 
-function stopTransaction(transactionId, meterStop, stopTime, reason) {
+function stopTransaction(transactionId, meterStop, stopTime, reason, charging_state = null) {
+  transactionId = String(transactionId);
   db.prepare(
-    `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed'
+    `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed',
+    charging_state = COALESCE(?, charging_state)
     WHERE transaction_id = ? AND status = 'Active'`
-  ).run(meterStop, stopTime, reason || 'Local', transactionId);
+  ).run(meterStop, stopTime, reason || 'Local', charging_state, transactionId);
   return db
     .prepare('SELECT * FROM transactions WHERE transaction_id = ? ORDER BY id DESC')
     .get(transactionId);
+}
+
+function updateTransactionChargingState(transactionId, chargingState) {
+  db.prepare(
+    `UPDATE transactions SET charging_state = ? WHERE transaction_id = ? AND status = 'Active'`
+  ).run(chargingState, String(transactionId));
 }
 
 function getDashboardChartData(siteIds = null, days = 30) {
@@ -881,7 +934,7 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
     .all(...params)
     .map((row) => ({
       ...row,
-      transaction_id: parseInt(row.transaction_id, 10),
+      transaction_id: row.transaction_id,
     }));
 }
 
@@ -917,24 +970,35 @@ function updateTransactionPowerEnergy(transactionId, power, energyWh) {
     params.push(energyWh);
   }
   if (updates.length === 0) return;
-  params.push(transactionId);
+  params.push(String(transactionId));
   db.prepare(
     `UPDATE transactions SET ${updates.join(', ')} WHERE transaction_id = ? AND status = 'Active'`
   ).run(...params);
 }
 
 function getTransactionByTransactionId(transactionId) {
-  return db.prepare('SELECT * FROM transactions WHERE transaction_id = ?').get(transactionId);
+  return db
+    .prepare('SELECT * FROM transactions WHERE transaction_id = ?')
+    .get(String(transactionId));
+}
+
+function getActiveTransactionByConnector(chargepointId, connectorId) {
+  return db
+    .prepare(
+      `SELECT * FROM transactions WHERE chargepoint_id = ? AND connector_id = ? AND status = 'Active' ORDER BY id DESC LIMIT 1`
+    )
+    .get(chargepointId, connectorId);
 }
 
 function getTransactionValues(transactionId) {
   return db
     .prepare('SELECT * FROM transactions_values WHERE transaction_id = ?')
-    .get(transactionId);
+    .get(String(transactionId));
 }
 
 // ── Transactions Values ──
 function upsertTransactionValues(transactionId, { energieEntry, courantEntry, socEntry } = {}) {
+  transactionId = String(transactionId);
   const existing = db
     .prepare('SELECT * FROM transactions_values WHERE transaction_id = ?')
     .get(transactionId);
@@ -1243,10 +1307,19 @@ function getIdTagByTag(idTag, siteId) {
     .get(idTag);
 }
 
-function createIdTag(idTag, userId, siteId, description, expiryDate, active = 1) {
+function createIdTag(
+  idTag,
+  userId,
+  siteId,
+  description,
+  expiryDate,
+  active = 1,
+  token_type = 'ISO14443',
+  group_id_token = null
+) {
   const info = db
     .prepare(
-      'INSERT INTO id_tags (id_tag, user_id, site_id, description, expiry_date, active) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT INTO id_tags (id_tag, user_id, site_id, description, expiry_date, active, token_type, group_id_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     )
     .run(
       idTag,
@@ -1254,7 +1327,9 @@ function createIdTag(idTag, userId, siteId, description, expiryDate, active = 1)
       siteId || null,
       description || null,
       expiryDate || null,
-      active ? 1 : 0
+      active ? 1 : 0,
+      token_type,
+      group_id_token || null
     );
   return getIdTagById(info.lastInsertRowid);
 }
@@ -1268,9 +1343,21 @@ function updateIdTag(id, data) {
   const active = data.active !== undefined ? data.active : tag.active;
   const description = data.description !== undefined ? data.description : tag.description;
   const expiryDate = data.expiry_date !== undefined ? data.expiry_date : tag.expiry_date;
+  const tokenType = data.token_type !== undefined ? data.token_type : tag.token_type || 'ISO14443';
+  const groupIdToken = data.group_id_token !== undefined ? data.group_id_token : tag.group_id_token;
   db.prepare(
-    'UPDATE id_tags SET id_tag = ?, user_id = ?, site_id = ?, active = ?, description = ?, expiry_date = ? WHERE id = ?'
-  ).run(idTag, userId || null, siteId || null, active, description || null, expiryDate || null, id);
+    'UPDATE id_tags SET id_tag = ?, user_id = ?, site_id = ?, active = ?, description = ?, expiry_date = ?, token_type = ?, group_id_token = ? WHERE id = ?'
+  ).run(
+    idTag,
+    userId || null,
+    siteId || null,
+    active,
+    description || null,
+    expiryDate || null,
+    tokenType,
+    groupIdToken || null,
+    id
+  );
   return getIdTagById(id);
 }
 
@@ -1387,7 +1474,7 @@ function getAvailableConnectorsForUser(userId) {
     SELECT c.*, cp.identity as chargepoint_identity, cp.id as chargepoint_id,
            cp.cpname as chargepoint_name, cp.mode, cp.connected, cp.cpstatus as cp_status,
            s.sname as site_name, s.id as site_id, us.authorized as site_authorized,
-           CAST(t.transaction_id AS INTEGER) as active_transaction_id, t.id_tag as active_id_tag,
+           t.transaction_id as active_transaction_id, t.id_tag as active_id_tag,
            t.power as active_power, t.energy as active_energy,
            it.user_id as active_user_id
     FROM connectors c
@@ -1885,10 +1972,12 @@ module.exports = {
   updateConnectorFields,
   createTransaction,
   stopTransaction,
+  updateTransactionChargingState,
   getTransactions,
   getUserTransactions,
   getDashboardChartData,
   getTransactionByTransactionId,
+  getActiveTransactionByConnector,
   getTransactionValues,
   updateChargepointMeterValue,
   updateConnectorMeterValue,

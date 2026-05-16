@@ -917,7 +917,9 @@
     "VALIDATION_PREF_ENABLED": "Drapeau de preference invalide.",
     "VALIDATION_PUSH_ENDPOINT": "Endpoint push invalide.",
     "VALIDATION_PUSH_P256DH": "Cle p256dh push invalide.",
-    "VALIDATION_PUSH_AUTH": "Cle auth push invalide."
+    "VALIDATION_PUSH_AUTH": "Cle auth push invalide.",
+    "VALIDATION_ID_TAG": "L'identifiant (idTag) doit faire 1-20 caractères.",
+    "VALIDATION_EXPIRY_DATE": "Date d'expiration invalide (format ISO 8601)."
   },
   "csvExportTitle": {
     "transaction_id": "ID Transaction",

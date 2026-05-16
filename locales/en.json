@@ -917,7 +917,9 @@
     "VALIDATION_PREF_ENABLED": "Invalid preference enabled flag.",
     "VALIDATION_PUSH_ENDPOINT": "Invalid push endpoint.",
     "VALIDATION_PUSH_P256DH": "Invalid push p256dh key.",
-    "VALIDATION_PUSH_AUTH": "Invalid push auth key."
+    "VALIDATION_PUSH_AUTH": "Invalid push auth key.",
+    "VALIDATION_ID_TAG": "The identifier (idTag) must be 1-20 characters.",
+    "VALIDATION_EXPIRY_DATE": "Invalid expiry date (ISO 8601 format)."
   },
   "csvExportTitle": {
     "transaction_id": "Transaction ID",

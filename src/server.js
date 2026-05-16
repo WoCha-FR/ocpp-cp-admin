@@ -296,6 +296,11 @@ app.get('/terms', (req, res) => {
   res.type('html').send(wrapLegalHtml(html, lang, config.cpoName || 'CP Admin'));
 });
 
+// Servir flatpickr depuis node_modules
+app.use(
+  '/vendor/flatpickr',
+  express.static(path.join(__dirname, '..', 'node_modules', 'flatpickr', 'dist'), { index: false })
+);
 // Servir l'UI statique (index: false pour que le catch-all serve le HTML avec i18n)
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
 app.get('/{*splat}', (req, res) => {

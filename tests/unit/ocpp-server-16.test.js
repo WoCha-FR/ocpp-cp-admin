@@ -11,6 +11,7 @@ const mockDb = {
   stopTransaction: jest.fn(),
   getTransactions: jest.fn(() => []),
   getTransactionByTransactionId: jest.fn(),
+  getActiveTransactionByConnector: jest.fn(),
   updateChargepointStatus: jest.fn(),
   upsertConnector: jest.fn(),
   getConnectorByChargepointAndId: jest.fn(),
@@ -31,6 +32,7 @@ const mockDb = {
   getChargingProfiles: jest.fn(() => []),
   activateReservationByConnector: jest.fn(),
   expireReservationByConnector: jest.fn(),
+  updateTransactionChargingState: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -523,6 +525,44 @@ describe('ocpp-server-16 — StartTransaction', () => {
     expect(result.transactionId).toBe(200);
     expect(result.idTagInfo.status).toBe('Accepted');
   });
+
+  it('creates transaction with charging_state=Charging', () => {
+    client._handlers['StartTransaction']({
+      connectorId: 1,
+      idTag: 'TAG001',
+      meterStart: 0,
+      timestamp: new Date().toISOString(),
+    });
+    expect(mockDb.createTransaction).toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(),
+      expect.objectContaining({ charging_state: 'Charging' })
+    );
+  });
+
+  it('closes orphan active transaction on same connector before creating new one', () => {
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 99, connector_id: 1 }]);
+    const ts = new Date().toISOString();
+    client._handlers['StartTransaction']({
+      connectorId: 1,
+      idTag: 'TAG001',
+      meterStart: 500,
+      timestamp: ts,
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(99, 500, ts, 'Other');
+    expect(mockDb.createTransaction).toHaveBeenCalled();
+  });
+
+  it('does not close active transaction on a different connector', () => {
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 99, connector_id: 2 }]);
+    client._handlers['StartTransaction']({
+      connectorId: 1,
+      idTag: 'TAG001',
+      meterStart: 0,
+      timestamp: new Date().toISOString(),
+    });
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+    expect(mockDb.createTransaction).toHaveBeenCalled();
+  });
 });
 
 // ── StopTransaction ──
@@ -735,7 +775,9 @@ describe('ocpp-server-16 — StatusNotification', () => {
       'OtherError',
       'scriptalert(1)/script',
       'Vendorid',
-      'err'
+      'err',
+      null,
+      'Unavailable'
     );
     expect(mockNotifications.emit).toHaveBeenCalledWith(
       'connector_error',
@@ -774,6 +816,19 @@ describe('ocpp-server-16 — StatusNotification', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1 });
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
     expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', undefined, true);
+  });
+
+  it('closes orphan active transaction when connector becomes Available', () => {
+    const ts = '2026-05-16T15:34:42Z';
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 99, connector_id: 1, meter_start: 500 }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError', timestamp: ts });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(99, 500, ts, 'EVDisconnected');
+  });
+
+  it('does not close transaction when connector status is not Available', () => {
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 99, connector_id: 1, meter_start: 500 }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
   });
 });
 
@@ -825,6 +880,51 @@ describe('ocpp-server-16 — StatusNotification reservation sync', () => {
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
     expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
     expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+  });
+});
+
+// ── StatusNotification — charging_state ──
+describe('ocpp-server-16 — StatusNotification charging_state', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1,
+    });
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  it.each([
+    ['Charging', 'Charging'],
+    ['SuspendedEV', 'SuspendedEV'],
+    ['SuspendedEVSE', 'SuspendedEVSE'],
+    ['Finishing', 'EVConnected'],
+    ['Preparing', 'EVConnected'],
+  ])('maps status=%s to chargingState=%s on active transaction', (status, expectedState) => {
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: '42', connector_id: 1 }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status, errorCode: 'NoError' });
+    expect(mockDb.updateTransactionChargingState).toHaveBeenCalledWith('42', expectedState);
+  });
+
+  it('does not call updateTransactionChargingState when no active transaction', () => {
+    mockDb.getTransactions.mockReturnValue([]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
+    expect(mockDb.updateTransactionChargingState).not.toHaveBeenCalled();
+  });
+
+  it('does not call updateTransactionChargingState for connectorId=0', () => {
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: '42', connector_id: 0 }]);
+    client._handlers['StatusNotification']({ connectorId: 0, status: 'Unavailable', errorCode: 'NoError' });
+    expect(mockDb.updateTransactionChargingState).not.toHaveBeenCalled();
+  });
+
+  it('does not call updateTransactionChargingState when status maps to null (e.g. Available)', () => {
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: '42', connector_id: 1 }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError' });
+    expect(mockDb.updateTransactionChargingState).not.toHaveBeenCalled();
   });
 });
 

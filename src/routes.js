@@ -12,6 +12,8 @@ const {
   callClient,
   broadcast,
   disconnectChargepoint,
+  remoteStopTransaction,
+  remoteStartTransaction,
   pendingRemoteStarts,
   pendingChargepoints,
 } = require('./ocpp-common');
@@ -700,6 +702,7 @@ router.post(
     try {
       const cp = db.createChargepoint(identity, identity, pending.password, 0, data.site_id);
       pendingChargepoints.delete(identity);
+      broadcast('chargepoint_update', cp);
       res.json(cp);
     } catch (e) {
       errorResponse(res, 400, e.message);
@@ -1307,10 +1310,7 @@ router.post(
     setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
 
     try {
-      const result = await callClient(cp.identity, 'RemoteStartTransaction', {
-        idTag,
-        connectorId: Number(connector_id),
-      });
+      const result = await remoteStartTransaction(cp.identity, Number(connector_id), idTag);
       if (result.status !== 'Accepted') {
         pendingRemoteStarts.delete(pendingKey);
       }
@@ -1345,9 +1345,7 @@ router.post(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
-      const result = await callClient(cp.identity, 'RemoteStopTransaction', {
-        transactionId: Number(transaction_id),
-      });
+      const result = await remoteStopTransaction(cp.identity, transaction_id);
       res.json({ result });
     } catch (err) {
       errorResponse(res, 500, err.message);
@@ -1775,7 +1773,7 @@ router.get(
   requireAuth,
   ...validateSchema(schema.TransactionIdParam),
   (req, res) => {
-    const transactionId = Number(req.params.transactionId);
+    const transactionId = req.params.transactionId;
     const values = db.getTransactionValues(transactionId);
     if (!values) return res.json({ energie: [], courant: [], soc: [] });
     res.json({
@@ -2153,10 +2151,7 @@ router.post(
     setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
 
     try {
-      const result = await callClient(cp.identity, 'RemoteStartTransaction', {
-        idTag,
-        connectorId: Number(connector_id),
-      });
+      const result = await remoteStartTransaction(cp.identity, Number(connector_id), idTag);
       if (result.status !== 'Accepted') {
         pendingRemoteStarts.delete(pendingKey);
       }
@@ -2275,7 +2270,7 @@ router.post(
 
     // Vérifier que la transaction appartient à l'utilisateur
     const transactions = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
-    const tx = transactions.find((t) => t.transaction_id === Number(transaction_id));
+    const tx = transactions.find((t) => t.transaction_id === transaction_id);
     if (!tx) return res.status(404).json({ error: 'ERR_TRANSACTION_NOT_FOUND' });
 
     // Vérifier que le tag de la transaction est lié à l'utilisateur (sauf admin)
@@ -2290,9 +2285,7 @@ router.post(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
-      const result = await callClient(cp.identity, 'RemoteStopTransaction', {
-        transactionId: Number(transaction_id),
-      });
+      const result = await remoteStopTransaction(cp.identity, transaction_id);
       res.json({ result });
     } catch (err) {
       errorResponse(res, 500, err.message);

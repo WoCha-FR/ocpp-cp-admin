@@ -660,27 +660,6 @@
     .badge-chargepoint { background: var(--badge-yellow-bg); color: var(--badge-yellow-text); }
     .badge-csms { background: var(--badge-blue-bg); color: var(--badge-blue-text); }
 
-    /* ── Flatpickr dark mode ── */
-    [data-theme="dark"] .flatpickr-calendar {
-      background: var(--bg-surface); border-color: var(--border-color);
-      box-shadow: var(--shadow-lg);
-    }
-    [data-theme="dark"] .flatpickr-months, [data-theme="dark"] .flatpickr-weekdays,
-    [data-theme="dark"] .flatpickr-month { background: var(--bg-surface); color: var(--text-primary); }
-    [data-theme="dark"] .flatpickr-weekday { color: var(--text-secondary); }
-    [data-theme="dark"] .flatpickr-day {
-      color: var(--text-primary); border-color: transparent;
-    }
-    [data-theme="dark"] .flatpickr-day:hover { background: var(--gray-200); border-color: var(--gray-200); }
-    [data-theme="dark"] .flatpickr-day.today { border-color: var(--primary); }
-    [data-theme="dark"] .flatpickr-day.selected { background: var(--primary); border-color: var(--primary); color: white; }
-    [data-theme="dark"] .flatpickr-day.prevMonthDay, [data-theme="dark"] .flatpickr-day.nextMonthDay { color: var(--gray-500); }
-    [data-theme="dark"] .flatpickr-current-month input.cur-year { color: var(--text-primary); }
-    [data-theme="dark"] .flatpickr-monthDropdown-months { background: var(--bg-surface); color: var(--text-primary); }
-    [data-theme="dark"] .numInputWrapper span { border-color: var(--border-color); }
-    [data-theme="dark"] .numInputWrapper span:hover { background: var(--gray-200); }
-    [data-theme="dark"] .flatpickr-months .flatpickr-prev-month, [data-theme="dark"] .flatpickr-months .flatpickr-next-month { color: var(--text-primary); fill: var(--text-primary); }
-    [data-theme="dark"] .flatpickr-months .flatpickr-prev-month:hover svg, [data-theme="dark"] .flatpickr-months .flatpickr-next-month:hover svg { fill: var(--primary); }
     .config-table { width: 100%; border-collapse: collapse; }
     .config-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
     .config-table .col-key { font-family: monospace; font-size: 0.85em; color: var(--text-muted); }
