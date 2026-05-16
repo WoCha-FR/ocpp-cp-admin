@@ -58,7 +58,12 @@ describe('Frontend XSS hardening', () => {
   it('does not dynamically load flatpickr locale scripts from CDN', () => {
     const html = fs.readFileSync(indexHtmlPath, 'utf8');
     expect(html).not.toMatch(/flatpickr@4\.6\.13\/dist\/l10n\//);
-    expect(html).not.toMatch(/document\.createElement\('script'\)/);
+    // Le chargement dynamique est autorisé uniquement depuis /vendor/ (self)
+    expect(html).not.toMatch(/createElement\('script'\)[\s\S]{0,300}cdn\./);
+    expect(html).not.toMatch(/createElement\('script'\)[\s\S]{0,300}jsdelivr\.net/);
+    if (/document\.createElement\('script'\)/.test(html)) {
+      expect(html).toMatch(/vendor\/flatpickr\/l10n\//);
+    }
   });
 
   it('restricts service worker openWindow to validated same-origin URL', () => {

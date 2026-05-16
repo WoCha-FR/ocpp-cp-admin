@@ -86,6 +86,19 @@ const OCPP16_ERROR_CODES = new Set([
   'WeakSignal',
 ]);
 
+const initSeqVersions = new Map();
+
+function ocppStatusToChargingState(status) {
+  const map = {
+    Charging: 'Charging',
+    SuspendedEV: 'SuspendedEV',
+    SuspendedEVSE: 'SuspendedEVSE',
+    Finishing: 'EVConnected',
+    Preparing: 'EVConnected',
+  };
+  return map[status] ?? null;
+}
+
 function sanitizeText(value, maxLen) {
   if (value == null) return null;
   const normalized = String(value)
@@ -160,6 +173,16 @@ async function callClient16(identity, method, params) {
   return result;
 }
 
+function isDisconnectionError(e) {
+  const msg = e.message || '';
+  return (
+    msg.includes('not connected') ||
+    msg.toLowerCase().includes('disconnected') ||
+    msg.includes('going away') ||
+    msg.includes('socket not open')
+  );
+}
+
 // ── Handlers entrants (borne → CSMS) OCPP 1.6 ──
 function register16Handlers(client, loggedHandle) {
   const identity = client.identity;
@@ -193,127 +216,197 @@ function register16Handlers(client, loggedHandle) {
     const cp = db.getChargepointByIdentity(identity);
     broadcast('chargepoint_update', cp);
 
-    setImmediate(async (cp) => {
-      if (!cp || cp.initialized) return;
-      try {
-        logger.debug(`[InitSeq] Calling ClearCache on ${identity} to clear authorization cache`);
-        await callClient16(identity, 'ClearCache', {});
-      } catch (e) {
-        logger.warn(`[InitSeq] ${identity} ClearCache: ${e.message}`);
-      }
+    const seqVersion = (initSeqVersions.get(identity) || 0) + 1;
+    initSeqVersions.set(identity, seqVersion);
 
-      try {
-        const existingProfiles = db.getChargingProfiles(cp.id);
-        if (existingProfiles.length === 0) {
-          logger.debug(
-            `[InitSeq] Calling ClearChargingProfile on ${identity} to clear charging profiles`
-          );
-          await callClient16(identity, 'ClearChargingProfile', {});
-        } else {
-          logger.debug(
-            `[InitSeq] ${identity} has ${existingProfiles.length} managed profile(s) — skipping ClearChargingProfile`
-          );
-        }
-      } catch (e) {
-        logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
-      }
+    setImmediate(
+      async (cp, seqVersion) => {
+        if (!cp || cp.initialized) return;
 
-      try {
-        logger.debug(`[InitSeq] ${identity} GetConfiguration (all keys)`);
-        await callClient16(identity, 'GetConfiguration', {});
-      } catch (e) {
-        logger.warn(
-          `[InitSeq] ${identity} GetConfiguration (all keys): ${e.message} — falling back to paginated`
-        );
+        const isSuperseded = () => initSeqVersions.get(identity) !== seqVersion;
 
-        let maxKeys = 20;
+        let disconnectedDuringInit = false;
+        let lastFailedStep = null;
+
+        // Step 1/5 — ClearCache
+        if (isSuperseded()) return;
         try {
-          const res = await callClient16(identity, 'GetConfiguration', {
-            key: ['GetConfigurationMaxKeys'],
-          });
-          const parsed = parseInt(res?.configurationKey?.[0]?.value, 10);
-          if (parsed > 0) maxKeys = parsed;
-        } catch (e2) {
-          logger.warn(
-            `[InitSeq] ${identity} GetConfigurationMaxKeys: ${e2.message} — using default ${maxKeys}`
-          );
-        }
-
-        logger.debug(
-          `[InitSeq] ${identity} GetConfiguration paginated (maxKeys=${maxKeys}, total=${OCPP16_STANDARD_KEYS.length})`
-        );
-        for (let i = 0; i < OCPP16_STANDARD_KEYS.length; i += maxKeys) {
-          const chunk = OCPP16_STANDARD_KEYS.slice(i, i + maxKeys);
-          try {
-            await callClient16(identity, 'GetConfiguration', { key: chunk });
-          } catch (e2) {
-            logger.warn(
-              `[InitSeq] ${identity} GetConfiguration chunk [${i}..${i + maxKeys - 1}]: ${e2.message}`
-            );
+          logger.debug(`[InitSeq] ${identity} step 1/5 — ClearCache`);
+          await callClient16(identity, 'ClearCache', {});
+        } catch (e) {
+          logger.warn(`[InitSeq] ${identity} ClearCache: ${e.message}`);
+          if (isDisconnectionError(e)) {
+            disconnectedDuringInit = true;
+            lastFailedStep = 'ClearCache';
           }
         }
-      }
 
-      const globals = db.getEnabledInitialChargepointConfig();
-      const rebootKeys = [];
-      const rejectedKeys = [];
-      const notSupportedKeys = [];
-      for (const cfg of globals) {
-        const current = db.getChargepointConfigByKey(cp.id, cfg.key);
-        if (current?.is_override) continue;
-        if (current?.value === cfg.value) continue;
+        // Step 2/5 — ClearChargingProfile
+        if (isSuperseded()) return;
         try {
-          const result = await callClient16(identity, 'ChangeConfiguration', {
-            key: cfg.key,
-            value: cfg.value,
-          });
-          if (result?.status === 'Accepted' || result?.status === 'RebootRequired') {
-            db.upsertChargepointConfig(cp.id, cfg.key, cfg.value, false);
-            if (result.status === 'RebootRequired') {
-              logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: RebootRequired`);
-              rebootKeys.push(cfg.key);
-            }
-          } else if (result.status === 'Rejected') {
-            logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: Rejected`);
-            rejectedKeys.push(cfg.key);
+          const existingProfiles = db.getChargingProfiles(cp.id);
+          if (existingProfiles.length === 0) {
+            logger.debug(`[InitSeq] ${identity} step 2/5 — ClearChargingProfile`);
+            await callClient16(identity, 'ClearChargingProfile', {});
           } else {
-            logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: NotSupported`);
-            notSupportedKeys.push(cfg.key);
-          }
-        } catch (e) {
-          logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: ${e.message}`);
-        }
-      }
-      const overrideConfigs = db.getChargepointOverrideConfigs(cp.id);
-      for (const cfg of overrideConfigs) {
-        const current = db.getChargepointConfigByKey(cp.id, cfg.key);
-        if (current?.value === cfg.value) continue;
-        try {
-          const result = await callClient16(identity, 'ChangeConfiguration', {
-            key: cfg.key,
-            value: cfg.value,
-          });
-          if (result?.status === 'RebootRequired') {
-            rebootKeys.push(cfg.key);
-          } else if (result?.status !== 'Accepted') {
-            logger.warn(
-              `[InitSeq] ${identity} Locked ChangeConfiguration ${cfg.key}: ${result?.status}`
+            logger.debug(
+              `[InitSeq] ${identity} step 2/5 — skipped (${existingProfiles.length} managed profile(s))`
             );
           }
         } catch (e) {
-          logger.warn(`[InitSeq] ${identity} Locked ChangeConfiguration ${cfg.key}: ${e.message}`);
+          logger.warn(`[InitSeq] ${identity} ClearChargingProfile: ${e.message}`);
+          if (isDisconnectionError(e)) {
+            disconnectedDuringInit = true;
+            lastFailedStep = 'ClearChargingProfile';
+          }
         }
-      }
 
-      if (rebootKeys.length > 0 || rejectedKeys.length > 0 || notSupportedKeys.length > 0) {
-        notifications
-          .emit('init_config_result', { identity, rebootKeys, rejectedKeys, notSupportedKeys })
-          .catch(() => {});
-      }
+        // Step 3/5 — GetConfiguration
+        if (isSuperseded()) return;
+        try {
+          logger.debug(`[InitSeq] ${identity} step 3/5 — GetConfiguration (all keys)`);
+          await callClient16(identity, 'GetConfiguration', {});
+        } catch (e) {
+          logger.warn(
+            `[InitSeq] ${identity} GetConfiguration (all keys): ${e.message} — falling back to paginated`
+          );
+          if (isDisconnectionError(e)) {
+            disconnectedDuringInit = true;
+            lastFailedStep = 'GetConfiguration';
+          }
 
-      db.markChargepointInitialized(cp.id);
-      logger.debug(`[InitSeq] ${identity} initialization sequence completed`);
-    }, cp);
+          if (!isSuperseded()) {
+            let maxKeys = 20;
+            try {
+              const res = await callClient16(identity, 'GetConfiguration', {
+                key: ['GetConfigurationMaxKeys'],
+              });
+              const parsed = parseInt(res?.configurationKey?.[0]?.value, 10);
+              if (parsed > 0) maxKeys = parsed;
+            } catch (e2) {
+              logger.warn(
+                `[InitSeq] ${identity} GetConfigurationMaxKeys: ${e2.message} — using default ${maxKeys}`
+              );
+              if (isDisconnectionError(e2)) {
+                disconnectedDuringInit = true;
+                lastFailedStep = lastFailedStep ?? 'GetConfiguration';
+              }
+            }
+
+            logger.debug(
+              `[InitSeq] ${identity} GetConfiguration paginated (maxKeys=${maxKeys}, total=${OCPP16_STANDARD_KEYS.length})`
+            );
+            for (let i = 0; i < OCPP16_STANDARD_KEYS.length; i += maxKeys) {
+              if (isSuperseded()) break;
+              const chunk = OCPP16_STANDARD_KEYS.slice(i, i + maxKeys);
+              try {
+                await callClient16(identity, 'GetConfiguration', { key: chunk });
+              } catch (e2) {
+                logger.warn(
+                  `[InitSeq] ${identity} GetConfiguration chunk [${i}..${i + maxKeys - 1}]: ${e2.message}`
+                );
+                if (isDisconnectionError(e2)) {
+                  disconnectedDuringInit = true;
+                  lastFailedStep = lastFailedStep ?? 'GetConfiguration';
+                }
+              }
+            }
+          }
+        }
+
+        // Step 4/5 — ChangeConfiguration (global defaults)
+        if (isSuperseded()) return;
+        const globals = db.getEnabledInitialChargepointConfig();
+        const rebootKeys = [];
+        const rejectedKeys = [];
+        const notSupportedKeys = [];
+        for (const cfg of globals) {
+          if (isSuperseded()) break;
+          const current = db.getChargepointConfigByKey(cp.id, cfg.key);
+          if (current?.is_override) continue;
+          if (current?.value === cfg.value) continue;
+          try {
+            logger.debug(`[InitSeq] ${identity} step 4/5 — ChangeConfiguration ${cfg.key}`);
+            const result = await callClient16(identity, 'ChangeConfiguration', {
+              key: cfg.key,
+              value: cfg.value,
+            });
+            if (result?.status === 'Accepted' || result?.status === 'RebootRequired') {
+              db.upsertChargepointConfig(cp.id, cfg.key, cfg.value, false);
+              if (result.status === 'RebootRequired') {
+                logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: RebootRequired`);
+                rebootKeys.push(cfg.key);
+              }
+            } else if (result.status === 'Rejected') {
+              logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: Rejected`);
+              rejectedKeys.push(cfg.key);
+            } else {
+              logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: NotSupported`);
+              notSupportedKeys.push(cfg.key);
+            }
+          } catch (e) {
+            logger.warn(`[InitSeq] ${identity} ChangeConfiguration ${cfg.key}: ${e.message}`);
+            if (isDisconnectionError(e)) {
+              disconnectedDuringInit = true;
+              lastFailedStep = lastFailedStep ?? `ChangeConfiguration(${cfg.key})`;
+            }
+          }
+        }
+
+        // Step 5/5 — ChangeConfiguration (override configs)
+        if (isSuperseded()) return;
+        const overrideConfigs = db.getChargepointOverrideConfigs(cp.id);
+        for (const cfg of overrideConfigs) {
+          if (isSuperseded()) break;
+          const current = db.getChargepointConfigByKey(cp.id, cfg.key);
+          if (current?.value === cfg.value) continue;
+          try {
+            logger.debug(
+              `[InitSeq] ${identity} step 5/5 — ChangeConfiguration override ${cfg.key}`
+            );
+            const result = await callClient16(identity, 'ChangeConfiguration', {
+              key: cfg.key,
+              value: cfg.value,
+            });
+            if (result?.status === 'RebootRequired') {
+              rebootKeys.push(cfg.key);
+            } else if (result?.status !== 'Accepted') {
+              logger.warn(
+                `[InitSeq] ${identity} Locked ChangeConfiguration ${cfg.key}: ${result?.status}`
+              );
+            }
+          } catch (e) {
+            logger.warn(
+              `[InitSeq] ${identity} Locked ChangeConfiguration ${cfg.key}: ${e.message}`
+            );
+            if (isDisconnectionError(e)) {
+              disconnectedDuringInit = true;
+              lastFailedStep = lastFailedStep ?? `ChangeConfiguration(${cfg.key})`;
+            }
+          }
+        }
+
+        if (isSuperseded()) return;
+
+        if (disconnectedDuringInit) {
+          logger.warn(
+            `[InitSeq] ${identity} initialization interrupted at step "${lastFailedStep}" — will retry on reconnect`
+          );
+          return;
+        }
+
+        if (rebootKeys.length > 0 || rejectedKeys.length > 0 || notSupportedKeys.length > 0) {
+          notifications
+            .emit('init_config_result', { identity, rebootKeys, rejectedKeys, notSupportedKeys })
+            .catch(() => {});
+        }
+
+        db.markChargepointInitialized(cp.id);
+        logger.debug(`[InitSeq] ${identity} initialization sequence completed`);
+      },
+      cp,
+      seqVersion
+    );
 
     const hbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
     const heartbeatInterval = hbConfig ? parseInt(hbConfig.value, 10) : 300;
@@ -360,13 +453,17 @@ function register16Handlers(client, loggedHandle) {
         safeErrorCode,
         safeInfo,
         safeVendorId,
-        safeVendorErrorCode
+        safeVendorErrorCode,
+        null,
+        safeStatus
       );
       if (params.connectorId !== 0) {
         if (safeStatus === 'Reserved') {
           db.activateReservationByConnector(cp.id, params.connectorId);
+          broadcast('reservation_updated', { chargepoint_id: cp.id });
         } else if (['Available', 'Faulted', 'Unavailable', 'Finishing'].includes(safeStatus)) {
           db.expireReservationByConnector(cp.id, params.connectorId);
+          broadcast('reservation_updated', { chargepoint_id: cp.id });
         }
         if (cp.cpstatus === 'Unavailable') {
           const allConnectors = db.getConnectorsByChargepoint(cp.id);
@@ -376,6 +473,33 @@ function register16Handlers(client, loggedHandle) {
           db.updateChargepointStatus(identity, derivedStatus, true);
         } else {
           db.updateChargepointStatus(identity, undefined, true);
+        }
+        const activeTx = db
+          .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
+          .find((t) => t.connector_id === params.connectorId);
+        if (activeTx) {
+          if (safeStatus === 'Available') {
+            // Borne revenue Available sans StopTransaction — fermer la transaction orpheline
+            db.stopTransaction(
+              activeTx.transaction_id,
+              activeTx.meter_start || 0,
+              params.timestamp || new Date().toISOString(),
+              'EVDisconnected'
+            );
+            broadcast('transaction_stop', {
+              identity,
+              transactionId: activeTx.transaction_id,
+              reason: 'EVDisconnected',
+            });
+            logger.warn(
+              `StatusNotification: closed orphan transaction ${activeTx.transaction_id} on ${identity} #${params.connectorId} (no StopTransaction received)`
+            );
+          } else {
+            const chargingState = ocppStatusToChargingState(safeStatus);
+            if (chargingState !== null) {
+              db.updateTransactionChargingState(activeTx.transaction_id, chargingState);
+            }
+          }
         }
       }
       const updatedCp = db.getChargepointByIdentity(identity);
@@ -599,15 +723,30 @@ function register16Handlers(client, loggedHandle) {
 
     let transactionId = 0;
     if (cp && authStatus === 'Accepted') {
+      const orphans = db
+        .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
+        .filter((t) => t.connector_id === params.connectorId);
+      for (const orphan of orphans) {
+        db.stopTransaction(orphan.transaction_id, params.meterStart, params.timestamp, 'Other');
+        broadcast('transaction_stop', {
+          identity,
+          transactionId: orphan.transaction_id,
+          reason: 'Other',
+        });
+        logger.warn(
+          `StartTransaction: closed orphan transaction ${orphan.transaction_id} on ${identity} #${params.connectorId}`
+        );
+      }
       const tx = db.createTransaction(
         cp.id,
         params.connectorId,
         params.idTag,
         params.meterStart,
         params.timestamp,
-        startSource
+        startSource,
+        { evse_id: null, charging_state: 'Charging', id_token_type: 'ISO14443' }
       );
-      transactionId = parseInt(tx.transaction_id, 10);
+      transactionId = tx.transaction_id;
       broadcast('transaction_start', {
         identity,
         connectorId: params.connectorId,
@@ -654,7 +793,7 @@ function register16Handlers(client, loggedHandle) {
     }
 
     return {
-      transactionId,
+      transactionId: parseInt(transactionId, 10),
       idTagInfo: { status: authStatus },
     };
   });
@@ -785,18 +924,22 @@ function register16Handlers(client, loggedHandle) {
         }
       }
 
-      if (params.transactionId) {
+      let txId = params.transactionId || null;
+      if (!txId && cp) {
+        const activeTx = db.getActiveTransactionByConnector(cp.id, params.connectorId);
+        if (activeTx) txId = activeTx.transaction_id;
+      }
+
+      if (txId) {
         // Transaction connue ?
-        const tx = db.getTransactionByTransactionId(params.transactionId);
+        const tx = db.getTransactionByTransactionId(txId);
         if (!tx) {
-          logger.warn(
-            `Received MeterValues for unknown transaction ${params.transactionId} from ${identity}`
-          );
+          logger.warn(`Received MeterValues for unknown transaction ${txId} from ${identity}`);
           return {};
         }
         // Oui, on traite le meter value
         db.updateTransactionPowerEnergy(
-          params.transactionId,
+          txId,
           powerW !== null ? Math.round(powerW) : null,
           energyWh !== null ? Math.round(energyWh) : null
         );
@@ -807,8 +950,7 @@ function register16Handlers(client, loggedHandle) {
           if (powerOffered !== null || powerW !== null || energyWh !== null) {
             let relativeEnergy = null;
             if (energyWh !== null) {
-              const tx = db.getTransactionByTransactionId(params.transactionId);
-              const meterStart = tx && tx.meter_start != null ? tx.meter_start : 0;
+              const meterStart = tx.meter_start != null ? tx.meter_start : 0;
               relativeEnergy = Math.round(energyWh - meterStart);
             }
             tvData.energieEntry = {
@@ -834,7 +976,7 @@ function register16Handlers(client, loggedHandle) {
           }
           if (socValue !== null) tvData.socEntry = { x: unixTs, y: socValue };
           if (Object.keys(tvData).length > 0) {
-            db.upsertTransactionValues(params.transactionId, tvData);
+            db.upsertTransactionValues(txId, tvData);
           }
         }
       }

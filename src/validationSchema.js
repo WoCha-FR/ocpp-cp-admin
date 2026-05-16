@@ -280,8 +280,8 @@ const IdParam = {
 const TransactionIdParam = {
   transactionId: {
     in: ['params'],
-    isInt: { options: { gt: 0 } },
-    toInt: true,
+    trim: true,
+    notEmpty: true,
     errorMessage: 'VALIDATION_TRANSACTION_ID',
   },
 };
@@ -381,8 +381,8 @@ const StopCharge = {
   },
   transaction_id: {
     in: ['body'],
-    isInt: { options: { gt: 0 } },
-    toInt: true,
+    customSanitizer: { options: (val) => String(val) },
+    notEmpty: true,
     errorMessage: 'VALIDATION_TRANSACTION_ID',
   },
 };

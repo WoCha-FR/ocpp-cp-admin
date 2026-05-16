@@ -13,13 +13,17 @@
     (function() {
       var t = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
       document.documentElement.setAttribute('data-theme', t);
+      var link = document.createElement('link');
+      link.id = 'flatpickr-css';
+      link.rel = 'stylesheet';
+      link.href = t === 'dark' ? '/vendor/flatpickr/themes/dark.css' : '/vendor/flatpickr/flatpickr.min.css';
+      document.head.appendChild(link);
     })();
   </script>
   <link rel="stylesheet" href="/css/app.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/i18next@26.1.0/i18next.min.js" integrity="sha384-u9Lno28ZWcetjYvw0ZPd9denWYeXoDKRTjmqMr989WT3F2gVOGDSYnOyy5nMqcQr" crossorigin="anonymous"></script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" integrity="sha384-RkASv+6KfBMW9eknReJIJ6b3UnjKOKC5bOUaNgIY778NFbQ8MtWq9Lr/khUgqtTt" crossorigin="anonymous">
-  <script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13" integrity="sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/i18next@26.2.0/i18next.min.js" integrity="sha384-u9Lno28ZWcetjYvw0ZPd9denWYeXoDKRTjmqMr989WT3F2gVOGDSYnOyy5nMqcQr" crossorigin="anonymous"></script>
+  <script src="/vendor/flatpickr/flatpickr.min.js"></script>
   <script>
     const __supportedLangs = window.__SUPPORTED_LANGUAGES__ || ['fr'];
     const __defaultLang = window.__DEFAULT_LANG__ || 'fr';
@@ -253,6 +257,12 @@ function applyTheme(theme) {
   document.querySelectorAll('.theme-option').forEach(el => {
     el.classList.toggle('active', el.dataset.theme === theme);
   });
+  // Swapper le thème flatpickr
+  const fpCss = document.getElementById('flatpickr-css');
+  if (fpCss) {
+    const target = isDark ? '/vendor/flatpickr/themes/dark.css' : '/vendor/flatpickr/flatpickr.min.css';
+    if (!fpCss.href.endsWith(target)) fpCss.href = target;
+  }
 }
 
 function toggleTheme() {
@@ -321,6 +331,9 @@ async function changeLanguage(lng) {
   if (currentUser) {
     refreshCurrentPage(true);
     applyTheme(getPreferredTheme());
+    checkPushPrompt();
+    checkDefaultCredentials();
+    checkSitePrompt();
     api('PUT', '/user/profile', { langue: lng }).catch(() => { });
   }
 }
@@ -363,18 +376,19 @@ async function loadFlatpickrLocale(lang) {
   const lc = getLocaleConfig();
   const fpLocale = lc.flatpickrLocale;
   if (!fpLocale) {
-    // anglais = défaut de Flatpickr, rien à charger
     flatpickr.localize(flatpickr.l10ns.default);
     return;
   }
-  // Déjà chargé ?
-  if (flatpickr.l10ns[fpLocale]) {
-    flatpickr.localize(flatpickr.l10ns[fpLocale]);
-    return;
+  if (!flatpickr.l10ns[fpLocale]) {
+    await new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = `/vendor/flatpickr/l10n/${fpLocale}.js`;
+      script.onload = resolve;
+      script.onerror = resolve;
+      document.head.appendChild(script);
+    });
   }
-  // Sécurité: éviter le chargement dynamique de script tiers sans SRI.
-  // Fallback temporaire sur la locale par défaut si non préchargée.
-  flatpickr.localize(flatpickr.l10ns.default);
+  flatpickr.localize(flatpickr.l10ns[fpLocale] || flatpickr.l10ns.default);
 }
 
 // ══════════════════════════════════════
@@ -1294,7 +1308,7 @@ async function renderChargepoints() {
                   <span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span>
                   <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>
                 </td>
-                <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' ? `${t('common.unknown')}` : escapeHtml(cp.cpstatus || '-')}</span>`}</td>
+                <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? `${t('common.unknown')}` : escapeHtml(cp.cpstatus || '-')}</span>`}</td>
                 <td>${cp.cpname ? escapeHtml(cp.cpname) : '-'}</td>
                 <td>${dashboardCpMode(cp.mode)}</td>
                 <td>${cp.vendor ? escapeHtml(cp.vendor) : '-'}</td>
@@ -1540,7 +1554,7 @@ async function showChargepointDetail(id, tab) {
       <div class="card">
         <div class="card-header">
           <h3><span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span> ${cp.cpname && cp.cpname !== cp.identity ? `${escapeHtml(cp.identity)} - ${escapeHtml(cp.cpname)}` : escapeHtml(cp.identity)} (${cp.site_name ? escapeHtml(cp.site_name) : t('chargepoint.cpNotAssigned')})</h3>
-          <span class="badge ${!cp.online && cp.cpstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' ? t('common.unknown') : escapeHtml(cp.cpstatus || '-')}</span>
+          <span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? t('common.unknown') : escapeHtml(cp.cpstatus || '-')}</span>
         </div>
       </div>
       <div id="detailTabContent"></div>
