@@ -1773,7 +1773,7 @@ router.get(
   requireAuth,
   ...validateSchema(schema.TransactionIdParam),
   (req, res) => {
-    const transactionId = Number(req.params.transactionId);
+    const transactionId = req.params.transactionId;
     const values = db.getTransactionValues(transactionId);
     if (!values) return res.json({ energie: [], courant: [], soc: [] });
     res.json({
@@ -2270,7 +2270,7 @@ router.post(
 
     // Vérifier que la transaction appartient à l'utilisateur
     const transactions = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
-    const tx = transactions.find((t) => t.transaction_id === String(transaction_id));
+    const tx = transactions.find((t) => t.transaction_id === transaction_id);
     if (!tx) return res.status(404).json({ error: 'ERR_TRANSACTION_NOT_FOUND' });
 
     // Vérifier que le tag de la transaction est lié à l'utilisateur (sauf admin)

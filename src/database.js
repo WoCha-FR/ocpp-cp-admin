@@ -621,7 +621,7 @@ function getAllConnectorsGrouped(siteIds) {
            cp.cpname as chargepoint_name, cp.connected, cp.cpstatus as cp_status,
            cp.mode,
            s.sname as site_name, s.id as site_id,
-           CAST(t.transaction_id AS INTEGER) as active_transaction_id, t.id_tag as active_id_tag,
+           t.transaction_id as active_transaction_id, t.id_tag as active_id_tag,
            t.power as active_power, t.energy as active_energy,
            c.evse_id, t.charging_state as active_charging_state
     FROM connectors c
@@ -934,7 +934,7 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
     .all(...params)
     .map((row) => ({
       ...row,
-      transaction_id: parseInt(row.transaction_id, 10),
+      transaction_id: row.transaction_id,
     }));
 }
 
@@ -1474,7 +1474,7 @@ function getAvailableConnectorsForUser(userId) {
     SELECT c.*, cp.identity as chargepoint_identity, cp.id as chargepoint_id,
            cp.cpname as chargepoint_name, cp.mode, cp.connected, cp.cpstatus as cp_status,
            s.sname as site_name, s.id as site_id, us.authorized as site_authorized,
-           CAST(t.transaction_id AS INTEGER) as active_transaction_id, t.id_tag as active_id_tag,
+           t.transaction_id as active_transaction_id, t.id_tag as active_id_tag,
            t.power as active_power, t.energy as active_energy,
            it.user_id as active_user_id
     FROM connectors c

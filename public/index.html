@@ -2756,7 +2756,7 @@ async function renderConnectors() {
                       <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
                       <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
                     </div>
-                    <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                    <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                       ⏹ ${t('connectors.cStopCharge')}
                     </button>`
               : isFaulted || isUnavailable
@@ -2889,7 +2889,7 @@ async function renderUserDashboard() {
                     <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
                     <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
                   </div>
-                  <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => userStopCharge(${c.chargepoint_id}, ${c.active_transaction_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                  <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => userStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                     ⏹ ${t('connectors.cStopCharge')}
                   </button>`
               : isAutoMode && isOnline
@@ -3756,7 +3756,7 @@ async function renderTransactions() {
                 <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${formatTxStatus(tx.status)}</td>
                 <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
-                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail(${tx.transaction_id}, 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -3959,7 +3959,7 @@ async function renderMyTransactions() {
               <td>${duration}</td>
               <td>${formatTxStatus(tx.status)}</td>
               <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
-              <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail(${tx.transaction_id}, 'mytransactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+              <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'mytransactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
             </tr>`;
           }).join('')}
         </tbody>
