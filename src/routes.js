@@ -1089,15 +1089,21 @@ router.delete(
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
       }
     }
-    const client = getConnectedClients().get(cp.identity);
-    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
-
     const profileDbId = Number(req.params.profileDbId);
     if (!profileDbId) return res.status(400).json({ error: 'VALIDATION_ID' });
     const profile = db.getChargingProfileById(profileDbId);
     if (!profile || profile.chargepoint_id !== cp.id) {
       return res.status(404).json({ error: 'ERR_PROFILE_NOT_FOUND' });
     }
+
+    if (profile.status === 'Rejected') {
+      db.deleteChargingProfileById(profileDbId);
+      broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      return res.json({ status: 'Accepted' });
+    }
+
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
       const result = await callClient(cp.identity, 'ClearChargingProfile', {
