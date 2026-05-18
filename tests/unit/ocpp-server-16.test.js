@@ -61,6 +61,7 @@ jest.mock('../../src/ocpp-common', () => ({
   trackRepeatedAuthReject: mockTrackRepeatedAuthReject,
   registerCallClientImpl: jest.fn(),
   registerHandlersFn: jest.fn(),
+  checkConnectorErrorCooldown: jest.fn().mockReturnValue(true),
 }));
 
 const { callClient16, register16Handlers, OCPP16_STANDARD_KEYS } = require('../../src/ocpp-server-16');

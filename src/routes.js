@@ -2016,6 +2016,7 @@ router.get('/dashboard', requireManager, (req, res) => {
     Unavailable: 0,
     Faulted: 0,
     Offline: 0,
+    WithError: 0,
   };
   connectors.forEach((c) => {
     const online = connectedIdentities.has(c.chargepoint_identity);
@@ -2025,6 +2026,7 @@ router.get('/dashboard', requireManager, (req, res) => {
       const st = c.cnstatus || 'Unknown';
       if (Object.prototype.hasOwnProperty.call(connectorStats, st)) connectorStats[st]++;
       else connectorStats[st] = 1;
+      if (c.error_code && c.error_code !== 'NoError') connectorStats.WithError++;
     }
   });
 

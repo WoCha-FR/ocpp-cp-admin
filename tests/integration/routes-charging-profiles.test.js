@@ -225,11 +225,17 @@ function createApp(options = {}) {
   app.delete('/api/chargepoints/:id/charging-profiles/:profileDbId', requireAuth, async (req, res) => {
     const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
-    if (!connectedClients.has(found.identity)) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     const profileDbId = Number(req.params.profileDbId);
     const profile = testDb.prepare('SELECT * FROM charging_profiles WHERE id = ?').get(profileDbId);
     if (!profile || profile.chargepoint_id !== found.id) return res.status(404).json({ error: 'ERR_PROFILE_NOT_FOUND' });
+
+    if (profile.status === 'Rejected') {
+      testDb.prepare('DELETE FROM charging_profiles WHERE id = ?').run(profileDbId);
+      return res.json({ status: 'Accepted' });
+    }
+
+    if (!connectedClients.has(found.identity)) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
       const result = await callClient(found.identity, 'ClearChargingProfile', { id: profile.profile_id });
@@ -494,6 +500,25 @@ describe('DELETE /api/chargepoints/:id/charging-profiles/:profileDbId', () => {
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('Rejected');
     expect(db.prepare('SELECT * FROM charging_profiles WHERE id = ?').get(dbId)).toBeDefined();
+  });
+
+  it('supprime directement un profil avec statut Rejected sans appeler la borne', async () => {
+    const callClient = jest.fn();
+    const { app, db, cp } = createApp({ callClient });
+    const dbId = db.prepare(`
+      INSERT INTO charging_profiles (chargepoint_id, profile_id, connector_id, stack_level,
+        profile_purpose, profile_kind, charging_rate_unit, schedule_json, status)
+      VALUES (?, 3, 0, 0, 'ChargePointMaxProfile', 'Absolute', 'W', '{}', 'Rejected')
+    `).run(cp.id).lastInsertRowid;
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    const res = await agent.delete(`/api/chargepoints/${cp.id}/charging-profiles/${dbId}`).set(CSRF_HEADER, csrf);
+
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('Accepted');
+    expect(db.prepare('SELECT * FROM charging_profiles WHERE id = ?').get(dbId)).toBeUndefined();
+    expect(callClient).not.toHaveBeenCalled();
   });
 });
 

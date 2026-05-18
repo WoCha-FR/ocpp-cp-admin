@@ -13,6 +13,7 @@ const pendingChargepoints = new Map();
 const authRejectTracker = new Map();
 const reconnectTracker = new Map();
 const refusedNotifCooldown = new Map();
+const connectorErrorCooldown = new Map();
 
 const wsRateTracker = new Map();
 const WS_RATE_MAX = 10;
@@ -41,6 +42,20 @@ function checkRefusedNotifCooldown(identity, reason) {
   const last = refusedNotifCooldown.get(key);
   if (!last || now - last > cooldownMs) {
     refusedNotifCooldown.set(key, now);
+    return true;
+  }
+  return false;
+}
+
+function checkConnectorErrorCooldown(identity, connectorId, errorCode) {
+  const config = getConfig();
+  const cooldownMs =
+    ((config.notifs && config.notifs.connectorErrorCooldownMinutes) || 60) * 60 * 1000;
+  const now = Date.now();
+  const key = `${identity}:${connectorId}:${errorCode}`;
+  const last = connectorErrorCooldown.get(key);
+  if (!last || now - last > cooldownMs) {
+    connectorErrorCooldown.set(key, now);
     return true;
   }
   return false;
@@ -691,4 +706,5 @@ module.exports = {
   remoteStartTransaction,
   pendingRemoteStarts,
   pendingChargepoints,
+  checkConnectorErrorCooldown,
 };

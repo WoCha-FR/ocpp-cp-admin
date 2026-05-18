@@ -981,10 +981,10 @@ async function renderDashboard() {
           <div class="stat-value">${stats.totalConnectors - (stats.connectorStats.Offline || 0) - (stats.connectorStats.Faulted || 0) - (stats.connectorStats.Unavailable || 0)} <span class="stat-sub-inline">/ ${stats.totalConnectors}</span></div>
           <div class="stat-sub">${(stats.connectorStats.Charging || 0) + (stats.connectorStats.SuspendedEV || 0) + (stats.connectorStats.SuspendedEVSE || 0)} ${t('dashboard.statCharging')}</div>
         </div>
-        <div class="stat-card" style="border-left-color:${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) > 0 ? 'var(--danger)' : 'var(--success)'}">
+        <div class="stat-card" style="border-left-color:${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) + (stats.connectorStats.WithError || 0) > 0 ? 'var(--danger)' : 'var(--success)'}">
           <div class="stat-label">${t('dashboard.statAlerts')}</div>
-          <div class="stat-value" style="color:${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) > 0 ? 'var(--danger)' : 'var(--success)'}">${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0)}</div>
-          <div class="stat-sub">${stats.connectorStats.Faulted || 0} ${t('dashboard.statFaulted')} · ${stats.connectorStats.Unavailable || 0} ${t('dashboard.statUnavailable')}</div>
+          <div class="stat-value" style="color:${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) + (stats.connectorStats.WithError || 0) > 0 ? 'var(--danger)' : 'var(--success)'}">${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) + (stats.connectorStats.WithError || 0)}</div>
+          <div class="stat-sub">${stats.connectorStats.Faulted || 0} ${t('dashboard.statFaulted')} · ${stats.connectorStats.Unavailable || 0} ${t('dashboard.statUnavailable')}${(stats.connectorStats.WithError || 0) > 0 ? ` · ${stats.connectorStats.WithError} ⚠️` : ''}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">${t('dashboard.totalActiveCharge')}</div>
@@ -2720,17 +2720,20 @@ async function renderConnectors() {
         const isCharging = isOnline && ['Charging', 'SuspendedEV', 'SuspendedEVSE'].includes(c.cnstatus);
         const isFaulted = isOnline && c.cnstatus === 'Faulted';
         const isUnavailable = isOnline && c.cnstatus === 'Unavailable';
+        const hasError = isOnline && c.error_code && c.error_code !== 'NoError';
         const isAutoMode = c.mode === 2 || c.mode === 3;
         const canStart = isAvailable;
         const cardStyle = canStart
           ? 'border-color: var(--success);'
-          : isCharging
-            ? 'border-color: var(--primary);'
-            : isFaulted || isUnavailable
-              ? 'border-color: var(--danger);'
-              : !isOnline
-                ? 'border-color: var(--gray-300); opacity: 0.7;'
-                : 'border-color: var(--warning);';
+          : isFaulted || isUnavailable
+            ? 'border-color: var(--danger);'
+            : hasError
+              ? 'border-color: var(--warning);'
+              : isCharging
+                ? 'border-color: var(--primary);'
+                : !isOnline
+                  ? 'border-color: var(--gray-300); opacity: 0.7;'
+                  : 'border-color: var(--warning);';
         return `
           <div class="connector-card" style="text-align:left;padding:14px 16px;${cardStyle}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:4px;">
@@ -2738,10 +2741,10 @@ async function renderConnectors() {
                 <span class="status-dot ${isOnline ? 'dot-online' : 'dot-offline'}"></span>
                 <strong><a href="#" data-onclick="showChargepointDetail(${c.chargepoint_id});return false;" style="color:inherit;text-decoration:none;">${escapeHtml(c.chargepoint_name || c.chargepoint_identity)}</a></strong>
               </div>
-              <div style="flex-shrink:0;">${!isOnline
+              <div style="flex-shrink:0;display:flex;gap:4px;align-items:center;">${!isOnline
             ? `<span class="badge badge-red">${t('connectors.status.Offline')}</span>`
             : `<span class="badge ${statusBadgeClass(c.cnstatus)}">${t(`connectors.status.${c.cnstatus}`)}</span>`
-          }</div>
+          }${hasError ? `<span class="badge badge-red" title="${escapeAttr(c.info || '')}">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}</div>
             </div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">📍 ${escapeHtml(c.site_name || t('sites.siteNoSite'))}</div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
@@ -2758,14 +2761,15 @@ async function renderConnectors() {
                     </div>
                     <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                       ⏹ ${t('connectors.cStopCharge')}
-                    </button>`
+                    </button>
+                    ${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
               : isFaulted || isUnavailable
                 ? `<div style="text-align:center;padding:6px;color:var(--danger);font-size:13px;">⚠ ${chargeConnectorReason(c.cnstatus)}${c.error_code && c.error_code !== 'NoError' ? ' — ' + escapeHtml(c.error_code) : ''}</div>`
                 : !isOnline
                     ? `<div style="text-align:center;padding:6px;color:var(--gray-500);font-size:13px;">⛓️‍💥 ${t('chargepoint.cpOffline')}</div>`
                     : isCharging
-                      ? `<div style="text-align:center;padding:6px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>`
-                      : `<div style="text-align:center;padding:6px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>`
+                      ? `<div style="text-align:center;padding:6px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
+                      : `<div style="text-align:center;padding:6px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
           }
           </div>`;
       }).join('')}
