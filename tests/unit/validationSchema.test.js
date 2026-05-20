@@ -3,8 +3,8 @@
 const { checkSchema, validationResult } = require('express-validator');
 const schema = require('../../src/validationSchema');
 
-async function runSchema(schemaObj, body, params = {}) {
-  const req = { body, params, query: {}, headers: {} };
+async function runSchema(schemaObj, body, params = {}, query = {}) {
+  const req = { body, params, query, headers: {} };
   const middleware = checkSchema(schemaObj);
   // express-validator v7: middleware is an array of handlers
   for (const fn of middleware) {
@@ -282,5 +282,30 @@ describe('validationSchema — ReservationIdParam', () => {
     const result = await runSchema(schema.ReservationIdParam, {}, {});
     expect(result.isEmpty()).toBe(false);
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_ID');
+  });
+});
+
+// ── OcppMessagesQuery ──
+describe('validationSchema — OcppMessagesQuery', () => {
+  it('passes with no filters', async () => {
+    const result = await runSchema(schema.OcppMessagesQuery, {}, {}, {});
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes with valid date_from and date_to', async () => {
+    const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { date_from: '2026-05-20', date_to: '2026-05-20' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('fails with invalid date_from format', async () => {
+    const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { date_from: 'not-a-date' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_DATE_FROM');
+  });
+
+  it('fails with date_to in wrong format (DD/MM/YYYY)', async () => {
+    const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { date_to: '20/05/2026' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_DATE_TO');
   });
 });

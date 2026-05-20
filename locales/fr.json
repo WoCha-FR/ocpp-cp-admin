@@ -259,6 +259,8 @@
     "cpLogsDelete": "Supprimer le journal",
     "cpLogsConfirmDelete": "Supprimer le journal de \"{{identity}}\" ?",
     "cpLogsDeleted": "Journal de la borne supprimé",
+    "cpLogsFilterDateFrom": "Du",
+    "cpLogsFilterDateTo": "Au",
     "cpConfTitle": "Configuration",
     "cpConfSearchPlaceholder": "Rechercher une clé...",
     "cpConfReadOnly": "Lecture seule",

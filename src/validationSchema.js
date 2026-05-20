@@ -459,6 +459,18 @@ const OcppMessagesQuery = {
     trim: true,
     errorMessage: 'VALIDATION_OCPP_ACTION',
   },
+  date_from: {
+    in: ['query'],
+    optional: true,
+    matches: { options: /^\d{4}-\d{2}-\d{2}$/ },
+    errorMessage: 'VALIDATION_DATE_FROM',
+  },
+  date_to: {
+    in: ['query'],
+    optional: true,
+    matches: { options: /^\d{4}-\d{2}-\d{2}$/ },
+    errorMessage: 'VALIDATION_DATE_TO',
+  },
 };
 
 const IdTagEventsQuery = {

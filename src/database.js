@@ -1079,6 +1079,14 @@ function getOcppMessages(filters = {}) {
     query += ' AND UPPER(om.action) LIKE UPPER(?)';
     params.push(`%${filters.action}%`);
   }
+  if (filters.date_from) {
+    query += ' AND om.timestamp >= ?';
+    params.push(filters.date_from);
+  }
+  if (filters.date_to) {
+    query += ' AND om.timestamp <= ?';
+    params.push(filters.date_to);
+  }
   if (filters.site_ids && filters.site_ids.length > 0) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);

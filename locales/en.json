@@ -259,6 +259,8 @@
     "cpLogsDelete": "Delete log",
     "cpLogsConfirmDelete": "Delete log for \"{{identity}}\"?",
     "cpLogsDeleted": "Chargepoint log deleted",
+    "cpLogsFilterDateFrom": "From",
+    "cpLogsFilterDateTo": "To",
     "cpConfTitle": "Configuration",
     "cpConfSearchPlaceholder": "Search for a key...",
     "cpConfReadOnly": "Read only",

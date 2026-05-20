@@ -768,3 +768,52 @@ describe('database — resetConnectorsByChargepoint', () => {
     expect(otherConnectors[0].cnstatus).toBe('Available');
   });
 });
+
+// ── OCPP Messages date filter ──
+describe('database — OCPP Messages date filter', () => {
+  let siteId, cpId;
+
+  beforeAll(() => {
+    const site = db.createSite('MsgSite', null);
+    siteId = site.id;
+    const cp = db.createChargepoint('TEST-MSG-01', 'Msg CP', 'pass', 1, siteId);
+    cpId = cp.id;
+    const raw = db.getDb();
+    const ins = raw.prepare(
+      `INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, action, payload, timestamp) VALUES (?, ?, ?, ?, ?, ?)`
+    );
+    ins.run(cpId, 'chargepoint', 'CALL',       'BootNotification', '{}', '2026-05-19 10:00:00');
+    ins.run(cpId, 'csms',        'CALLRESULT',  'BootNotification', '{}', '2026-05-20 10:00:00');
+    ins.run(cpId, 'chargepoint', 'CALL',       'Heartbeat',        '{}', '2026-05-20 14:00:00');
+  });
+
+  afterAll(() => {
+    db.clearOcppMessages(cpId);
+  });
+
+  it('returns all messages without date filter', () => {
+    expect(db.getOcppMessages({ chargepoint_id: cpId }).length).toBe(3);
+  });
+
+  it('filters messages by date_from', () => {
+    const msgs = db.getOcppMessages({ chargepoint_id: cpId, date_from: '2026-05-20 00:00:00' });
+    expect(msgs.length).toBe(2);
+  });
+
+  it('filters messages by date_to', () => {
+    const msgs = db.getOcppMessages({ chargepoint_id: cpId, date_to: '2026-05-19 23:59:59' });
+    expect(msgs.length).toBe(1);
+    expect(msgs[0].action).toBe('BootNotification');
+    expect(msgs[0].origin).toBe('chargepoint');
+  });
+
+  it('filters messages by full day range', () => {
+    const msgs = db.getOcppMessages({ chargepoint_id: cpId, date_from: '2026-05-20 00:00:00', date_to: '2026-05-20 23:59:59' });
+    expect(msgs.length).toBe(2);
+  });
+
+  it('returns empty for date with no messages', () => {
+    const msgs = db.getOcppMessages({ chargepoint_id: cpId, date_from: '2026-05-21 00:00:00', date_to: '2026-05-21 23:59:59' });
+    expect(msgs.length).toBe(0);
+  });
+});
