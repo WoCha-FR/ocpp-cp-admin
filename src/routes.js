@@ -2028,9 +2028,11 @@ router.get('/dashboard', requireManager, (req, res) => {
     if (!online) {
       connectorStats.Offline++;
     } else {
-      const st = c.cnstatus || 'Unknown';
-      if (Object.prototype.hasOwnProperty.call(connectorStats, st)) connectorStats[st]++;
-      else connectorStats[st] = 1;
+      if (c.cnstatus) {
+        if (Object.prototype.hasOwnProperty.call(connectorStats, c.cnstatus))
+          connectorStats[c.cnstatus]++;
+        else connectorStats[c.cnstatus] = 1;
+      }
       if (c.error_code && c.error_code !== 'NoError') connectorStats.WithError++;
     }
   });

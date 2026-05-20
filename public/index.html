@@ -1307,7 +1307,7 @@ async function renderChargepoints() {
                   <span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span>
                   <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>
                 </td>
-                <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? `${t('common.unknown')}` : escapeHtml(cp.cpstatus || '-')}</span>`}</td>
+                <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? `${t('common.unknown')}` : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>`}</td>
                 <td>${cp.cpname ? escapeHtml(cp.cpname) : '-'}</td>
                 <td>${dashboardCpMode(cp.mode)}</td>
                 <td>${cp.vendor ? escapeHtml(cp.vendor) : '-'}</td>
@@ -1553,7 +1553,7 @@ async function showChargepointDetail(id, tab) {
       <div class="card">
         <div class="card-header">
           <h3><span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span> ${cp.cpname && cp.cpname !== cp.identity ? `${escapeHtml(cp.identity)} - ${escapeHtml(cp.cpname)}` : escapeHtml(cp.identity)} (${cp.site_name ? escapeHtml(cp.site_name) : t('chargepoint.cpNotAssigned')})</h3>
-          <span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? t('common.unknown') : escapeHtml(cp.cpstatus || '-')}</span>
+          <span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? t('common.unknown') : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>
         </div>
       </div>
       <div id="detailTabContent"></div>
@@ -1701,7 +1701,7 @@ async function renderDetailTabConnectors(cp) {
                 <div class="detail-section-title">
                   🔌 ${t('common.connector_one')} ${c.connector_id}${c.connector_name ? ' · ' + escapeHtml(c.connector_name) : ''}
                   ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
-                  <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : escapeHtml(c.cnstatus || '-')}</span>
+                  <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : (c.cnstatus ? escapeHtml(c.cnstatus) : t('common.unknown'))}</span>
                   ${hasError ? `<span class="badge badge-red">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}
                 </div>
                 <div class="detail-row">
@@ -2742,7 +2742,7 @@ async function renderConnectors() {
               </div>
               <div style="flex-shrink:0;display:flex;gap:4px;align-items:center;">${!isOnline
             ? `<span class="badge badge-red">${t('connectors.status.Offline')}</span>`
-            : `<span class="badge ${statusBadgeClass(c.cnstatus)}">${t(`connectors.status.${c.cnstatus}`)}</span>`
+            : `<span class="badge ${statusBadgeClass(c.cnstatus)}">${c.cnstatus ? t(`connectors.status.${c.cnstatus}`) : t('common.unknown')}</span>`
           }${hasError ? `<span class="badge badge-red" title="${escapeAttr(c.info || '')}">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}</div>
             </div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">📍 ${escapeHtml(c.site_name || t('sites.siteNoSite'))}</div>
@@ -2818,6 +2818,7 @@ async function mgrStopCharge(chargepointId, transactionId, cpName, connId) {
 }
 
 function chargeConnectorReason(status) {
+  if (!status) return t('common.unknown');
   const map = {
     Charging: t('connectors.status.Charging'),
     Preparing: t('connectors.status.Preparing'),
@@ -2874,7 +2875,7 @@ async function renderUserDashboard() {
               </div>
               ${!isOnline
           ? `<span class="badge badge-red">${t('connectors.status.Offline')}</span>`
-          : `<span class="badge ${statusBadgeClass(c.cnstatus)}">${t(`connectors.status.${c.cnstatus}`)}</span>`
+          : `<span class="badge ${statusBadgeClass(c.cnstatus)}">${c.cnstatus ? t(`connectors.status.${c.cnstatus}`) : t('common.unknown')}</span>`
         }
             </div>
             <div class="text-muted" style="margin-bottom:4px;">📍 ${escapeHtml(c.site_name)}</div>
