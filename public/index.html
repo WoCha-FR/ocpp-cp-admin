@@ -3744,7 +3744,7 @@ async function renderTransactions() {
       <div class="card">
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: transactions.length })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
-        <table style="font-size: 0.85em;">
+        <table style="font-size: 0.75em;">
           <thead><tr><th>ID</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.site_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `

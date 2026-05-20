@@ -702,13 +702,13 @@ function createTransaction(
   })();
 }
 
-function stopTransaction(transactionId, meterStop, stopTime, reason, charging_state = null) {
+function stopTransaction(transactionId, meterStop, stopTime, reason) {
   transactionId = String(transactionId);
   db.prepare(
     `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed',
-    charging_state = COALESCE(?, charging_state)
+    charging_state = NULL
     WHERE transaction_id = ? AND status = 'Active'`
-  ).run(meterStop, stopTime, reason || 'Local', charging_state, transactionId);
+  ).run(meterStop, stopTime, reason || 'Local', transactionId);
   return db
     .prepare('SELECT * FROM transactions WHERE transaction_id = ? ORDER BY id DESC')
     .get(transactionId);

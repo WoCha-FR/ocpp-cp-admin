@@ -588,6 +588,17 @@ describe('ocpp-server-16 — StopTransaction', () => {
     expect(result.idTagInfo.status).toBe('Accepted');
   });
 
+  it('clears charging_state on stop (no 5th arg passed to stopTransaction)', () => {
+    client._handlers['StopTransaction']({
+      transactionId: 42,
+      meterStop: 1000,
+      timestamp: new Date().toISOString(),
+      reason: 'Local',
+    });
+    const call = mockDb.stopTransaction.mock.calls[0];
+    expect(call).toHaveLength(4);
+  });
+
   it('emits site and user notifications when transaction found with valid tag', () => {
     mockDb.getTransactionByTransactionId.mockReturnValue({
       chargepoint_id: 1,
