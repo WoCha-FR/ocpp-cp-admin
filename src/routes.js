@@ -1808,6 +1808,8 @@ router.get(
     if (req.query.origin) filters.origin = req.query.origin;
     if (req.query.message_type) filters.message_type = req.query.message_type;
     if (req.query.action) filters.action = req.query.action;
+    if (req.query.date_from) filters.date_from = `${req.query.date_from} 00:00:00`;
+    if (req.query.date_to) filters.date_to = `${req.query.date_to} 23:59:59`;
 
     // Empêcher un manager de voir tous les messages hors de ses sites
     if (req.user.role !== 'admin') {
@@ -2028,9 +2030,11 @@ router.get('/dashboard', requireManager, (req, res) => {
     if (!online) {
       connectorStats.Offline++;
     } else {
-      const st = c.cnstatus || 'Unknown';
-      if (Object.prototype.hasOwnProperty.call(connectorStats, st)) connectorStats[st]++;
-      else connectorStats[st] = 1;
+      if (c.cnstatus) {
+        if (Object.prototype.hasOwnProperty.call(connectorStats, c.cnstatus))
+          connectorStats[c.cnstatus]++;
+        else connectorStats[c.cnstatus] = 1;
+      }
       if (c.error_code && c.error_code !== 'NoError') connectorStats.WithError++;
     }
   });

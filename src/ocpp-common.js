@@ -429,11 +429,14 @@ function createOCPPServerBase(options = {}) {
         connected: 0,
         connected_wss: 0,
         endpoint_address: null,
-        cpstatus: 'Unavailable',
+        cpstatus: null,
         has_connector0: 0,
       });
       broadcast('chargepoint_disconnected', { identity });
       const cpDisc = db.getChargepointByIdentity(identity);
+      if (cpDisc) {
+        db.resetConnectorsByChargepoint(cpDisc.id);
+      }
       if (client._disconnectReason !== 'heartbeat_timeout') {
         notifications
           .emit(

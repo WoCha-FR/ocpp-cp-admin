@@ -1079,6 +1079,14 @@ function getOcppMessages(filters = {}) {
     query += ' AND UPPER(om.action) LIKE UPPER(?)';
     params.push(`%${filters.action}%`);
   }
+  if (filters.date_from) {
+    query += ' AND om.timestamp >= ?';
+    params.push(filters.date_from);
+  }
+  if (filters.date_to) {
+    query += ' AND om.timestamp <= ?';
+    params.push(filters.date_to);
+  }
   if (filters.site_ids && filters.site_ids.length > 0) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
@@ -1924,6 +1932,46 @@ function getExpiredActiveReservations(graceSeconds) {
     .all(`-${graceSeconds} seconds`);
 }
 
+function resetStateOnStartup() {
+  const cpResult = db
+    .prepare(
+      `UPDATE chargepoints
+       SET connected = 0, connected_wss = 0, endpoint_address = NULL, cpstatus = NULL`
+    )
+    .run();
+  const txResult = db
+    .prepare(
+      `UPDATE transactions
+       SET status = 'Completed',
+           stop_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+           stop_reason = 'Other',
+           charging_state = NULL,
+           power = NULL,
+           energy = NULL
+       WHERE status = 'Active'`
+    )
+    .run();
+  const cnResult = db
+    .prepare(
+      `UPDATE connectors
+       SET cnstatus = NULL, cnstatus_raw = NULL, updated_at = datetime('now')`
+    )
+    .run();
+  return {
+    chargepoints: cpResult.changes,
+    transactions: txResult.changes,
+    connectors: cnResult.changes,
+  };
+}
+
+function resetConnectorsByChargepoint(cpId) {
+  db.prepare(
+    `UPDATE connectors
+     SET cnstatus = NULL, cnstatus_raw = NULL, updated_at = datetime('now')
+     WHERE chargepoint_id = ?`
+  ).run(cpId);
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -2046,4 +2094,6 @@ module.exports = {
   activateReservationByConnector,
   expireReservationByConnector,
   getExpiredActiveReservations,
+  resetStateOnStartup,
+  resetConnectorsByChargepoint,
 };
