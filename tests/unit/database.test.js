@@ -679,3 +679,92 @@ describe('database — getTransactions connector_name', () => {
     expect(tx.connector_name).toBeNull();
   });
 });
+
+// ── resetStateOnStartup ──
+describe('database — resetStateOnStartup', () => {
+  let cpId1, cpId2, txId;
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-RST-1', { cpstatus: 'Charging', connected: 1, connected_wss: 1, initialized: 1 });
+    cpId1 = db.getChargepointByIdentity('CP-RST-1').id;
+    db.upsertConnector(cpId1, 1, 'Charging', 'NoError', null, null, null);
+    const tx = db.createTransaction(cpId1, 1, 'RSTTAG1', 1000, new Date().toISOString(), 'rfid');
+    txId = tx.transaction_id;
+
+    db.upsertChargepoint('CP-RST-2', { cpstatus: 'Available', connected: 0, initialized: 1 });
+    cpId2 = db.getChargepointByIdentity('CP-RST-2').id;
+  });
+
+  it('remet connected=0 et cpstatus=null sur toutes les bornes', () => {
+    db.resetStateOnStartup();
+    const cp1 = db.getChargepointById(cpId1);
+    expect(cp1.connected).toBe(0);
+    expect(cp1.connected_wss).toBe(0);
+    expect(cp1.cpstatus).toBeNull();
+  });
+
+  it('ne modifie pas initialized (donnée persistante)', () => {
+    const cp1 = db.getChargepointById(cpId1);
+    expect(cp1.initialized).toBe(1);
+    const cp2 = db.getChargepointById(cpId2);
+    expect(cp2.initialized).toBe(1);
+  });
+
+  it('ferme les transactions Active avec stop_reason=PowerLoss', () => {
+    const tx = db.getTransactionByTransactionId(txId);
+    expect(tx.status).toBe('Completed');
+    expect(tx.stop_reason).toBe('Other');
+    expect(tx.stop_time).not.toBeNull();
+    expect(tx.charging_state).toBeNull();
+  });
+
+  it('remet cnstatus=null sur tous les connecteurs', () => {
+    const connectors = db.getConnectorsByChargepoint(cpId1);
+    expect(connectors[0].cnstatus).toBeNull();
+  });
+
+  it('retourne le nombre correct d\'enregistrements modifiés', () => {
+    db.upsertChargepoint('CP-RST-COUNT', { connected: 1 });
+    const cpCount = db.getChargepointByIdentity('CP-RST-COUNT').id;
+    db.createTransaction(cpCount, 1, 'RSTTAG2', 0, new Date().toISOString(), 'rfid');
+    const result = db.resetStateOnStartup();
+    expect(result.chargepoints).toBeGreaterThanOrEqual(1);
+    expect(result.transactions).toBeGreaterThanOrEqual(1);
+    expect(result.connectors).toBeGreaterThanOrEqual(0);
+  });
+
+  it('est idempotent : un 2e appel ne ferme plus de transactions', () => {
+    const result = db.resetStateOnStartup();
+    expect(result.transactions).toBe(0);
+  });
+});
+
+// ── resetConnectorsByChargepoint ──
+describe('database — resetConnectorsByChargepoint', () => {
+  let cpId;
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-RSCN-1', { connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-RSCN-1').id;
+    db.upsertConnector(cpId, 1, 'Charging', 'NoError', null, null, null);
+    db.upsertConnector(cpId, 2, 'Available', 'NoError', null, null, null);
+  });
+
+  it('met cnstatus=null sur tous les connecteurs de la borne', () => {
+    db.resetConnectorsByChargepoint(cpId);
+    const connectors = db.getConnectorsByChargepoint(cpId);
+    expect(connectors).toHaveLength(2);
+    for (const c of connectors) {
+      expect(c.cnstatus).toBeNull();
+    }
+  });
+
+  it('ne touche pas les connecteurs d\'autres bornes', () => {
+    db.upsertChargepoint('CP-RSCN-2', { connected: 0 });
+    const otherId = db.getChargepointByIdentity('CP-RSCN-2').id;
+    db.upsertConnector(otherId, 1, 'Available', 'NoError', null, null, null);
+    db.resetConnectorsByChargepoint(cpId);
+    const otherConnectors = db.getConnectorsByChargepoint(otherId);
+    expect(otherConnectors[0].cnstatus).toBe('Available');
+  });
+});

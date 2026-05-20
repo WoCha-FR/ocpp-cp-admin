@@ -51,6 +51,20 @@ if (config.ocpp.v16?.enabled !== false) require('./ocpp-server-16');
 // ── Initialiser la DB ──
 const sqliteDb = db.getDb();
 
+// ── RAZ au démarrage : nettoyer les états incohérents post-crash ──
+{
+  const r = db.resetStateOnStartup();
+  if (r.chargepoints > 0 || r.transactions > 0 || r.connectors > 0) {
+    logger.warn(
+      `Startup cleanup: ${r.chargepoints} chargepoint(s) reset, ` +
+        `${r.transactions} orphan transaction(s) closed (Other), ` +
+        `${r.connectors} connector(s) reset`
+    );
+  } else {
+    logger.debug('Startup cleanup: nothing to reset');
+  }
+}
+
 // ── Initialiser le système de notifications ──
 notifications.init();
 
@@ -653,6 +667,17 @@ async function gracefulShutdown(signal) {
     await new Promise((resolve) => httpServer.close(resolve));
     if (httpsServer) {
       await new Promise((resolve) => httpsServer.close(resolve));
+    }
+    // 4bis. RAZ finale : statuts et connexions remis à NULL
+    try {
+      const r = db.resetStateOnStartup();
+      logger.info(
+        `Shutdown cleanup: ${r.chargepoints} chargepoint(s) reset, ` +
+          `${r.transactions} transaction(s) closed, ` +
+          `${r.connectors} connector(s) reset`
+      );
+    } catch (err) {
+      logger.warn('Shutdown cleanup failed (non-blocking):', err);
     }
     // 5. Fermer la base de données SQLite
     db.closeDb();

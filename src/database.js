@@ -1924,6 +1924,46 @@ function getExpiredActiveReservations(graceSeconds) {
     .all(`-${graceSeconds} seconds`);
 }
 
+function resetStateOnStartup() {
+  const cpResult = db
+    .prepare(
+      `UPDATE chargepoints
+       SET connected = 0, connected_wss = 0, endpoint_address = NULL, cpstatus = NULL`
+    )
+    .run();
+  const txResult = db
+    .prepare(
+      `UPDATE transactions
+       SET status = 'Completed',
+           stop_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
+           stop_reason = 'Other',
+           charging_state = NULL,
+           power = NULL,
+           energy = NULL
+       WHERE status = 'Active'`
+    )
+    .run();
+  const cnResult = db
+    .prepare(
+      `UPDATE connectors
+       SET cnstatus = NULL, cnstatus_raw = NULL, updated_at = datetime('now')`
+    )
+    .run();
+  return {
+    chargepoints: cpResult.changes,
+    transactions: txResult.changes,
+    connectors: cnResult.changes,
+  };
+}
+
+function resetConnectorsByChargepoint(cpId) {
+  db.prepare(
+    `UPDATE connectors
+     SET cnstatus = NULL, cnstatus_raw = NULL, updated_at = datetime('now')
+     WHERE chargepoint_id = ?`
+  ).run(cpId);
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -2046,4 +2086,6 @@ module.exports = {
   activateReservationByConnector,
   expireReservationByConnector,
   getExpiredActiveReservations,
+  resetStateOnStartup,
+  resetConnectorsByChargepoint,
 };
