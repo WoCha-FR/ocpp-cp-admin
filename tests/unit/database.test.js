@@ -644,3 +644,38 @@ describe('database — HeartbeatInterval global config', () => {
     expect(interval).toBe(300);
   });
 });
+
+// ── getTransactions — connector_name ──
+describe('database — getTransactions connector_name', () => {
+  let cpId;
+  const START = '2026-01-01T10:00:00Z';
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-CNTX-TEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-CNTX-TEST').id;
+  });
+
+  it('returns connector_name when connector has a name', () => {
+    db.getDb()
+      .prepare('INSERT OR REPLACE INTO connectors (chargepoint_id, connector_id, connector_name) VALUES (?,?,?)')
+      .run(cpId, 1, 'Prise A');
+    db.createTransaction(cpId, 1, 'TAG001', 0, START, 'local');
+
+    const txs = db.getTransactions({ chargepoint_id: cpId });
+    const tx = txs.find((t) => t.connector_id === 1);
+    expect(tx).toBeDefined();
+    expect(tx.connector_name).toBe('Prise A');
+  });
+
+  it('returns connector_name as null when connector has no name', () => {
+    db.getDb()
+      .prepare('INSERT OR REPLACE INTO connectors (chargepoint_id, connector_id, connector_name) VALUES (?,?,?)')
+      .run(cpId, 2, null);
+    db.createTransaction(cpId, 2, 'TAG002', 0, START, 'local');
+
+    const txs = db.getTransactions({ chargepoint_id: cpId });
+    const tx = txs.find((t) => t.connector_id === 2);
+    expect(tx).toBeDefined();
+    expect(tx.connector_name).toBeNull();
+  });
+});

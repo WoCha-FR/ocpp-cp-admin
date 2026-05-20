@@ -8,6 +8,7 @@ const {
   trackRepeatedAuthReject,
   registerCallClientImpl,
   registerHandlersFn,
+  checkConnectorErrorCooldown,
 } = require('./ocpp-common');
 
 const OCPP16_STANDARD_KEYS = [
@@ -546,24 +547,26 @@ function register16Handlers(client, loggedHandle) {
         logger.warn(
           `Connector error on ${identity} #${params.connectorId}: status=${safeStatus} errorCode=${safeErrorCode}`
         );
-        notifications
-          .emit(
-            'connector_error',
-            {
-              identity,
-              connector_id: params.connectorId,
-              status: safeStatus,
-              error_code: safeErrorCode,
-              info: safeInfo || null,
-              cp_name: updatedCp ? updatedCp.cpname : null,
-              cn_name:
-                connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
-                null,
-              site_name: updatedCp ? updatedCp.site_name : null,
-            },
-            { siteId: updatedCp ? updatedCp.site_id : null }
-          )
-          .catch(() => {});
+        if (checkConnectorErrorCooldown(identity, params.connectorId, safeErrorCode)) {
+          notifications
+            .emit(
+              'connector_error',
+              {
+                identity,
+                connector_id: params.connectorId,
+                status: safeStatus,
+                error_code: safeErrorCode,
+                info: safeInfo || null,
+                cp_name: updatedCp ? updatedCp.cpname : null,
+                cn_name:
+                  connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                  null,
+                site_name: updatedCp ? updatedCp.site_name : null,
+              },
+              { siteId: updatedCp ? updatedCp.site_id : null }
+            )
+            .catch(() => {});
+        }
       }
       if (params.connectorId > 0 && safeStatus === 'SuspendedEV') {
         const activeTx = db

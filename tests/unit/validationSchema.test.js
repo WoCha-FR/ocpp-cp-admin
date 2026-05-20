@@ -207,6 +207,58 @@ describe('validationSchema — CreateReservation', () => {
   });
 });
 
+// ── ConnectorDetails ──
+describe('validationSchema — ConnectorDetails', () => {
+  const VALID = { connector_name: 'Borne A', connector_power: 22, connector_type: 'Type2' };
+
+  it('passes with valid data', async () => {
+    const result = await runSchema(schema.ConnectorDetails, VALID);
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes when connector_name is absent (optional)', async () => {
+    const { connector_name, ...rest } = VALID;
+    const result = await runSchema(schema.ConnectorDetails, rest);
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes when connector_name is empty string', async () => {
+    const result = await runSchema(schema.ConnectorDetails, { ...VALID, connector_name: '' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('fails when connector_name exceeds 50 characters', async () => {
+    const result = await runSchema(schema.ConnectorDetails, { ...VALID, connector_name: 'A'.repeat(51) });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_CONNECTOR_NAME');
+  });
+
+  it('fails when connector_name contains forbidden characters', async () => {
+    const result = await runSchema(schema.ConnectorDetails, { ...VALID, connector_name: 'Borne@A!' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_CONNECTOR_NAME');
+  });
+
+  it('fails when connector_power is absent', async () => {
+    const { connector_power, ...rest } = VALID;
+    const result = await runSchema(schema.ConnectorDetails, rest);
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_CONNECTOR_POWER');
+  });
+
+  it('fails when connector_power is 0 (must be >= 1)', async () => {
+    const result = await runSchema(schema.ConnectorDetails, { ...VALID, connector_power: 0 });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_CONNECTOR_POWER');
+  });
+
+  it('fails when connector_power exceeds 900', async () => {
+    const result = await runSchema(schema.ConnectorDetails, { ...VALID, connector_power: 901 });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_CONNECTOR_POWER');
+  });
+});
+
 // ── ReservationIdParam ──
 describe('validationSchema — ReservationIdParam', () => {
   it('passes with valid integer id in params', async () => {

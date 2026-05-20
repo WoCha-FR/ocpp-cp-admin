@@ -127,9 +127,7 @@
     </div>
   </div>
   <div class="login-footer">
-    <a href="/privacy" target="_blank" rel="noopener noreferrer" data-i18n="legal.privacy">Politique de confidentialité</a>
-    <span aria-hidden="true">·</span>
-    <a href="/terms" target="_blank" rel="noopener noreferrer" data-i18n="legal.terms">Conditions d'utilisation</a>
+    <a href="/about" target="_blank" rel="noopener noreferrer" data-i18n="legal.about">À propos</a>
   </div>
 </div>
 
@@ -981,10 +979,10 @@ async function renderDashboard() {
           <div class="stat-value">${stats.totalConnectors - (stats.connectorStats.Offline || 0) - (stats.connectorStats.Faulted || 0) - (stats.connectorStats.Unavailable || 0)} <span class="stat-sub-inline">/ ${stats.totalConnectors}</span></div>
           <div class="stat-sub">${(stats.connectorStats.Charging || 0) + (stats.connectorStats.SuspendedEV || 0) + (stats.connectorStats.SuspendedEVSE || 0)} ${t('dashboard.statCharging')}</div>
         </div>
-        <div class="stat-card" style="border-left-color:${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) > 0 ? 'var(--danger)' : 'var(--success)'}">
+        <div class="stat-card" style="border-left-color:${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) + (stats.connectorStats.WithError || 0) > 0 ? 'var(--danger)' : 'var(--success)'}">
           <div class="stat-label">${t('dashboard.statAlerts')}</div>
-          <div class="stat-value" style="color:${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) > 0 ? 'var(--danger)' : 'var(--success)'}">${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0)}</div>
-          <div class="stat-sub">${stats.connectorStats.Faulted || 0} ${t('dashboard.statFaulted')} · ${stats.connectorStats.Unavailable || 0} ${t('dashboard.statUnavailable')}</div>
+          <div class="stat-value" style="color:${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) + (stats.connectorStats.WithError || 0) > 0 ? 'var(--danger)' : 'var(--success)'}">${(stats.connectorStats.Faulted || 0) + (stats.connectorStats.Unavailable || 0) + (stats.connectorStats.WithError || 0)}</div>
+          <div class="stat-sub">${stats.connectorStats.Faulted || 0} ${t('dashboard.statFaulted')} · ${stats.connectorStats.Unavailable || 0} ${t('dashboard.statUnavailable')}${(stats.connectorStats.WithError || 0) > 0 ? ` · ${stats.connectorStats.WithError} ⚠️` : ''}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">${t('dashboard.totalActiveCharge')}</div>
@@ -1023,7 +1021,7 @@ async function renderDashboard() {
         <div class="card-header"><h3>${t('dashboard.totalActiveCharge')}</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('dashboard.noActiveCharge')}</p>` : `
         <table>
-          <thead><tr><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('transac.meterStart')}</th></tr></thead>
+          <thead><tr><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('transac.meterStart')}</th><th>${t('common.status')}</th><th>${t('common.energy')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
@@ -1033,7 +1031,8 @@ async function renderDashboard() {
                 <td>${tx.tag_username ? `<span class="badge badge-blue">${escapeHtml(tx.tag_username)}</span>` : '-'}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
                 <td>${formatDate(tx.start_time)}</td>
-                <td>${tx.meter_start != null ? (tx.meter_start / 1000).toFixed(2) + ' kWh' : '-'}</td>
+                <td>${tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
+                <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -2720,17 +2719,20 @@ async function renderConnectors() {
         const isCharging = isOnline && ['Charging', 'SuspendedEV', 'SuspendedEVSE'].includes(c.cnstatus);
         const isFaulted = isOnline && c.cnstatus === 'Faulted';
         const isUnavailable = isOnline && c.cnstatus === 'Unavailable';
+        const hasError = isOnline && c.error_code && c.error_code !== 'NoError';
         const isAutoMode = c.mode === 2 || c.mode === 3;
         const canStart = isAvailable;
         const cardStyle = canStart
           ? 'border-color: var(--success);'
-          : isCharging
-            ? 'border-color: var(--primary);'
-            : isFaulted || isUnavailable
-              ? 'border-color: var(--danger);'
-              : !isOnline
-                ? 'border-color: var(--gray-300); opacity: 0.7;'
-                : 'border-color: var(--warning);';
+          : isFaulted || isUnavailable
+            ? 'border-color: var(--danger);'
+            : hasError
+              ? 'border-color: var(--warning);'
+              : isCharging
+                ? 'border-color: var(--primary);'
+                : !isOnline
+                  ? 'border-color: var(--gray-300); opacity: 0.7;'
+                  : 'border-color: var(--warning);';
         return `
           <div class="connector-card" style="text-align:left;padding:14px 16px;${cardStyle}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:4px;">
@@ -2738,10 +2740,10 @@ async function renderConnectors() {
                 <span class="status-dot ${isOnline ? 'dot-online' : 'dot-offline'}"></span>
                 <strong><a href="#" data-onclick="showChargepointDetail(${c.chargepoint_id});return false;" style="color:inherit;text-decoration:none;">${escapeHtml(c.chargepoint_name || c.chargepoint_identity)}</a></strong>
               </div>
-              <div style="flex-shrink:0;">${!isOnline
+              <div style="flex-shrink:0;display:flex;gap:4px;align-items:center;">${!isOnline
             ? `<span class="badge badge-red">${t('connectors.status.Offline')}</span>`
             : `<span class="badge ${statusBadgeClass(c.cnstatus)}">${t(`connectors.status.${c.cnstatus}`)}</span>`
-          }</div>
+          }${hasError ? `<span class="badge badge-red" title="${escapeAttr(c.info || '')}">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}</div>
             </div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">📍 ${escapeHtml(c.site_name || t('sites.siteNoSite'))}</div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
@@ -2758,14 +2760,15 @@ async function renderConnectors() {
                     </div>
                     <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                       ⏹ ${t('connectors.cStopCharge')}
-                    </button>`
+                    </button>
+                    ${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
               : isFaulted || isUnavailable
                 ? `<div style="text-align:center;padding:6px;color:var(--danger);font-size:13px;">⚠ ${chargeConnectorReason(c.cnstatus)}${c.error_code && c.error_code !== 'NoError' ? ' — ' + escapeHtml(c.error_code) : ''}</div>`
                 : !isOnline
                     ? `<div style="text-align:center;padding:6px;color:var(--gray-500);font-size:13px;">⛓️‍💥 ${t('chargepoint.cpOffline')}</div>`
                     : isCharging
-                      ? `<div style="text-align:center;padding:6px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>`
-                      : `<div style="text-align:center;padding:6px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>`
+                      ? `<div style="text-align:center;padding:6px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
+                      : `<div style="text-align:center;padding:6px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
           }
           </div>`;
       }).join('')}
@@ -3739,15 +3742,14 @@ async function renderTransactions() {
       <div class="card">
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: transactions.length })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
-        <table>
-          <thead><tr><th>ID</th><th>${t('common.chargepoint_one')}</th><th>${t('common.site_one')}</th><th>${t('common.connector_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+        <table style="font-size: 0.75em;">
+          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
                 <td>${tx.transaction_id}</td>
-                <td>${tx.chargepoint_name && tx.chargepoint_name !== tx.chargepoint_identity ? `${escapeHtml(tx.chargepoint_identity)} - ${escapeHtml(tx.chargepoint_name)}` : escapeHtml(tx.chargepoint_identity)}</td>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
-                <td>${tx.connector_id}</td>
+                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
                 <td>${cleanIdTag(tx.id_tag) || '-'}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
@@ -3755,6 +3757,7 @@ async function renderTransactions() {
                 <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
                 <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${formatTxStatus(tx.status)}</td>
+                <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
                 <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
                 <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
               </tr>
@@ -3931,7 +3934,7 @@ async function renderMyTransactions() {
       <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: transactions.length })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
-        <thead><tr><th>ID</th><th>${t('common.chargepoint_one')}</th><th>${t('common.site_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.duration')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.duration')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
         <tbody>
         ${transactions.map(tx => {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
@@ -3949,9 +3952,8 @@ async function renderMyTransactions() {
           return `
             <tr>
               <td>${tx.transaction_id}</td>
-              <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
               <td>${tx.site_name || '-'}</td>
-              <td>${tx.connector_id}</td>
+              <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
               <td>${formatStartSource(tx.start_source)}</td>
               <td>${formatDate(tx.start_time)}</td>
               <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>

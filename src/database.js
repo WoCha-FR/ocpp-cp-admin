@@ -607,9 +607,9 @@ function updateConnectorFields(connectorId, data) {
   db.prepare(
     `UPDATE connectors SET connector_name = ?, connector_power = ?, connector_type = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
-    data.connector_name ?? existing.connector_name,
-    data.connector_power ?? existing.connector_power,
-    data.connector_type ?? existing.connector_type,
+    data.connector_name !== undefined ? data.connector_name : existing.connector_name,
+    data.connector_power !== undefined ? data.connector_power : existing.connector_power,
+    data.connector_type !== undefined ? data.connector_type : existing.connector_type,
     connectorId
   );
   return db.prepare('SELECT * FROM connectors WHERE id = ?').get(connectorId);
@@ -702,13 +702,13 @@ function createTransaction(
   })();
 }
 
-function stopTransaction(transactionId, meterStop, stopTime, reason, charging_state = null) {
+function stopTransaction(transactionId, meterStop, stopTime, reason) {
   transactionId = String(transactionId);
   db.prepare(
     `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed',
-    charging_state = COALESCE(?, charging_state)
+    charging_state = NULL
     WHERE transaction_id = ? AND status = 'Active'`
-  ).run(meterStop, stopTime, reason || 'Local', charging_state, transactionId);
+  ).run(meterStop, stopTime, reason || 'Local', transactionId);
   return db
     .prepare('SELECT * FROM transactions WHERE transaction_id = ? ORDER BY id DESC')
     .get(transactionId);
@@ -888,7 +888,8 @@ function getChargingKpi(siteIds = null, days = 30) {
 const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity, cp.cpname as chargepoint_name,
     s.sname as site_name,
     it.user_id as tag_user_id, COALESCE(u.shortname, u.useremail) as tag_username,
-    CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values
+    CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values,
+    cn.connector_name as connector_name
     FROM transactions t
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
     LEFT JOIN sites s ON cp.site_id = s.id
@@ -900,7 +901,8 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
       LIMIT 1
     )
     LEFT JOIN users u ON it.user_id = u.id
-    LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id`;
+    LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id
+    LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id`;
 
 function buildTransactionQuery(baseCondition, baseParams, filters) {
   let query = TRANSACTIONS_BASE_QUERY + ' WHERE ' + baseCondition;

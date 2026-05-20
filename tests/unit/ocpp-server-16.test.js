@@ -61,6 +61,7 @@ jest.mock('../../src/ocpp-common', () => ({
   trackRepeatedAuthReject: mockTrackRepeatedAuthReject,
   registerCallClientImpl: jest.fn(),
   registerHandlersFn: jest.fn(),
+  checkConnectorErrorCooldown: jest.fn().mockReturnValue(true),
 }));
 
 const { callClient16, register16Handlers, OCPP16_STANDARD_KEYS } = require('../../src/ocpp-server-16');
@@ -585,6 +586,17 @@ describe('ocpp-server-16 — StopTransaction', () => {
     });
     expect(mockDb.stopTransaction).toHaveBeenCalledWith(42, 1000, expect.any(String), 'Local');
     expect(result.idTagInfo.status).toBe('Accepted');
+  });
+
+  it('clears charging_state on stop (no 5th arg passed to stopTransaction)', () => {
+    client._handlers['StopTransaction']({
+      transactionId: 42,
+      meterStop: 1000,
+      timestamp: new Date().toISOString(),
+      reason: 'Local',
+    });
+    const call = mockDb.stopTransaction.mock.calls[0];
+    expect(call).toHaveLength(4);
   });
 
   it('emits site and user notifications when transaction found with valid tag', () => {

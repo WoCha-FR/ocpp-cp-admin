@@ -49,10 +49,9 @@ describe('Frontend XSS hardening', () => {
     expect(html).not.toMatch(/checkPasswordStrength\(newPwd\)\s*<\s*4/);
   });
 
-  it('adds rel noopener noreferrer to target blank legal links', () => {
+  it('adds rel noopener noreferrer to target blank about link', () => {
     const html = fs.readFileSync(indexHtmlPath, 'utf8');
-    expect(html).toMatch(/<a href="\/privacy"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
-    expect(html).toMatch(/<a href="\/terms"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
+    expect(html).toMatch(/<a href="\/about"[^>]*target="_blank"[^>]*rel="noopener noreferrer"/);
   });
 
   it('does not dynamically load flatpickr locale scripts from CDN', () => {

@@ -1089,15 +1089,21 @@ router.delete(
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
       }
     }
-    const client = getConnectedClients().get(cp.identity);
-    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
-
     const profileDbId = Number(req.params.profileDbId);
     if (!profileDbId) return res.status(400).json({ error: 'VALIDATION_ID' });
     const profile = db.getChargingProfileById(profileDbId);
     if (!profile || profile.chargepoint_id !== cp.id) {
       return res.status(404).json({ error: 'ERR_PROFILE_NOT_FOUND' });
     }
+
+    if (profile.status === 'Rejected') {
+      db.deleteChargingProfileById(profileDbId);
+      broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      return res.json({ status: 'Accepted' });
+    }
+
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
       const result = await callClient(cp.identity, 'ClearChargingProfile', {
@@ -1250,7 +1256,12 @@ router.put(
     try {
       const { connector_name, connector_power, connector_type } = data;
       const connector = db.updateConnectorFields(Number(req.params.id), {
-        connector_name: connector_name !== undefined ? connector_name : undefined,
+        connector_name:
+          connector_name !== undefined
+            ? connector_name.trim() === ''
+              ? null
+              : connector_name
+            : undefined,
         connector_power:
           connector_power !== undefined
             ? connector_power === '' || connector_power === null
@@ -2010,6 +2021,7 @@ router.get('/dashboard', requireManager, (req, res) => {
     Unavailable: 0,
     Faulted: 0,
     Offline: 0,
+    WithError: 0,
   };
   connectors.forEach((c) => {
     const online = connectedIdentities.has(c.chargepoint_identity);
@@ -2019,6 +2031,7 @@ router.get('/dashboard', requireManager, (req, res) => {
       const st = c.cnstatus || 'Unknown';
       if (Object.prototype.hasOwnProperty.call(connectorStats, st)) connectorStats[st]++;
       else connectorStats[st] = 1;
+      if (c.error_code && c.error_code !== 'NoError') connectorStats.WithError++;
     }
   });
 
