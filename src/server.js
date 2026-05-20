@@ -280,6 +280,67 @@ function wrapLegalHtml(content, lang, appName) {
 </html>`;
 }
 
+function wrapAboutHtml(lang, appName) {
+  const t = (key) => i18next.t(key, { lng: lang });
+  return `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${appName} – ${t('legal.about')}</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <style>
+    body { background: var(--bg-body); color: var(--text-primary); }
+    .about-page { max-width: 680px; margin: 60px auto; padding: 0 24px 80px; text-align: center; }
+    .about-logo { max-width: 160px; margin: 0 auto 24px; display: block; }
+    .about-title { font-size: 1.8rem; font-weight: 700; margin-bottom: 8px; }
+    .about-subtitle { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 24px; }
+    .about-desc { font-size: 0.95rem; line-height: 1.7; color: var(--text-primary); margin-bottom: 32px; text-align: left; }
+    .about-features { text-align: left; margin-bottom: 32px; }
+    .about-features h2 { font-size: 1rem; font-weight: 600; margin-bottom: 12px; }
+    .about-features ul { padding-left: 1.4em; }
+    .about-features li { line-height: 2; }
+    .about-access { background: var(--bg-surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 20px; font-size: 0.9rem; color: var(--text-secondary); text-align: left; }
+    .about-access strong { display: block; margin-bottom: 4px; color: var(--text-primary); }
+    .about-signin { display: inline-block; margin-top: 12px; padding: 10px 28px; background: var(--primary); color: #fff; border-radius: var(--radius); text-decoration: none; font-weight: 600; font-size: 1rem; }
+    .about-signin:hover { opacity: 0.88; }
+  </style>
+</head>
+<body>
+  <div class="about-page">
+    <img src="/logo-400.png" alt="${appName}" class="about-logo">
+    <h1 class="about-title">${t('about.title')}</h1>
+    <p class="about-subtitle">${t('about.subtitle')}</p>
+    <p class="about-desc">${t('about.description')}</p>
+    <div class="about-features">
+      <h2>${t('about.featuresTitle')}</h2>
+      <ul>
+        <li>${t('about.feature1')}</li>
+        <li>${t('about.feature2')}</li>
+        <li>${t('about.feature3')}</li>
+        <li>${t('about.feature4')}</li>
+        <li>${t('about.feature5')}</li>
+      </ul>
+    </div>
+    <div class="about-access">
+      <strong>${t('about.accessTitle')}</strong>
+      ${t('about.accessNotice')}
+    </div>
+    <div class="about-access">
+      <strong>${t('about.googleDataTitle')}</strong>
+      ${t('about.googleDataNotice')}
+    </div>
+    <a href="/" class="about-signin">${t('about.signin')}</a>
+  </div>
+</body>
+</html>`;
+}
+
+app.get('/about', (req, res) => {
+  const lang = detectLegalLang(req);
+  res.type('html').send(wrapAboutHtml(lang, config.cpoName || 'CP Admin'));
+});
+
 app.get('/privacy', (req, res) => {
   const lang = detectLegalLang(req);
   const mdPath = resolveLegalFile('privacy', lang);

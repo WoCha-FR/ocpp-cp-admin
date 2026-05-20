@@ -985,6 +985,23 @@
   },
   "legal": {
     "privacy": "Politique de confidentialité",
-    "terms": "Conditions d'utilisation"
+    "terms": "Conditions d'utilisation",
+    "about": "À propos"
+  },
+  "about": {
+    "title": "OCPP Charge Point Admin",
+    "subtitle": "Plateforme de gestion et supervision des bornes de recharge OCPP",
+    "description": "CPAdmin vous permet de surveiller, contrôler et administrer vos bornes de recharge compatibles OCPP 1.6 et OCPP 2.0.1 depuis une interface centralisée.",
+    "featuresTitle": "Fonctionnalités principales",
+    "feature1": "Tableau de bord temps réel des bornes et connecteurs",
+    "feature2": "Historique complet des transactions de recharge",
+    "feature3": "Gestion multi-sites et multi-utilisateurs",
+    "feature4": "Support des protocoles OCPP 1.6 et OCPP 2.0.1",
+    "feature5": "Authentification Google OAuth",
+    "accessTitle": "Accès restreint",
+    "accessNotice": "L'accès à l'application est réservé aux utilisateurs préalablement autorisés par un administrateur. Les nouveaux comptes ne peuvent pas être créés librement.",
+    "googleDataTitle": "Données Google utilisées",
+    "googleDataNotice": "Lors de la connexion via Google, l'application utilise uniquement votre adresse e-mail et votre nom de profil à des fins d'authentification. Aucune donnée Gmail, Google Drive, Google Calendar ou autre donnée sensible Google n'est consultée ni stockée par l'application.",
+    "signin": "Se connecter"
   }
 }

@@ -985,6 +985,23 @@
   },
   "legal": {
     "privacy": "Privacy Policy",
-    "terms": "Terms of Use"
+    "terms": "Terms of Use",
+    "about": "About"
+  },
+  "about": {
+    "title": "OCPP Charge Point Admin",
+    "subtitle": "Platform for managing and monitoring OCPP EV charge points",
+    "description": "CPAdmin lets you monitor, control, and manage your OCPP 1.6 and OCPP 2.0.1 compatible charge points from a centralized interface.",
+    "featuresTitle": "Key features",
+    "feature1": "Real-time dashboard for charge points and connectors",
+    "feature2": "Full transaction history",
+    "feature3": "Multi-site and multi-user management",
+    "feature4": "OCPP 1.6 and OCPP 2.0.1 protocol support",
+    "feature5": "Google OAuth authentication",
+    "accessTitle": "Restricted access",
+    "accessNotice": "Access to this application is reserved for users previously authorized by an administrator. New accounts cannot be created freely.",
+    "googleDataTitle": "Google data used",
+    "googleDataNotice": "When signing in with Google, the application only uses your email address and profile name for authentication purposes. No Gmail, Google Drive, Google Calendar, or other sensitive Google data is accessed or stored by the application.",
+    "signin": "Sign In"
   }
 }
