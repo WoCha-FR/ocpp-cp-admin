@@ -888,7 +888,8 @@ function getChargingKpi(siteIds = null, days = 30) {
 const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity, cp.cpname as chargepoint_name,
     s.sname as site_name,
     it.user_id as tag_user_id, COALESCE(u.shortname, u.useremail) as tag_username,
-    CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values
+    CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values,
+    cn.connector_name as connector_name
     FROM transactions t
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
     LEFT JOIN sites s ON cp.site_id = s.id
@@ -900,7 +901,8 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
       LIMIT 1
     )
     LEFT JOIN users u ON it.user_id = u.id
-    LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id`;
+    LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id
+    LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id`;
 
 function buildTransactionQuery(baseCondition, baseParams, filters) {
   let query = TRANSACTIONS_BASE_QUERY + ' WHERE ' + baseCondition;

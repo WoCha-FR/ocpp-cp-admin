@@ -3745,13 +3745,13 @@ async function renderTransactions() {
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: transactions.length })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
         <table style="font-size: 0.75em;">
-          <thead><tr><th>ID</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.site_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
                 <td>${tx.transaction_id}</td>
-                <td>${tx.chargepoint_name && tx.chargepoint_name !== tx.chargepoint_identity ? `${escapeHtml(tx.chargepoint_identity)} - ${escapeHtml(tx.chargepoint_name)}` : escapeHtml(tx.chargepoint_identity)} / #${tx.connector_id}</td>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
+                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
                 <td>${cleanIdTag(tx.id_tag) || '-'}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
@@ -3936,7 +3936,7 @@ async function renderMyTransactions() {
       <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: transactions.length })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
-        <thead><tr><th>ID</th><th>${t('common.chargepoint_one')}</th><th>${t('common.site_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.duration')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.duration')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
         <tbody>
         ${transactions.map(tx => {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
@@ -3954,9 +3954,8 @@ async function renderMyTransactions() {
           return `
             <tr>
               <td>${tx.transaction_id}</td>
-              <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
               <td>${tx.site_name || '-'}</td>
-              <td>${tx.connector_id}</td>
+              <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
               <td>${formatStartSource(tx.start_source)}</td>
               <td>${formatDate(tx.start_time)}</td>
               <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
