@@ -465,6 +465,7 @@
     "charts": "Graphics",
     "view": "See",
     "meterStart": "Meter start",
+    "chargingState": "OCPP state",
     "sourcename": {
       "rfid": "RFID tag",
       "web": "Website",

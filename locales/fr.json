@@ -465,6 +465,7 @@
     "charts": "Graphiques",
     "view": "Voir",
     "meterStart": "Index début",
+    "chargingState": "État OCPP",
     "sourcename": {
       "rfid": "Badge RFID",
       "web": "Site web",
