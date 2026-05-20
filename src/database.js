@@ -607,9 +607,9 @@ function updateConnectorFields(connectorId, data) {
   db.prepare(
     `UPDATE connectors SET connector_name = ?, connector_power = ?, connector_type = ?, updated_at = datetime('now') WHERE id = ?`
   ).run(
-    data.connector_name ?? existing.connector_name,
-    data.connector_power ?? existing.connector_power,
-    data.connector_type ?? existing.connector_type,
+    data.connector_name !== undefined ? data.connector_name : existing.connector_name,
+    data.connector_power !== undefined ? data.connector_power : existing.connector_power,
+    data.connector_type !== undefined ? data.connector_type : existing.connector_type,
     connectorId
   );
   return db.prepare('SELECT * FROM connectors WHERE id = ?').get(connectorId);

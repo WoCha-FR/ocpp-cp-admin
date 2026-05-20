@@ -1256,7 +1256,12 @@ router.put(
     try {
       const { connector_name, connector_power, connector_type } = data;
       const connector = db.updateConnectorFields(Number(req.params.id), {
-        connector_name: connector_name !== undefined ? connector_name : undefined,
+        connector_name:
+          connector_name !== undefined
+            ? connector_name.trim() === ''
+              ? null
+              : connector_name
+            : undefined,
         connector_power:
           connector_power !== undefined
             ? connector_power === '' || connector_power === null

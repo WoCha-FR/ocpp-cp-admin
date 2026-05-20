@@ -126,8 +126,9 @@ const ChargePointSite = {
 const ConnectorDetails = {
   connector_name: {
     in: ['body'],
+    optional: { options: { nullable: true } },
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
-    isLength: { options: { min: 1, max: 50 } },
+    isLength: { options: { min: 0, max: 50 } },
     trim: true,
     errorMessage: 'VALIDATION_CONNECTOR_NAME',
   },
