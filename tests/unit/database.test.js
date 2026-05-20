@@ -710,7 +710,7 @@ describe('database — resetStateOnStartup', () => {
     expect(cp2.initialized).toBe(1);
   });
 
-  it('ferme les transactions Active avec stop_reason=PowerLoss', () => {
+  it('ferme les transactions Active avec stop_reason=Other', () => {
     const tx = db.getTransactionByTransactionId(txId);
     expect(tx.status).toBe('Completed');
     expect(tx.stop_reason).toBe('Other');

@@ -23,6 +23,7 @@ const {
   startReservationCleanupWatchdog,
   stopReservationCleanupWatchdog,
   getConnectedClients,
+  remoteStopTransaction,
   pendingChargepoints,
 } = require('./ocpp-common');
 
@@ -655,6 +656,33 @@ async function gracefulShutdown(signal) {
     // 1. Fermer les clients WebSocket UI
     for (const client of uiClients) {
       client.close(1001, 'Server shutting down');
+    }
+    // 1bis. RemoteStopTransaction pour les bornes connectées avec transactions actives
+    try {
+      const connectedCps = getConnectedClients();
+      const stopPromises = [];
+      for (const [identity] of connectedCps) {
+        const cp = db.getChargepointByIdentity(identity);
+        if (!cp) continue;
+        const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
+        for (const tx of activeTxs) {
+          stopPromises.push(
+            Promise.race([
+              remoteStopTransaction(identity, tx.transaction_id).catch(() => {}),
+              new Promise((resolve) => setTimeout(resolve, 5000)),
+            ])
+          );
+        }
+      }
+      if (stopPromises.length > 0) {
+        await Promise.allSettled(stopPromises);
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        logger.info(
+          `Shutdown: RemoteStopTransaction envoyé pour ${stopPromises.length} transaction(s).`
+        );
+      }
+    } catch (err) {
+      logger.warn('Shutdown: RemoteStopTransaction échoué (non-bloquant):', err);
     }
     // 2. Fermer le serveur OCPP WS
     await ocppServer.close();
