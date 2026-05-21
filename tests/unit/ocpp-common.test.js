@@ -113,6 +113,57 @@ describe('ocpp-common — createOCPPServerBase auth', () => {
   });
 });
 
+// ── getClientIp — résolution IP derrière proxy ──
+describe('ocpp-common — getClientIp via trustProxy', () => {
+  const CP = { authorized: true, password: null };
+
+  afterEach(() => {
+    delete configMock.webui;
+  });
+
+  it('retourne remoteAddress quand trustProxy est désactivé, même avec x-forwarded-for', () => {
+    configMock.webui = { trustProxy: false };
+    mockDb.getChargepointByIdentity.mockReturnValue(CP);
+    const server = ocppCommon.createOCPPServerBase();
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP001',
+      remoteAddress: '127.0.0.1',
+      headers: { 'x-forwarded-for': '1.2.3.4, 172.18.0.1' },
+    });
+    expect(accept).toHaveBeenCalledWith(expect.objectContaining({ remoteAddress: '127.0.0.1' }));
+  });
+
+  it('retourne la première IP de x-forwarded-for quand trustProxy est activé', () => {
+    configMock.webui = { trustProxy: true };
+    mockDb.getChargepointByIdentity.mockReturnValue(CP);
+    const server = ocppCommon.createOCPPServerBase();
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP001',
+      remoteAddress: '172.18.0.1',
+      headers: { 'x-forwarded-for': '1.2.3.4, 172.18.0.1' },
+    });
+    expect(accept).toHaveBeenCalledWith(expect.objectContaining({ remoteAddress: '1.2.3.4' }));
+  });
+
+  it('retourne x-real-ip quand trustProxy est activé et x-forwarded-for absent', () => {
+    configMock.webui = { trustProxy: true };
+    mockDb.getChargepointByIdentity.mockReturnValue(CP);
+    const server = ocppCommon.createOCPPServerBase();
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP001',
+      remoteAddress: '172.18.0.1',
+      headers: { 'x-real-ip': '5.6.7.8' },
+    });
+    expect(accept).toHaveBeenCalledWith(expect.objectContaining({ remoteAddress: '5.6.7.8' }));
+  });
+});
+
 // ── registerHandlersFn / registerCallClientImpl ──
 describe('ocpp-common — register helpers', () => {
   it('registers 1.6 and 2.0.1 handler fns without error', () => {

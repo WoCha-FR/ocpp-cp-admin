@@ -2052,13 +2052,15 @@ router.get('/dashboard', requireManager, (req, res) => {
 
 router.get('/dashboard/chart-data', requireManager, (req, res) => {
   const siteIds = getUserSiteIds(req);
-  const days = Math.min(Number(req.query.days) || 30, 365);
+  const rawDays = Number(req.query.days);
+  const days = isNaN(rawDays) || rawDays < 0 ? 30 : rawDays === 0 ? 0 : Math.min(rawDays, 365);
   res.json(db.getDashboardChartData(siteIds, days));
 });
 
 router.get('/dashboard/kpi', requireManager, (req, res) => {
   const siteIds = getUserSiteIds(req);
-  const days = Math.min(Number(req.query.days) || 30, 365);
+  const rawDays = Number(req.query.days);
+  const days = isNaN(rawDays) || rawDays < 0 ? 30 : rawDays === 0 ? 0 : Math.min(rawDays, 365);
   res.json(db.getChargingKpi(siteIds, days));
 });
 

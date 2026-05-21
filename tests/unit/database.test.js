@@ -817,3 +817,124 @@ describe('database — OCPP Messages date filter', () => {
     expect(msgs.length).toBe(0);
   });
 });
+
+// ── getDashboardChartData / getChargingKpi ──
+describe('database — getDashboardChartData / getChargingKpi', () => {
+  let cpId;
+  const TODAY = new Date().toISOString().slice(0, 19) + 'Z';
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-KPI-TEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-KPI-TEST').id;
+    db.getDb().prepare('INSERT OR IGNORE INTO connectors (chargepoint_id, connector_id) VALUES (?,?)').run(cpId, 1);
+    db.getDb().prepare('INSERT OR IGNORE INTO connectors (chargepoint_id, connector_id) VALUES (?,?)').run(cpId, 2);
+
+    // Transaction complétée : meter_start=0, meter_stop=5000 => 5 kWh
+    const tx1 = db.createTransaction(cpId, 1, 'TAG-KPI', 0, TODAY, 'rfid');
+    db.stopTransaction(tx1.transaction_id, 5000, TODAY, 'Local');
+
+    // Transaction active : energy = 2000 Wh net => 2 kWh
+    const tx2 = db.createTransaction(cpId, 2, 'TAG-KPI', 0, TODAY, 'rfid');
+    db.updateTransactionPowerEnergy(tx2.transaction_id, null, 2000);
+  });
+
+  describe('getDashboardChartData', () => {
+    it('inclut les transactions actives et complétées dans tx_count', () => {
+      const { energyPerDay } = db.getDashboardChartData(null, 7);
+      const total = energyPerDay.reduce((s, d) => s + d.tx_count, 0);
+      expect(total).toBeGreaterThanOrEqual(2);
+    });
+
+    it('inclut l\'énergie des transactions actives dans energy_kwh', () => {
+      const { energyPerDay } = db.getDashboardChartData(null, 7);
+      const totalKwh = energyPerDay.reduce((s, d) => s + d.energy_kwh, 0);
+      expect(totalKwh).toBeGreaterThanOrEqual(7.0);
+    });
+
+    it('days=0 retourne au moins autant de données que days=7', () => {
+      const r7 = db.getDashboardChartData(null, 7);
+      const r0 = db.getDashboardChartData(null, 0);
+      const count7 = r7.energyPerDay.reduce((s, d) => s + d.tx_count, 0);
+      const count0 = r0.energyPerDay.reduce((s, d) => s + d.tx_count, 0);
+      expect(count0).toBeGreaterThanOrEqual(count7);
+    });
+
+    it('retourne tableau vide si aucune transaction dans la plage', () => {
+      const { energyPerDay } = db.getDashboardChartData([999999], 7);
+      expect(energyPerDay).toEqual([]);
+    });
+  });
+
+  describe('getChargingKpi', () => {
+    it('totalSessions inclut les transactions actives', () => {
+      const { period } = db.getChargingKpi(null, 7);
+      expect(period.totalSessions).toBeGreaterThanOrEqual(2);
+    });
+
+    it('totalEnergy inclut l\'énergie des transactions actives', () => {
+      const { period } = db.getChargingKpi(null, 7);
+      expect(period.totalEnergy).toBeGreaterThanOrEqual(7.0);
+    });
+
+    it('avgEnergy ne tient compte que des transactions complétées', () => {
+      const { period } = db.getChargingKpi(null, 7);
+      // La transaction complétée vaut 5 kWh, l'active est exclue de la moyenne
+      expect(period.avgEnergy).toBeCloseTo(5.0, 1);
+    });
+
+    it('days=0 retourne au moins autant de sessions que days=7', () => {
+      const r7 = db.getChargingKpi(null, 7);
+      const r0 = db.getChargingKpi(null, 0);
+      expect(r0.period.totalSessions).toBeGreaterThanOrEqual(r7.period.totalSessions);
+    });
+
+    it('allTime inclut les transactions actives', () => {
+      const { allTime } = db.getChargingKpi(null, 30);
+      expect(allTime.totalSessions).toBeGreaterThanOrEqual(2);
+      expect(allTime.totalEnergy).toBeGreaterThanOrEqual(7.0);
+    });
+  });
+});
+
+// ── Meter Values ──
+describe('database — meter values', () => {
+  let cpId;
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-METER-TEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-METER-TEST').id;
+    db.upsertConnector(cpId, 1, 'Available', 'NoError', null, null, null);
+    db.upsertConnector(cpId, 2, 'Available', 'NoError', null, null, null);
+  });
+
+  it('updateConnectorMeterValue met à jour meter_value du connecteur', () => {
+    db.updateConnectorMeterValue(cpId, 1, 15000);
+    const connectors = db.getConnectorsByChargepoint(cpId);
+    const cn1 = connectors.find((c) => c.connector_id === 1);
+    expect(cn1.meter_value).toBe(15000);
+  });
+
+  it('updateConnectorMeterValue recalcule chargepoints.meter_value (SUM)', () => {
+    db.updateConnectorMeterValue(cpId, 2, 5000);
+    const cp = db.getChargepointById(cpId);
+    expect(cp.meter_value).toBe(20000);
+  });
+
+  it('recalcChargepointMeterValue exclut les connecteurs à 0', () => {
+    db.upsertChargepoint('CP-METER-ZERO', { cpstatus: 'Available', connected: 0 });
+    const zeroId = db.getChargepointByIdentity('CP-METER-ZERO').id;
+    db.upsertConnector(zeroId, 1, 'Available', 'NoError', null, null, null);
+    db.upsertConnector(zeroId, 2, 'Available', 'NoError', null, null, null);
+    db.updateConnectorMeterValue(zeroId, 1, 8000);
+    // connector 2 reste à 0 (DEFAULT) → exclu du SUM
+    db.recalcChargepointMeterValue(zeroId);
+    const cp = db.getChargepointById(zeroId);
+    expect(cp.meter_value).toBe(8000);
+  });
+
+  it('updateChargepointMeterValue écrit directement dans chargepoints', () => {
+    db.updateChargepointMeterValue(cpId, 99999);
+    const cp = db.getChargepointById(cpId);
+    expect(cp.meter_value).toBe(99999);
+  });
+});

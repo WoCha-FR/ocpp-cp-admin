@@ -740,6 +740,9 @@ function register16Handlers(client, loggedHandle) {
           `StartTransaction: closed orphan transaction ${orphan.transaction_id} on ${identity} #${params.connectorId}`
         );
       }
+      const connectorRecord = db.getConnectorByChargepointAndId(cp.id, params.connectorId);
+      const initialChargingState =
+        (connectorRecord && ocppStatusToChargingState(connectorRecord.cnstatus)) || 'Charging';
       const tx = db.createTransaction(
         cp.id,
         params.connectorId,
@@ -747,9 +750,12 @@ function register16Handlers(client, loggedHandle) {
         params.meterStart,
         params.timestamp,
         startSource,
-        { evse_id: null, charging_state: 'Charging', id_token_type: 'ISO14443' }
+        { evse_id: null, charging_state: initialChargingState, id_token_type: 'ISO14443' }
       );
       transactionId = tx.transaction_id;
+      if (params.meterStart > 0) {
+        db.updateConnectorMeterValue(cp.id, params.connectorId, params.meterStart);
+      }
       broadcast('transaction_start', {
         identity,
         connectorId: params.connectorId,
@@ -816,6 +822,9 @@ function register16Handlers(client, loggedHandle) {
     const stoppedTx = db.getTransactionByTransactionId(params.transactionId);
     if (stoppedTx) {
       const cpForTx = db.getChargepointById(stoppedTx.chargepoint_id);
+      if (cpForTx && params.meterStop != null) {
+        db.updateConnectorMeterValue(cpForTx.id, stoppedTx.connector_id, params.meterStop);
+      }
       const siteId = cpForTx ? cpForTx.site_id : null;
       const tag = stoppedTx.id_tag ? db.getIdTagByTag(stoppedTx.id_tag, siteId) : null;
       const connectors = cpForTx ? db.getConnectorsByChargepoint(cpForTx.id) : [];

@@ -991,7 +991,7 @@
     "about": "À propos"
   },
   "about": {
-    "title": "OCPP Charge Point Admin",
+    "title": "Charge Point Admin",
     "subtitle": "Plateforme de gestion et supervision des bornes de recharge OCPP",
     "description": "CPAdmin vous permet de surveiller, contrôler et administrer vos bornes de recharge compatibles OCPP 1.6 et OCPP 2.0.1 depuis une interface centralisée.",
     "featuresTitle": "Fonctionnalités principales",

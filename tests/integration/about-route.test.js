@@ -63,6 +63,11 @@ function wrapAboutHtml(lang, appName) {
       ${t('about.googleDataNotice')}
     </div>
     <a href="/">${t('about.signin')}</a>
+    <div class="about-footer">
+      <a href="/privacy" rel="noopener noreferrer">${t('legal.privacy')}</a>
+      <span> · </span>
+      <a href="/terms" rel="noopener noreferrer">${t('legal.terms')}</a>
+    </div>
   </div>
 </body>
 </html>`;
@@ -143,6 +148,16 @@ describe('GET /about', () => {
   it('contains the Google data notice (en)', async () => {
     const res = await request(app).get('/about?lang=en');
     expect(res.text).toMatch(/Gmail|Google Drive|Google Calendar/);
+  });
+
+  it('contains a link to /privacy', async () => {
+    const res = await request(app).get('/about');
+    expect(res.text).toContain('href="/privacy"');
+  });
+
+  it('contains a link to /terms', async () => {
+    const res = await request(app).get('/about');
+    expect(res.text).toContain('href="/terms"');
   });
 
   it('sets html lang attribute to detected language', async () => {
