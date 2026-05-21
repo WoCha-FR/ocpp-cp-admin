@@ -974,6 +974,16 @@ function updateConnectorMeterValue(chargepointId, connectorId, meterValue) {
     `UPDATE connectors SET meter_value = ?, updated_at = datetime('now')
     WHERE chargepoint_id = ? AND connector_id = ?`
   ).run(meterValue, chargepointId, connectorId);
+  recalcChargepointMeterValue(chargepointId);
+}
+
+function recalcChargepointMeterValue(chargepointId) {
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(meter_value), 0) as total FROM connectors WHERE chargepoint_id = ? AND meter_value > 0`
+    )
+    .get(chargepointId);
+  db.prepare(`UPDATE chargepoints SET meter_value = ? WHERE id = ?`).run(row.total, chargepointId);
 }
 
 function updateTransactionPowerEnergy(transactionId, power, energyWh) {
@@ -2047,6 +2057,7 @@ module.exports = {
   getTransactionValues,
   updateChargepointMeterValue,
   updateConnectorMeterValue,
+  recalcChargepointMeterValue,
   updateTransactionPowerEnergy,
   upsertTransactionValues,
   addOcppMessage,

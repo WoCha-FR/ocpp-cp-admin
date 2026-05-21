@@ -753,6 +753,9 @@ function register16Handlers(client, loggedHandle) {
         { evse_id: null, charging_state: initialChargingState, id_token_type: 'ISO14443' }
       );
       transactionId = tx.transaction_id;
+      if (params.meterStart > 0) {
+        db.updateConnectorMeterValue(cp.id, params.connectorId, params.meterStart);
+      }
       broadcast('transaction_start', {
         identity,
         connectorId: params.connectorId,
@@ -819,6 +822,9 @@ function register16Handlers(client, loggedHandle) {
     const stoppedTx = db.getTransactionByTransactionId(params.transactionId);
     if (stoppedTx) {
       const cpForTx = db.getChargepointById(stoppedTx.chargepoint_id);
+      if (cpForTx && params.meterStop != null) {
+        db.updateConnectorMeterValue(cpForTx.id, stoppedTx.connector_id, params.meterStop);
+      }
       const siteId = cpForTx ? cpForTx.site_id : null;
       const tag = stoppedTx.id_tag ? db.getIdTagByTag(stoppedTx.id_tag, siteId) : null;
       const connectors = cpForTx ? db.getConnectorsByChargepoint(cpForTx.id) : [];

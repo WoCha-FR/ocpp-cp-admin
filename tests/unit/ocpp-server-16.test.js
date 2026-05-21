@@ -564,6 +564,26 @@ describe('ocpp-server-16 — StartTransaction', () => {
     expect(mockDb.stopTransaction).not.toHaveBeenCalled();
     expect(mockDb.createTransaction).toHaveBeenCalled();
   });
+
+  it('calls updateConnectorMeterValue with meterStart when meterStart > 0', () => {
+    client._handlers['StartTransaction']({
+      connectorId: 1,
+      idTag: 'TAG001',
+      meterStart: 5000,
+      timestamp: new Date().toISOString(),
+    });
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 5000);
+  });
+
+  it('does not call updateConnectorMeterValue when meterStart === 0', () => {
+    client._handlers['StartTransaction']({
+      connectorId: 1,
+      idTag: 'TAG001',
+      meterStart: 0,
+      timestamp: new Date().toISOString(),
+    });
+    expect(mockDb.updateConnectorMeterValue).not.toHaveBeenCalled();
+  });
 });
 
 // ── StopTransaction ──
@@ -630,6 +650,28 @@ describe('ocpp-server-16 — StopTransaction', () => {
       expect.objectContaining({ transaction_id: 42 }),
       expect.objectContaining({ userId: 99 })
     );
+  });
+
+  it('calls updateConnectorMeterValue with meterStop when transaction found', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      chargepoint_id: 1,
+      connector_id: 2,
+      id_tag: null,
+      meter_start: 1000,
+      meter_stop: 6000,
+      start_time: new Date(Date.now() - 3600000).toISOString(),
+      stop_time: new Date().toISOString(),
+    });
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+
+    client._handlers['StopTransaction']({
+      transactionId: 42,
+      meterStop: 6000,
+      timestamp: new Date().toISOString(),
+      reason: 'Local',
+    });
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 2, 6000);
   });
 });
 
@@ -716,6 +758,22 @@ describe('ocpp-server-16 — MeterValues', () => {
       ],
     });
     expect(mockDb.updateChargepointMeterValue).toHaveBeenCalledWith(1, 2000);
+  });
+
+  it('calls updateConnectorMeterValue for connector > 0 energy update', () => {
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [
+            { measurand: 'Energy.Active.Import.Register', value: '3500', unit: 'Wh' },
+          ],
+        },
+      ],
+    });
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 3500);
   });
 
   it('returns {} and skips DB update for unknown transactionId', () => {

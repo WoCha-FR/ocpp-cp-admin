@@ -895,3 +895,46 @@ describe('database — getDashboardChartData / getChargingKpi', () => {
     });
   });
 });
+
+// ── Meter Values ──
+describe('database — meter values', () => {
+  let cpId;
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-METER-TEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-METER-TEST').id;
+    db.upsertConnector(cpId, 1, 'Available', 'NoError', null, null, null);
+    db.upsertConnector(cpId, 2, 'Available', 'NoError', null, null, null);
+  });
+
+  it('updateConnectorMeterValue met à jour meter_value du connecteur', () => {
+    db.updateConnectorMeterValue(cpId, 1, 15000);
+    const connectors = db.getConnectorsByChargepoint(cpId);
+    const cn1 = connectors.find((c) => c.connector_id === 1);
+    expect(cn1.meter_value).toBe(15000);
+  });
+
+  it('updateConnectorMeterValue recalcule chargepoints.meter_value (SUM)', () => {
+    db.updateConnectorMeterValue(cpId, 2, 5000);
+    const cp = db.getChargepointById(cpId);
+    expect(cp.meter_value).toBe(20000);
+  });
+
+  it('recalcChargepointMeterValue exclut les connecteurs à 0', () => {
+    db.upsertChargepoint('CP-METER-ZERO', { cpstatus: 'Available', connected: 0 });
+    const zeroId = db.getChargepointByIdentity('CP-METER-ZERO').id;
+    db.upsertConnector(zeroId, 1, 'Available', 'NoError', null, null, null);
+    db.upsertConnector(zeroId, 2, 'Available', 'NoError', null, null, null);
+    db.updateConnectorMeterValue(zeroId, 1, 8000);
+    // connector 2 reste à 0 (DEFAULT) → exclu du SUM
+    db.recalcChargepointMeterValue(zeroId);
+    const cp = db.getChargepointById(zeroId);
+    expect(cp.meter_value).toBe(8000);
+  });
+
+  it('updateChargepointMeterValue écrit directement dans chargepoints', () => {
+    db.updateChargepointMeterValue(cpId, 99999);
+    const cp = db.getChargepointById(cpId);
+    expect(cp.meter_value).toBe(99999);
+  });
+});

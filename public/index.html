@@ -801,7 +801,7 @@ function shouldRefreshDetail(eventType, cpIdentity, cpId) {
     || (cpId && cpId === currentDetailCpId);
   if (!isOurCp) return false;
   const tabEvents = {
-    infos:        ['chargepoint_update', 'status_update', 'chargepoint_heartbeat', 'chargepoint_connected', 'chargepoint_disconnected', 'transaction_start', 'transaction_stop'],
+    infos:        ['chargepoint_update', 'status_update', 'chargepoint_heartbeat', 'chargepoint_connected', 'chargepoint_disconnected', 'transaction_start', 'transaction_stop', 'meter_values'],
     connecteurs:  ['status_update', 'chargepoint_connected', 'chargepoint_disconnected', 'meter_values'],
     transactions: ['transaction_start', 'transaction_stop'],
     logs:         [],
@@ -1618,8 +1618,8 @@ async function renderDetailTabBorne(cp) {
               <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
               <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'BootNotification'})">${t('chargepoint.cpBootNotification')}</button>
               <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'Heartbeat'})">${t('chargepoint.cpHeartbeat')}</button>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: 0})">${t('connectors.cTriggerMeter')}</button>
-              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: 0})">${t('connectors.cTriggerStatus')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues'})">${t('connectors.cTriggerMeter')}</button>
+              <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification'})">${t('connectors.cTriggerStatus')}</button>
             </div>
             ${adminManage() ? `
             <div class="cmd-subgroup">
