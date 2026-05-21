@@ -5610,9 +5610,12 @@ function renderConnectorBadges(connectorStats) {
     { key: 'Offline', label: t('connectors.status.Offline'), css: 'offline', icon: '⛓️‍💥' },
   ];
   const knownKeys = new Set(defs.map(d => d.key));
+  knownKeys.add('WithError');
   let html = '';
   for (const d of defs) {
-    const count = connectorStats[d.key] || 0;
+    const count = d.key === 'Faulted'
+      ? (connectorStats.Faulted || 0) + (connectorStats.WithError || 0)
+      : (connectorStats[d.key] || 0);
     html += `<span class="connector-badge connector-badge-${d.css}">${d.icon} ${d.label} <span class="cb-count">${count}</span></span>`;
   }
   // Statuts inconnus
