@@ -143,6 +143,16 @@ function makeLoggedHandle(client, identity, chargepointId) {
 }
 
 // ── Factory serveur OCPP ──
+function getClientIp(handshake, config) {
+  if (config.webui?.trustProxy) {
+    const forwarded = handshake.headers?.['x-forwarded-for'];
+    if (forwarded) return forwarded.split(',')[0].trim();
+    const realIp = handshake.headers?.['x-real-ip'];
+    if (realIp) return realIp.trim();
+  }
+  return handshake.remoteAddress || 'unknown';
+}
+
 function createOCPPServerBase(options = {}) {
   const isWSS = options.isWSS || false;
   const config = getConfig();
@@ -164,7 +174,7 @@ function createOCPPServerBase(options = {}) {
     if (protocols.length === 0) {
       return reject(503, 'No OCPP version enabled on this server');
     }
-    const clientIp = handshake.remoteAddress || 'unknown';
+    const clientIp = getClientIp(handshake, config);
     if (!checkWsRateLimit(clientIp)) {
       logger.warn(`OCPP WS rate limit exceeded for IP: ${clientIp}`);
       return reject(429, 'Too many connection attempts');
@@ -240,13 +250,13 @@ function createOCPPServerBase(options = {}) {
         const alreadyPending = pendingChargepoints.has(handshake.identity);
         pendingChargepoints.set(handshake.identity, {
           identity: handshake.identity,
-          remoteAddress: handshake.remoteAddress,
+          remoteAddress: clientIp,
           password: providedPassword,
           timestamp: new Date().toISOString(),
         });
         broadcast('pending_chargepoint', {
           identity: handshake.identity,
-          remoteAddress: handshake.remoteAddress,
+          remoteAddress: clientIp,
           timestamp: new Date().toISOString(),
         });
         if (!alreadyPending) {
@@ -307,7 +317,7 @@ function createOCPPServerBase(options = {}) {
       return reject(401, 'Invalid password');
     }
 
-    accept({ identity: handshake.identity, remoteAddress: handshake.remoteAddress });
+    accept({ identity: handshake.identity, remoteAddress: clientIp });
   });
 
   server.on('client', (client) => {
