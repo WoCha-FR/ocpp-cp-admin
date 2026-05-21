@@ -319,6 +319,9 @@ function wrapAboutHtml(lang, appName) {
     .about-access strong { display: block; margin-bottom: 4px; color: var(--text-primary); }
     .about-signin { display: inline-block; margin-top: 12px; padding: 10px 28px; background: var(--primary); color: #fff; border-radius: var(--radius); text-decoration: none; font-weight: 600; font-size: 1rem; }
     .about-signin:hover { opacity: 0.88; }
+    .about-footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 0.85rem; color: var(--text-secondary); }
+    .about-footer a { color: var(--text-secondary); text-decoration: none; }
+    .about-footer a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -346,6 +349,11 @@ function wrapAboutHtml(lang, appName) {
       ${t('about.googleDataNotice')}
     </div>
     <a href="/" class="about-signin">${t('about.signin')}</a>
+    <div class="about-footer">
+      <a href="/privacy" rel="noopener noreferrer">${t('legal.privacy')}</a>
+      <span aria-hidden="true"> · </span>
+      <a href="/terms" rel="noopener noreferrer">${t('legal.terms')}</a>
+    </div>
   </div>
 </body>
 </html>`;
