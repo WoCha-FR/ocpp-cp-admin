@@ -86,8 +86,8 @@ const ChargePoint = {
   name: {
     in: ['body'],
     optional: { options: { nullable: true } },
-    matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
-    isLength: { options: { min: 5, max: 75 } },
+    matches: { options: /^[a-zA-ZÀ-Ÿ0-9\-_ &+]*$/ },
+    isLength: { options: { min: 4, max: 75 } },
     trim: true,
     errorMessage: 'VALIDATION_CHARGEPOINT_NAME',
   },

@@ -991,7 +991,7 @@
     "about": "About"
   },
   "about": {
-    "title": "OCPP Charge Point Admin",
+    "title": "Charge Point Admin",
     "subtitle": "Platform for managing and monitoring OCPP EV charge points",
     "description": "CPAdmin lets you monitor, control, and manage your OCPP 1.6 and OCPP 2.0.1 compatible charge points from a centralized interface.",
     "featuresTitle": "Key features",

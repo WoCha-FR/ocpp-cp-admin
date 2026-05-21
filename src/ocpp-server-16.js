@@ -740,6 +740,9 @@ function register16Handlers(client, loggedHandle) {
           `StartTransaction: closed orphan transaction ${orphan.transaction_id} on ${identity} #${params.connectorId}`
         );
       }
+      const connectorRecord = db.getConnectorByChargepointAndId(cp.id, params.connectorId);
+      const initialChargingState =
+        (connectorRecord && ocppStatusToChargingState(connectorRecord.cnstatus)) || 'Charging';
       const tx = db.createTransaction(
         cp.id,
         params.connectorId,
@@ -747,7 +750,7 @@ function register16Handlers(client, loggedHandle) {
         params.meterStart,
         params.timestamp,
         startSource,
-        { evse_id: null, charging_state: 'Charging', id_token_type: 'ISO14443' }
+        { evse_id: null, charging_state: initialChargingState, id_token_type: 'ISO14443' }
       );
       transactionId = tx.transaction_id;
       broadcast('transaction_start', {

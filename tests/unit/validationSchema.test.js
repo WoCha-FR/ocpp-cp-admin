@@ -117,6 +117,26 @@ describe('validationSchema — ChargePoint', () => {
     expect(result.isEmpty()).toBe(false);
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_CHARGEPOINT_MODE');
   });
+
+  it('passes with & and + in name', async () => {
+    const result = await runSchema(schema.ChargePoint, {
+      identity: 'VALIDCP01',
+      mode: 1,
+      site_id: 1,
+      name: 'Snug & Co+',
+    });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('fails with script tag in name', async () => {
+    const result = await runSchema(schema.ChargePoint, {
+      identity: 'VALIDCP01',
+      mode: 1,
+      site_id: 1,
+      name: '<script>alert(1)</script>',
+    });
+    expect(result.isEmpty()).toBe(false);
+  });
 });
 
 // ── Login ──
