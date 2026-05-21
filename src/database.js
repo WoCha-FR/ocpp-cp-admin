@@ -730,18 +730,24 @@ function getDashboardChartData(siteIds = null, days = 30) {
     return { energyPerDay: [], transactionsPerDay: [] };
   }
 
+  const dateFilter = days > 0 ? `AND t.start_time >= date('now', '-${days} days')` : '';
+
   // Énergie par jour (kWh)
   const energyPerDay = db
     .prepare(
       `
     SELECT date(t.start_time) as day,
-      ROUND(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
-        THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 2) as energy_kwh,
+      ROUND(SUM(CASE
+        WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
+          THEN (t.meter_stop - t.meter_start) / 1000.0
+        WHEN t.status = 'Active' AND t.energy IS NOT NULL
+          THEN t.energy / 1000.0
+        ELSE 0 END), 2) as energy_kwh,
       COUNT(*) as tx_count
     FROM transactions t
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    WHERE t.status = 'Completed'
-      AND t.start_time >= date('now', '-' || ${days} || ' days')${siteFilter}
+    WHERE t.status IN ('Completed', 'Active')
+      ${dateFilter}${siteFilter}
     GROUP BY date(t.start_time)
     ORDER BY day ASC
   `
@@ -764,12 +770,18 @@ function getChargingKpi(siteIds = null, days = 30) {
     };
   }
 
+  const kpiDateFilter = days > 0 ? `AND t.start_time >= date('now', '-${days} days')` : '';
+
   const period = db
     .prepare(
       `
     SELECT
-      ROUND(COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
-        THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 0), 2) as totalEnergy,
+      ROUND(COALESCE(SUM(CASE
+        WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
+          THEN (t.meter_stop - t.meter_start) / 1000.0
+        WHEN t.status = 'Active' AND t.energy IS NOT NULL
+          THEN t.energy / 1000.0
+        ELSE 0 END), 0), 2) as totalEnergy,
       COUNT(*) as totalSessions,
       ROUND(COALESCE(AVG(
         CASE WHEN t.stop_time IS NOT NULL AND t.start_time IS NOT NULL
@@ -780,8 +792,8 @@ function getChargingKpi(siteIds = null, days = 30) {
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE NULL END), 0), 2) as avgEnergy
     FROM transactions t
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    WHERE t.status = 'Completed'
-      AND t.start_time >= date('now', '-' || ${days} || ' days')${siteFilter}
+    WHERE t.status IN ('Completed', 'Active')
+      ${kpiDateFilter}${siteFilter}
   `
     )
     .get(...params);
@@ -790,8 +802,12 @@ function getChargingKpi(siteIds = null, days = 30) {
     .prepare(
       `
     SELECT
-      ROUND(COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
-        THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 0), 2) as totalEnergy,
+      ROUND(COALESCE(SUM(CASE
+        WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
+          THEN (t.meter_stop - t.meter_start) / 1000.0
+        WHEN t.status = 'Active' AND t.energy IS NOT NULL
+          THEN t.energy / 1000.0
+        ELSE 0 END), 0), 2) as totalEnergy,
       COUNT(*) as totalSessions,
       ROUND(COALESCE(AVG(
         CASE WHEN t.stop_time IS NOT NULL AND t.start_time IS NOT NULL
@@ -802,7 +818,7 @@ function getChargingKpi(siteIds = null, days = 30) {
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE NULL END), 0), 2) as avgEnergy
     FROM transactions t
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    WHERE t.status = 'Completed'${siteFilter}
+    WHERE t.status IN ('Completed', 'Active')${siteFilter}
   `
     )
     .get(...params);
