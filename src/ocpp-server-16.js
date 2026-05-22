@@ -1023,6 +1023,30 @@ function register16Handlers(client, loggedHandle) {
     }
     return {};
   });
+
+  // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
+  if (cpRecord && cpRecord.initialized) {
+    const refreshTimer = setTimeout(async () => {
+      const current = db.getChargepointByIdentity(identity);
+      if (!current || !current.connected || current.cpstatus) return;
+
+      logger.info(`[StateRefresh] ${identity}: reconnecté sans BootNotification, envoi TriggerMessage`);
+      try {
+        await callClient16(identity, 'TriggerMessage', { requestedMessage: 'BootNotification' });
+      } catch (e) {
+        logger.warn(`[StateRefresh] ${identity}: TriggerMessage(BootNotification) échoué: ${e.message}`);
+        return;
+      }
+
+      try {
+        await callClient16(identity, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
+      } catch (e) {
+        logger.warn(`[StateRefresh] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`);
+      }
+    }, 8000);
+
+    client.once('close', () => clearTimeout(refreshTimer));
+  }
 }
 
 // ── Enregistrement au chargement du module ──

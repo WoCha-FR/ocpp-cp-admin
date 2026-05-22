@@ -79,6 +79,7 @@ function makeClient(identity) {
     protocol: 'ocpp1.6',
     call: jest.fn().mockResolvedValue({}),
     handle: jest.fn(),
+    once: jest.fn(),
     _handlers: {},
   };
 }
@@ -1022,5 +1023,101 @@ describe('ocpp-server-16 — DiagnosticsStatusNotification', () => {
   it('does not broadcast on intermediate status', () => {
     client._handlers['DiagnosticsStatusNotification']({ status: 'Uploading' });
     expect(mockBroadcast).not.toHaveBeenCalled();
+  });
+});
+
+// ── StateRefresh (TriggerMessage on reconnect without BootNotification) ──
+describe('ocpp-server-16 — StateRefresh TriggerMessage', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('sends TriggerMessage(BootNotification) + TriggerMessage(StatusNotification) when initialized=1 and cpstatus=null after 8s', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })   // register16Handlers
+      .mockReturnValueOnce({ id: 1, connected: 1, cpstatus: null })     // timer check
+      .mockReturnValue({ id: 1 });                                        // callClient16 calls
+    mockConnectedClients.set('CP001', client);
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
+  });
+
+  it('does not send TriggerMessage when cpstatus is set before the timer fires', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })       // register16Handlers
+      .mockReturnValue({ id: 1, connected: 1, cpstatus: 'Available' });     // timer check (BootNotification already received)
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('does not set timer when initialized=0 (new chargepoint, full boot expected)', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 0, cpstatus: null });
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('does not set timer when cpRecord is null (unknown chargepoint)', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue(null);
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('registers close listener to cancel the timer', () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 1, cpstatus: null });
+
+    register16Handlers(client, makeLoggedHandle(client));
+
+    expect(client.once).toHaveBeenCalledWith('close', expect.any(Function));
+  });
+
+  it('does not send TriggerMessage when chargepoint disconnects before 8s', async () => {
+    const client = makeClient('CP001');
+    let closeCallback;
+    client.once = jest.fn((event, cb) => { if (event === 'close') closeCallback = cb; });
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 1, cpstatus: null });
+
+    register16Handlers(client, makeLoggedHandle(client));
+    closeCallback(); // simulate disconnect
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('does not send StatusNotification TriggerMessage when BootNotification TriggerMessage fails', async () => {
+    const client = makeClient('CP001');
+    client.call = jest.fn().mockRejectedValue(new Error('not connected'));
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })
+      .mockReturnValueOnce({ id: 1, connected: 1, cpstatus: null })
+      .mockReturnValue({ id: 1 });
+    mockConnectedClients.set('CP001', client);
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
   });
 });
