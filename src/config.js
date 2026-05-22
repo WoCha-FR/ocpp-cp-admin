@@ -75,6 +75,10 @@ const ENV_OVERRIDES = [
     path: ['notifs', 'defaultDisabledEvents'],
     type: 'csv-array',
   },
+  {
+    env: 'CPADMIN_NOTIF_RECONNECT_GRACE_PERIOD',
+    path: ['notifs', 'reconnectGracePeriodSeconds'],
+  },
   { env: 'CPADMIN_GOOGLE_AUTH_ENABLED', path: ['auth', 'google', 'enabled'] },
   // ── Métriques ──
   { env: 'CPADMIN_METRICS_TOKEN', path: ['metrics', 'bearerToken'], type: 'string' },
@@ -342,6 +346,13 @@ const CONFIG_FIELDS = [
   },
   {
     key: 'notifs.flapWindowMinutes',
+    section: 'notifs',
+    type: 'number',
+    required: false,
+    sensitive: false,
+  },
+  {
+    key: 'notifs.reconnectGracePeriodSeconds',
     section: 'notifs',
     type: 'number',
     required: false,

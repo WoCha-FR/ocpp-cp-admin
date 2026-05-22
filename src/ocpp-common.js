@@ -14,6 +14,7 @@ const authRejectTracker = new Map();
 const reconnectTracker = new Map();
 const refusedNotifCooldown = new Map();
 const connectorErrorCooldown = new Map();
+const pendingOfflineNotifs = new Map();
 
 const wsRateTracker = new Map();
 const WS_RATE_MAX = 10;
@@ -379,18 +380,25 @@ function createOCPPServerBase(options = {}) {
       }
     });
 
-    const cpForNotif = db.getChargepointByIdentity(identity);
-    notifications
-      .emit(
-        'chargepoint_online',
-        {
-          identity,
-          cp_name: cpForNotif ? cpForNotif.cpname : null,
-          site_name: cpForNotif ? cpForNotif.site_name : null,
-        },
-        { siteId: cpForNotif ? cpForNotif.site_id : null }
-      )
-      .catch(() => {});
+    const pendingOffline = pendingOfflineNotifs.get(identity);
+    if (pendingOffline !== undefined) {
+      clearTimeout(pendingOffline);
+      pendingOfflineNotifs.delete(identity);
+      logger.debug(`[${identity}] Reconnexion dans la période de grâce — notifications online/offline supprimées`);
+    } else {
+      const cpForNotif = db.getChargepointByIdentity(identity);
+      notifications
+        .emit(
+          'chargepoint_online',
+          {
+            identity,
+            cp_name: cpForNotif ? cpForNotif.cpname : null,
+            site_name: cpForNotif ? cpForNotif.site_name : null,
+          },
+          { siteId: cpForNotif ? cpForNotif.site_id : null }
+        )
+        .catch(() => {});
+    }
 
     const cpRecord = db.getChargepointByIdentity(identity);
     const chargepointId = cpRecord ? cpRecord.id : null;
@@ -448,17 +456,24 @@ function createOCPPServerBase(options = {}) {
         db.resetConnectorsByChargepoint(cpDisc.id);
       }
       if (client._disconnectReason !== 'heartbeat_timeout') {
-        notifications
-          .emit(
-            'chargepoint_offline',
-            {
-              identity,
-              cp_name: cpDisc ? cpDisc.cpname : null,
-              site_name: cpDisc ? cpDisc.site_name : null,
-            },
-            { siteId: cpDisc ? cpDisc.site_id : null }
-          )
-          .catch(() => {});
+        const cfg = getConfig();
+        const graceMs = ((cfg.notifs && cfg.notifs.reconnectGracePeriodSeconds) ?? 60) * 1000;
+        const timerId = setTimeout(() => {
+          pendingOfflineNotifs.delete(identity);
+          const cpOffline = db.getChargepointByIdentity(identity);
+          notifications
+            .emit(
+              'chargepoint_offline',
+              {
+                identity,
+                cp_name: cpOffline ? cpOffline.cpname : null,
+                site_name: cpOffline ? cpOffline.site_name : null,
+              },
+              { siteId: cpOffline ? cpOffline.site_id : null }
+            )
+            .catch(() => {});
+        }, graceMs);
+        pendingOfflineNotifs.set(identity, timerId);
       }
     });
   });

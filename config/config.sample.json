@@ -49,6 +49,7 @@
     "flapThreshold": 4,
     "flapWindowMinutes": 2,
     "refusedCooldownMinutes": 60,
+    "reconnectGracePeriodSeconds": 60,
     "mail": {
       "enabled": false,
       "from": "CPADMIN <noreply@cpadmin.local>",
