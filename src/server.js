@@ -262,7 +262,7 @@ function resolveLegalFile(type, lang) {
 }
 
 function wrapLegalHtml(content, lang, appName) {
-  const backlink = i18next.t('login.backToLogin', { lng: lang });
+  const backlink = i18next.t('legal.back', { lng: lang });
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -287,7 +287,7 @@ function wrapLegalHtml(content, lang, appName) {
 </head>
 <body>
   <div class="legal-page">
-    <a href="/" class="legal-back">&#8592; ${backlink}</a>
+    <a href="/about" class="legal-back">&#8592; ${backlink}</a>
     <p class="legal-app">${appName}</p>
     ${content}
   </div>

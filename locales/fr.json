@@ -988,7 +988,8 @@
   "legal": {
     "privacy": "Politique de confidentialité",
     "terms": "Conditions d'utilisation",
-    "about": "À propos"
+    "about": "À propos",
+    "back": "Retour"
   },
   "about": {
     "title": "Charge Point Admin",
