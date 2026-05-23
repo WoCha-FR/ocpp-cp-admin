@@ -674,3 +674,9 @@
     .restart-overlay-box { background: var(--bg-surface); border-radius: 12px; padding: 32px 40px; text-align: center; min-width: 260px; }
     .restart-overlay-box .spinner { font-size: 2em; margin-bottom: 12px; animation: spin 1s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    /* ── Pagination ── */
+    .pagination-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+    .page-info { font-size: 13px; color: var(--text-secondary); }
+    .page-buttons { display: flex; gap: 4px; flex-wrap: wrap; }
+    .page-ellipsis { display: inline-flex; align-items: center; padding: 0 4px; color: var(--text-secondary); font-size: 13px; }
+    .page-btn:disabled { cursor: default; }

@@ -79,10 +79,15 @@ function validateSchema(...schemas) {
   ];
 }
 
-// Retourne la limite paginée (null = pas de limite si non fournie)
-function parsePagination(req, maxLimit = 200) {
-  if (!req.query.limit) return null;
-  return Math.min(Number(req.query.limit), maxLimit);
+const TX_PAGE_SIZE_DEFAULT = 50;
+const TX_PAGE_SIZE_MAX = 200;
+
+function parsePagination(req, defaultLimit = TX_PAGE_SIZE_DEFAULT) {
+  const limit = req.query.limit
+    ? Math.min(Number(req.query.limit), TX_PAGE_SIZE_MAX)
+    : defaultLimit;
+  const page = req.query.page ? Math.max(1, Number(req.query.page)) : 1;
+  return { limit, page, offset: (page - 1) * limit };
 }
 
 function generateResetToken(userId, expiresInMinutes = 30) {
@@ -1679,8 +1684,9 @@ router.get(
     if (req.query.status) filters.status = req.query.status;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
-    const limit = parsePagination(req);
-    if (limit !== null) filters.limit = limit;
+    const { limit, offset } = parsePagination(req);
+    filters.limit = limit;
+    filters.offset = offset;
 
     const user = req.user;
     if (user.role !== 'admin') {
@@ -1688,7 +1694,11 @@ router.get(
       if (siteIds && siteIds.length > 0) {
         filters.site_ids = siteIds;
       } else if (siteIds && siteIds.length === 0) {
-        return res.json([]);
+        return res.json({
+          data: [],
+          total: 0,
+          stats: { totalEnergy: 0, activeCount: 0, totalMinutes: 0 },
+        });
       }
     }
 
@@ -2205,6 +2215,9 @@ router.get(
     if (req.query.status) filters.status = req.query.status;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
+    const { limit, offset } = parsePagination(req);
+    filters.limit = limit;
+    filters.offset = offset;
     res.json(db.getUserTransactions(req.user.id, filters));
   }
 );

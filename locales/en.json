@@ -916,6 +916,7 @@
     "VALIDATION_OCPP_ACTION": "Invalid OCPP action.",
     "VALIDATION_IDTAG_STATUS": "Invalid ID tag status.",
     "VALIDATION_LIMIT": "Invalid limit value.",
+    "VALIDATION_PAGE": "Invalid page number.",
     "VALIDATION_OCPP_METHOD": "Invalid OCPP method.",
     "VALIDATION_OCPP_PARAMS": "Invalid OCPP params.",
     "VALIDATION_CONFIG_KEY": "Invalid config key.",

@@ -916,6 +916,7 @@
     "VALIDATION_OCPP_ACTION": "Action OCPP invalide.",
     "VALIDATION_IDTAG_STATUS": "Statut de badge invalide.",
     "VALIDATION_LIMIT": "Valeur de limite invalide.",
+    "VALIDATION_PAGE": "Numéro de page invalide.",
     "VALIDATION_OCPP_METHOD": "Methode OCPP invalide.",
     "VALIDATION_OCPP_PARAMS": "Parametres OCPP invalides.",
     "VALIDATION_CONFIG_KEY": "Cle de configuration invalide.",

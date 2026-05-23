@@ -938,3 +938,47 @@ describe('database — meter values', () => {
     expect(cp.meter_value).toBe(99999);
   });
 });
+
+// ── getTransactions — pagination ──
+describe('database — getTransactions pagination', () => {
+  let cpId;
+  const START = '2026-01-01T10:00:00Z';
+  const STOP  = '2026-01-01T11:00:00Z';
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-PAGTEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-PAGTEST').id;
+    for (let i = 0; i < 5; i++) {
+      const tx = db.createTransaction(cpId, 1, 'TAG-PAG', i * 100, START, 'local');
+      if (i < 3) db.stopTransaction(tx.transaction_id, (i + 1) * 100, STOP, 'Local');
+    }
+  });
+
+  it('retourne { data, total, stats } quand limit est fourni', () => {
+    const result = db.getTransactions({ chargepoint_id: cpId, limit: 10, offset: 0 });
+    expect(result).toHaveProperty('data');
+    expect(result).toHaveProperty('total');
+    expect(result).toHaveProperty('stats');
+    expect(Array.isArray(result.data)).toBe(true);
+    expect(result.total).toBeGreaterThanOrEqual(5);
+  });
+
+  it('applique correctement LIMIT et OFFSET', () => {
+    const page1 = db.getTransactions({ chargepoint_id: cpId, limit: 2, offset: 0 });
+    const page2 = db.getTransactions({ chargepoint_id: cpId, limit: 2, offset: 2 });
+    expect(page1.data.length).toBe(2);
+    expect(page2.data.length).toBe(2);
+    expect(page1.data[0].id).not.toBe(page2.data[0].id);
+    expect(page1.total).toBe(page2.total);
+  });
+
+  it('stats.activeCount est correct', () => {
+    const result = db.getTransactions({ chargepoint_id: cpId, limit: 50, offset: 0 });
+    expect(result.stats.activeCount).toBe(2);
+  });
+
+  it('retourne un tableau brut sans limit (rétrocompat CSV)', () => {
+    const result = db.getTransactions({ chargepoint_id: cpId });
+    expect(Array.isArray(result)).toBe(true);
+  });
+});

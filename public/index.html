@@ -1529,7 +1529,10 @@ let currentDetailTab = 'infos';
 
 async function showChargepointDetail(id, tab) {
   currentPage = 'chargepointdetail';
-  if (currentDetailCpId !== id) cpLogsFilters = { date_from: _today(), date_to: _today() };
+  if (currentDetailCpId !== id) {
+    cpLogsFilters = { date_from: _today(), date_to: _today() };
+    cpTxFilters = { from: _today(), to: _today() };
+  }
   currentDetailCpId = id;
   currentDetailTab = tab || 'infos';
   document.querySelectorAll('.sidebar-nav a').forEach(a => {
@@ -1784,10 +1787,30 @@ async function saveConnector(connectorId) {
 
 // ── Onglet Transactions ────────────────────────────────────────────
 async function renderDetailTabTransactions(cp) {
-  const transactions = await api('GET', `/transactions?chargepoint_id=${cp.id}`);
+  const queryParams = new URLSearchParams();
+  queryParams.set('chargepoint_id', cp.id);
+  if (cpTxFilters.from) queryParams.set('from', localDateToUtcStr(cpTxFilters.from, false));
+  if (cpTxFilters.to)   queryParams.set('to',   localDateToUtcStr(cpTxFilters.to, true));
+  queryParams.set('limit', '200');
+  queryParams.set('page', '1');
+  const { data: transactions, total: cpTxTotal } = await api('GET', '/transactions?' + queryParams.toString());
   document.getElementById('detailTabContent').innerHTML = `
+    <div class="card card-filters">
+      <div class="card-header"><h3>🔍 ${t('filters.filter')}</h3></div>
+      <div class="msg-filters">
+        <div class="form-group">
+          <label>${t('filters.dateFrom')}</label>
+          <input type="text" id="cpTxFilterFrom" readonly />
+        </div>
+        <div class="form-group">
+          <label>${t('filters.dateTo')}</label>
+          <input type="text" id="cpTxFilterTo" readonly />
+        </div>
+        <button class="btn btn-outline btn-sm" data-onclick="resetCpTxFilters(${cp.id})">${t('common.reset')}</button>
+      </div>
+    </div>
     <div class="card">
-      <div class="card-header"><h3>${t('transac.transactions', { count: transactions.length })}</h3></div>
+      <div class="card-header"><h3>${t('transac.transactions', { count: cpTxTotal })}</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noTransactions')}</p>` : `
       <table>
         <thead><tr><th>ID</th><th>${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th></tr></thead>
@@ -1809,6 +1832,30 @@ async function renderDetailTabTransactions(cp) {
       </table>`}
     </div>
   `;
+  const lc = getLocaleConfig();
+  const fpCpTxOpts = {
+    dateFormat: 'Y-m-d',
+    altInput: true,
+    altFormat: lc.dateFormat,
+    locale: getFlatpickrLocaleOption(lc),
+    onChange: () => applyCpTxFilters(cp),
+  };
+  flatpickr('#cpTxFilterFrom', { ...fpCpTxOpts, defaultDate: cpTxFilters.from || 'today' });
+  flatpickr('#cpTxFilterTo',   { ...fpCpTxOpts, defaultDate: cpTxFilters.to   || 'today' });
+}
+
+function applyCpTxFilters(cp) {
+  cpTxFilters = {
+    from: document.getElementById('cpTxFilterFrom')?.value || undefined,
+    to:   document.getElementById('cpTxFilterTo')?.value   || undefined,
+  };
+  renderDetailTabTransactions(cp);
+}
+
+async function resetCpTxFilters(cpId) {
+  cpTxFilters = { from: _today(), to: _today() };
+  const cp = await api('GET', `/chargepoints/${cpId}`);
+  renderDetailTabTransactions(cp);
 }
 
 // ── Onglet Messages Log ────────────────────────────────────────────
@@ -1818,6 +1865,32 @@ function localDateToUtcStr(dateStr, endOfDay) {
   return d.toISOString().replace('T', ' ').slice(0, 19);
 }
 let cpLogsFilters = { date_from: _today(), date_to: _today() };
+let cpTxFilters = { from: _today(), to: _today() };
+
+function renderPaginationBar(currentPage, total, pageSize, callbackFn) {
+  if (total <= pageSize) return '';
+  const totalPages = Math.ceil(total / pageSize);
+  const from = (currentPage - 1) * pageSize + 1;
+  const to = Math.min(currentPage * pageSize, total);
+  const pages = [...new Set([1, totalPages, currentPage, currentPage - 1, currentPage + 1]
+    .filter(p => p >= 1 && p <= totalPages))].sort((a, b) => a - b);
+  let buttons = '';
+  let prev = null;
+  for (const p of pages) {
+    if (prev !== null && p - prev > 1) buttons += `<span class="page-ellipsis">…</span>`;
+    buttons += `<button class="btn btn-sm ${p === currentPage ? 'btn-primary' : 'btn-outline'} page-btn"
+      ${p === currentPage ? 'disabled' : ''} data-onclick="${callbackFn}(${p})">${p}</button>`;
+    prev = p;
+  }
+  return `<div class="pagination-bar">
+    <span class="page-info">${from}–${to} / ${total}</span>
+    <div class="page-buttons">
+      <button class="btn btn-sm btn-outline" ${currentPage <= 1 ? 'disabled' : ''} data-onclick="${callbackFn}(${currentPage - 1})">&#8249;</button>
+      ${buttons}
+      <button class="btn btn-sm btn-outline" ${currentPage >= totalPages ? 'disabled' : ''} data-onclick="${callbackFn}(${currentPage + 1})">&#8250;</button>
+    </div>
+  </div>`;
+}
 
 async function renderDetailTabLogs(cp) {
   const queryParams = new URLSearchParams();
@@ -3674,7 +3747,9 @@ function onSiteCheckChange(siteId) {
 // ══════════════════════════════════════
 //  TRANSACTIONS
 // ══════════════════════════════════════
-let txFilters = {};
+let txFilters = { from: _today(), to: _today() };
+let txPage = 1;
+const TX_PAGE_SIZE = 50;
 
 async function renderTransactions() {
   document.getElementById('topbarActions').innerHTML =
@@ -3689,45 +3764,33 @@ async function renderTransactions() {
     if (txFilters.site_id) queryParams.set('site_id', txFilters.site_id);
     if (txFilters.chargepoint_id) queryParams.set('chargepoint_id', txFilters.chargepoint_id);
     if (txFilters.status) queryParams.set('status', txFilters.status);
-    if (txFilters.from) queryParams.set('from', txFilters.from);
-    if (txFilters.to) queryParams.set('to', txFilters.to);
-    const qs = queryParams.toString();
-    const transactions = await api('GET', '/transactions' + (qs ? '?' + qs : ''));
+    if (txFilters.from) queryParams.set('from', localDateToUtcStr(txFilters.from, false));
+    if (txFilters.to) queryParams.set('to', localDateToUtcStr(txFilters.to, true));
+    queryParams.set('limit', TX_PAGE_SIZE);
+    queryParams.set('page', txPage);
+    const { data: transactions, total: txTotal, stats: txStats } = await api('GET', '/transactions?' + queryParams.toString());
 
     // Filtrer les bornes selon le site sélectionné
     const filteredCps = txFilters.site_id
       ? chargepoints.filter(cp => cp.site_id === Number(txFilters.site_id))
       : chargepoints;
 
-    // Calculer les stats
-    const totalEnergy = transactions.reduce((sum, tx) => {
-      if (tx.meter_stop != null && tx.meter_start != null) return sum + (tx.meter_stop - tx.meter_start);
-      return sum;
-    }, 0);
-    const completedCount = transactions.filter(tx => tx.status === 'Completed').length;
-    const activeCount = transactions.filter(tx => tx.status === 'Active').length;
-    let totalDuration = 0;
-    transactions.forEach(tx => {
-      if (tx.start_time && tx.stop_time) {
-        totalDuration += Math.floor((new Date(tx.stop_time) - new Date(tx.start_time)) / 60000);
-      }
-    });
-    const totalHours = formatDuree(totalDuration);
+    const totalHours = formatDuree(txStats.totalMinutes);
     const activeFilterCount = Object.values(txFilters).filter(v => v).length;
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-label">${t('transac.nbTransactions')}</div>
-          <div class="stat-value">${transactions.length}</div>
+          <div class="stat-value">${txTotal}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">${t('transac.chargedEnergy')}</div>
-          <div class="stat-value" style="color:var(--success)">${(totalEnergy / 1000).toFixed(2)} kWh</div>
+          <div class="stat-value" style="color:var(--success)">${(txStats.totalEnergy / 1000).toFixed(2)} kWh</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">${t('transac.inProgress')}</div>
-          <div class="stat-value" style="color:var(--primary)">${activeCount}</div>
+          <div class="stat-value" style="color:var(--primary)">${txStats.activeCount}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">${t('transac.totalDuration')}</div>
@@ -3772,7 +3835,7 @@ async function renderTransactions() {
       </div>
 
       <div class="card">
-        <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: transactions.length })})</h3></div>
+        <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: txTotal })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
         <table style="font-size: 0.85em;">
           <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
@@ -3795,7 +3858,8 @@ async function renderTransactions() {
               </tr>
             `).join('')}
           </tbody>
-        </table>`}
+        </table>
+        ${renderPaginationBar(txPage, txTotal, TX_PAGE_SIZE, 'goToTxPage')}`}
       </div>
     `;
     const lc = getLocaleConfig();
@@ -3804,7 +3868,6 @@ async function renderTransactions() {
       altInput: true,
       altFormat: lc.dateFormat,
       locale: getFlatpickrLocaleOption(lc),
-      defaultDate: null,
       onChange: function () { applyTxFilters(); }
     };
     flatpickr('#txFilterFrom', { ...fpOpts, defaultDate: txFilters.from || null });
@@ -3827,11 +3890,18 @@ function applyTxFilters() {
     from: document.getElementById('txFilterFrom')?.value || undefined,
     to: document.getElementById('txFilterTo')?.value || undefined,
   };
+  txPage = 1;
   renderTransactions();
 }
 
 function resetTxFilters() {
-  txFilters = {};
+  txFilters = { from: _today(), to: _today() };
+  txPage = 1;
+  renderTransactions();
+}
+
+function goToTxPage(page) {
+  txPage = page;
   renderTransactions();
 }
 
@@ -3862,7 +3932,9 @@ function formatTxUser(tx) {
 // ══════════════════════════════════════
 //  MES TRANSACTIONS (utilisateur courant)
 // ══════════════════════════════════════
-let myTxFilters = {};
+let myTxFilters = { from: _today(), to: _today() };
+let myTxPage = 1;
+const MY_TX_PAGE_SIZE = 50;
 
 function myTxKpiCompare(current, previous) {
   if (!previous || previous === 0) return current > 0 ? '<div class="kpi-compare up">↑ new</div>' : '';
@@ -3881,19 +3953,22 @@ async function renderMyTransactions() {
   try {
     const queryParams = new URLSearchParams();
     if (myTxFilters.status) queryParams.set('status', myTxFilters.status);
-    if (myTxFilters.from) queryParams.set('from', myTxFilters.from);
-    if (myTxFilters.to) queryParams.set('to', myTxFilters.to);
-    const qs = queryParams.toString();
+    if (myTxFilters.from) queryParams.set('from', localDateToUtcStr(myTxFilters.from, false));
+    if (myTxFilters.to) queryParams.set('to', localDateToUtcStr(myTxFilters.to, true));
+    queryParams.set('limit', MY_TX_PAGE_SIZE);
+    queryParams.set('page', myTxPage);
 
     // Charger transactions + stats KPI en parallèle
     const statsParams = new URLSearchParams();
-    if (myTxFilters.from) statsParams.set('from', myTxFilters.from);
-    if (myTxFilters.to) statsParams.set('to', myTxFilters.to);
+    if (myTxFilters.from) statsParams.set('from', localDateToUtcStr(myTxFilters.from, false));
+    if (myTxFilters.to) statsParams.set('to', localDateToUtcStr(myTxFilters.to, true));
     const statsQs = statsParams.toString();
-    const [transactions, kpiStats] = await Promise.all([
-      api('GET', '/user/transactions' + (qs ? '?' + qs : '')),
+    const [txResponse, kpiStats] = await Promise.all([
+      api('GET', '/user/transactions?' + queryParams.toString()),
       api('GET', '/user/transactions/stats' + (statsQs ? '?' + statsQs : ''))
     ]);
+    const transactions = txResponse.data;
+    const myTxTotal = txResponse.total;
 
     const hasDateFilter = myTxFilters.from || myTxFilters.to;
     const myActiveFilterCount = Object.values(myTxFilters).filter(v => v).length;
@@ -3963,7 +4038,7 @@ async function renderMyTransactions() {
       </div>
     </div>
     <div class="card">
-      <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: transactions.length })})</h3></div>
+      <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: myTxTotal })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
         <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.duration')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
@@ -3997,7 +4072,8 @@ async function renderMyTransactions() {
             </tr>`;
           }).join('')}
         </tbody>
-        </table>`}
+        </table>
+        ${renderPaginationBar(myTxPage, myTxTotal, MY_TX_PAGE_SIZE, 'goToMyTxPage')}`}
       </div>
     `;
     const lc = getLocaleConfig();
@@ -4022,11 +4098,18 @@ function applyMyTxFilters() {
     from: document.getElementById('myTxFilterFrom')?.value || undefined,
     to: document.getElementById('myTxFilterTo')?.value || undefined,
   };
+  myTxPage = 1;
   renderMyTransactions();
 }
 
 function resetMyTxFilters() {
-  myTxFilters = {};
+  myTxFilters = { from: _today(), to: _today() };
+  myTxPage = 1;
+  renderMyTransactions();
+}
+
+function goToMyTxPage(page) {
+  myTxPage = page;
   renderMyTransactions();
 }
 
