@@ -644,11 +644,13 @@ function register16Handlers(client, loggedHandle) {
     const cp = db.getChargepointByIdentity(identity);
     const siteId = cp ? cp.site_id : null;
     const authResult = db.authorizeIdTag(params.idTag, siteId);
-    logger.info(`Authorize result for ${identity}: ${authResult.status}`);
 
     if (cp && cp.mode === 3) {
+      logger.info(`Authorize result for ${identity}: Accepted (free mode, raw DB: ${authResult.status})`);
       return { idTagInfo: { status: 'Accepted' } };
     }
+
+    logger.info(`Authorize result for ${identity}: ${authResult.status}`);
     if (authResult.status !== 'Accepted' && chargepointId) {
       db.addIdTagEvent(
         chargepointId,
