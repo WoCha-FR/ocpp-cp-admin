@@ -3776,7 +3776,7 @@ async function renderTransactions() {
       : chargepoints;
 
     const totalHours = formatDuree(txStats.totalMinutes);
-    const activeFilterCount = Object.values(txFilters).filter(v => v).length;
+    const activeFilterCount = ['site_id', 'chargepoint_id', 'status'].filter(k => txFilters[k]).length;
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
@@ -3971,7 +3971,7 @@ async function renderMyTransactions() {
     const myTxTotal = txResponse.total;
 
     const hasDateFilter = myTxFilters.from || myTxFilters.to;
-    const myActiveFilterCount = Object.values(myTxFilters).filter(v => v).length;
+    const myActiveFilterCount = ['status'].filter(k => myTxFilters[k]).length;
 
     // Déterminer les valeurs principales et secondaires selon le contexte
     const main = hasDateFilter && kpiStats.filtered ? kpiStats.filtered : kpiStats.currentMonth;
