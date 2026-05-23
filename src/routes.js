@@ -2045,7 +2045,8 @@ router.get('/dashboard', requireManager, (req, res) => {
           connectorStats[c.cnstatus]++;
         else connectorStats[c.cnstatus] = 1;
       }
-      if (c.error_code && c.error_code !== 'NoError' && c.cnstatus !== 'Faulted') connectorStats.WithError++;
+      if (c.error_code && c.error_code !== 'NoError' && c.cnstatus !== 'Faulted')
+        connectorStats.WithError++;
     }
   });
 

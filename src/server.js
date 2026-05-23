@@ -86,12 +86,8 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         // Inline event handlers migrated to delegated data handlers.
-        scriptSrc: [
-          "'self'",
-          'https://cdn.jsdelivr.net',
-          (req, res) => `'nonce-${res.locals.cspNonce}'`,
-        ],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+        scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+        styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
         // 'self' couvre déjà les WebSockets vers la même origine (ws:// et wss://)
         connectSrc: ["'self'"],
@@ -380,10 +376,20 @@ app.get('/terms', (req, res) => {
   res.type('html').send(wrapLegalHtml(html, lang, config.cpoName || 'CP Admin'));
 });
 
-// Servir flatpickr depuis node_modules
+// Servir flatpickr, chartjs & i18next depuis node_modules
 app.use(
   '/vendor/flatpickr',
   express.static(path.join(__dirname, '..', 'node_modules', 'flatpickr', 'dist'), { index: false })
+);
+app.use(
+  '/vendor/chartjs',
+  express.static(path.join(__dirname, '..', 'node_modules', 'chart.js', 'dist'), { index: false })
+);
+app.use(
+  '/vendor/i18next',
+  express.static(path.join(__dirname, '..', 'node_modules', 'i18next', 'dist', 'umd'), {
+    index: false,
+  })
 );
 // Servir l'UI statique (index: false pour que le catch-all serve le HTML avec i18n)
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
