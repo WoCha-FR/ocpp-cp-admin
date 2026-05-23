@@ -1790,8 +1790,8 @@ async function saveConnector(connectorId) {
 async function renderDetailTabTransactions(cp) {
   const queryParams = new URLSearchParams();
   queryParams.set('chargepoint_id', cp.id);
-  if (cpTxFilters.from) queryParams.set('from', localDateToUtcStr(cpTxFilters.from, false));
-  if (cpTxFilters.to)   queryParams.set('to',   localDateToUtcStr(cpTxFilters.to, true));
+  if (cpTxFilters.from) queryParams.set('from', cpTxFilters.from);
+  if (cpTxFilters.to)   queryParams.set('to',   cpTxFilters.to);
   queryParams.set('limit', '200');
   queryParams.set('page', '1');
   const { data: transactions, total: cpTxTotal } = await api('GET', '/transactions?' + queryParams.toString());
@@ -3752,7 +3752,8 @@ let txFilters = { from: _today(), to: _today() };
 let txPage = 1;
 const TX_PAGE_SIZE = 50;
 
-async function renderTransactions() {
+async function renderTransactions(keepState = false) {
+  if (!keepState) { txFilters = { from: _today(), to: _today() }; txPage = 1; }
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-primary" data-onclick="exportTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
@@ -3765,8 +3766,8 @@ async function renderTransactions() {
     if (txFilters.site_id) queryParams.set('site_id', txFilters.site_id);
     if (txFilters.chargepoint_id) queryParams.set('chargepoint_id', txFilters.chargepoint_id);
     if (txFilters.status) queryParams.set('status', txFilters.status);
-    if (txFilters.from) queryParams.set('from', localDateToUtcStr(txFilters.from, false));
-    if (txFilters.to) queryParams.set('to', localDateToUtcStr(txFilters.to, true));
+    if (txFilters.from) queryParams.set('from', txFilters.from);
+    if (txFilters.to) queryParams.set('to', txFilters.to);
     queryParams.set('limit', TX_PAGE_SIZE);
     queryParams.set('page', txPage);
     const { data: transactions, total: txTotal, stats: txStats } = await api('GET', '/transactions?' + queryParams.toString());
@@ -3892,18 +3893,18 @@ function applyTxFilters() {
     to: document.getElementById('txFilterTo')?.value || undefined,
   };
   txPage = 1;
-  renderTransactions();
+  renderTransactions(true);
 }
 
 function resetTxFilters() {
   txFilters = { from: _today(), to: _today() };
   txPage = 1;
-  renderTransactions();
+  renderTransactions(true);
 }
 
 function goToTxPage(page) {
   txPage = page;
-  renderTransactions();
+  renderTransactions(true);
 }
 
 function exportTransactionsCsv() {
@@ -3948,21 +3949,22 @@ function myTxKpiCompare(current, previous) {
   return `<div class="kpi-compare ${cls}">${arrow} ${sign}${pct}% vs ${t('transac.kpiPrevMonth')}</div>`;
 }
 
-async function renderMyTransactions() {
+async function renderMyTransactions(keepState = false) {
+  if (!keepState) { myTxFilters = { from: _today(), to: _today() }; myTxPage = 1; }
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-primary" data-onclick="exportMyTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
     const queryParams = new URLSearchParams();
     if (myTxFilters.status) queryParams.set('status', myTxFilters.status);
-    if (myTxFilters.from) queryParams.set('from', localDateToUtcStr(myTxFilters.from, false));
-    if (myTxFilters.to) queryParams.set('to', localDateToUtcStr(myTxFilters.to, true));
+    if (myTxFilters.from) queryParams.set('from', myTxFilters.from);
+    if (myTxFilters.to) queryParams.set('to', myTxFilters.to);
     queryParams.set('limit', MY_TX_PAGE_SIZE);
     queryParams.set('page', myTxPage);
 
     // Charger transactions + stats KPI en parallèle
     const statsParams = new URLSearchParams();
-    if (myTxFilters.from) statsParams.set('from', localDateToUtcStr(myTxFilters.from, false));
-    if (myTxFilters.to) statsParams.set('to', localDateToUtcStr(myTxFilters.to, true));
+    if (myTxFilters.from) statsParams.set('from', myTxFilters.from);
+    if (myTxFilters.to) statsParams.set('to', myTxFilters.to);
     const statsQs = statsParams.toString();
     const [txResponse, kpiStats] = await Promise.all([
       api('GET', '/user/transactions?' + queryParams.toString()),
@@ -4100,18 +4102,18 @@ function applyMyTxFilters() {
     to: document.getElementById('myTxFilterTo')?.value || undefined,
   };
   myTxPage = 1;
-  renderMyTransactions();
+  renderMyTransactions(true);
 }
 
 function resetMyTxFilters() {
   myTxFilters = { from: _today(), to: _today() };
   myTxPage = 1;
-  renderMyTransactions();
+  renderMyTransactions(true);
 }
 
 function goToMyTxPage(page) {
   myTxPage = page;
-  renderMyTransactions();
+  renderMyTransactions(true);
 }
 
 function exportMyTransactionsCsv() {
@@ -5731,7 +5733,7 @@ function formatDate(str) {
 function formatDuree(minutes) {
   if (minutes == null) return '-';
   const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
+  const m = Math.floor(minutes % 60);
   //return minutes;
   return `${h}${t('common.unitHours')}${m.toString().padStart(2, '0')}${t('common.unitMinutes')}`;
 }

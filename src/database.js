@@ -939,11 +939,11 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
     params.push(filters.status);
   }
   if (filters.from) {
-    whereClause += ' AND t.start_time >= ?';
+    whereClause += ' AND date(t.start_time) >= ?';
     params.push(filters.from);
   }
   if (filters.to) {
-    whereClause += ' AND t.start_time <= ?';
+    whereClause += ' AND date(t.start_time) <= ?';
     params.push(filters.to);
   }
 
@@ -1525,11 +1525,11 @@ function getUserTransactionStats(userId, filters = {}) {
     let filterWhere = '';
     const filterParams = [userId];
     if (filters.from) {
-      filterWhere += ' AND t.start_time >= ?';
+      filterWhere += ' AND date(t.start_time) >= ?';
       filterParams.push(filters.from);
     }
     if (filters.to) {
-      filterWhere += ' AND t.start_time <= ?';
+      filterWhere += ' AND date(t.start_time) <= ?';
       filterParams.push(filters.to);
     }
     filtered = db.prepare(buildQuery(filterWhere)).get(...filterParams);
