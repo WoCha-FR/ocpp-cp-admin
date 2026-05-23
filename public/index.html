@@ -1023,7 +1023,7 @@ async function renderDashboard() {
         <div class="card-header"><h3>${t('dashboard.totalActiveCharge')}</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('dashboard.noActiveCharge')}</p>` : `
         <table>
-          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th></tr></thead>
+          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.charts')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
@@ -1035,6 +1035,7 @@ async function renderDashboard() {
                 <td>${formatDate(tx.start_time)}</td>
                 <td>${tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
+                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
               </tr>
             `).join('')}
           </tbody>
