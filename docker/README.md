@@ -15,6 +15,8 @@ Choose the one that matches your infrastructure.
 | `docker-compose.https.yml` | Simple deployment, HTTPS/WSS managed by the app |
 | `docker-compose.yml` | Full stack with Traefik (HTTPS, TLS termination) + FTP |
 | `docker-compose.tls.yml` | Full stack with Traefik, HTTPS + WSS passthrough + cert export |
+| `docker-compose.traefik-ext.yml` | External Traefik — HTTPS, TLS termination (no Traefik deployed) |
+| `docker-compose.tls-ext.yml` | External Traefik — HTTPS + WSS passthrough (no Traefik deployed) |
 
 ---
 
@@ -180,6 +182,138 @@ To activate Security Profile 3, add the following to `config.json` and restart:
 Then deploy `./data/config/certs/client.pem` (contains certificate + private key) to each charge point.
 
 > `cert-init` is idempotent: files already present are never overwritten. To renew the client certificate, delete `client.pem` and restart the stack.
+
+---
+
+### `docker-compose.traefik-ext.yml` — External Traefik (HTTPS, TLS Termination)
+
+Same routing as `docker-compose.yml` but without deploying a Traefik container. Use this when Traefik is already running on your host.
+
+**Prerequisites:**
+
+1. Create the shared Docker network (once):
+   ```bash
+   docker network create traefik
+   ```
+   Adapt the name in the compose file if your network is named differently.
+2. In your existing Traefik, enable Docker discovery on that network: `providers.docker.network = traefik`
+3. Find your certresolver name and replace `letsencrypt` in the two `certresolver` labels.
+
+   Look at your Traefik static configuration (YAML, TOML, or CLI flags) for the `certificatesResolvers` section:
+
+   ```yaml
+   # traefik.yml (static config)
+   certificatesResolvers:
+     myresolver:        # ← this is the name to use
+       acme:
+         email: admin@example.com
+         storage: /letsencrypt/acme.json
+         tlsChallenge: {}
+   ```
+
+   Then replace `letsencrypt` in the compose labels:
+   ```yaml
+   - "traefik.http.routers.ui.tls.certresolver=myresolver"
+   - "traefik.http.routers.ocpp-wss.tls.certresolver=myresolver"
+   ```
+
+   > If `keyType` is not specified in your Traefik config, the resolver uses **RSA2048** by default.
+
+```bash
+docker compose -f docker/docker-compose.traefik-ext.yml up -d
+```
+
+**Variables to replace before starting:**
+
+| Variable / Value | Role | Mandatory |
+|---|---|---|
+| `cpadmin.local` (Traefik labels) | Domain of the web interface | Yes |
+| `ws.cpadmin.local` (Traefik labels) | Domain of the OCPP WebSocket endpoint | Yes |
+| `letsencrypt` (certresolver labels) | Name of your existing Traefik Let's Encrypt resolver | Yes |
+| `CPADMIN_PUBLIC_URL=https://cpadmin.local` | Public HTTPS URL of the web interface | Yes |
+| `CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local` | OCPP WS URL given to charge points | Yes |
+| `CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local` | OCPP WSS URL given to charge points | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local` | FTP URL for diagnostics | Yes |
+| `CPADMIN_SESSION_SECRET=change-me-with-a-random-secret` | Session signing secret — use at least 32 random characters | Yes |
+| FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
+| FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
+
+---
+
+### `docker-compose.tls-ext.yml` — External Traefik (HTTPS + WSS Passthrough)
+
+Same routing as `docker-compose.tls.yml` but without deploying a Traefik container. Traefik performs TCP passthrough for OCPP WSS — the app manages TLS and client certificate authentication (Security Profile 3).
+
+**Prerequisites:**
+
+1. Create the shared Docker network (once):
+   ```bash
+   docker network create traefik
+   ```
+2. In your existing Traefik, enable Docker discovery on that network: `providers.docker.network = traefik`
+3. Identify your certresolver names and their key type.
+
+   In your Traefik static configuration, look for the `keyType` field under `certificatesResolvers`:
+
+   ```yaml
+   # traefik.yml (static config)
+   certificatesResolvers:
+     letsencrypt-rsa:
+       acme:
+         keyType: RSA2048    # ← RSA resolver
+         email: admin@example.com
+         storage: /letsencrypt/acme-rsa.json
+         httpChallenge:
+           entryPoint: web
+     letsencrypt-ecdsa:
+       acme:
+         keyType: EC256      # ← ECDSA resolver
+         email: admin@example.com
+         storage: /letsencrypt/acme-ecdsa.json
+         httpChallenge:
+           entryPoint: web
+   ```
+
+   > If `keyType` is absent, Traefik defaults to **RSA2048**.
+
+   **I have two resolvers (RSA + ECDSA):** replace `letsencrypt-rsa` and `letsencrypt-ecdsa` in the labels with your resolver names.
+
+   **I have a single resolver:** use the same name for both `letsencrypt-rsa` and `letsencrypt-ecdsa` labels. The OCPP WSS passthrough will still work — the app manages TLS itself. Only the ECDSA cert generation is skipped, which has no impact if your charge points do not require it.
+   ```yaml
+   - "traefik.http.routers.ui.tls.certresolver=myresolver"
+   - "traefik.http.routers.ui-ecdsa.tls.certresolver=myresolver"  # same resolver
+   ```
+   In this case the cert-dumper for ECDSA will look for `acme-ecdsa.json` — point both cert-dumper volume mounts to the same file.
+
+4. Adapt the cert-dumper volume mount to point to your Traefik's letsencrypt directory (the one containing `acme-rsa.json` and `acme-ecdsa.json`):
+   ```yaml
+   # Bind mount example (host path):
+   - /opt/traefik/letsencrypt:/traefik:ro
+   # Or, if Traefik uses a named Docker volume:
+   - letsencrypt:/traefik:ro
+   # (add at the bottom: volumes: { letsencrypt: { external: true } })
+   ```
+
+```bash
+docker compose -f docker/docker-compose.tls-ext.yml up -d
+```
+
+**Variables to replace before starting:**
+
+| Variable / Value | Role | Mandatory |
+|---|---|---|
+| `cpadmin.local` (Traefik labels) | Domain of the web interface | Yes |
+| `ws.cpadmin.local` (Traefik labels) | Domain of the OCPP WebSocket endpoint | Yes |
+| `letsencrypt-rsa` / `letsencrypt-ecdsa` (certresolver labels) | Names of your existing Traefik RSA/ECDSA resolvers | Yes |
+| cert-dumper volume `/opt/traefik/letsencrypt` | Path to your external Traefik's letsencrypt folder | Yes |
+| `CPADMIN_PUBLIC_URL=https://cpadmin.local` | Public HTTPS URL of the web interface | Yes |
+| `CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local` | OCPP WS URL (charge points without TLS) | Yes |
+| `CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local` | OCPP WSS URL (charge points with TLS, Security Profile 2/3) | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local` | FTP URL for diagnostics | Yes |
+| FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
+| FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
+
+**Security Profile 3 — client certificate authentication:** see `docker-compose.tls.yml` section above, the `cert-init` service works identically.
 
 ---
 

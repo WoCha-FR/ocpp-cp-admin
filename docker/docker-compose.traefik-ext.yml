@@ -1,0 +1,145 @@
+# ── Variante "Traefik externe" ──────────────────────────────────────────────
+# Utilisez ce fichier si Traefik est déjà en cours d'exécution sur votre serveur.
+#
+# Prérequis :
+#   1. Créer le réseau Docker partagé avec Traefik (une seule fois) :
+#        docker network create traefik
+#      (adapter le nom ci-dessous si votre réseau s'appelle autrement)
+#   2. Dans votre Traefik existant, activer la découverte Docker sur ce réseau :
+#        providers.docker.network = traefik
+#   3. Adapter les labels 'certresolver' au nom de votre resolver Let's Encrypt
+
+services:
+
+  # ── Application OCPP CP Admin ──────────────────────────────
+  ocpp-cp-admin:
+    image: ghcr.io/wocha-fr/ocpp-cp-admin:latest
+    container_name: ocpp-cp-admin
+    restart: unless-stopped
+    depends_on:
+      - ftp
+    volumes:
+      # Bind mounts : accès direct à config.json et aux logs depuis l'hôte
+      - ./data/config:/app/config
+      - ./data/logs:/app/logs
+      # Uncomment the following line to enable image uploads (e.g. for custom favicon and logos)
+      #- ./data/public-img:/app/public/img
+      # Uncomment the following line to enable custom locales (for translations)
+      #- ./data/locales-custom:/app/locales-custom
+    networks:
+      - default  # communication avec le service ftp
+      - traefik  # découverte par le Traefik externe
+    environment:
+      - NODE_ENV=production
+      # Décommenter pour afficher les logs en console (debug temporaire uniquement)
+      # - LOG_CONSOLE=true
+
+      # ── Déploiement / URLs ──────────────────────────────────
+      - CPADMIN_HTTP_HOST=0.0.0.0
+      - CPADMIN_TRUST_PROXY=true
+      # URL publique HTTPS (utilisée pour les liens dans les notifications)
+      - CPADMIN_PUBLIC_URL=https://cpadmin.local
+      # URL WebSocket OCPP non chiffré (bornes sans TLS, via Traefik port 80)
+      - CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local
+      # URL WebSocket OCPP chiffré, TLS terminé par Traefik (Security Profile 2/3)
+      - CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local
+
+      # ── Diagnostics FTP ─────────────────────────────────────
+      # URL FTP où les bornes déposent leurs fichiers de diagnostic
+      - CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local
+
+      # ── Sécurité ────────────────────────────────────────────
+      # IMPORTANT : changer cette valeur (min. 32 caractères aléatoires)
+      - CPADMIN_SESSION_SECRET=change-me-with-a-random-secret
+
+      # ── Activation des fonctionnalités ──────────────────────
+      # HTTPS/WSS terminés par Traefik — ne pas activer ici
+      # - CPADMIN_WEBUI_HTTPS_ENABLED=true
+      # - CPADMIN_OCPP_WSS_ENABLED=true
+
+      # ── Comportement OCPP ───────────────────────────────────
+      # - CPADMIN_OCPP_V16_ENABLED=true
+      # - CPADMIN_OCPP_V201_ENABLED=false
+      - CPADMIN_OCPP_STRICT_MODE=false
+      - CPADMIN_OCPP_AUTO_ADD=true
+      - CPADMIN_OCPP_PENDING_UNKNOWN=false
+
+      # ── Configuration générale ──────────────────────────────
+      # Niveau de log : error | warn | info | debug
+      - CPADMIN_LOGLEVEL=info
+      # - CPADMIN_LANGUAGE=fr
+      # - CPADMIN_CPO_NAME=Mon CPO
+
+      # ── Notifications e-mail (optionnel) ────────────────────
+      # - CPADMIN_MAIL_ENABLED=true
+      # - CPADMIN_MAIL_HOST=smtp.example.com
+      # - CPADMIN_MAIL_PORT=587
+      # - CPADMIN_MAIL_SECURE=false
+      # - CPADMIN_MAIL_USER=user@example.com
+      # - CPADMIN_MAIL_PASS=password
+      # - CPADMIN_MAIL_FROM=noreply@cpadmin.local
+
+      # ── Notifications Web Push (optionnel) ──────────────────
+      # - CPADMIN_WEBPUSH_ENABLED=true
+      # - CPADMIN_VAPID_SUBJECT=mailto:admin@cpadmin.local
+      # - CPADMIN_VAPID_PUBLIC_KEY=
+      # - CPADMIN_VAPID_PRIVATE_KEY=
+
+      # ── Notifications Pushover (optionnel) ──────────────────
+      # - CPADMIN_PUSHOVER_ENABLED=true
+
+      # ── Authentification Google OAuth (optionnel) ───────────
+      # - CPADMIN_GOOGLE_AUTH_ENABLED=true
+      # - CPADMIN_GOOGLE_CLIENT_ID=
+      # - CPADMIN_GOOGLE_CLIENT_SECRET=
+    labels:
+      - "traefik.enable=true"
+      # ── UI HTTP → HTTPS redirect ──
+      - "traefik.http.routers.ui-http.rule=Host(`cpadmin.local`)"
+      - "traefik.http.routers.ui-http.entrypoints=web"
+      - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.redirect-https.redirectscheme.permanent=true"
+      - "traefik.http.routers.ui-http.middlewares=redirect-https"
+      # ── UI HTTPS (TLS terminé par Traefik) ──
+      - "traefik.http.routers.ui.rule=Host(`cpadmin.local`)"
+      - "traefik.http.routers.ui.entrypoints=websecure"
+      - "traefik.http.routers.ui.tls=true"
+      # Adapter 'letsencrypt' au nom du certresolver défini dans votre Traefik existant
+      - "traefik.http.routers.ui.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ui.service=ui"
+      - "traefik.http.services.ui.loadbalancer.server.port=3000"
+      # ── OCPP WebSocket WSS (TLS terminé par Traefik, port 443) ──
+      - "traefik.http.routers.ocpp-wss.rule=Host(`ws.cpadmin.local`)"
+      - "traefik.http.routers.ocpp-wss.entrypoints=websecure"
+      - "traefik.http.routers.ocpp-wss.tls=true"
+      # Adapter 'letsencrypt' au nom du certresolver défini dans votre Traefik existant
+      - "traefik.http.routers.ocpp-wss.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.ocpp-wss.service=ocpp-ws"
+      # ── OCPP WebSocket WS (non chiffré, port 80) ──
+      - "traefik.http.routers.ocpp-ws.rule=Host(`ws.cpadmin.local`)"
+      - "traefik.http.routers.ocpp-ws.entrypoints=web"
+      - "traefik.http.routers.ocpp-ws.service=ocpp-ws"
+      - "traefik.http.services.ocpp-ws.loadbalancer.server.port=9000"
+
+  # ── Serveur FTP pour les diagnostics de bornes ─────────────
+  ftp:
+    image: delfer/alpine-ftp-server
+    container_name: ocpp-ftp
+    restart: unless-stopped
+    ports:
+      - "21:21"
+      - "21000-21010:21000-21010"
+    environment:
+      - USERS=ocpp|changeme
+      - ADDRESS=ftp.cpadmin.local
+      - MIN_PORT=21000
+      - MAX_PORT=21010
+      - ADDED_FLAGS= --dirlist_enable=NO --download_enable=NO --delete_enable=NO
+    volumes:
+      - ./data/ftp:/ftp/ocpp
+    labels:
+      - "traefik.enable=false"
+
+networks:
+  traefik:
+    external: true
