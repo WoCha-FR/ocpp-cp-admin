@@ -686,6 +686,12 @@
       "title": "Diagnostics upload result – {{cp_name}}",
       "body": "The result is: {{status}}."
     },
+    "firmware_status": {
+      "eLabel": "Firmware update status",
+      "eDesc" : "Firmware update result from a chargepoint",
+      "title": "Firmware update – {{cp_name}}",
+      "body": "The status is: {{status}}."
+    },
     "init_config_result": {
       "eLabel": "Init config result",
       "eDesc": "Result of the initialization configuration sequence for a chargepoint",

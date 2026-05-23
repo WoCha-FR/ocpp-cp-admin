@@ -839,6 +839,7 @@ L'application implémente le protocole OCPP 1.6-J (JSON sur WebSocket) pour la c
 | **MeterValues** | Données de comptage temps réel (énergie, puissance, courant, SOC) |
 | **DataTransfer** | Échange de données propriétaires constructeur |
 | **DiagnosticsStatusNotification** | Statut de l'upload de diagnostics |
+| **FirmwareStatusNotification** | Statut d'avancement de la mise à jour firmware |
 
 #### Serveur → Borne (commandes distantes)
 

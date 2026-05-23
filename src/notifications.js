@@ -41,6 +41,10 @@ const EVENT_DEFINITIONS = {
     roles: ['admin'],
     defaultChannels: ['email'],
   },
+  firmware_status: {
+    roles: ['admin'],
+    defaultChannels: ['email'],
+  },
   init_config_result: {
     roles: ['admin'],
     defaultChannels: ['email'],

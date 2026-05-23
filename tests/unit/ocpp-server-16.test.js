@@ -1026,6 +1026,47 @@ describe('ocpp-server-16 — DiagnosticsStatusNotification', () => {
   });
 });
 
+// ── FirmwareStatusNotification ──
+describe('ocpp-server-16 — FirmwareStatusNotification', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1' });
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('returns empty object', () => {
+    const result = client._handlers['FirmwareStatusNotification']({ status: 'Installed' });
+    expect(result).toEqual({});
+  });
+
+  it('always broadcasts on any status', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
+    expect(mockBroadcast).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'Downloading' }));
+  });
+
+  it('notifies on Installed', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Installed' });
+    expect(mockNotifications.emit).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'Installed' }));
+  });
+
+  it('notifies on InstallationFailed', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'InstallationFailed' });
+    expect(mockNotifications.emit).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'InstallationFailed' }));
+  });
+
+  it('notifies on DownloadFailed', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'DownloadFailed' });
+    expect(mockNotifications.emit).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'DownloadFailed' }));
+  });
+
+  it('does not notify on intermediate status', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
+    expect(mockNotifications.emit).not.toHaveBeenCalled();
+  });
+});
+
 // ── StateRefresh (TriggerMessage on reconnect without BootNotification) ──
 describe('ocpp-server-16 — StateRefresh TriggerMessage', () => {
   beforeEach(() => {

@@ -384,7 +384,9 @@ function createOCPPServerBase(options = {}) {
     if (pendingOffline !== undefined) {
       clearTimeout(pendingOffline);
       pendingOfflineNotifs.delete(identity);
-      logger.debug(`[${identity}] Reconnexion dans la période de grâce — notifications online/offline supprimées`);
+      logger.debug(
+        `[${identity}] Reconnexion dans la période de grâce — notifications online/offline supprimées`
+      );
     } else {
       const cpForNotif = db.getChargepointByIdentity(identity);
       notifications

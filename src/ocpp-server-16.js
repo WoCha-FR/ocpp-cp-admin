@@ -646,7 +646,9 @@ function register16Handlers(client, loggedHandle) {
     const authResult = db.authorizeIdTag(params.idTag, siteId);
 
     if (cp && cp.mode === 3) {
-      logger.info(`Authorize result for ${identity}: Accepted (free mode, raw DB: ${authResult.status})`);
+      logger.info(
+        `Authorize result for ${identity}: Accepted (free mode, raw DB: ${authResult.status})`
+      );
       return { idTagInfo: { status: 'Accepted' } };
     }
 
@@ -1026,24 +1028,51 @@ function register16Handlers(client, loggedHandle) {
     return {};
   });
 
+  // ── FirmwareStatusNotification ──
+  loggedHandle('FirmwareStatusNotification', (params) => {
+    broadcast('firmware_status', { identity, status: params.status });
+    if (
+      params.status === 'Installed' ||
+      params.status === 'InstallationFailed' ||
+      params.status === 'DownloadFailed'
+    ) {
+      const updatedCp = db.getChargepointByIdentity(identity);
+      notifications
+        .emit('firmware_status', {
+          identity,
+          status: params.status,
+          cp_name: updatedCp ? updatedCp.cpname : null,
+          site_name: updatedCp ? updatedCp.site_name : null,
+        })
+        .catch(() => {});
+    }
+    return {};
+  });
+
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {
     const refreshTimer = setTimeout(async () => {
       const current = db.getChargepointByIdentity(identity);
       if (!current || !current.connected || current.cpstatus) return;
 
-      logger.info(`[StateRefresh] ${identity}: reconnecté sans BootNotification, envoi TriggerMessage`);
+      logger.info(
+        `[StateRefresh] ${identity}: reconnecté sans BootNotification, envoi TriggerMessage`
+      );
       try {
         await callClient16(identity, 'TriggerMessage', { requestedMessage: 'BootNotification' });
       } catch (e) {
-        logger.warn(`[StateRefresh] ${identity}: TriggerMessage(BootNotification) échoué: ${e.message}`);
+        logger.warn(
+          `[StateRefresh] ${identity}: TriggerMessage(BootNotification) échoué: ${e.message}`
+        );
         return;
       }
 
       try {
         await callClient16(identity, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
       } catch (e) {
-        logger.warn(`[StateRefresh] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`);
+        logger.warn(
+          `[StateRefresh] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`
+        );
       }
     }, 8000);
 

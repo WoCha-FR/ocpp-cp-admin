@@ -686,6 +686,12 @@
       "title": "Résultat upload diagnostics – {{cp_name}}",
       "body": "Le résultat est : {{status}}."
     },
+    "firmware_status": {
+      "eLabel": "Statut mise à jour firmware",
+      "eDesc": "Résultat de la mise à jour firmware d'une borne",
+      "title": "Mise à jour firmware – {{cp_name}}",
+      "body": "Le statut est : {{status}}."
+    },
     "init_config_result": {
       "eLabel": "Résultat config initiale",
       "eDesc": "Résultat de la séquence de configuration initiale d'une borne",

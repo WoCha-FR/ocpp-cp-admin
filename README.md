@@ -844,6 +844,7 @@ The application implements the OCPP 1.6-J protocol (JSON over WebSocket) for com
 | **MeterValues** | Real-time metering data (energy, power, current, SOC) |
 | **DataTransfer** | Vendor-specific data exchange |
 | **DiagnosticsStatusNotification** | Diagnostics upload status |
+| **FirmwareStatusNotification** | Firmware update progress status |
 
 #### Server → Charge Point (remote commands)
 
