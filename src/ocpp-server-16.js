@@ -809,7 +809,6 @@ function register16Handlers(client, loggedHandle) {
 
   // ── StopTransaction ──
   loggedHandle('StopTransaction', (params) => {
-    logger.info(`StopTransaction from ${identity} #${params.connectorId}`);
     db.stopTransaction(params.transactionId, params.meterStop, params.timestamp, params.reason);
 
     broadcast('transaction_stop', {
@@ -820,6 +819,7 @@ function register16Handlers(client, loggedHandle) {
     });
 
     const stoppedTx = db.getTransactionByTransactionId(params.transactionId);
+    logger.info(`StopTransaction from ${identity} #${stoppedTx?.connector_id ?? '?'}`);
     if (stoppedTx) {
       const cpForTx = db.getChargepointById(stoppedTx.chargepoint_id);
       if (cpForTx && params.meterStop != null) {
