@@ -20,7 +20,7 @@ jobs:
 
       - run: npm ci
 
-      - run: npm run lint && npm run format:check
+      - run: npm run lint:check && npm run format:check
 
       - run: npm run audit:secrets
 
