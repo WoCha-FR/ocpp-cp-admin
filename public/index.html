@@ -966,7 +966,8 @@ async function renderDashboard() {
   document.getElementById('topbarActions').innerHTML = '';
   try {
     const stats = await api('GET', '/dashboard');
-    const transactions = await api('GET', '/transactions?status=Active');
+    const txResponse = await api('GET', '/transactions?status=Active');
+    const transactions = txResponse.data ?? [];
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
