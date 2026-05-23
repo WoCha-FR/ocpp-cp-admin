@@ -462,14 +462,24 @@ const OcppMessagesQuery = {
   date_from: {
     in: ['query'],
     optional: true,
-    matches: { options: /^\d{4}-\d{2}-\d{2}$/ },
-    errorMessage: 'VALIDATION_DATE_FROM',
+    custom: {
+      options: (v) => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v))
+          return true;
+        throw new Error('VALIDATION_DATE_FROM');
+      },
+    },
   },
   date_to: {
     in: ['query'],
     optional: true,
-    matches: { options: /^\d{4}-\d{2}-\d{2}$/ },
-    errorMessage: 'VALIDATION_DATE_TO',
+    custom: {
+      options: (v) => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v))
+          return true;
+        throw new Error('VALIDATION_DATE_TO');
+      },
+    },
   },
 };
 

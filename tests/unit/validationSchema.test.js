@@ -317,6 +317,11 @@ describe('validationSchema — OcppMessagesQuery', () => {
     expect(result.isEmpty()).toBe(true);
   });
 
+  it('passes with date_from and date_to as datetime strings', async () => {
+    const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { date_from: '2026-05-20 00:00:00', date_to: '2026-05-20 23:59:59' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
   it('fails with invalid date_from format', async () => {
     const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { date_from: 'not-a-date' });
     expect(result.isEmpty()).toBe(false);
