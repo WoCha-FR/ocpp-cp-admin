@@ -1890,6 +1890,7 @@ async function renderDetailTabTransactions(cp) {
     altInput: true,
     altFormat: lc.dateFormat,
     locale: getFlatpickrLocaleOption(lc),
+    maxDate: 'today',
     onChange: () => applyCpTxFilters(cp),
   };
   flatpickr('#cpTxFilterFrom', { ...fpCpTxOpts, defaultDate: cpTxFilters.from || 'today' });
@@ -2020,6 +2021,7 @@ async function renderDetailTabLogs(cp) {
     altInput: true,
     altFormat: lc.dateFormat,
     locale: getFlatpickrLocaleOption(lc),
+    maxDate: 'today',
     onChange: () => applyCpLogFilters(cp.id, cp.identity),
   };
   flatpickr('#cpLogFilterDateFrom', { ...fpLogOpts, defaultDate: cpLogsFilters.date_from || 'today' });
@@ -2474,7 +2476,7 @@ async function showCreateProfileModal(cpId, isOnline) {
   `);
   // Init flatpickr on date fields
   const lc = getLocaleConfig();
-  const fpOpts = { enableTime: true, dateFormat: 'Z', altInput: true, altFormat: lc.dateTimeFormat, time_24hr: true, locale: getFlatpickrLocaleOption(lc) };
+  const fpOpts = { enableTime: true, dateFormat: 'Z', altInput: true, altFormat: lc.dateTimeFormat, time_24hr: true, locale: getFlatpickrLocaleOption(lc), minDate: new Date() };
   flatpickr('#cp_valid_from', fpOpts);
   flatpickr('#cp_valid_to', fpOpts);
   // Init conditional display
@@ -3310,7 +3312,8 @@ async function showCreateIdTagModal() {
     altInput: true,
     altFormat: lc.dateTimeFormat,
     time_24hr: true,
-    locale: getFlatpickrLocaleOption(lc)
+    locale: getFlatpickrLocaleOption(lc),
+    minDate: new Date()
   });
 }
 
@@ -3926,6 +3929,7 @@ async function renderTransactions(keepState = false) {
       altInput: true,
       altFormat: lc.dateFormat,
       locale: getFlatpickrLocaleOption(lc),
+      maxDate: 'today',
       onChange: function () { applyTxFilters(); }
     };
     flatpickr('#txFilterFrom', { ...fpOpts, defaultDate: txFilters.from || null });
@@ -4141,6 +4145,7 @@ async function renderMyTransactions(keepState = false) {
       altInput: true,
       altFormat: lc.dateFormat,
       locale: getFlatpickrLocaleOption(lc),
+      maxDate: 'today',
       defaultDate: null,
       onChange: function () { applyMyTxFilters(); }
     };
