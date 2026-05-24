@@ -16,8 +16,6 @@ module.exports = defineConfig({
   },
   workers: 1,
   retries: 0,
-  projects: [
-    { name: 'chromium', use: { browserName: 'chromium' } },
-  ],
+  projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
   reporter: [['html', { open: 'never' }]],
 });

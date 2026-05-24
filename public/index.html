@@ -2229,7 +2229,7 @@ async function loadReservations(cpId) {
               <tr>
                 <td>${r.connector_id}</td>
                 <td>${escapeHtml(r.id_tag)}</td>
-                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.expiry_date)}</td>
+                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDateShort(r.expiry_date)}</td>
                 <td><span class="badge ${reservationBadgeClass(r.status)}">${r.status}</span></td>
                 <td class="text-muted" style="font-size:12px">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
                 <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.created_at)}</td>
@@ -3235,7 +3235,7 @@ async function renderIdTags(tab, keepState = false) {
                     ? tag.user_sites.map(s => `<span class="badge badge-green">${escapeHtml(s.site_name)}</span>`).join(' ')
                     : (tag.user_id ? '<span class="text-muted">-</span>' : `<span class="badge badge-yellow">${t('filters.all')}</span>`))}</td>
                 <td>${tag.description ? escapeHtml(tag.description) : '<span class="text-muted">-</span>'}</td>
-                <td>${tag.expiry_date ? formatDate(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
+                <td>${tag.expiry_date ? formatDateShort(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
                 <td class="text-muted">${formatDate(tag.created_at)}</td>
                 <td><div class="flex-gap">
                   ${!canEditTag(tag) ? (isAutoTag(tag) ? `<span class="badge badge-yellow" title="${t('idtags.rfVirtualHint')}">${t('idtags.rfVirtual')}</span>` : '') : `
@@ -3576,7 +3576,7 @@ async function renderUsers() {
                 <td>${u.shortname ? escapeHtml(u.shortname) : '<span class="text-muted">-</span>'}</td>
                 <td>${formatRoleColumn(u)}</td>
                 <td>${formatUserSites(u.sites)}</td>
-                <td class="text-muted">${formatDate(u.created_at)}</td>
+                <td class="text-muted">${formatDateShort(u.created_at)}</td>
                 <td class="text-muted">${u.last_login ? formatDate(u.last_login) : '<span class="text-muted">-</span>'}</td>
                 <td>
                   <button class="btn btn-indigo btn-sm" data-onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
@@ -5417,7 +5417,7 @@ async function renderSites() {
               <td style="font-weight:500">${escapeHtml(s.sname)}</td>
               <td>${s.address ? escapeHtml(s.address) : '-'}</td>
               <td>${cpCount}</td>
-              <td class="text-muted">${formatDate(s.created_at)}</td>
+              <td class="text-muted">${formatDateShort(s.created_at)}</td>
               <td>
                 ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, '${escapeAttr(s.sname)}')">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>
@@ -5785,6 +5785,15 @@ function formatDate(str) {
     const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str) ? str.replace(' ', 'T') + 'Z' : str;
     const d = new Date(normalized);
     return d.toLocaleString(lc.dateFns, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch { return str; }
+}
+function formatDateShort(str) {
+  const lc = getLocaleConfig();
+  if (!str) return '-';
+  try {
+    const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str) ? str.replace(' ', 'T') + 'Z' : str;
+    const d = new Date(normalized);
+    return d.toLocaleString(lc.dateFns, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   } catch { return str; }
 }
 function formatDuree(minutes) {
