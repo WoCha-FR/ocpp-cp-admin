@@ -60,7 +60,8 @@ test.describe('Tags RFID', () => {
     await expect(page.locator('#editTagExpiry')).toHaveValue('');
 
     // Nettoyage
-    await page.keyboard.press('Escape');
+    await page.locator('#modalContent [data-onclick="closeModal()"]').click();
+    await expect(page.locator('#modalOverlay')).toBeHidden({ timeout: 5000 });
     await row.locator('[data-onclick*="deleteIdTag"]').click();
     await page.locator('#confirmBtnOk').click();
     await expect(page.locator('#pageContent').getByText(tagId)).toBeHidden({ timeout: 8000 });
