@@ -829,6 +829,41 @@ describe('ocpp-server-16 — MeterValues', () => {
     const txUpdatedCalls = mockBroadcast.mock.calls.filter((c) => c[0] === 'transaction_updated');
     expect(txUpdatedCalls).toHaveLength(0);
   });
+
+  it('broadcasts chargepoint_meter_update when energy measurand is present', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: null, meter_value: 2000 });
+    client._handlers['MeterValues']({
+      connectorId: 0,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [
+            { measurand: 'Energy.Active.Import.Register', value: '2000', unit: 'Wh' },
+          ],
+        },
+      ],
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'chargepoint_meter_update',
+      { identity: 'CP001', meter_value: 2000 },
+      null
+    );
+  });
+
+  it('does not broadcast chargepoint_meter_update when no energy measurand', () => {
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [{ measurand: 'Power.Active.Import', value: '3.0', unit: 'kW' }],
+        },
+      ],
+    });
+    const calls = mockBroadcast.mock.calls.filter((c) => c[0] === 'chargepoint_meter_update');
+    expect(calls).toHaveLength(0);
+  });
 });
 
 // ── DataTransfer ──

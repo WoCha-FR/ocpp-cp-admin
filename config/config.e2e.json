@@ -1,0 +1,70 @@
+{
+  "loglevel": "error",
+  "language": "fr",
+  "dbname": "e2e.db",
+  "cpoName": "CP Admin E2E",
+  "webui": {
+    "httpHost": "localhost",
+    "httpPort": 3099,
+    "trustProxy": false,
+    "publicUrl": "http://localhost:3099",
+    "sessionSecret": "e2e-test-secret-fixed-for-playwright-do-not-use-in-production",
+    "https": {
+      "enabled": false,
+      "httpsPort": 3100,
+      "certFile": "certs/server.crt",
+      "keyFile": "certs/server.key"
+    }
+  },
+  "ocpp": {
+    "host": "0.0.0.0",
+    "wsPort": 9099,
+    "v16": { "enabled": true },
+    "v201": { "enabled": false },
+    "strictMode": false,
+    "callTimeoutSeconds": 45,
+    "autoAddUnknownChargepoints": false,
+    "pendingUnknownChargepoints": false,
+    "ocppWsUrl": "ws://localhost:9099",
+    "diagnosticsLocation": "",
+    "wss": {
+      "enabled": false,
+      "wssPort": 9100,
+      "strictClientCert": false,
+      "ocppWsUrl": "wss://localhost:9100",
+      "rsa": { "certFile": "", "keyFile": "" },
+      "ecdsa": { "certFile": "", "keyFile": "" },
+      "caFile": ""
+    }
+  },
+  "notifs": {
+    "authRejectThreshold": 3,
+    "authRejectWindowMinutes": 5,
+    "flapThreshold": 4,
+    "flapWindowMinutes": 2,
+    "refusedCooldownMinutes": 60,
+    "reconnectGracePeriodSeconds": 60,
+    "mail": {
+      "enabled": false,
+      "from": "CPADMIN <noreply@cpadmin.local>",
+      "transport": {
+        "host": "smtp.cpadmin.local",
+        "port": 587,
+        "secure": false,
+        "auth": { "user": "", "pass": "" }
+      }
+    },
+    "webpush": {
+      "enabled": false,
+      "vapidSubject": "",
+      "vapidPublicKey": "",
+      "vapidPrivateKey": ""
+    },
+    "pushover": { "enabled": false },
+    "defaultDisabledEvents": []
+  },
+  "auth": {
+    "google": { "enabled": false, "client_id": "", "client_secret": "" }
+  },
+  "metrics": { "bearerToken": "" }
+}

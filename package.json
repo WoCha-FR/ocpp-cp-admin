@@ -5,20 +5,23 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
+    "backup": "node scripts/backup.js",
     "start-dev": "cross-env NODE_ENV=development node src/server.js",
     "start-watch": "cross-env NODE_ENV=development node --watch src/server.js",
     "lint:fix": "eslint src/ --fix",
     "format:fix": "prettier --write \"src/**/*.js\" \"*.json\" \"*.js\"",
-    "lint:check": "eslint src/",
-    "format:check": "prettier --check \"src/**/*.js\" \"*.json\" \"*.js\"",
-    "backup": "node scripts/backup.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:ci": "jest --coverage --ci --forceExit",
+    "pretest:e2e": "node -e \"const fs=require('fs'),p=require('path');['e2e.db','e2e.db-shm','e2e.db-wal'].forEach(f=>fs.rmSync(p.join('config',f),{force:true}))\"",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "audit:secrets": "secretlint \"**/*\"",
-    "audit:deps": "npm audit --audit-level=high"
-  },
+    "audit:deps": "npm audit --audit-level=high",
+    "lint:check": "eslint src/",
+    "format:check": "prettier --check \"src/**/*.js\" \"*.json\" \"*.js\""
+ },
   "homepage": "https://github.com/WoCha-FR/ocpp-cp-admin#readme",
   "bugs": {
     "url": "https://github.com/WoCha-FR/ocpp-cp-admin/issues"
@@ -68,6 +71,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.60.0",
     "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
     "cross-env": "^10.1.0",
     "eslint": "^10.4.0",

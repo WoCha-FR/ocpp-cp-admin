@@ -21,3 +21,5 @@ config/legal/*.md
 
 # Tests et couverture
 coverage/
+playwright-report/
+test-results/

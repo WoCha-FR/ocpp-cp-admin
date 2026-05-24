@@ -9,15 +9,16 @@ let config = null;
 let configDir = null;
 
 function resolveConfigPath() {
-  // Priorité 1 : config.dev.json si NODE_ENV=development
-  if (process.env.NODE_ENV === 'development') {
-    const devFile = path.join(CONFIG_DIR_DEFAULT, 'config.dev.json');
-    if (fs.existsSync(devFile)) {
-      return { file: devFile, dir: CONFIG_DIR_DEFAULT };
+  const env = process.env.NODE_ENV;
+  if (env && env !== 'production') {
+    const envFile = path.join(CONFIG_DIR_DEFAULT, `config.${env}.json`);
+    if (fs.existsSync(envFile)) {
+      return { file: envFile, dir: CONFIG_DIR_DEFAULT };
     }
-    logger.warn('config/config.dev.json not found, fallback on config/config.json');
+    if (env === 'development') {
+      logger.warn('config/config.dev.json not found, fallback on config/config.json');
+    }
   }
-  // Priorité 2 : config/config.json (défaut)
   return { file: path.join(CONFIG_DIR_DEFAULT, 'config.json'), dir: CONFIG_DIR_DEFAULT };
 }
 
