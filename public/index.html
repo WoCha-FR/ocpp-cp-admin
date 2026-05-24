@@ -876,6 +876,10 @@ function refreshCurrentPage(force = false) {
   if (!force && STATIC_PAGES.has(currentPage)) return;
   if (currentPage === 'chargepointdetail' && currentDetailCpId) {
     showChargepointDetail(currentDetailCpId, currentDetailTab);
+  } else if (currentPage === 'transactions') {
+    renderTransactions(true);
+  } else if (currentPage === 'mytransactions') {
+    renderMyTransactions(true);
   } else {
     navigate(currentPage, true);
   }
