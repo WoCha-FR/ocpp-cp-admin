@@ -843,7 +843,10 @@ function handleRealtimeEvent(type, data) {
       if (shouldRefreshDetail('meter_values', data.identity, null)) refreshCurrentPage();
       break;
     case 'ocpp_message':
-      if (currentPage === 'chargepointdetail' && currentDetailTab === 'logs' && data.identity === currentDetailCpIdentity) refreshCurrentPage();
+      if (currentPage === 'chargepointdetail' && currentDetailTab === 'logs' && data.identity === currentDetailCpIdentity) {
+        const today = _today();
+        if (!cpLogsFilters.date_to || cpLogsFilters.date_to >= today) refreshCurrentPage();
+      }
       break;
     case 'chargepoint_config_update':
       // Ne pas rafraîchir toute la page, juste la config si on est sur le détail
