@@ -1941,6 +1941,7 @@ router.put(
     // Préserver les valeurs null explicites (matchedData les exclut à cause de optional+nullable)
     if (req.body.site_id === null && data.site_id === undefined) data.site_id = null;
     if (req.body.user_id === null && data.user_id === undefined) data.user_id = null;
+    if (req.body.expiry_date === null && data.expiry_date === undefined) data.expiry_date = null;
     // Un manager ne peut pas changer le site du tag vers un site qu'il ne gère pas
     if (req.user.role !== 'admin') {
       if (!data.site_id) {

@@ -36,6 +36,36 @@ test.describe('Tags RFID', () => {
     await expect(page.locator('#pageContent').getByText(tagId)).toBeVisible();
   });
 
+  test('peut effacer la date d\'expiration d\'un tag RFID', async ({ loggedInPage: page }) => {
+    const tagId = `E2EEXP${Date.now()}`;
+
+    // Créer un tag avec une date d'expiration
+    await page.locator('[data-onclick="showCreateIdTagModal()"]').click();
+    await page.fill('#tagIdTag', tagId);
+    await page.locator('#tagExpiry').evaluate(el => el._flatpickr.setDate('2030-12-31'));
+    await page.locator('[data-onclick="withBtn(this, createIdTag)"]').click();
+    await expect(page.locator('#tagIdTag')).toBeHidden({ timeout: 5000 });
+    await expect(page.locator('#pageContent').getByText(tagId)).toBeVisible({ timeout: 8000 });
+
+    // Ouvrir le formulaire d'édition et vider la date
+    const row = page.locator('#pageContent table tbody tr', { hasText: tagId });
+    await row.locator('[data-onclick*="showEditIdTagModal"]').click();
+    await expect(page.locator('#editTagIdTag')).toBeVisible({ timeout: 5000 });
+    await page.locator('#editTagExpiry').evaluate(el => el._flatpickr.clear());
+    await page.locator('[data-onclick*="updateIdTag"]').click();
+    await expect(page.locator('#editTagIdTag')).toBeHidden({ timeout: 5000 });
+
+    // Vérifier que la date a bien été supprimée
+    await row.locator('[data-onclick*="showEditIdTagModal"]').click();
+    await expect(page.locator('#editTagExpiry')).toHaveValue('');
+
+    // Nettoyage
+    await page.keyboard.press('Escape');
+    await row.locator('[data-onclick*="deleteIdTag"]').click();
+    await page.locator('#confirmBtnOk').click();
+    await expect(page.locator('#pageContent').getByText(tagId)).toBeHidden({ timeout: 8000 });
+  });
+
   test('peut supprimer un tag RFID', async ({ loggedInPage: page }) => {
     // Créer un tag à supprimer
     const tagId = `E2EDEL${Date.now()}`;
