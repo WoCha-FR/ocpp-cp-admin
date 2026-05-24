@@ -31,7 +31,11 @@ const mockDb = {
   getChargepointOverrideConfigs: jest.fn(() => []),
   getChargingProfiles: jest.fn(() => []),
   activateReservationByConnector: jest.fn(),
-  expireReservationByConnector: jest.fn(),
+  expireActiveReservationByConnector: jest.fn(),
+  fulfillInUseReservationByConnector: jest.fn(),
+  startUsingReservationByConnectorAndIdTag: jest.fn(() => 0),
+  getReservationByOcppId: jest.fn(),
+  fulfillReservationByConnectorAndIdTag: jest.fn(() => 0),
   updateTransactionChargingState: jest.fn(),
 };
 
@@ -674,6 +678,63 @@ describe('ocpp-server-16 — StopTransaction', () => {
     });
     expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 2, 6000);
   });
+
+  it('calls fulfillReservationByConnectorAndIdTag when InUse reservation matches', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      chargepoint_id: 1,
+      connector_id: 1,
+      id_tag: 'TAG001',
+      meter_start: 0,
+      meter_stop: 3000,
+      start_time: new Date(Date.now() - 1800000).toISOString(),
+      stop_time: new Date().toISOString(),
+    });
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.fulfillReservationByConnectorAndIdTag.mockReturnValue(1);
+
+    client._handlers['StopTransaction']({
+      transactionId: 42,
+      meterStop: 3000,
+      timestamp: new Date().toISOString(),
+      reason: 'Local',
+    });
+
+    expect(mockDb.fulfillReservationByConnectorAndIdTag).toHaveBeenCalledWith(1, 1, 'TAG001');
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'reservation_updated',
+      { chargepoint_id: 1 },
+      expect.anything()
+    );
+  });
+
+  it('does not broadcast reservation_updated when no InUse reservation matched', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      chargepoint_id: 1,
+      connector_id: 1,
+      id_tag: 'TAG001',
+      meter_start: 0,
+      meter_stop: 3000,
+      start_time: new Date(Date.now() - 1800000).toISOString(),
+      stop_time: new Date().toISOString(),
+    });
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.fulfillReservationByConnectorAndIdTag.mockReturnValue(0);
+
+    client._handlers['StopTransaction']({
+      transactionId: 42,
+      meterStop: 3000,
+      timestamp: new Date().toISOString(),
+      reason: 'Local',
+    });
+
+    expect(mockDb.fulfillReservationByConnectorAndIdTag).toHaveBeenCalledWith(1, 1, 'TAG001');
+    const reservationBroadcasts = mockBroadcast.mock.calls.filter(
+      (c) => c[0] === 'reservation_updated'
+    );
+    expect(reservationBroadcasts).toHaveLength(0);
+  });
 });
 
 // ── MeterValues ──
@@ -992,20 +1053,32 @@ describe('ocpp-server-16 — StatusNotification reservation sync', () => {
     });
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Reserved', errorCode: 'NoError' });
     expect(mockDb.activateReservationByConnector).toHaveBeenCalledWith(1, 1);
-    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
   });
 
-  it.each(['Available', 'Faulted', 'Unavailable', 'Finishing'])(
-    'calls expireReservationByConnector when status=%s',
+  it.each(['Available', 'Faulted', 'Unavailable'])(
+    'calls expireActiveReservationByConnector and fulfillInUseReservationByConnector when status=%s',
     (status) => {
       mockDb.getChargepointByIdentity.mockReturnValue({
         id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 0,
       });
       client._handlers['StatusNotification']({ connectorId: 1, status, errorCode: 'NoError' });
-      expect(mockDb.expireReservationByConnector).toHaveBeenCalledWith(1, 1);
+      expect(mockDb.expireActiveReservationByConnector).toHaveBeenCalledWith(1, 1);
+      expect(mockDb.fulfillInUseReservationByConnector).toHaveBeenCalledWith(1, 1);
       expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
     }
   );
+
+  it('does not call any reservation function when status=Finishing', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 0,
+    });
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Finishing', errorCode: 'NoError' });
+    expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.fulfillInUseReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.startUsingReservationByConnectorAndIdTag).not.toHaveBeenCalled();
+  });
 
   it('does not call reservation functions for connectorId=0', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({
@@ -1013,17 +1086,33 @@ describe('ocpp-server-16 — StatusNotification reservation sync', () => {
     });
     client._handlers['StatusNotification']({ connectorId: 0, status: 'Reserved', errorCode: 'NoError' });
     expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
-    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
   });
 
-  it('does not call reservation functions for status=Charging (not in trigger list)', () => {
+  it('does not call startUsingReservationByConnectorAndIdTag when Charging but no active transaction', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({
       id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 1,
     });
+    mockDb.getActiveTransactionByConnector.mockReturnValue(null);
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
     expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
-    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.startUsingReservationByConnectorAndIdTag).not.toHaveBeenCalled();
   });
+
+  it.each(['Charging', 'SuspendedEV', 'SuspendedEVSE'])(
+    'calls startUsingReservationByConnectorAndIdTag when status=%s and active transaction found',
+    (status) => {
+      mockDb.getChargepointByIdentity.mockReturnValue({
+        id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 1,
+      });
+      mockDb.getActiveTransactionByConnector.mockReturnValue({ id_tag: 'TAG001' });
+      client._handlers['StatusNotification']({ connectorId: 1, status, errorCode: 'NoError' });
+      expect(mockDb.startUsingReservationByConnectorAndIdTag).toHaveBeenCalledWith(1, 1, 'TAG001');
+      expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
+      expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
+    }
+  );
 });
 
 // ── StatusNotification — charging_state ──

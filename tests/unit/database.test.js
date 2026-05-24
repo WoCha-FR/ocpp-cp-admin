@@ -435,7 +435,7 @@ describe('database — Reservations CRUD', () => {
     expect(db.getNextReservationId(cpId)).toBe(1);
   });
 
-  it('expireReservationByConnector sets Pending/Active → Expired', () => {
+  it('expireActiveReservationByConnector sets Pending → Expired', () => {
     const id = db.createReservation({
       chargepoint_id: cpId,
       connector_id: 2,
@@ -444,11 +444,11 @@ describe('database — Reservations CRUD', () => {
       expiry_date: EXPIRY,
       created_by: userId,
     });
-    db.expireReservationByConnector(cpId, 2);
+    db.expireActiveReservationByConnector(cpId, 2);
     expect(db.getReservationById(id).status).toBe('Expired');
   });
 
-  it('expireReservationByConnector also expires Active reservations', () => {
+  it('expireActiveReservationByConnector also expires Active reservations', () => {
     const id = db.createReservation({
       chargepoint_id: cpId,
       connector_id: 3,
@@ -459,8 +459,92 @@ describe('database — Reservations CRUD', () => {
     });
     db.activateReservationByConnector(cpId, 3);
     expect(db.getReservationById(id).status).toBe('Active');
-    db.expireReservationByConnector(cpId, 3);
+    db.expireActiveReservationByConnector(cpId, 3);
     expect(db.getReservationById(id).status).toBe('Expired');
+  });
+
+  it('expireActiveReservationByConnector does not expire InUse reservations', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 4,
+      reservation_id: 3,
+      id_tag: 'TAG004',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 4);
+    db.startUsingReservationByConnectorAndIdTag(cpId, 4, 'TAG004');
+    expect(db.getReservationById(id).status).toBe('InUse');
+    db.expireActiveReservationByConnector(cpId, 4);
+    expect(db.getReservationById(id).status).toBe('InUse');
+  });
+
+  it('startUsingReservationByConnectorAndIdTag sets Active → InUse only when idTag matches', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 5,
+      reservation_id: 4,
+      id_tag: 'TAG005',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 5);
+    const changed = db.startUsingReservationByConnectorAndIdTag(cpId, 5, 'WRONG_TAG');
+    expect(changed).toBe(0);
+    expect(db.getReservationById(id).status).toBe('Active');
+    const changed2 = db.startUsingReservationByConnectorAndIdTag(cpId, 5, 'TAG005');
+    expect(changed2).toBe(1);
+    expect(db.getReservationById(id).status).toBe('InUse');
+  });
+
+  it('fulfillReservationByConnectorAndIdTag sets InUse → Fulfilled only when idTag matches', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 6,
+      reservation_id: 5,
+      id_tag: 'TAG006',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 6);
+    db.startUsingReservationByConnectorAndIdTag(cpId, 6, 'TAG006');
+    const changed = db.fulfillReservationByConnectorAndIdTag(cpId, 6, 'WRONG_TAG');
+    expect(changed).toBe(0);
+    expect(db.getReservationById(id).status).toBe('InUse');
+    const changed2 = db.fulfillReservationByConnectorAndIdTag(cpId, 6, 'TAG006');
+    expect(changed2).toBe(1);
+    expect(db.getReservationById(id).status).toBe('Fulfilled');
+  });
+
+  it('fulfillInUseReservationByConnector sets InUse → Fulfilled regardless of idTag', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 7,
+      reservation_id: 6,
+      id_tag: 'TAG007',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 7);
+    db.startUsingReservationByConnectorAndIdTag(cpId, 7, 'TAG007');
+    db.fulfillInUseReservationByConnector(cpId, 7);
+    expect(db.getReservationById(id).status).toBe('Fulfilled');
+  });
+
+  it('getReservationByOcppId returns reservation by OCPP-level reservation_id', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 8,
+      reservation_id: 42,
+      id_tag: 'TAG008',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    const resv = db.getReservationByOcppId(cpId, 42);
+    expect(resv).toBeDefined();
+    expect(resv.id).toBe(id);
+    expect(resv.id_tag).toBe('TAG008');
+    expect(db.getReservationByOcppId(cpId, 999)).toBeUndefined();
   });
 
   it('ON DELETE CASCADE removes reservations when chargepoint is deleted', () => {

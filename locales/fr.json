@@ -248,6 +248,7 @@
     "cpReservationCancelled": "Réservation annulée",
     "cpReservationCreated": "Réservation créée",
     "cpReservationRejected": "Réservation refusée par la borne : {{status}}",
+    "cpReservationExpiryExceedsTag": "La date d'expiration de la réservation dépasse celle du badge.",
     "cpReservationStatusPending": "En attente",
     "cpReservationStatusActive": "Active",
     "cpReservationStatusInUse": "En cours d'utilisation",

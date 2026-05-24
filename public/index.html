@@ -2265,6 +2265,8 @@ async function showCreateReservationModal(cpId) {
     if (tag.user_id && tag.user_sites) return tag.user_sites.some(s => s.site_id === cp.site_id);
     return !tag.user_id;
   };
+  const now = new Date();
+  const isExpired = (tag) => tag.expiry_date && new Date(tag.expiry_date) < now;
   const visibleTags = tags.filter(tag => !isAutoTag(tag) && tag.active && tagMatchesSite(tag));
   const minExpiry = new Date(Date.now() + 60000);
   openModal(`
@@ -2277,8 +2279,11 @@ async function showCreateReservationModal(cpId) {
     </div>
     <div class="form-group">
       <label>${t('chargepoint.cpReservationIdTag')}</label>
-      <select id="resIdTag">
-        ${visibleTags.map(tag => `<option value="${escapeHtml(tag.id_tag)}">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}${tag.description ? ' — ' + escapeHtml(tag.description) : ''}</option>`).join('')}
+      <select id="resIdTag" data-onchange="onResTagChange(this)">
+        ${visibleTags.map(tag => isExpired(tag)
+          ? `<option value="${escapeHtml(tag.id_tag)}" data-expiry="${tag.expiry_date || ''}" disabled style="color:var(--text-muted)">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}${tag.description ? ' — ' + escapeHtml(tag.description) : ''} (${t('idtags.rfRespExpired')})</option>`
+          : `<option value="${escapeHtml(tag.id_tag)}" data-expiry="${tag.expiry_date || ''}">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}${tag.description ? ' — ' + escapeHtml(tag.description) : ''}</option>`
+        ).join('')}
       </select>
     </div>
     <div class="form-group">
@@ -2301,12 +2306,29 @@ async function showCreateReservationModal(cpId) {
     minDate: minExpiry,
     defaultDate: minExpiry,
   });
+  onResTagChange(document.getElementById('resIdTag'));
+}
+
+function onResTagChange(el) {
+  const tagExpiry = el?.options[el.selectedIndex]?.dataset.expiry;
+  const fp = document.getElementById('resExpiry')?._flatpickr;
+  if (!fp) return;
+  const maxDate = tagExpiry ? new Date(tagExpiry) : null;
+  fp.set('maxDate', maxDate);
+  if (maxDate && fp.selectedDates[0] && fp.selectedDates[0] > maxDate) {
+    fp.setDate(maxDate);
+  }
 }
 
 async function submitCreateReservation(cpId) {
   const connector_id = Number(document.getElementById('resConnectorId').value);
   const id_tag = document.getElementById('resIdTag').value;
   const expiry_date = new Date(document.getElementById('resExpiry').value).toISOString();
+  const tagExpiry = document.getElementById('resIdTag')?.selectedOptions[0]?.dataset.expiry;
+  if (tagExpiry && new Date(expiry_date) > new Date(tagExpiry)) {
+    toast(t('chargepoint.cpReservationExpiryExceedsTag'), 'error');
+    return;
+  }
   const result = await api('POST', `/chargepoints/${cpId}/reservations`, { connector_id, id_tag, expiry_date });
   if (result.status === 'Accepted') {
     closeModal();
@@ -2328,6 +2350,7 @@ async function cancelReservation(cpId, reservationId) {
   }
 }
 
+// ── Onglet Profils de Charge ─────────────────────────────────────────────
 function showProfileDetail(profileDbId) {
   const p = _cpProfilesById[profileDbId];
   if (!p) return;

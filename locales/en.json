@@ -248,6 +248,7 @@
     "cpReservationCancelled": "Reservation cancelled",
     "cpReservationCreated": "Reservation created",
     "cpReservationRejected": "Reservation rejected by chargepoint: {{status}}",
+    "cpReservationExpiryExceedsTag": "Reservation expiry date exceeds the badge expiry date.",
     "cpReservationStatusPending": "Pending",
     "cpReservationStatusActive": "Active",
     "cpReservationStatusInUse": "In use",
