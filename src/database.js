@@ -1976,9 +1976,37 @@ function activateReservationByConnector(chargepointId, connectorId) {
   ).run(chargepointId, connectorId);
 }
 
-function expireReservationByConnector(chargepointId, connectorId) {
+function expireActiveReservationByConnector(chargepointId, connectorId) {
   db.prepare(
     "UPDATE reservations SET status = 'Expired' WHERE chargepoint_id = ? AND connector_id = ? AND status IN ('Pending','Active')"
+  ).run(chargepointId, connectorId);
+}
+
+function getReservationByOcppId(chargepointId, ocppReservationId) {
+  return db
+    .prepare('SELECT * FROM reservations WHERE chargepoint_id = ? AND reservation_id = ?')
+    .get(chargepointId, ocppReservationId);
+}
+
+function startUsingReservationByConnectorAndIdTag(chargepointId, connectorId, idTag) {
+  return db
+    .prepare(
+      "UPDATE reservations SET status = 'InUse' WHERE chargepoint_id = ? AND connector_id = ? AND id_tag = ? AND status = 'Active'"
+    )
+    .run(chargepointId, connectorId, idTag).changes;
+}
+
+function fulfillReservationByConnectorAndIdTag(chargepointId, connectorId, idTag) {
+  return db
+    .prepare(
+      "UPDATE reservations SET status = 'Fulfilled' WHERE chargepoint_id = ? AND connector_id = ? AND id_tag = ? AND status = 'InUse'"
+    )
+    .run(chargepointId, connectorId, idTag).changes;
+}
+
+function fulfillInUseReservationByConnector(chargepointId, connectorId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Fulfilled' WHERE chargepoint_id = ? AND connector_id = ? AND status = 'InUse'"
   ).run(chargepointId, connectorId);
 }
 
@@ -2154,7 +2182,11 @@ module.exports = {
   getReservationById,
   updateReservationStatus,
   activateReservationByConnector,
-  expireReservationByConnector,
+  expireActiveReservationByConnector,
+  getReservationByOcppId,
+  startUsingReservationByConnectorAndIdTag,
+  fulfillReservationByConnectorAndIdTag,
+  fulfillInUseReservationByConnector,
   getExpiredActiveReservations,
   resetStateOnStartup,
   resetConnectorsByChargepoint,

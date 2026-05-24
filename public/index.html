@@ -2213,7 +2213,7 @@ async function loadReservations(cpId) {
       container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('chargepoint.cpReservationsNone')}</p>`;
       return;
     }
-    const reservationBadgeClass = (s) => s === 'Active' || s === 'Fulfilled' ? 'badge-green' : s === 'Pending' ? 'badge-yellow' : 'badge-gray';
+    const reservationBadgeClass = (s) => s === 'Active' || s === 'Fulfilled' ? 'badge-green' : s === 'InUse' ? 'badge-blue' : s === 'Pending' ? 'badge-yellow' : 'badge-gray';
     container.innerHTML = `
       <div style="overflow-x:auto">
         <table>
@@ -2232,7 +2232,7 @@ async function loadReservations(cpId) {
                 <td>${r.connector_id}</td>
                 <td>${escapeHtml(r.id_tag)}</td>
                 <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDateShort(r.expiry_date)}</td>
-                <td><span class="badge ${reservationBadgeClass(r.status)}">${r.status}</span></td>
+                <td><span class="badge ${reservationBadgeClass(r.status)}">${t('chargepoint.cpReservationStatus' + r.status, { defaultValue: r.status })}</span></td>
                 <td class="text-muted" style="font-size:12px">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
                 <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.created_at)}</td>
                 ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}

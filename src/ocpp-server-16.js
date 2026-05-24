@@ -482,8 +482,20 @@ function register16Handlers(client, loggedHandle) {
         if (safeStatus === 'Reserved') {
           db.activateReservationByConnector(cp.id, params.connectorId);
           broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
-        } else if (['Available', 'Faulted', 'Unavailable', 'Finishing'].includes(safeStatus)) {
-          db.expireReservationByConnector(cp.id, params.connectorId);
+        } else if (['Charging', 'SuspendedEV', 'SuspendedEVSE'].includes(safeStatus)) {
+          const activeTx = db.getActiveTransactionByConnector(cp.id, params.connectorId);
+          if (activeTx) {
+            const changed = db.startUsingReservationByConnectorAndIdTag(
+              cp.id,
+              params.connectorId,
+              activeTx.id_tag
+            );
+            if (changed > 0)
+              broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
+          }
+        } else if (['Available', 'Faulted', 'Unavailable'].includes(safeStatus)) {
+          db.expireActiveReservationByConnector(cp.id, params.connectorId);
+          db.fulfillInUseReservationByConnector(cp.id, params.connectorId);
           broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
         }
         if (cp.cpstatus === 'Unavailable') {
@@ -853,6 +865,13 @@ function register16Handlers(client, loggedHandle) {
             .catch(() => {});
         }
       }
+      if (params.reservationId != null) {
+        const reservation = db.getReservationByOcppId(cp.id, params.reservationId);
+        if (reservation && reservation.status === 'Active' && reservation.id_tag === params.idTag) {
+          db.updateReservationStatus(reservation.id, 'InUse');
+          broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
+        }
+      }
     }
 
     return {
@@ -937,6 +956,15 @@ function register16Handlers(client, loggedHandle) {
             { userId: tag.user_id }
           )
           .catch(() => {});
+      }
+      if (cpForTx && stoppedTx.id_tag) {
+        const changed = db.fulfillReservationByConnectorAndIdTag(
+          cpForTx.id,
+          stoppedTx.connector_id,
+          stoppedTx.id_tag
+        );
+        if (changed > 0)
+          broadcast('reservation_updated', { chargepoint_id: cpForTx.id }, cpForTx.site_id ?? null);
       }
     }
 
