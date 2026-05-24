@@ -112,8 +112,8 @@ describe('ocpp-server-16 — callClient16', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1 });
 
     await callClient16('CP001', 'Reset', { type: 'Soft' });
-    expect(mockBroadcast).toHaveBeenCalledWith('ocpp_message', expect.objectContaining({ message_type: 'CALL' }));
-    expect(mockBroadcast).toHaveBeenCalledWith('ocpp_message', expect.objectContaining({ message_type: 'CALLRESULT' }));
+    expect(mockBroadcast).toHaveBeenCalledWith('ocpp_message', expect.objectContaining({ message_type: 'CALL' }), null);
+    expect(mockBroadcast).toHaveBeenCalledWith('ocpp_message', expect.objectContaining({ message_type: 'CALLRESULT' }), null);
   });
 
   it('bulkUpserts config after GetConfiguration', async () => {
@@ -124,7 +124,7 @@ describe('ocpp-server-16 — callClient16', () => {
 
     await callClient16('CP002', 'GetConfiguration', {});
     expect(mockDb.bulkUpsertChargepointConfig).toHaveBeenCalledWith(2, configKey);
-    expect(mockBroadcast).toHaveBeenCalledWith('chargepoint_config_update', expect.any(Object));
+    expect(mockBroadcast).toHaveBeenCalledWith('chargepoint_config_update', expect.any(Object), null);
   });
 
   it('works when cp is null (no DB record)', async () => {
@@ -378,7 +378,7 @@ describe('ocpp-server-16 — Heartbeat', () => {
 
   it('broadcasts chargepoint_heartbeat', () => {
     client._handlers['Heartbeat']({});
-    expect(mockBroadcast).toHaveBeenCalledWith('chargepoint_heartbeat', expect.any(Object));
+    expect(mockBroadcast).toHaveBeenCalledWith('chargepoint_heartbeat', expect.any(Object), null);
   });
 });
 
@@ -1016,7 +1016,7 @@ describe('ocpp-server-16 — DiagnosticsStatusNotification', () => {
 
   it('broadcasts and notifies on Uploaded', () => {
     client._handlers['DiagnosticsStatusNotification']({ status: 'Uploaded' });
-    expect(mockBroadcast).toHaveBeenCalledWith('diagnostics_upload', expect.objectContaining({ status: 'Uploaded' }));
+    expect(mockBroadcast).toHaveBeenCalledWith('diagnostics_upload', expect.objectContaining({ status: 'Uploaded' }), null);
     expect(mockNotifications.emit).toHaveBeenCalledWith('diagnostics_upload', expect.any(Object));
   });
 
@@ -1043,7 +1043,7 @@ describe('ocpp-server-16 — FirmwareStatusNotification', () => {
 
   it('always broadcasts on any status', () => {
     client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
-    expect(mockBroadcast).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'Downloading' }));
+    expect(mockBroadcast).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'Downloading' }), null);
   });
 
   it('notifies on Installed', () => {

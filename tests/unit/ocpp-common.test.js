@@ -31,6 +31,7 @@ jest.mock('../../src/logger', () => ({
 
 const mockDb = {
   getChargepointByIdentity: jest.fn(),
+  getChargepointById: jest.fn(),
   upsertChargepoint: jest.fn(),
   getTransactions: jest.fn(() => []),
   stopTransaction: jest.fn(),
@@ -83,11 +84,18 @@ describe('ocpp-common — broadcast', () => {
     expect(() => ocppCommon.broadcast('test', {})).not.toThrow();
   });
 
-  it('calls the registered fn with serialized payload', () => {
+  it('calls the registered fn with serialized payload and null siteId', () => {
     const fn = jest.fn();
     ocppCommon.setBroadcast(fn);
     ocppCommon.broadcast('event', { x: 1 });
-    expect(fn).toHaveBeenCalledWith(JSON.stringify({ type: 'event', data: { x: 1 } }));
+    expect(fn).toHaveBeenCalledWith(JSON.stringify({ type: 'event', data: { x: 1 } }), null);
+  });
+
+  it('passes siteId as second argument to the registered fn', () => {
+    const fn = jest.fn();
+    ocppCommon.setBroadcast(fn);
+    ocppCommon.broadcast('event', { x: 1 }, 42);
+    expect(fn).toHaveBeenCalledWith(JSON.stringify({ type: 'event', data: { x: 1 } }), 42);
   });
 });
 
@@ -370,7 +378,8 @@ describe('ocpp-common — reservation cleanup watchdog', () => {
     await jest.advanceTimersByTimeAsync(60000);
 
     expect(fn).toHaveBeenCalledWith(
-      JSON.stringify({ type: 'reservation_updated', data: { chargepoint_id: 55 } })
+      JSON.stringify({ type: 'reservation_updated', data: { chargepoint_id: 55 } }),
+      null
     );
   });
 });

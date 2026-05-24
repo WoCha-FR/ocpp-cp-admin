@@ -66,8 +66,13 @@ function setBroadcast(fn) {
   wsBroadcast = fn;
 }
 
-function broadcast(type, data) {
-  if (wsBroadcast) wsBroadcast(JSON.stringify({ type, data }));
+function broadcast(type, data, siteId = null) {
+  if (wsBroadcast) wsBroadcast(JSON.stringify({ type, data }), siteId);
+}
+
+function getSiteIdByIdentity(identity) {
+  if (!identity) return null;
+  return db.getChargepointByIdentity(identity)?.site_id ?? null;
 }
 
 function getConnectedClients() {
@@ -107,36 +112,48 @@ function makeLoggedHandle(client, identity, chargepointId) {
       const params = msg.params;
       if (chargepointId) db.addOcppMessage(chargepointId, 'chargepoint', 'CALL', action, params);
       logger.debug(`Received ${action} from ${identity}: ${JSON.stringify(params)}`);
-      broadcast('ocpp_message', {
-        identity,
-        origin: 'chargepoint',
-        message_type: 'CALL',
-        action,
-        payload: params,
-      });
+      broadcast(
+        'ocpp_message',
+        {
+          identity,
+          origin: 'chargepoint',
+          message_type: 'CALL',
+          action,
+          payload: params,
+        },
+        getSiteIdByIdentity(identity)
+      );
       try {
         const result = handler(params);
         if (chargepointId) db.addOcppMessage(chargepointId, 'csms', 'CALLRESULT', action, result);
         logger.debug(`Responding to ${action} from ${identity}: ${JSON.stringify(result)}`);
-        broadcast('ocpp_message', {
-          identity,
-          origin: 'csms',
-          message_type: 'CALLRESULT',
-          action,
-          payload: result,
-        });
+        broadcast(
+          'ocpp_message',
+          {
+            identity,
+            origin: 'csms',
+            message_type: 'CALLRESULT',
+            action,
+            payload: result,
+          },
+          getSiteIdByIdentity(identity)
+        );
         return result;
       } catch (err) {
         if (chargepointId)
           db.addOcppMessage(chargepointId, 'csms', 'CALLERROR', action, { error: err.message });
         logger.error(`Error handling ${action} from csms to ${identity}: ${err.message}`);
-        broadcast('ocpp_message', {
-          identity,
-          origin: 'csms',
-          message_type: 'CALLERROR',
-          action,
-          payload: { error: err.message },
-        });
+        broadcast(
+          'ocpp_message',
+          {
+            identity,
+            origin: 'csms',
+            message_type: 'CALLERROR',
+            action,
+            payload: { error: err.message },
+          },
+          getSiteIdByIdentity(identity)
+        );
         throw err;
       }
     });
@@ -369,14 +386,14 @@ function createOCPPServerBase(options = {}) {
       connected_wss: isWSS ? 1 : 0,
       endpoint_address: client.session.remoteAddress || null,
     });
-    broadcast('chargepoint_connected', { identity });
+    broadcast('chargepoint_connected', { identity }, getSiteIdByIdentity(identity));
 
     client.on('strictValidationFailure', ({ method, error, outbound, isCall }) => {
       if (!outbound && !isCall) {
         logger.warn(
           `[${identity}] Strict mode violation on ${method}.conf: ${error?.message} — this chargepoint is not OCPP strict-mode compliant. Set ocpp.strictMode to false in the configuration to avoid errors.`
         );
-        broadcast('strict_mode_violation', { identity, method });
+        broadcast('strict_mode_violation', { identity, method }, getSiteIdByIdentity(identity));
       }
     });
 
@@ -417,25 +434,33 @@ function createOCPPServerBase(options = {}) {
     client.handle(({ method, params }) => {
       logger.warn(`OCPP method not managed ${method} from ${identity}`);
       if (chargepointId) db.addOcppMessage(chargepointId, 'chargepoint', 'CALL', method, params);
-      broadcast('ocpp_message', {
-        identity,
-        origin: 'chargepoint',
-        message_type: 'CALL',
-        action: method,
-        payload: params,
-      });
+      broadcast(
+        'ocpp_message',
+        {
+          identity,
+          origin: 'chargepoint',
+          message_type: 'CALL',
+          action: method,
+          payload: params,
+        },
+        getSiteIdByIdentity(identity)
+      );
       const err = createRPCError('NotImplemented');
       if (chargepointId)
         db.addOcppMessage(chargepointId, 'csms', 'CALLERROR', method, {
           error: 'NotImplemented',
         });
-      broadcast('ocpp_message', {
-        identity,
-        origin: 'csms',
-        message_type: 'CALLERROR',
-        action: method,
-        payload: { error: 'NotImplemented' },
-      });
+      broadcast(
+        'ocpp_message',
+        {
+          identity,
+          origin: 'csms',
+          message_type: 'CALLERROR',
+          action: method,
+          payload: { error: 'NotImplemented' },
+        },
+        getSiteIdByIdentity(identity)
+      );
       throw err;
     });
 
@@ -452,7 +477,7 @@ function createOCPPServerBase(options = {}) {
         cpstatus: null,
         has_connector0: 0,
       });
-      broadcast('chargepoint_disconnected', { identity });
+      broadcast('chargepoint_disconnected', { identity }, getSiteIdByIdentity(identity));
       const cpDisc = db.getChargepointByIdentity(identity);
       if (cpDisc) {
         db.resetConnectorsByChargepoint(cpDisc.id);
@@ -677,7 +702,11 @@ function startReservationCleanupWatchdog() {
         const status = result?.status ?? 'Rejected';
         if (status === 'Accepted') {
           db.updateReservationStatus(reservation.id, 'Expired');
-          broadcast('reservation_updated', { chargepoint_id: reservation.chargepoint_id });
+          broadcast(
+            'reservation_updated',
+            { chargepoint_id: reservation.chargepoint_id },
+            db.getChargepointById(reservation.chargepoint_id)?.site_id ?? null
+          );
           logger.info(
             `Reservation ${reservation.reservation_id} auto-expired on ${reservation.identity}`
           );
@@ -737,4 +766,5 @@ module.exports = {
   pendingRemoteStarts,
   pendingChargepoints,
   checkConnectorErrorCooldown,
+  getSiteIdByIdentity,
 };

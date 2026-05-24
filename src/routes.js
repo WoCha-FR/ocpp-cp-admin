@@ -707,7 +707,7 @@ router.post(
     try {
       const cp = db.createChargepoint(identity, identity, pending.password, 0, data.site_id);
       pendingChargepoints.delete(identity);
-      broadcast('chargepoint_update', cp);
+      broadcast('chargepoint_update', cp, cp.site_id ?? null);
       res.json(cp);
     } catch (e) {
       errorResponse(res, 400, e.message);
@@ -937,7 +937,7 @@ router.post(
       });
       const status = result?.status ?? 'Rejected';
       db.updateChargingProfileStatus(dbId, status);
-      broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       res.json({ status, id: dbId });
     } catch (e) {
       db.deleteChargingProfileById(dbId);
@@ -979,7 +979,7 @@ router.post(
         if (profile_purpose) filters.profile_purpose = profile_purpose;
         if (stack_level != null) filters.stack_level = stack_level;
         db.clearChargingProfilesByFilter(cp.id, filters);
-        broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+        broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
       res.json({ status: result?.status ?? 'Unknown' });
     } catch (e) {
@@ -1047,7 +1047,7 @@ router.post(
       }
     }
 
-    broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+    broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
     res.json({ sent: profiles.length, accepted, rejected, errors });
   }
 );
@@ -1103,7 +1103,7 @@ router.delete(
 
     if (profile.status === 'Rejected') {
       db.deleteChargingProfileById(profileDbId);
-      broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       return res.json({ status: 'Accepted' });
     }
 
@@ -1116,7 +1116,7 @@ router.delete(
       });
       if (result?.status === 'Accepted') {
         db.deleteChargingProfileById(profileDbId);
-        broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+        broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
       res.json({ status: result?.status ?? 'Unknown' });
     } catch (e) {
@@ -1180,7 +1180,7 @@ router.post(
         expiry_date,
         created_by: req.user.id,
       });
-      broadcast('reservation_updated', { chargepoint_id: cp.id });
+      broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       res.status(201).json({ status, id });
     } catch (e) {
       errorResponse(res, 500, e.message);
@@ -1213,7 +1213,7 @@ router.delete(
       const status = result?.status ?? 'Rejected';
       if (status === 'Accepted') {
         db.updateReservationStatus(reservation.id, 'Cancelled');
-        broadcast('reservation_updated', { chargepoint_id: cp.id });
+        broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
       res.json({ status });
     } catch (e) {

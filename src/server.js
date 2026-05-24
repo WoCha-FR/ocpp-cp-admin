@@ -551,10 +551,16 @@ function attachUIWebSocket(server, label) {
   const wss = new WebSocketServer({ server, path: '/ws' });
   wss.on('connection', (ws, req) => {
     sessionMiddleware(req, {}, () => {
-      if (!req.session?.passport?.user) {
+      const userId = req.session?.passport?.user;
+      if (!userId) {
         ws.close(401, 'Unauthorized');
         return;
       }
+      const dbUser = db.getUserById(userId);
+      const dbSites = db.getUserSites(userId);
+      ws.userId = userId;
+      ws.userRole = dbUser?.role ?? 'user';
+      ws.userSiteIds = (dbSites || []).map((s) => s.site_id);
       uiClients.add(ws);
       logWEBUI.debug(`UI WS Client connected${label} (${uiClients.size} total)`);
       ws.on('close', () => {
@@ -568,10 +574,10 @@ function attachUIWebSocket(server, label) {
 attachUIWebSocket(httpServer, '');
 if (httpsServer) attachUIWebSocket(httpsServer, ' (secure)');
 
-function broadcastToUI(message) {
+function broadcastToUI(message, siteId = null) {
   for (const client of uiClients) {
-    if (client.readyState === 1) {
-      // WebSocket.OPEN
+    if (client.readyState !== 1) continue;
+    if (siteId === null || client.userRole === 'admin' || client.userSiteIds?.includes(siteId)) {
       client.send(message);
     }
   }

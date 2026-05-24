@@ -129,13 +129,17 @@ async function callClient16(identity, method, params) {
   const cpId = cp ? cp.id : null;
 
   if (cpId) db.addOcppMessage(cpId, 'csms', 'CALL', method, params);
-  broadcast('ocpp_message', {
-    identity,
-    origin: 'csms',
-    message_type: 'CALL',
-    action: method,
-    payload: params,
-  });
+  broadcast(
+    'ocpp_message',
+    {
+      identity,
+      origin: 'csms',
+      message_type: 'CALL',
+      action: method,
+      payload: params,
+    },
+    cp?.site_id ?? null
+  );
   logger.info(`Calling ${method} on ${identity} with params: ${JSON.stringify(params)}`);
 
   let result;
@@ -143,31 +147,43 @@ async function callClient16(identity, method, params) {
     result = await client.call(method, params);
   } catch (err) {
     if (cpId) db.addOcppMessage(cpId, 'chargepoint', 'CALLERROR', method, { error: err.message });
-    broadcast('ocpp_message', {
-      identity,
-      origin: 'chargepoint',
-      message_type: 'CALLERROR',
-      action: method,
-      payload: { error: err.message },
-    });
+    broadcast(
+      'ocpp_message',
+      {
+        identity,
+        origin: 'chargepoint',
+        message_type: 'CALLERROR',
+        action: method,
+        payload: { error: err.message },
+      },
+      cp?.site_id ?? null
+    );
     logger.warn(`Error response for ${method} from ${identity}: ${err.message}`);
     throw err;
   }
 
   if (cpId) db.addOcppMessage(cpId, 'chargepoint', 'CALLRESULT', method, result);
-  broadcast('ocpp_message', {
-    identity,
-    origin: 'chargepoint',
-    message_type: 'CALLRESULT',
-    action: method,
-    payload: result,
-  });
+  broadcast(
+    'ocpp_message',
+    {
+      identity,
+      origin: 'chargepoint',
+      message_type: 'CALLRESULT',
+      action: method,
+      payload: result,
+    },
+    cp?.site_id ?? null
+  );
   logger.debug(`Received response for ${method} from ${identity}: ${JSON.stringify(result)}`);
 
   if (method === 'GetConfiguration' && result && result.configurationKey) {
     if (cp) {
       db.bulkUpsertChargepointConfig(cp.id, result.configurationKey);
-      broadcast('chargepoint_config_update', { identity, chargepointId: cp.id });
+      broadcast(
+        'chargepoint_config_update',
+        { identity, chargepointId: cp.id },
+        cp.site_id ?? null
+      );
     }
   }
 
@@ -215,7 +231,7 @@ function register16Handlers(client, loggedHandle) {
     });
 
     const cp = db.getChargepointByIdentity(identity);
-    broadcast('chargepoint_update', cp);
+    broadcast('chargepoint_update', cp, cp?.site_id ?? null);
 
     const seqVersion = (initSeqVersions.get(identity) || 0) + 1;
     initSeqVersions.set(identity, seqVersion);
@@ -422,7 +438,11 @@ function register16Handlers(client, loggedHandle) {
   loggedHandle('Heartbeat', (_params) => {
     db.updateChargepointStatus(identity, undefined, true);
     const cp = db.getChargepointByIdentity(identity);
-    broadcast('chargepoint_heartbeat', { identity, last_heartbeat: cp?.last_heartbeat });
+    broadcast(
+      'chargepoint_heartbeat',
+      { identity, last_heartbeat: cp?.last_heartbeat },
+      cp?.site_id ?? null
+    );
     return { currentTime: new Date().toISOString() };
   });
 
@@ -461,10 +481,10 @@ function register16Handlers(client, loggedHandle) {
       if (params.connectorId !== 0) {
         if (safeStatus === 'Reserved') {
           db.activateReservationByConnector(cp.id, params.connectorId);
-          broadcast('reservation_updated', { chargepoint_id: cp.id });
+          broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
         } else if (['Available', 'Faulted', 'Unavailable', 'Finishing'].includes(safeStatus)) {
           db.expireReservationByConnector(cp.id, params.connectorId);
-          broadcast('reservation_updated', { chargepoint_id: cp.id });
+          broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
         }
         if (cp.cpstatus === 'Unavailable') {
           const allConnectors = db.getConnectorsByChargepoint(cp.id);
@@ -487,11 +507,15 @@ function register16Handlers(client, loggedHandle) {
               params.timestamp || new Date().toISOString(),
               'EVDisconnected'
             );
-            broadcast('transaction_stop', {
-              identity,
-              transactionId: activeTx.transaction_id,
-              reason: 'EVDisconnected',
-            });
+            broadcast(
+              'transaction_stop',
+              {
+                identity,
+                transactionId: activeTx.transaction_id,
+                reason: 'EVDisconnected',
+              },
+              cp.site_id ?? null
+            );
             logger.warn(
               `StatusNotification: closed orphan transaction ${activeTx.transaction_id} on ${identity} #${params.connectorId} (no StopTransaction received)`
             );
@@ -505,7 +529,7 @@ function register16Handlers(client, loggedHandle) {
       }
       const updatedCp = db.getChargepointByIdentity(identity);
       const connectors = db.getConnectorsByChargepoint(cp.id);
-      broadcast('status_update', { chargepoint: updatedCp, connectors });
+      broadcast('status_update', { chargepoint: updatedCp, connectors }, cp.site_id ?? null);
       if (
         safeStatus === 'Available' &&
         (previousStatus === 'Unavailable' || previousStatus === 'Faulted')
@@ -662,14 +686,18 @@ function register16Handlers(client, loggedHandle) {
         authResult.reason,
         'authorize'
       );
-      broadcast('auth_rejected', {
-        identity,
-        id_tag: params.idTag,
-        status: authResult.status,
-        reason: authResult.reason,
-        source: 'authorize',
-        cp_name: cp ? cp.cpname : null,
-      });
+      broadcast(
+        'auth_rejected',
+        {
+          identity,
+          id_tag: params.idTag,
+          status: authResult.status,
+          reason: authResult.reason,
+          source: 'authorize',
+          cp_name: cp ? cp.cpname : null,
+        },
+        cp?.site_id ?? null
+      );
       trackRepeatedAuthReject(params.idTag, identity, cp);
     }
 
@@ -717,14 +745,18 @@ function register16Handlers(client, loggedHandle) {
     }
     if (authStatus !== 'Accepted' && chargepointId) {
       db.addIdTagEvent(chargepointId, null, params.idTag, authStatus, authReason, 'authorize');
-      broadcast('auth_rejected', {
-        identity,
-        id_tag: params.idTag,
-        status: authStatus,
-        reason: authReason,
-        source: 'authorize',
-        cp_name: cp ? cp.cpname : null,
-      });
+      broadcast(
+        'auth_rejected',
+        {
+          identity,
+          id_tag: params.idTag,
+          status: authStatus,
+          reason: authReason,
+          source: 'authorize',
+          cp_name: cp ? cp.cpname : null,
+        },
+        cp?.site_id ?? null
+      );
       trackRepeatedAuthReject(params.idTag, identity, cp);
     }
 
@@ -735,11 +767,15 @@ function register16Handlers(client, loggedHandle) {
         .filter((t) => t.connector_id === params.connectorId);
       for (const orphan of orphans) {
         db.stopTransaction(orphan.transaction_id, params.meterStart, params.timestamp, 'Other');
-        broadcast('transaction_stop', {
-          identity,
-          transactionId: orphan.transaction_id,
-          reason: 'Other',
-        });
+        broadcast(
+          'transaction_stop',
+          {
+            identity,
+            transactionId: orphan.transaction_id,
+            reason: 'Other',
+          },
+          cp?.site_id ?? null
+        );
         logger.warn(
           `StartTransaction: closed orphan transaction ${orphan.transaction_id} on ${identity} #${params.connectorId}`
         );
@@ -760,12 +796,16 @@ function register16Handlers(client, loggedHandle) {
       if (params.meterStart > 0) {
         db.updateConnectorMeterValue(cp.id, params.connectorId, params.meterStart);
       }
-      broadcast('transaction_start', {
-        identity,
-        connectorId: params.connectorId,
-        transactionId,
-        idTag: params.idTag,
-      });
+      broadcast(
+        'transaction_start',
+        {
+          identity,
+          connectorId: params.connectorId,
+          transactionId,
+          idTag: params.idTag,
+        },
+        cp?.site_id ?? null
+      );
       const siteId = cp ? cp.site_id : null;
       const connectors = db.getConnectorsByChargepoint(cp.id);
       notifications
@@ -815,12 +855,16 @@ function register16Handlers(client, loggedHandle) {
   loggedHandle('StopTransaction', (params) => {
     db.stopTransaction(params.transactionId, params.meterStop, params.timestamp, params.reason);
 
-    broadcast('transaction_stop', {
-      identity,
-      transactionId: params.transactionId,
-      meterStop: params.meterStop,
-      reason: params.reason,
-    });
+    broadcast(
+      'transaction_stop',
+      {
+        identity,
+        transactionId: params.transactionId,
+        meterStop: params.meterStop,
+        reason: params.reason,
+      },
+      db.getChargepointByIdentity(identity)?.site_id ?? null
+    );
 
     const stoppedTx = db.getTransactionByTransactionId(params.transactionId);
     logger.info(`StopTransaction from ${identity} #${stoppedTx?.connector_id ?? '?'}`);
@@ -997,11 +1041,15 @@ function register16Handlers(client, loggedHandle) {
         }
       }
 
-      broadcast('meter_values', {
-        identity,
-        connectorId: params.connectorId,
-        meterValue: params.meterValue,
-      });
+      broadcast(
+        'meter_values',
+        {
+          identity,
+          connectorId: params.connectorId,
+          meterValue: params.meterValue,
+        },
+        cp?.site_id ?? null
+      );
     }
     return {};
   });
@@ -1014,8 +1062,12 @@ function register16Handlers(client, loggedHandle) {
   // ── DiagnosticsStatusNotification ──
   loggedHandle('DiagnosticsStatusNotification', (params) => {
     if (params.status === 'Uploaded' || params.status === 'UploadFailed') {
-      broadcast('diagnostics_upload', { identity, status: params.status });
       const updatedCp = db.getChargepointByIdentity(identity);
+      broadcast(
+        'diagnostics_upload',
+        { identity, status: params.status },
+        updatedCp?.site_id ?? null
+      );
       notifications
         .emit('diagnostics_upload', {
           identity,
@@ -1030,13 +1082,13 @@ function register16Handlers(client, loggedHandle) {
 
   // ── FirmwareStatusNotification ──
   loggedHandle('FirmwareStatusNotification', (params) => {
-    broadcast('firmware_status', { identity, status: params.status });
+    const updatedCp = db.getChargepointByIdentity(identity);
+    broadcast('firmware_status', { identity, status: params.status }, updatedCp?.site_id ?? null);
     if (
       params.status === 'Installed' ||
       params.status === 'InstallationFailed' ||
       params.status === 'DownloadFailed'
     ) {
-      const updatedCp = db.getChargepointByIdentity(identity);
       notifications
         .emit('firmware_status', {
           identity,
