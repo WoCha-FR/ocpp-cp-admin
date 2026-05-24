@@ -552,7 +552,7 @@ function attachUIWebSocket(server, label) {
   wss.on('connection', (ws, req) => {
     sessionMiddleware(req, {}, () => {
       if (!req.session?.passport?.user) {
-        ws.close(4401, 'Unauthorized');
+        ws.close(401, 'Unauthorized');
         return;
       }
       uiClients.add(ws);

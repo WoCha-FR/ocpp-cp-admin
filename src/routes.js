@@ -2511,7 +2511,7 @@ router.get(
   requireAuth,
   ...validateSchema(schema.NotificationsLogQuery),
   (req, res) => {
-    const limit = parsePagination(req) ?? 50;
+    const { limit } = parsePagination(req);
     res.json(db.getNotificationLog(req.user.id, limit));
   }
 );
