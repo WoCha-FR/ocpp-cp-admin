@@ -812,36 +812,48 @@ function shouldRefreshDetail(eventType, cpIdentity, cpId) {
   return (tabEvents[currentDetailTab] || []).includes(eventType);
 }
 
+function cpEventMatchesFilters(identity, cpId) {
+  if (!cpListFilters.site_id && !cpListFilters.mode) return true;
+  const cp = cpListCache.find(c =>
+    (identity && c.identity === identity) ||
+    (cpId && String(c.id) === String(cpId))
+  );
+  if (!cp) return true;
+  if (cpListFilters.site_id && String(cp.site_id) !== cpListFilters.site_id) return false;
+  if (cpListFilters.mode && String(cp.mode) !== cpListFilters.mode) return false;
+  return true;
+}
+
 function handleRealtimeEvent(type, data) {
   switch (type) {
     case 'chargepoint_connected':
       toast(t('realTime.cpConnected', { identity: data.identity }), 'success');
-      if (shouldRefreshDetail('chargepoint_connected', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_connected', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'chargepoint_disconnected':
       toast(t('realTime.cpDisconnected', { identity: data.identity }), 'error');
-      if (shouldRefreshDetail('chargepoint_disconnected', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_disconnected', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'chargepoint_update':
-      if (shouldRefreshDetail('chargepoint_update', data.identity, data.id)) refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_update', data.identity, data.id) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, data.id))) refreshCurrentPage();
       break;
     case 'status_update':
-      if (shouldRefreshDetail('status_update', data.chargepoint?.identity, data.chargepoint?.id)) refreshCurrentPage();
+      if (shouldRefreshDetail('status_update', data.chargepoint?.identity, data.chargepoint?.id) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.chargepoint?.identity, data.chargepoint?.id))) refreshCurrentPage();
       break;
     case 'chargepoint_heartbeat':
-      if (shouldRefreshDetail('chargepoint_heartbeat', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_heartbeat', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'transaction_start':
       toast(t('realTime.transactionStarted', { identity: data.identity, connectorId: data.connectorId }), 'info');
-      if (shouldRefreshDetail('transaction_start', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('transaction_start', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'transaction_stop':
       toast(t('realTime.transactionStopped', { identity: data.identity }), 'info');
-      if (shouldRefreshDetail('transaction_stop', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('transaction_stop', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'meter_values':
       if (currentPage === 'transactions' || currentPage === 'mytransactions' || currentPage === 'dashboard') break;
-      if (shouldRefreshDetail('meter_values', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('meter_values', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'transaction_updated':
       if (currentPage === 'transactions' || currentPage === 'mytransactions' || currentPage === 'dashboard') {
@@ -891,6 +903,8 @@ function refreshCurrentPage(force = false) {
     renderTransactions(true);
   } else if (currentPage === 'mytransactions') {
     renderMyTransactions(true);
+  } else if (currentPage === 'chargepoints') {
+    renderChargepoints(true);
   } else {
     navigate(currentPage, true);
   }
@@ -1216,8 +1230,10 @@ function renderDashboardCharts(data) {
 //  CHARGEPOINTS
 // ══════════════════════════════════════
 let cpListFilters = { site_id: '', mode: '', cpstatus: '', online: '' };
+let cpListCache = [];
 
-async function renderChargepoints() {
+async function renderChargepoints(keepState = false) {
+  if (!keepState) cpListFilters = { site_id: '', mode: '', cpstatus: '', online: '' };
   const isAdmin = currentUser.role === 'admin';
   document.getElementById('topbarActions').innerHTML = isAdmin
     ? `<button class="btn btn-primary" data-onclick="showCreateChargepointModal()">+ ${t('chargepoint.cpBtnAdd')}</button>`
@@ -1225,6 +1241,7 @@ async function renderChargepoints() {
 
   try {
     const chargepoints = await api('GET', '/chargepoints');
+    cpListCache = chargepoints;
     const sites = await api('GET', '/sites');
     let pendingHtml = '';
     if (adminManage()) {
@@ -1354,12 +1371,12 @@ function applyCpListFilters() {
   cpListFilters.mode = document.getElementById('cpFilterMode').value;
   cpListFilters.cpstatus = document.getElementById('cpFilterStatus').value;
   cpListFilters.online = document.getElementById('cpFilterOnline').value;
-  renderChargepoints();
+  renderChargepoints(true);
 }
 
 function resetCpListFilters() {
   cpListFilters = { site_id: '', mode: '', cpstatus: '', online: '' };
-  renderChargepoints();
+  renderChargepoints(true);
 }
 
 async function showCreateChargepointModal() {
@@ -1443,7 +1460,7 @@ async function createChargepoint() {
     });
     closeModal();
     toast(t('chargepoint.cpCreated'), 'success');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1460,7 +1477,7 @@ async function updateChargepoint(id) {
     await api('PUT', `/chargepoints/${id}`, data);
     closeModal();
     toast(t('chargepoint.cpUpdated'), 'success');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1469,7 +1486,7 @@ async function deleteChargepoint(id, name) {
   try {
     await api('DELETE', `/chargepoints/${id}`);
     toast(t('chargepoint.cpDeleted'), 'success');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1526,7 +1543,7 @@ async function execAcceptPending(identity) {
   try {
     await api('POST', `/chargepoints/pending/${encodeURIComponent(identity)}/accept`, { site_id: siteId });
     toast(t('chargepoint.cpAccepted', { identity }), 'success');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1535,7 +1552,7 @@ async function rejectPendingChargepoint(identity) {
   try {
     await api('DELETE', `/chargepoints/pending/${encodeURIComponent(identity)}`);
     toast(`${t('chargepoint.cpRefused', { identity })}`, 'info');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -3095,8 +3112,13 @@ async function userStopCharge(chargepointId, transactionId, cpName, connId) {
 let idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
 let idTagsActiveTab = 'tags';
 
-async function renderIdTags(tab) {
-  idTagsActiveTab = tab || 'tags';
+async function renderIdTags(tab, keepState = false) {
+  if (tab !== undefined) idTagsActiveTab = tab;
+  else if (!keepState) idTagsActiveTab = 'tags';
+  if (!keepState) {
+    idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
+    idTagsEventsFilters = { status: '', chargepoint: '', id_tag: '', limit: '100' };
+  }
   const isAdmin = currentUser.role === 'admin';
   const managedSiteIds = isAdmin ? null : (currentUser.sites || []).filter(s => s.role === 'manager').map(s => s.site_id);
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-primary" data-onclick="showCreateIdTagModal()">+ ${t('idtags.rfBtnAdd')}</button>`;
@@ -3218,12 +3240,12 @@ function applyIdTagsFilters() {
   idTagsFilters.site_id = document.getElementById('idTagFilterSite').value;
   idTagsFilters.user = document.getElementById('idTagFilterUser').value;
   idTagsFilters.auto = document.getElementById('idTagFilterAuto').value;
-  renderIdTags();
+  renderIdTags(idTagsActiveTab, true);
 }
 
 function resetIdTagsFilters() {
   idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
-  renderIdTags();
+  renderIdTags(idTagsActiveTab, true);
 }
 
 async function showCreateIdTagModal() {
@@ -3345,7 +3367,7 @@ async function createIdTag() {
     });
     closeModal();
     toast(t('idtags.rfAdded'), 'success');
-    renderIdTags();
+    renderIdTags(idTagsActiveTab, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -3365,7 +3387,7 @@ async function updateIdTag(id) {
     });
     closeModal();
     toast(t('idtags.rfUpdated'), 'success');
-    renderIdTags();
+    renderIdTags(idTagsActiveTab, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -3374,12 +3396,12 @@ async function deleteIdTag(id, name) {
   try {
     await api('DELETE', `/id-tags/${id}`);
     toast(t('idtags.rfDeleted'), 'success');
-    renderIdTags();
+    renderIdTags(idTagsActiveTab, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
 function switchIdTagsTab(tab) {
-  renderIdTags(tab);
+  renderIdTags(tab, true);
 }
 
 // ── Historique des badges ──
@@ -3481,12 +3503,12 @@ function applyIdTagsEventsFilters() {
   idTagsEventsFilters.chargepoint = document.getElementById('evtFilterCp').value;
   idTagsEventsFilters.id_tag = document.getElementById('evtFilterTag').value.trim();
   idTagsEventsFilters.limit = document.getElementById('evtFilterLimit').value;
-  renderIdTags();
+  renderIdTags(idTagsActiveTab, true);
 }
 
 function resetIdTagsEventsFilters() {
   idTagsEventsFilters = { status: '', chargepoint: '', id_tag: '', limit: '100' };
-  renderIdTags();
+  renderIdTags(idTagsActiveTab, true);
 }
 
 const eventReasonLabels = {
@@ -5453,11 +5475,12 @@ async function deleteSite(id, name) {
 let siteUsersContext = { siteId: null, siteName: null };
 let siteUsersFilters = {};
 
-async function renderSiteUsers(siteId, siteName) {
+async function renderSiteUsers(siteId, siteName, keepState = false) {
   if (siteId) {
     siteUsersContext.siteId = siteId;
     siteUsersContext.siteName = siteName;
   }
+  if (!keepState) siteUsersFilters = {};
   const sid = siteUsersContext.siteId;
   const sname = siteUsersContext.siteName;
   if (!sid) return navigate('sites');
@@ -5600,12 +5623,12 @@ function applySiteUsersFilters() {
     status: document.getElementById('suFilterStatus').value,
     search: document.getElementById('suFilterSearch').value,
   };
-  renderSiteUsers();
+  renderSiteUsers(null, null, true);
 }
 
 function resetSiteUsersFilters() {
   siteUsersFilters = {};
-  renderSiteUsers();
+  renderSiteUsers(null, null, true);
 }
 
 function showAddUserToSiteModal(siteId, siteName) {
@@ -5624,7 +5647,7 @@ async function toggleUserSiteAuth(userId, siteId, authorized, siteName) {
   try {
     await api('PATCH', `/sites/${siteId}/users/${userId}`, { authorized });
     toast(authorized ? t('sites.siteUserUnsuspended') : t('sites.siteUserSuspended'), 'success');
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5637,7 +5660,7 @@ async function toggleUserSiteRole(userId, siteId, newRole, siteName, userEmail) 
   try {
     await api('PATCH', `/sites/${siteId}/users/${userId}`, { role: newRole });
     toast(isPromote ? t('sites.siteUserPromoted') : t('sites.siteUserDemoted'), 'success');
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5653,7 +5676,7 @@ async function addUserToSite(siteId, siteName) {
       toast(t('sites.siteUserAdded'), 'info');
     }
     closeModal();
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5662,7 +5685,7 @@ async function addSelfToSite(siteId, siteName) {
   try {
     await api('POST', `/sites/${siteId}/users`, { useremail: currentUser.useremail });
     toast(t('sites.siteUserAdded'), 'info');
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5671,7 +5694,7 @@ async function removeUserFromSite(userId, siteId, siteName, userEmail) {
   try {
     await api('DELETE', `/sites/${siteId}/users/${userId}`);
     toast(t('sites.siteUserRemoved'), 'success');
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
