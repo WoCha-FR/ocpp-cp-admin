@@ -3606,8 +3606,8 @@ async function renderUsers() {
                 <td class="text-muted">${u.last_login ? formatDate(u.last_login) : '<span class="text-muted">-</span>'}</td>
                 <td>
                   <button class="btn btn-indigo btn-sm" data-onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
-                  ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
                   <button class="btn btn-teal btn-sm" data-onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
+                  ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
                   ${canDelete ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteUser(${u.id}, '${escapeAttr(u.useremail)}'))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>

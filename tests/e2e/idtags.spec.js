@@ -61,6 +61,7 @@ test.describe('Tags RFID', () => {
 
     // Nettoyage
     await page.keyboard.press('Escape');
+    await expect(page.locator('#modalOverlay')).toBeHidden({ timeout: 5000 });
     await row.locator('[data-onclick*="deleteIdTag"]').click();
     await page.locator('#confirmBtnOk').click();
     await expect(page.locator('#pageContent').getByText(tagId)).toBeHidden({ timeout: 8000 });
