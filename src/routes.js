@@ -1993,8 +1993,8 @@ router.get(
     if (req.query.chargepoint_id) filters.chargepoint_id = Number(req.query.chargepoint_id);
     if (req.query.id_tag) filters.id_tag = req.query.id_tag;
     if (req.query.status) filters.status = req.query.status;
-    const limit = parsePagination(req);
-    if (limit !== null) filters.limit = limit;
+    const pagination = parsePagination(req);
+    filters.limit = pagination.limit;
     // Filtrer par sites accessibles
     const siteIds = getUserSiteIds(req);
     if (siteIds !== null) filters.site_ids = siteIds;
