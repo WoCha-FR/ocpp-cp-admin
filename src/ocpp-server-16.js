@@ -994,6 +994,15 @@ function register16Handlers(client, loggedHandle) {
         }
       }
 
+      if (energyWh !== null) {
+        const updatedCp = db.getChargepointByIdentity(identity);
+        broadcast(
+          'chargepoint_meter_update',
+          { identity, meter_value: updatedCp.meter_value },
+          cp?.site_id ?? null
+        );
+      }
+
       let txId = params.transactionId || null;
       if (!txId && cp) {
         const activeTx = db.getActiveTransactionByConnector(cp.id, params.connectorId);
