@@ -523,6 +523,16 @@ function register16Handlers(client, loggedHandle) {
             const chargingState = ocppStatusToChargingState(safeStatus);
             if (chargingState !== null) {
               db.updateTransactionChargingState(activeTx.transaction_id, chargingState);
+              broadcast(
+                'transaction_updated',
+                {
+                  identity,
+                  connectorId: params.connectorId,
+                  transactionId: activeTx.transaction_id,
+                  charging_state: chargingState,
+                },
+                cp.site_id ?? null
+              );
             }
           }
         }
@@ -1039,6 +1049,17 @@ function register16Handlers(client, loggedHandle) {
             db.upsertTransactionValues(txId, tvData);
           }
         }
+        broadcast(
+          'transaction_updated',
+          {
+            identity,
+            connectorId: params.connectorId,
+            transactionId: txId,
+            power: powerW !== null ? Math.round(powerW) : null,
+            energy: energyWh !== null ? Math.round(energyWh) : null,
+          },
+          cp?.site_id ?? null
+        );
       }
 
       broadcast(

@@ -792,6 +792,43 @@ describe('ocpp-server-16 — MeterValues', () => {
     expect(result).toEqual({});
     expect(mockDb.updateTransactionPowerEnergy).not.toHaveBeenCalled();
   });
+
+  it('broadcasts transaction_updated when active transaction exists', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({ meter_start: 0 });
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [
+            { measurand: 'Power.Active.Import', value: '7.4', unit: 'kW' },
+            { measurand: 'Energy.Active.Import.Register', value: '5000', unit: 'Wh' },
+          ],
+        },
+      ],
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'transaction_updated',
+      expect.objectContaining({ transactionId: 42, power: 7400, energy: 5000 }),
+      null
+    );
+  });
+
+  it('does not broadcast transaction_updated without active transaction', () => {
+    mockDb.getActiveTransactionByConnector.mockReturnValue(null);
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [{ measurand: 'Power.Active.Import', value: '3.0', unit: 'kW' }],
+        },
+      ],
+    });
+    const txUpdatedCalls = mockBroadcast.mock.calls.filter((c) => c[0] === 'transaction_updated');
+    expect(txUpdatedCalls).toHaveLength(0);
+  });
 });
 
 // ── DataTransfer ──
@@ -996,6 +1033,16 @@ describe('ocpp-server-16 — StatusNotification charging_state', () => {
     mockDb.getTransactions.mockReturnValue([{ transaction_id: '42', connector_id: 1 }]);
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError' });
     expect(mockDb.updateTransactionChargingState).not.toHaveBeenCalled();
+  });
+
+  it('broadcasts transaction_updated when charging_state changes for active transaction', () => {
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 'tx-abc', connector_id: 1 }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'transaction_updated',
+      expect.objectContaining({ transactionId: 'tx-abc', charging_state: 'Charging' }),
+      null
+    );
   });
 });
 

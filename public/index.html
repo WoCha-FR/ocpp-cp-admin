@@ -803,7 +803,7 @@ function shouldRefreshDetail(eventType, cpIdentity, cpId) {
   const tabEvents = {
     infos:        ['chargepoint_update', 'status_update', 'chargepoint_heartbeat', 'chargepoint_connected', 'chargepoint_disconnected', 'transaction_start', 'transaction_stop', 'meter_values'],
     connecteurs:  ['status_update', 'chargepoint_connected', 'chargepoint_disconnected', 'meter_values'],
-    transactions: ['transaction_start', 'transaction_stop'],
+    transactions: ['transaction_start', 'transaction_stop', 'transaction_updated'],
     logs:         [],
     profiles:     ['chargepoint_connected', 'chargepoint_disconnected'],
     reservations: ['chargepoint_connected', 'chargepoint_disconnected'],
@@ -840,7 +840,15 @@ function handleRealtimeEvent(type, data) {
       if (shouldRefreshDetail('transaction_stop', data.identity, null)) refreshCurrentPage();
       break;
     case 'meter_values':
+      if (currentPage === 'transactions' || currentPage === 'mytransactions' || currentPage === 'dashboard') break;
       if (shouldRefreshDetail('meter_values', data.identity, null)) refreshCurrentPage();
+      break;
+    case 'transaction_updated':
+      if (currentPage === 'transactions' || currentPage === 'mytransactions' || currentPage === 'dashboard') {
+        refreshCurrentPage();
+      } else if (shouldRefreshDetail('transaction_updated', data.identity, null)) {
+        refreshCurrentPage();
+      }
       break;
     case 'ocpp_message':
       if (currentPage === 'chargepointdetail' && currentDetailTab === 'logs' && data.identity === currentDetailCpIdentity) {
