@@ -506,6 +506,8 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
   "flapThreshold": 4,
   "flapWindowMinutes": 2,
   "refusedCooldownMinutes": 60,
+  "reconnectGracePeriodSeconds": 60,
+  "availabilityDebounceSeconds": 5,
   "mail": {
     "enabled": false,
     "from": "CPADMIN <noreply@cpadmin.local>",
@@ -535,6 +537,8 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 | `flapThreshold` | Nombre de reconnexions rapides d'une borne avant alerte flapping |
 | `flapWindowMinutes` | Fenêtre de temps pour la détection de flapping (minutes) |
 | `refusedCooldownMinutes` | Délai entre deux notifications `chargepoint_refused` pour la même identité (défaut : 60 min) |
+| `reconnectGracePeriodSeconds` | Délai de grâce en secondes avant l'envoi de la notification hors ligne. Si la borne se reconnecte dans ce délai, les notifications offline et online sont supprimées (défaut : `60`) |
+| `availabilityDebounceSeconds` | Délai de debounce (secondes) avant envoi des notifications Available/Unavailable. Évite les alertes parasites des bornes qui alternent rapidement le statut à la connexion (défaut : `5`) |
 | `mail.enabled` | Activer les notifications par email |
 | `mail.from` | Adresse d'expéditeur |
 | `mail.transport` | Configuration du transport SMTP (Nodemailer) |
@@ -837,6 +841,7 @@ L'application implémente le protocole OCPP 1.6-J (JSON sur WebSocket) pour la c
 | **MeterValues** | Données de comptage temps réel (énergie, puissance, courant, SOC) |
 | **DataTransfer** | Échange de données propriétaires constructeur |
 | **DiagnosticsStatusNotification** | Statut de l'upload de diagnostics |
+| **FirmwareStatusNotification** | Statut d'avancement de la mise à jour firmware |
 
 #### Serveur → Borne (commandes distantes)
 

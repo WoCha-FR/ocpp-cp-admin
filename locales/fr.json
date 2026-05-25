@@ -248,6 +248,13 @@
     "cpReservationCancelled": "Réservation annulée",
     "cpReservationCreated": "Réservation créée",
     "cpReservationRejected": "Réservation refusée par la borne : {{status}}",
+    "cpReservationExpiryExceedsTag": "La date d'expiration de la réservation dépasse celle du badge.",
+    "cpReservationStatusPending": "En attente",
+    "cpReservationStatusActive": "Active",
+    "cpReservationStatusInUse": "En cours d'utilisation",
+    "cpReservationStatusFulfilled": "Complétée",
+    "cpReservationStatusExpired": "Expirée",
+    "cpReservationStatusCancelled": "Annulée",
     "cpLogsTitle": "Journal des messages",
     "cpLogsNbMsg_one": "Message ({{count}})",
     "cpLogsNbMsg_other": "Messages ({{count}})",
@@ -686,6 +693,12 @@
       "title": "Résultat upload diagnostics – {{cp_name}}",
       "body": "Le résultat est : {{status}}."
     },
+    "firmware_status": {
+      "eLabel": "Statut mise à jour firmware",
+      "eDesc": "Résultat de la mise à jour firmware d'une borne",
+      "title": "Mise à jour firmware – {{cp_name}}",
+      "body": "Le statut est : {{status}}."
+    },
     "init_config_result": {
       "eLabel": "Résultat config initiale",
       "eDesc": "Résultat de la séquence de configuration initiale d'une borne",
@@ -910,6 +923,7 @@
     "VALIDATION_OCPP_ACTION": "Action OCPP invalide.",
     "VALIDATION_IDTAG_STATUS": "Statut de badge invalide.",
     "VALIDATION_LIMIT": "Valeur de limite invalide.",
+    "VALIDATION_PAGE": "Numéro de page invalide.",
     "VALIDATION_OCPP_METHOD": "Methode OCPP invalide.",
     "VALIDATION_OCPP_PARAMS": "Parametres OCPP invalides.",
     "VALIDATION_CONFIG_KEY": "Cle de configuration invalide.",
@@ -988,7 +1002,8 @@
   "legal": {
     "privacy": "Politique de confidentialité",
     "terms": "Conditions d'utilisation",
-    "about": "À propos"
+    "about": "À propos",
+    "back": "Retour"
   },
   "about": {
     "title": "Charge Point Admin",

@@ -317,6 +317,11 @@ describe('validationSchema — OcppMessagesQuery', () => {
     expect(result.isEmpty()).toBe(true);
   });
 
+  it('passes with date_from and date_to as datetime strings', async () => {
+    const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { date_from: '2026-05-20 00:00:00', date_to: '2026-05-20 23:59:59' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
   it('fails with invalid date_from format', async () => {
     const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { date_from: 'not-a-date' });
     expect(result.isEmpty()).toBe(false);
@@ -327,5 +332,44 @@ describe('validationSchema — OcppMessagesQuery', () => {
     const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { date_to: '20/05/2026' });
     expect(result.isEmpty()).toBe(false);
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_DATE_TO');
+  });
+});
+
+// ── TransactionsQuery ──
+describe('validationSchema — TransactionsQuery', () => {
+  it('passes with valid page', async () => {
+    const result = await runSchema(schema.TransactionsQuery, {}, {}, { page: '2' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('fails with page = 0', async () => {
+    const result = await runSchema(schema.TransactionsQuery, {}, {}, { page: '0' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_PAGE');
+  });
+
+  it('fails with page = abc', async () => {
+    const result = await runSchema(schema.TransactionsQuery, {}, {}, { page: 'abc' });
+    expect(result.isEmpty()).toBe(false);
+  });
+});
+
+// ── UserTransactionsQuery ──
+describe('validationSchema — UserTransactionsQuery', () => {
+  it('passes with valid limit and page', async () => {
+    const result = await runSchema(schema.UserTransactionsQuery, {}, {}, { limit: '25', page: '3' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('fails with limit > 200', async () => {
+    const result = await runSchema(schema.UserTransactionsQuery, {}, {}, { limit: '201' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_LIMIT');
+  });
+
+  it('fails with page = -1', async () => {
+    const result = await runSchema(schema.UserTransactionsQuery, {}, {}, { page: '-1' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_PAGE');
   });
 });

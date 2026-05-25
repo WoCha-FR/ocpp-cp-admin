@@ -31,6 +31,7 @@ jest.mock('../../src/logger', () => ({
 
 const mockDb = {
   getChargepointByIdentity: jest.fn(),
+  getChargepointById: jest.fn(),
   upsertChargepoint: jest.fn(),
   getTransactions: jest.fn(() => []),
   stopTransaction: jest.fn(),
@@ -39,6 +40,7 @@ const mockDb = {
   addOcppMessage: jest.fn(),
   getExpiredActiveReservations: jest.fn(() => []),
   updateReservationStatus: jest.fn(),
+  resetConnectorsByChargepoint: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -82,11 +84,18 @@ describe('ocpp-common — broadcast', () => {
     expect(() => ocppCommon.broadcast('test', {})).not.toThrow();
   });
 
-  it('calls the registered fn with serialized payload', () => {
+  it('calls the registered fn with serialized payload and null siteId', () => {
     const fn = jest.fn();
     ocppCommon.setBroadcast(fn);
     ocppCommon.broadcast('event', { x: 1 });
-    expect(fn).toHaveBeenCalledWith(JSON.stringify({ type: 'event', data: { x: 1 } }));
+    expect(fn).toHaveBeenCalledWith(JSON.stringify({ type: 'event', data: { x: 1 } }), null);
+  });
+
+  it('passes siteId as second argument to the registered fn', () => {
+    const fn = jest.fn();
+    ocppCommon.setBroadcast(fn);
+    ocppCommon.broadcast('event', { x: 1 }, 42);
+    expect(fn).toHaveBeenCalledWith(JSON.stringify({ type: 'event', data: { x: 1 } }), 42);
   });
 });
 
@@ -369,7 +378,8 @@ describe('ocpp-common — reservation cleanup watchdog', () => {
     await jest.advanceTimersByTimeAsync(60000);
 
     expect(fn).toHaveBeenCalledWith(
-      JSON.stringify({ type: 'reservation_updated', data: { chargepoint_id: 55 } })
+      JSON.stringify({ type: 'reservation_updated', data: { chargepoint_id: 55 } }),
+      null
     );
   });
 });
@@ -385,5 +395,145 @@ describe('ocpp-common — pendingChargepoints', () => {
 describe('ocpp-common — pendingRemoteStarts', () => {
   it('is exported as a Map', () => {
     expect(ocppCommon.pendingRemoteStarts).toBeInstanceOf(Map);
+  });
+});
+
+// ── période de grâce offline (reconnectGracePeriodSeconds) ──
+describe('ocpp-common — période de grâce offline', () => {
+  const { EventEmitter } = require('events');
+
+  function makeClient(identity) {
+    const client = new EventEmitter();
+    client.identity = identity;
+    client.session = { remoteAddress: '1.2.3.4' };
+    client.protocol = 'ocpp1.6';
+    client.close = jest.fn();
+    client.handle = jest.fn();
+    return client;
+  }
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    configMock.notifs.reconnectGracePeriodSeconds = 60;
+    ocppCommon.registerHandlersFn('1.6', jest.fn());
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1,
+      cpname: 'Test CP',
+      site_id: 10,
+      site_name: 'Site Test',
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+  });
+
+  it('émet chargepoint_online immédiatement à la connexion', () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeClient('CP_GRACE_ONLINE');
+
+    server.emit('client', client);
+
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'chargepoint_online',
+      expect.objectContaining({ identity: 'CP_GRACE_ONLINE' }),
+      expect.any(Object)
+    );
+  });
+
+  it("ne déclenche pas la notification offline avant l'expiration de la période de grâce", async () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeClient('CP_GRACE_WAIT');
+    server.emit('client', client);
+    jest.clearAllMocks();
+
+    client.emit('close');
+
+    await jest.advanceTimersByTimeAsync(59000);
+    expect(mockNotifications.emit).not.toHaveBeenCalledWith(
+      'chargepoint_offline',
+      expect.any(Object),
+      expect.any(Object)
+    );
+  });
+
+  it('envoie chargepoint_offline après la période de grâce si la borne reste déconnectée', async () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeClient('CP_GRACE_EXPIRE');
+    server.emit('client', client);
+    jest.clearAllMocks();
+
+    client.emit('close');
+
+    await jest.advanceTimersByTimeAsync(61000);
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'chargepoint_offline',
+      expect.objectContaining({ identity: 'CP_GRACE_EXPIRE' }),
+      expect.any(Object)
+    );
+  });
+
+  it('supprime les notifications offline et online si reconnexion dans la période de grâce', async () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client1 = makeClient('CP_GRACE_FAST');
+    const client2 = makeClient('CP_GRACE_FAST');
+    server.emit('client', client1);
+    jest.clearAllMocks();
+
+    client1.emit('close');
+
+    await jest.advanceTimersByTimeAsync(30000);
+    server.emit('client', client2);
+
+    await jest.advanceTimersByTimeAsync(40000);
+
+    expect(mockNotifications.emit).not.toHaveBeenCalledWith(
+      'chargepoint_offline',
+      expect.any(Object),
+      expect.any(Object)
+    );
+    expect(mockNotifications.emit).not.toHaveBeenCalledWith(
+      'chargepoint_online',
+      expect.any(Object),
+      expect.any(Object)
+    );
+  });
+
+  it('émet chargepoint_online si la borne se reconnecte après la période de grâce', async () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client1 = makeClient('CP_GRACE_LATE');
+    const client2 = makeClient('CP_GRACE_LATE');
+    server.emit('client', client1);
+    jest.clearAllMocks();
+
+    client1.emit('close');
+
+    await jest.advanceTimersByTimeAsync(61000);
+    jest.clearAllMocks();
+
+    server.emit('client', client2);
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'chargepoint_online',
+      expect.objectContaining({ identity: 'CP_GRACE_LATE' }),
+      expect.any(Object)
+    );
+  });
+
+  it("n'envoie pas de notification offline si la déconnexion est due à heartbeat_timeout", async () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeClient('CP_GRACE_HBT');
+    server.emit('client', client);
+    jest.clearAllMocks();
+
+    client._disconnectReason = 'heartbeat_timeout';
+    client.emit('close');
+
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(mockNotifications.emit).not.toHaveBeenCalledWith(
+      'chargepoint_offline',
+      expect.any(Object),
+      expect.any(Object)
+    );
   });
 });

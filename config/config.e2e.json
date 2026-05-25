@@ -1,45 +1,39 @@
 {
-  "loglevel": "warn",
+  "loglevel": "error",
   "language": "fr",
-  "dbname": "cpadmin.db",
-  "cpoName": "CP Admin",
+  "dbname": "e2e.db",
+  "cpoName": "CP Admin E2E",
   "webui": {
     "httpHost": "localhost",
-    "httpPort": 3000,
+    "httpPort": 3099,
     "trustProxy": false,
-    "publicUrl": "http://localhost:3000",
-    "sessionSecret": "",
+    "publicUrl": "http://localhost:3099",
+    "sessionSecret": "e2e-test-secret-fixed-for-playwright-do-not-use-in-production",
     "https": {
       "enabled": false,
-      "httpsPort": 3001,
+      "httpsPort": 3100,
       "certFile": "certs/server.crt",
       "keyFile": "certs/server.key"
     }
   },
   "ocpp": {
     "host": "0.0.0.0",
-    "wsPort": 9000,
-    "v16":  { "enabled": true },
+    "wsPort": 9099,
+    "v16": { "enabled": true },
     "v201": { "enabled": false },
-    "strictMode": true,
+    "strictMode": false,
     "callTimeoutSeconds": 45,
     "autoAddUnknownChargepoints": false,
     "pendingUnknownChargepoints": false,
-    "ocppWsUrl": "ws://ws.cpadmin.local:9000",
-    "diagnosticsLocation": "ftp://ftp.cpadmin.local/diagnostics",
+    "ocppWsUrl": "ws://localhost:9099",
+    "diagnosticsLocation": "",
     "wss": {
       "enabled": false,
-      "wssPort": 9001,
+      "wssPort": 9100,
       "strictClientCert": false,
-      "ocppWsUrl": "wss://ws.cpadmin.local:9001",
-      "rsa": {
-        "certFile": "certs/rsa-server.crt",
-        "keyFile": "certs/rsa-server.key"
-      },
-      "ecdsa": {
-        "certFile": "certs/ecdsa-server.crt",
-        "keyFile": "certs/ecdsa-server.key"
-      },
+      "ocppWsUrl": "wss://localhost:9100",
+      "rsa": { "certFile": "", "keyFile": "" },
+      "ecdsa": { "certFile": "", "keyFile": "" },
       "caFile": ""
     }
   },
@@ -49,9 +43,7 @@
     "flapThreshold": 4,
     "flapWindowMinutes": 2,
     "refusedCooldownMinutes": 60,
-    "connectorErrorCooldownMinutes": 60,
     "reconnectGracePeriodSeconds": 60,
-    "availabilityDebounceSeconds": 5,
     "mail": {
       "enabled": false,
       "from": "CPADMIN <noreply@cpadmin.local>",
@@ -59,10 +51,7 @@
         "host": "smtp.cpadmin.local",
         "port": 587,
         "secure": false,
-        "auth": {
-          "user": "user@cpadmin.local",
-          "pass": "password"
-        }
+        "auth": { "user": "", "pass": "" }
       }
     },
     "webpush": {
@@ -71,19 +60,11 @@
       "vapidPublicKey": "",
       "vapidPrivateKey": ""
     },
-    "pushover": {
-      "enabled": false
-    },
+    "pushover": { "enabled": false },
     "defaultDisabledEvents": []
   },
   "auth": {
-    "google": {
-      "enabled": false,
-      "client_id": "",
-      "client_secret": ""
-    }
+    "google": { "enabled": false, "client_id": "", "client_secret": "" }
   },
-  "metrics": {
-    "bearerToken": ""
-  }
+  "metrics": { "bearerToken": "" }
 }

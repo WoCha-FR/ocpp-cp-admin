@@ -24,8 +24,9 @@ describe('Frontend XSS hardening', () => {
   it('does not allow script unsafe-inline in CSP', () => {
     const server = fs.readFileSync(serverPath, 'utf8');
     expect(server).toMatch(
-      /scriptSrc:\s*\[[\s\S]*?"'self'"[\s\S]*?'https:\/\/cdn\.jsdelivr\.net'[\s\S]*?\(req,\s*res\)\s*=>\s*`'nonce-\$\{res\.locals\.cspNonce\}'`[\s\S]*?\]/
+      /scriptSrc:\s*\[[\s\S]*?"'self'"[\s\S]*?\(req,\s*res\)\s*=>\s*`'nonce-\$\{res\.locals\.cspNonce\}'`[\s\S]*?\]/
     );
+    expect(server).not.toMatch(/scriptSrc[\s\S]*?cdn\.jsdelivr\.net/);
     expect(server).not.toMatch(/scriptSrc:\s*\[[^\]]*'unsafe-inline'/);
     expect(server).not.toMatch(/scriptSrc:\s*\[[^\]]*'unsafe-eval'/);
     expect(server).not.toMatch(/scriptSrcAttr:\s*\[\s*"'unsafe-inline'"\s*]/);

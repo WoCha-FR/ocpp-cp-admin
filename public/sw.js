@@ -76,5 +76,6 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  if (!event.request.url.startsWith(self.location.origin)) return;
   event.respondWith(fetch(event.request));
 });

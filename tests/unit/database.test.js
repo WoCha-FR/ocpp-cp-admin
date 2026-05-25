@@ -435,7 +435,7 @@ describe('database — Reservations CRUD', () => {
     expect(db.getNextReservationId(cpId)).toBe(1);
   });
 
-  it('expireReservationByConnector sets Pending/Active → Expired', () => {
+  it('expireActiveReservationByConnector sets Pending → Expired', () => {
     const id = db.createReservation({
       chargepoint_id: cpId,
       connector_id: 2,
@@ -444,11 +444,11 @@ describe('database — Reservations CRUD', () => {
       expiry_date: EXPIRY,
       created_by: userId,
     });
-    db.expireReservationByConnector(cpId, 2);
+    db.expireActiveReservationByConnector(cpId, 2);
     expect(db.getReservationById(id).status).toBe('Expired');
   });
 
-  it('expireReservationByConnector also expires Active reservations', () => {
+  it('expireActiveReservationByConnector also expires Active reservations', () => {
     const id = db.createReservation({
       chargepoint_id: cpId,
       connector_id: 3,
@@ -459,8 +459,92 @@ describe('database — Reservations CRUD', () => {
     });
     db.activateReservationByConnector(cpId, 3);
     expect(db.getReservationById(id).status).toBe('Active');
-    db.expireReservationByConnector(cpId, 3);
+    db.expireActiveReservationByConnector(cpId, 3);
     expect(db.getReservationById(id).status).toBe('Expired');
+  });
+
+  it('expireActiveReservationByConnector does not expire InUse reservations', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 4,
+      reservation_id: 3,
+      id_tag: 'TAG004',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 4);
+    db.startUsingReservationByConnectorAndIdTag(cpId, 4, 'TAG004');
+    expect(db.getReservationById(id).status).toBe('InUse');
+    db.expireActiveReservationByConnector(cpId, 4);
+    expect(db.getReservationById(id).status).toBe('InUse');
+  });
+
+  it('startUsingReservationByConnectorAndIdTag sets Active → InUse only when idTag matches', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 5,
+      reservation_id: 4,
+      id_tag: 'TAG005',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 5);
+    const changed = db.startUsingReservationByConnectorAndIdTag(cpId, 5, 'WRONG_TAG');
+    expect(changed).toBe(0);
+    expect(db.getReservationById(id).status).toBe('Active');
+    const changed2 = db.startUsingReservationByConnectorAndIdTag(cpId, 5, 'TAG005');
+    expect(changed2).toBe(1);
+    expect(db.getReservationById(id).status).toBe('InUse');
+  });
+
+  it('fulfillReservationByConnectorAndIdTag sets InUse → Fulfilled only when idTag matches', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 6,
+      reservation_id: 5,
+      id_tag: 'TAG006',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 6);
+    db.startUsingReservationByConnectorAndIdTag(cpId, 6, 'TAG006');
+    const changed = db.fulfillReservationByConnectorAndIdTag(cpId, 6, 'WRONG_TAG');
+    expect(changed).toBe(0);
+    expect(db.getReservationById(id).status).toBe('InUse');
+    const changed2 = db.fulfillReservationByConnectorAndIdTag(cpId, 6, 'TAG006');
+    expect(changed2).toBe(1);
+    expect(db.getReservationById(id).status).toBe('Fulfilled');
+  });
+
+  it('fulfillInUseReservationByConnector sets InUse → Fulfilled regardless of idTag', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 7,
+      reservation_id: 6,
+      id_tag: 'TAG007',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByConnector(cpId, 7);
+    db.startUsingReservationByConnectorAndIdTag(cpId, 7, 'TAG007');
+    db.fulfillInUseReservationByConnector(cpId, 7);
+    expect(db.getReservationById(id).status).toBe('Fulfilled');
+  });
+
+  it('getReservationByOcppId returns reservation by OCPP-level reservation_id', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 8,
+      reservation_id: 42,
+      id_tag: 'TAG008',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    const resv = db.getReservationByOcppId(cpId, 42);
+    expect(resv).toBeDefined();
+    expect(resv.id).toBe(id);
+    expect(resv.id_tag).toBe('TAG008');
+    expect(db.getReservationByOcppId(cpId, 999)).toBeUndefined();
   });
 
   it('ON DELETE CASCADE removes reservations when chargepoint is deleted', () => {
@@ -936,5 +1020,49 @@ describe('database — meter values', () => {
     db.updateChargepointMeterValue(cpId, 99999);
     const cp = db.getChargepointById(cpId);
     expect(cp.meter_value).toBe(99999);
+  });
+});
+
+// ── getTransactions — pagination ──
+describe('database — getTransactions pagination', () => {
+  let cpId;
+  const START = '2026-01-01T10:00:00Z';
+  const STOP  = '2026-01-01T11:00:00Z';
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-PAGTEST', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-PAGTEST').id;
+    for (let i = 0; i < 5; i++) {
+      const tx = db.createTransaction(cpId, 1, 'TAG-PAG', i * 100, START, 'local');
+      if (i < 3) db.stopTransaction(tx.transaction_id, (i + 1) * 100, STOP, 'Local');
+    }
+  });
+
+  it('retourne { data, total, stats } quand limit est fourni', () => {
+    const result = db.getTransactions({ chargepoint_id: cpId, limit: 10, offset: 0 });
+    expect(result).toHaveProperty('data');
+    expect(result).toHaveProperty('total');
+    expect(result).toHaveProperty('stats');
+    expect(Array.isArray(result.data)).toBe(true);
+    expect(result.total).toBeGreaterThanOrEqual(5);
+  });
+
+  it('applique correctement LIMIT et OFFSET', () => {
+    const page1 = db.getTransactions({ chargepoint_id: cpId, limit: 2, offset: 0 });
+    const page2 = db.getTransactions({ chargepoint_id: cpId, limit: 2, offset: 2 });
+    expect(page1.data.length).toBe(2);
+    expect(page2.data.length).toBe(2);
+    expect(page1.data[0].id).not.toBe(page2.data[0].id);
+    expect(page1.total).toBe(page2.total);
+  });
+
+  it('stats.activeCount est correct', () => {
+    const result = db.getTransactions({ chargepoint_id: cpId, limit: 50, offset: 0 });
+    expect(result.stats.activeCount).toBe(2);
+  });
+
+  it('retourne un tableau brut sans limit (rétrocompat CSV)', () => {
+    const result = db.getTransactions({ chargepoint_id: cpId });
+    expect(Array.isArray(result)).toBe(true);
   });
 });

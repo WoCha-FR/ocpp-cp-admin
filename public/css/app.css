@@ -105,7 +105,7 @@
       border-right: 1px solid var(--sidebar-border);
     }
     .sidebar-header {
-      padding: 20px;
+      padding: 10px;
       border-bottom: 1px solid var(--sidebar-border);
     }
     .sidebar-header h1 { font-size: 18px; font-weight: 700; }
@@ -120,7 +120,7 @@
     .sidebar-nav { padding: 12px 0; overflow-y: auto; }
     .sidebar-nav a {
       display: flex; align-items: center; gap: 10px;
-      padding: 10px 20px; color: var(--sidebar-muted);
+      padding: 5px 10px; color: var(--sidebar-muted);
       text-decoration: none; font-size: 14px;
       transition: all 0.15s;
       cursor: pointer;
@@ -129,15 +129,15 @@
     .sidebar-nav a.active { background: var(--primary); color: white; }
     .sidebar-nav a .icon { width: 20px; text-align: center; }
     .sidebar-nav .nav-divider {
-      margin: 8px 20px; border-top: 1px solid var(--sidebar-border);
+      margin: 5px 10px; border-top: 1px solid var(--sidebar-border);
       padding-top: 8px;
     }
     .sidebar-nav .nav-divider-label {
       font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--sidebar-muted); padding: 0 20px 2px; display: block;
+      color: var(--sidebar-muted); padding: 0 10px 2px; display: block;
     }
     .sidebar-footer {
-      padding: 16px 20px;
+      padding: 10px 10px;
       border-top: 1px solid var(--sidebar-border);
       font-size: 13px;
     }
@@ -614,7 +614,7 @@
     /* ── Theme Toggle ── */
     .theme-toggle {
       display: flex; align-items: center; gap: 10px;
-      padding: 10px 20px; cursor: pointer;
+      padding: 5px 10px; cursor: pointer;
       color: var(--sidebar-muted); font-size: 14px;
       transition: all 0.15s; background: none; border: none; width: 100%;
       text-align: left;
@@ -632,7 +632,7 @@
     .login-lang { position: absolute; top: 16px; right: 16px; }
     .sidebar-lang {
       display: flex; align-items: center; gap: 10px;
-      padding: 6px 20px; color: var(--sidebar-muted); font-size: 14px;
+      padding: 6px 10px; color: var(--sidebar-muted); font-size: 14px;
     }
     .sidebar-lang .icon { width: 20px; text-align: center; }
 
@@ -674,3 +674,9 @@
     .restart-overlay-box { background: var(--bg-surface); border-radius: 12px; padding: 32px 40px; text-align: center; min-width: 260px; }
     .restart-overlay-box .spinner { font-size: 2em; margin-bottom: 12px; animation: spin 1s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    /* ── Pagination ── */
+    .pagination-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+    .page-info { font-size: 13px; color: var(--text-secondary); }
+    .page-buttons { display: flex; gap: 4px; flex-wrap: wrap; }
+    .page-ellipsis { display: inline-flex; align-items: center; padding: 0 4px; color: var(--text-secondary); font-size: 13px; }
+    .page-btn:disabled { cursor: default; }

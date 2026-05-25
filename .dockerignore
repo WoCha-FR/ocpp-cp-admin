@@ -32,6 +32,10 @@ coverage/
 .nyc_output/
 tests/
 jest.config.cjs
+playwright.config.js
+playwright-report/
+test-results/
+config/config.e2e.json
 .secretlintrc.json
 .secretlintignore
 

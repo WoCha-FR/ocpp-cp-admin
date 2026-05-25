@@ -88,4 +88,10 @@ describe('notificationTemplates — format', () => {
     expect(result).toHaveProperty('titre');
     expect(result).toHaveProperty('corps');
   });
+
+  it('firmware_status returns titre and corps', () => {
+    const result = format('firmware_status', { cp_name: 'Station A', status: 'Installed' }, 'fr');
+    expect(result).toHaveProperty('titre');
+    expect(result).toHaveProperty('corps');
+  });
 });

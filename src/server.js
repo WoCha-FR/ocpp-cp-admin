@@ -86,12 +86,8 @@ app.use(
       directives: {
         defaultSrc: ["'self'"],
         // Inline event handlers migrated to delegated data handlers.
-        scriptSrc: [
-          "'self'",
-          'https://cdn.jsdelivr.net',
-          (req, res) => `'nonce-${res.locals.cspNonce}'`,
-        ],
-        styleSrc: ["'self'", "'unsafe-inline'", 'https://cdn.jsdelivr.net'],
+        scriptSrc: ["'self'", (req, res) => `'nonce-${res.locals.cspNonce}'`],
+        styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", 'data:'],
         // 'self' couvre déjà les WebSockets vers la même origine (ws:// et wss://)
         connectSrc: ["'self'"],
@@ -262,7 +258,7 @@ function resolveLegalFile(type, lang) {
 }
 
 function wrapLegalHtml(content, lang, appName) {
-  const backlink = i18next.t('login.backToLogin', { lng: lang });
+  const backlink = i18next.t('legal.back', { lng: lang });
   return `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -287,7 +283,7 @@ function wrapLegalHtml(content, lang, appName) {
 </head>
 <body>
   <div class="legal-page">
-    <a href="/" class="legal-back">&#8592; ${backlink}</a>
+    <a href="/about" class="legal-back">&#8592; ${backlink}</a>
     <p class="legal-app">${appName}</p>
     ${content}
   </div>
@@ -380,10 +376,20 @@ app.get('/terms', (req, res) => {
   res.type('html').send(wrapLegalHtml(html, lang, config.cpoName || 'CP Admin'));
 });
 
-// Servir flatpickr depuis node_modules
+// Servir flatpickr, chartjs & i18next depuis node_modules
 app.use(
   '/vendor/flatpickr',
   express.static(path.join(__dirname, '..', 'node_modules', 'flatpickr', 'dist'), { index: false })
+);
+app.use(
+  '/vendor/chartjs',
+  express.static(path.join(__dirname, '..', 'node_modules', 'chart.js', 'dist'), { index: false })
+);
+app.use(
+  '/vendor/i18next',
+  express.static(path.join(__dirname, '..', 'node_modules', 'i18next', 'dist', 'umd'), {
+    index: false,
+  })
 );
 // Servir l'UI statique (index: false pour que le catch-all serve le HTML avec i18n)
 app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
@@ -545,10 +551,16 @@ function attachUIWebSocket(server, label) {
   const wss = new WebSocketServer({ server, path: '/ws' });
   wss.on('connection', (ws, req) => {
     sessionMiddleware(req, {}, () => {
-      if (!req.session?.passport?.user) {
-        ws.close(4401, 'Unauthorized');
+      const userId = req.session?.passport?.user;
+      if (!userId) {
+        ws.close(401, 'Unauthorized');
         return;
       }
+      const dbUser = db.getUserById(userId);
+      const dbSites = db.getUserSites(userId);
+      ws.userId = userId;
+      ws.userRole = dbUser?.role ?? 'user';
+      ws.userSiteIds = (dbSites || []).map((s) => s.site_id);
       uiClients.add(ws);
       logWEBUI.debug(`UI WS Client connected${label} (${uiClients.size} total)`);
       ws.on('close', () => {
@@ -562,10 +574,10 @@ function attachUIWebSocket(server, label) {
 attachUIWebSocket(httpServer, '');
 if (httpsServer) attachUIWebSocket(httpsServer, ' (secure)');
 
-function broadcastToUI(message) {
+function broadcastToUI(message, siteId = null) {
   for (const client of uiClients) {
-    if (client.readyState === 1) {
-      // WebSocket.OPEN
+    if (client.readyState !== 1) continue;
+    if (siteId === null || client.userRole === 'admin' || client.userSiteIds?.includes(siteId)) {
       client.send(message);
     }
   }

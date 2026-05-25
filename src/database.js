@@ -921,39 +921,74 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
     LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id`;
 
 function buildTransactionQuery(baseCondition, baseParams, filters) {
-  let query = TRANSACTIONS_BASE_QUERY + ' WHERE ' + baseCondition;
+  let whereClause = ' WHERE ' + baseCondition;
   const params = [...baseParams];
   if (filters.chargepoint_id) {
-    query += ' AND t.chargepoint_id = ?';
+    whereClause += ' AND t.chargepoint_id = ?';
     params.push(filters.chargepoint_id);
   }
   if (filters.site_ids && filters.site_ids.length > 0) {
-    query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
+    whereClause += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
   } else if (filters.site_id) {
-    query += ' AND cp.site_id = ?';
+    whereClause += ' AND cp.site_id = ?';
     params.push(filters.site_id);
   }
   if (filters.status) {
-    query += ' AND t.status = ?';
+    whereClause += ' AND t.status = ?';
     params.push(filters.status);
   }
   if (filters.from) {
-    query += ' AND t.start_time >= ?';
+    whereClause += ' AND date(t.start_time) >= ?';
     params.push(filters.from);
   }
   if (filters.to) {
-    query += ' AND t.start_time <= ?';
+    whereClause += ' AND date(t.start_time) <= ?';
     params.push(filters.to);
   }
-  query += ` ORDER BY t.id DESC`;
-  return db
-    .prepare(query)
-    .all(...params)
-    .map((row) => ({
-      ...row,
-      transaction_id: row.transaction_id,
-    }));
+
+  if (filters.limit == null) {
+    // Chemin sans pagination (CSV export) : retourne tableau brut pour rétrocompat
+    return db
+      .prepare(TRANSACTIONS_BASE_QUERY + whereClause + ' ORDER BY t.id DESC')
+      .all(...params)
+      .map((row) => ({ ...row }));
+  }
+
+  // Chemin paginé : COUNT + stats agrégées + données
+  const ID_TAG_SUBQUERY = `(SELECT it2.id FROM id_tags it2
+      JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
+      WHERE it2.id_tag = t.id_tag
+      ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
+      LIMIT 1)`;
+  const countQuery =
+    `SELECT
+    COUNT(*) as total,
+    COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
+      THEN t.meter_stop - t.meter_start ELSE 0 END), 0) as totalEnergy,
+    COUNT(CASE WHEN t.status = 'Active' THEN 1 END) as activeCount,
+    COALESCE(SUM(CASE WHEN t.start_time IS NOT NULL AND t.stop_time IS NOT NULL
+      THEN (julianday(t.stop_time) - julianday(t.start_time)) * 1440 ELSE 0 END), 0) as totalMinutes
+    FROM transactions t
+    JOIN chargepoints cp ON t.chargepoint_id = cp.id
+    LEFT JOIN id_tags it ON it.id = ${ID_TAG_SUBQUERY}` + whereClause;
+
+  const countResult = db.prepare(countQuery).get(...params);
+
+  const rows = db
+    .prepare(TRANSACTIONS_BASE_QUERY + whereClause + ' ORDER BY t.id DESC LIMIT ? OFFSET ?')
+    .all(...params, filters.limit, filters.offset ?? 0)
+    .map((row) => ({ ...row }));
+
+  return {
+    data: rows,
+    total: countResult.total,
+    stats: {
+      totalEnergy: countResult.totalEnergy,
+      activeCount: countResult.activeCount,
+      totalMinutes: countResult.totalMinutes,
+    },
+  };
 }
 
 function getTransactions(filters = {}) {
@@ -1490,11 +1525,11 @@ function getUserTransactionStats(userId, filters = {}) {
     let filterWhere = '';
     const filterParams = [userId];
     if (filters.from) {
-      filterWhere += ' AND t.start_time >= ?';
+      filterWhere += ' AND date(t.start_time) >= ?';
       filterParams.push(filters.from);
     }
     if (filters.to) {
-      filterWhere += ' AND t.start_time <= ?';
+      filterWhere += ' AND date(t.start_time) <= ?';
       filterParams.push(filters.to);
     }
     filtered = db.prepare(buildQuery(filterWhere)).get(...filterParams);
@@ -1941,9 +1976,37 @@ function activateReservationByConnector(chargepointId, connectorId) {
   ).run(chargepointId, connectorId);
 }
 
-function expireReservationByConnector(chargepointId, connectorId) {
+function expireActiveReservationByConnector(chargepointId, connectorId) {
   db.prepare(
     "UPDATE reservations SET status = 'Expired' WHERE chargepoint_id = ? AND connector_id = ? AND status IN ('Pending','Active')"
+  ).run(chargepointId, connectorId);
+}
+
+function getReservationByOcppId(chargepointId, ocppReservationId) {
+  return db
+    .prepare('SELECT * FROM reservations WHERE chargepoint_id = ? AND reservation_id = ?')
+    .get(chargepointId, ocppReservationId);
+}
+
+function startUsingReservationByConnectorAndIdTag(chargepointId, connectorId, idTag) {
+  return db
+    .prepare(
+      "UPDATE reservations SET status = 'InUse' WHERE chargepoint_id = ? AND connector_id = ? AND id_tag = ? AND status = 'Active'"
+    )
+    .run(chargepointId, connectorId, idTag).changes;
+}
+
+function fulfillReservationByConnectorAndIdTag(chargepointId, connectorId, idTag) {
+  return db
+    .prepare(
+      "UPDATE reservations SET status = 'Fulfilled' WHERE chargepoint_id = ? AND connector_id = ? AND id_tag = ? AND status = 'InUse'"
+    )
+    .run(chargepointId, connectorId, idTag).changes;
+}
+
+function fulfillInUseReservationByConnector(chargepointId, connectorId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Fulfilled' WHERE chargepoint_id = ? AND connector_id = ? AND status = 'InUse'"
   ).run(chargepointId, connectorId);
 }
 
@@ -2119,7 +2182,11 @@ module.exports = {
   getReservationById,
   updateReservationStatus,
   activateReservationByConnector,
-  expireReservationByConnector,
+  expireActiveReservationByConnector,
+  getReservationByOcppId,
+  startUsingReservationByConnectorAndIdTag,
+  fulfillReservationByConnectorAndIdTag,
+  fulfillInUseReservationByConnector,
   getExpiredActiveReservations,
   resetStateOnStartup,
   resetConnectorsByChargepoint,

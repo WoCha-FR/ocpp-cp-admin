@@ -79,10 +79,15 @@ function validateSchema(...schemas) {
   ];
 }
 
-// Retourne la limite paginée (null = pas de limite si non fournie)
-function parsePagination(req, maxLimit = 200) {
-  if (!req.query.limit) return null;
-  return Math.min(Number(req.query.limit), maxLimit);
+const TX_PAGE_SIZE_DEFAULT = 50;
+const TX_PAGE_SIZE_MAX = 200;
+
+function parsePagination(req, defaultLimit = TX_PAGE_SIZE_DEFAULT) {
+  const limit = req.query.limit
+    ? Math.min(Number(req.query.limit), TX_PAGE_SIZE_MAX)
+    : defaultLimit;
+  const page = req.query.page ? Math.max(1, Number(req.query.page)) : 1;
+  return { limit, page, offset: (page - 1) * limit };
 }
 
 function generateResetToken(userId, expiresInMinutes = 30) {
@@ -702,7 +707,7 @@ router.post(
     try {
       const cp = db.createChargepoint(identity, identity, pending.password, 0, data.site_id);
       pendingChargepoints.delete(identity);
-      broadcast('chargepoint_update', cp);
+      broadcast('chargepoint_update', cp, cp.site_id ?? null);
       res.json(cp);
     } catch (e) {
       errorResponse(res, 400, e.message);
@@ -932,7 +937,7 @@ router.post(
       });
       const status = result?.status ?? 'Rejected';
       db.updateChargingProfileStatus(dbId, status);
-      broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       res.json({ status, id: dbId });
     } catch (e) {
       db.deleteChargingProfileById(dbId);
@@ -974,7 +979,7 @@ router.post(
         if (profile_purpose) filters.profile_purpose = profile_purpose;
         if (stack_level != null) filters.stack_level = stack_level;
         db.clearChargingProfilesByFilter(cp.id, filters);
-        broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+        broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
       res.json({ status: result?.status ?? 'Unknown' });
     } catch (e) {
@@ -1042,7 +1047,7 @@ router.post(
       }
     }
 
-    broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+    broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
     res.json({ sent: profiles.length, accepted, rejected, errors });
   }
 );
@@ -1098,7 +1103,7 @@ router.delete(
 
     if (profile.status === 'Rejected') {
       db.deleteChargingProfileById(profileDbId);
-      broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+      broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       return res.json({ status: 'Accepted' });
     }
 
@@ -1111,7 +1116,7 @@ router.delete(
       });
       if (result?.status === 'Accepted') {
         db.deleteChargingProfileById(profileDbId);
-        broadcast('charging_profile_updated', { chargepoint_id: cp.id });
+        broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
       res.json({ status: result?.status ?? 'Unknown' });
     } catch (e) {
@@ -1175,7 +1180,7 @@ router.post(
         expiry_date,
         created_by: req.user.id,
       });
-      broadcast('reservation_updated', { chargepoint_id: cp.id });
+      broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       res.status(201).json({ status, id });
     } catch (e) {
       errorResponse(res, 500, e.message);
@@ -1208,7 +1213,7 @@ router.delete(
       const status = result?.status ?? 'Rejected';
       if (status === 'Accepted') {
         db.updateReservationStatus(reservation.id, 'Cancelled');
-        broadcast('reservation_updated', { chargepoint_id: cp.id });
+        broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
       res.json({ status });
     } catch (e) {
@@ -1679,8 +1684,9 @@ router.get(
     if (req.query.status) filters.status = req.query.status;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
-    const limit = parsePagination(req);
-    if (limit !== null) filters.limit = limit;
+    const { limit, offset } = parsePagination(req);
+    filters.limit = limit;
+    filters.offset = offset;
 
     const user = req.user;
     if (user.role !== 'admin') {
@@ -1688,7 +1694,11 @@ router.get(
       if (siteIds && siteIds.length > 0) {
         filters.site_ids = siteIds;
       } else if (siteIds && siteIds.length === 0) {
-        return res.json([]);
+        return res.json({
+          data: [],
+          total: 0,
+          stats: { totalEnergy: 0, activeCount: 0, totalMinutes: 0 },
+        });
       }
     }
 
@@ -1808,8 +1818,8 @@ router.get(
     if (req.query.origin) filters.origin = req.query.origin;
     if (req.query.message_type) filters.message_type = req.query.message_type;
     if (req.query.action) filters.action = req.query.action;
-    if (req.query.date_from) filters.date_from = `${req.query.date_from} 00:00:00`;
-    if (req.query.date_to) filters.date_to = `${req.query.date_to} 23:59:59`;
+    if (req.query.date_from) filters.date_from = req.query.date_from;
+    if (req.query.date_to) filters.date_to = req.query.date_to;
 
     // Empêcher un manager de voir tous les messages hors de ses sites
     if (req.user.role !== 'admin') {
@@ -1931,6 +1941,7 @@ router.put(
     // Préserver les valeurs null explicites (matchedData les exclut à cause de optional+nullable)
     if (req.body.site_id === null && data.site_id === undefined) data.site_id = null;
     if (req.body.user_id === null && data.user_id === undefined) data.user_id = null;
+    if (req.body.expiry_date === null && data.expiry_date === undefined) data.expiry_date = null;
     // Un manager ne peut pas changer le site du tag vers un site qu'il ne gère pas
     if (req.user.role !== 'admin') {
       if (!data.site_id) {
@@ -1983,8 +1994,8 @@ router.get(
     if (req.query.chargepoint_id) filters.chargepoint_id = Number(req.query.chargepoint_id);
     if (req.query.id_tag) filters.id_tag = req.query.id_tag;
     if (req.query.status) filters.status = req.query.status;
-    const limit = parsePagination(req);
-    if (limit !== null) filters.limit = limit;
+    const pagination = parsePagination(req);
+    filters.limit = pagination.limit;
     // Filtrer par sites accessibles
     const siteIds = getUserSiteIds(req);
     if (siteIds !== null) filters.site_ids = siteIds;
@@ -2035,7 +2046,8 @@ router.get('/dashboard', requireManager, (req, res) => {
           connectorStats[c.cnstatus]++;
         else connectorStats[c.cnstatus] = 1;
       }
-      if (c.error_code && c.error_code !== 'NoError') connectorStats.WithError++;
+      if (c.error_code && c.error_code !== 'NoError' && c.cnstatus !== 'Faulted')
+        connectorStats.WithError++;
     }
   });
 
@@ -2205,6 +2217,9 @@ router.get(
     if (req.query.status) filters.status = req.query.status;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
+    const { limit, offset } = parsePagination(req);
+    filters.limit = limit;
+    filters.offset = offset;
     res.json(db.getUserTransactions(req.user.id, filters));
   }
 );
@@ -2497,7 +2512,7 @@ router.get(
   requireAuth,
   ...validateSchema(schema.NotificationsLogQuery),
   (req, res) => {
-    const limit = parsePagination(req) ?? 50;
+    const { limit } = parsePagination(req);
     res.json(db.getNotificationLog(req.user.id, limit));
   }
 );

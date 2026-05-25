@@ -57,6 +57,15 @@ function format(event, data, lang = 'fr') {
       titre: tradN('notifications.diagnostics_upload.title', { cp_name }),
       corps: tradN('notifications.diagnostics_upload.body', { status: data.status }),
     }),
+    firmware_status: () => ({
+      titre: tradN('notifications.firmware_status.title', { cp_name }),
+      corps: [
+        tradN('notifications.firmware_status.body', { status: data.status }),
+        line('notifications.common.site', data.site_name, { ...opts, site_name: data.site_name }),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }),
     init_config_result: () => ({
       titre: tradN('notifications.init_config_result.title', { identity: data.identity }),
       corps: [

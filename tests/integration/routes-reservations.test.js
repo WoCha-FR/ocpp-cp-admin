@@ -340,6 +340,44 @@ describe('POST /api/chargepoints/:id/reservations', () => {
     const row2 = db.prepare('SELECT * FROM reservations WHERE id = ?').get(res2.body.id);
     expect(row2.reservation_id).toBe(2);
   });
+
+  it("le reservation_id ne réutilise pas l'id d'une réservation InUse", async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, db, cp, adminUser } = createApp({ callClient });
+    db.prepare(
+      "INSERT INTO reservations (chargepoint_id, connector_id, reservation_id, id_tag, expiry_date, status, created_by) VALUES (?,?,?,?,?,?,?)"
+    ).run(cp.id, 1, 1, 'TAG001', EXPIRY, 'InUse', adminUser.id);
+
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/reservations`)
+      .set(CSRF_HEADER, csrf)
+      .send({ connector_id: 2, id_tag: 'TAG002', expiry_date: EXPIRY });
+
+    expect(res.status).toBe(201);
+    const row = db.prepare('SELECT * FROM reservations WHERE id = ?').get(res.body.id);
+    expect(row.reservation_id).toBe(2);
+  });
+
+  it("le reservation_id peut réutiliser l'id d'une réservation Fulfilled", async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, db, cp, adminUser } = createApp({ callClient });
+    db.prepare(
+      "INSERT INTO reservations (chargepoint_id, connector_id, reservation_id, id_tag, expiry_date, status, created_by) VALUES (?,?,?,?,?,?,?)"
+    ).run(cp.id, 1, 1, 'TAG001', EXPIRY, 'Fulfilled', adminUser.id);
+
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/reservations`)
+      .set(CSRF_HEADER, csrf)
+      .send({ connector_id: 2, id_tag: 'TAG002', expiry_date: EXPIRY });
+
+    expect(res.status).toBe(201);
+    const row = db.prepare('SELECT * FROM reservations WHERE id = ?').get(res.body.id);
+    expect(row.reservation_id).toBe(1);
+  });
 });
 
 // ══════════════════════════════════════════════════════
@@ -430,5 +468,20 @@ describe('DELETE /api/reservations/:reservationId', () => {
 
     const row = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
     expect(row.status).toBe('Pending');
+  });
+
+  it('conserve le statut InUse si la borne refuse l\'annulation', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Rejected' });
+    const { app, db, cp, adminUser } = createApp({ callClient });
+    const id = insertReservation(db, cp.id, adminUser.id, { status: 'InUse' });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    const res = await agent.delete(`/api/reservations/${id}`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('Rejected');
+
+    const row = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
+    expect(row.status).toBe('InUse');
   });
 });

@@ -248,6 +248,13 @@
     "cpReservationCancelled": "Reservation cancelled",
     "cpReservationCreated": "Reservation created",
     "cpReservationRejected": "Reservation rejected by chargepoint: {{status}}",
+    "cpReservationExpiryExceedsTag": "Reservation expiry date exceeds the badge expiry date.",
+    "cpReservationStatusPending": "Pending",
+    "cpReservationStatusActive": "Active",
+    "cpReservationStatusInUse": "In use",
+    "cpReservationStatusFulfilled": "Fulfilled",
+    "cpReservationStatusExpired": "Expired",
+    "cpReservationStatusCancelled": "Cancelled",
     "cpLogsTitle": "Message log",
     "cpLogsNbMsg_one": "Message ({{count}})",
     "cpLogsNbMsg_other": "Messages ({{count}})",
@@ -686,6 +693,12 @@
       "title": "Diagnostics upload result – {{cp_name}}",
       "body": "The result is: {{status}}."
     },
+    "firmware_status": {
+      "eLabel": "Firmware update status",
+      "eDesc" : "Firmware update result from a chargepoint",
+      "title": "Firmware update – {{cp_name}}",
+      "body": "The status is: {{status}}."
+    },
     "init_config_result": {
       "eLabel": "Init config result",
       "eDesc": "Result of the initialization configuration sequence for a chargepoint",
@@ -910,6 +923,7 @@
     "VALIDATION_OCPP_ACTION": "Invalid OCPP action.",
     "VALIDATION_IDTAG_STATUS": "Invalid ID tag status.",
     "VALIDATION_LIMIT": "Invalid limit value.",
+    "VALIDATION_PAGE": "Invalid page number.",
     "VALIDATION_OCPP_METHOD": "Invalid OCPP method.",
     "VALIDATION_OCPP_PARAMS": "Invalid OCPP params.",
     "VALIDATION_CONFIG_KEY": "Invalid config key.",
@@ -988,7 +1002,8 @@
   "legal": {
     "privacy": "Privacy Policy",
     "terms": "Terms of Use",
-    "about": "About"
+    "about": "About",
+    "back": "Back"
   },
   "about": {
     "title": "Charge Point Admin",

@@ -21,8 +21,8 @@
     })();
   </script>
   <link rel="stylesheet" href="/css/app.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/i18next@26.2.0/i18next.min.js" integrity="sha384-u9Lno28ZWcetjYvw0ZPd9denWYeXoDKRTjmqMr989WT3F2gVOGDSYnOyy5nMqcQr" crossorigin="anonymous"></script>
+  <script src="/vendor/chartjs/chart.umd.min.js"></script>
+  <script src="/vendor/i18next/i18next.min.js"></script>
   <script src="/vendor/flatpickr/flatpickr.min.js"></script>
   <script>
     const __supportedLangs = window.__SUPPORTED_LANGUAGES__ || ['fr'];
@@ -796,14 +796,25 @@ function connectWebSocket() {
 }
 
 function shouldRefreshDetail(eventType, cpIdentity, cpId) {
-  if (currentPage !== 'chargepointdetail') return true;
+  if (currentPage !== 'chargepointdetail') {
+    const pageEvents = {
+      dashboard:      ['chargepoint_connected', 'chargepoint_disconnected', 'status_update', 'transaction_start', 'transaction_stop', 'transaction_updated'],
+      chargepoints:   ['chargepoint_connected', 'chargepoint_disconnected', 'chargepoint_heartbeat', 'chargepoint_update', 'pending_chargepoint'],
+      connectors:     ['chargepoint_connected', 'chargepoint_disconnected', 'status_update', 'transaction_updated', 'transaction_start', 'transaction_stop'],
+      transactions:   ['transaction_start', 'transaction_stop', 'transaction_updated'],
+      mytransactions: ['transaction_start', 'transaction_stop', 'transaction_updated'],
+      mycharge:       ['chargepoint_connected', 'chargepoint_disconnected', 'status_update', 'transaction_updated', 'transaction_start', 'transaction_stop'],
+    };
+    if (pageEvents[currentPage] && !pageEvents[currentPage].includes(eventType)) return false;
+    return true;
+  }
   const isOurCp = (cpIdentity && cpIdentity === currentDetailCpIdentity)
     || (cpId && cpId === currentDetailCpId);
   if (!isOurCp) return false;
   const tabEvents = {
-    infos:        ['chargepoint_update', 'status_update', 'chargepoint_heartbeat', 'chargepoint_connected', 'chargepoint_disconnected', 'transaction_start', 'transaction_stop', 'meter_values'],
+    infos:        ['chargepoint_update', 'status_update', 'chargepoint_connected', 'chargepoint_disconnected', 'chargepoint_meter_update'],
     connecteurs:  ['status_update', 'chargepoint_connected', 'chargepoint_disconnected', 'meter_values'],
-    transactions: ['transaction_start', 'transaction_stop'],
+    transactions: ['transaction_start', 'transaction_stop', 'transaction_updated'],
     logs:         [],
     profiles:     ['chargepoint_connected', 'chargepoint_disconnected'],
     reservations: ['chargepoint_connected', 'chargepoint_disconnected'],
@@ -812,38 +823,68 @@ function shouldRefreshDetail(eventType, cpIdentity, cpId) {
   return (tabEvents[currentDetailTab] || []).includes(eventType);
 }
 
+function cpEventMatchesFilters(identity, cpId) {
+  if (!cpListFilters.site_id && !cpListFilters.mode) return true;
+  const cp = cpListCache.find(c =>
+    (identity && c.identity === identity) ||
+    (cpId && String(c.id) === String(cpId))
+  );
+  if (!cp) return true;
+  if (cpListFilters.site_id && String(cp.site_id) !== cpListFilters.site_id) return false;
+  if (cpListFilters.mode && String(cp.mode) !== cpListFilters.mode) return false;
+  return true;
+}
+
+function txPageNeedsRefresh(filters) {
+  const today = _today();
+  if (filters.to && filters.to < today) return false;
+  if (filters.status === 'Completed') return false;
+  return true;
+}
+
 function handleRealtimeEvent(type, data) {
   switch (type) {
     case 'chargepoint_connected':
       toast(t('realTime.cpConnected', { identity: data.identity }), 'success');
-      if (shouldRefreshDetail('chargepoint_connected', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_connected', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'chargepoint_disconnected':
       toast(t('realTime.cpDisconnected', { identity: data.identity }), 'error');
-      if (shouldRefreshDetail('chargepoint_disconnected', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_disconnected', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'chargepoint_update':
-      if (shouldRefreshDetail('chargepoint_update', data.identity, data.id)) refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_update', data.identity, data.id) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, data.id))) refreshCurrentPage();
       break;
     case 'status_update':
-      if (shouldRefreshDetail('status_update', data.chargepoint?.identity, data.chargepoint?.id)) refreshCurrentPage();
+      if (shouldRefreshDetail('status_update', data.chargepoint?.identity, data.chargepoint?.id) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.chargepoint?.identity, data.chargepoint?.id))) refreshCurrentPage();
       break;
     case 'chargepoint_heartbeat':
-      if (shouldRefreshDetail('chargepoint_heartbeat', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('chargepoint_heartbeat', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'transaction_start':
       toast(t('realTime.transactionStarted', { identity: data.identity, connectorId: data.connectorId }), 'info');
-      if (shouldRefreshDetail('transaction_start', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('transaction_start', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'transaction_stop':
       toast(t('realTime.transactionStopped', { identity: data.identity }), 'info');
-      if (shouldRefreshDetail('transaction_stop', data.identity, null)) refreshCurrentPage();
+      if (shouldRefreshDetail('transaction_stop', data.identity, null) && (currentPage !== 'chargepoints' || cpEventMatchesFilters(data.identity, null))) refreshCurrentPage();
       break;
     case 'meter_values':
       if (shouldRefreshDetail('meter_values', data.identity, null)) refreshCurrentPage();
       break;
+    case 'chargepoint_meter_update':
+      if (shouldRefreshDetail('chargepoint_meter_update', data.identity, null)) refreshCurrentPage();
+      break;
+    case 'transaction_updated':
+      if (currentPage === 'transactions' && !txPageNeedsRefresh(txFilters)) break;
+      if (currentPage === 'mytransactions' && !txPageNeedsRefresh(myTxFilters)) break;
+      if (shouldRefreshDetail('transaction_updated', data.identity, null)) refreshCurrentPage();
+      break;
     case 'ocpp_message':
-      if (currentPage === 'chargepointdetail' && currentDetailTab === 'logs' && data.identity === currentDetailCpIdentity) refreshCurrentPage();
+      if (currentPage === 'chargepointdetail' && currentDetailTab === 'logs' && data.identity === currentDetailCpIdentity) {
+        const today = _today();
+        if (!cpLogsFilters.date_to || cpLogsFilters.date_to >= today) refreshCurrentPage();
+      }
       break;
     case 'chargepoint_config_update':
       // Ne pas rafraîchir toute la page, juste la config si on est sur le détail
@@ -876,6 +917,12 @@ function refreshCurrentPage(force = false) {
   if (!force && STATIC_PAGES.has(currentPage)) return;
   if (currentPage === 'chargepointdetail' && currentDetailCpId) {
     showChargepointDetail(currentDetailCpId, currentDetailTab);
+  } else if (currentPage === 'transactions') {
+    renderTransactions(true);
+  } else if (currentPage === 'mytransactions') {
+    renderMyTransactions(true);
+  } else if (currentPage === 'chargepoints') {
+    renderChargepoints(true);
   } else {
     navigate(currentPage, true);
   }
@@ -966,7 +1013,8 @@ async function renderDashboard() {
   document.getElementById('topbarActions').innerHTML = '';
   try {
     const stats = await api('GET', '/dashboard');
-    const transactions = await api('GET', '/transactions?status=Active');
+    const txResponse = await api('GET', '/transactions?status=Active');
+    const transactions = txResponse.data ?? [];
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
@@ -1022,7 +1070,7 @@ async function renderDashboard() {
         <div class="card-header"><h3>${t('dashboard.totalActiveCharge')}</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('dashboard.noActiveCharge')}</p>` : `
         <table>
-          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th></tr></thead>
+          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.charts')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
@@ -1034,6 +1082,7 @@ async function renderDashboard() {
                 <td>${formatDate(tx.start_time)}</td>
                 <td>${tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
+                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1199,8 +1248,10 @@ function renderDashboardCharts(data) {
 //  CHARGEPOINTS
 // ══════════════════════════════════════
 let cpListFilters = { site_id: '', mode: '', cpstatus: '', online: '' };
+let cpListCache = [];
 
-async function renderChargepoints() {
+async function renderChargepoints(keepState = false) {
+  if (!keepState) cpListFilters = { site_id: '', mode: '', cpstatus: '', online: '' };
   const isAdmin = currentUser.role === 'admin';
   document.getElementById('topbarActions').innerHTML = isAdmin
     ? `<button class="btn btn-primary" data-onclick="showCreateChargepointModal()">+ ${t('chargepoint.cpBtnAdd')}</button>`
@@ -1208,6 +1259,7 @@ async function renderChargepoints() {
 
   try {
     const chargepoints = await api('GET', '/chargepoints');
+    cpListCache = chargepoints;
     const sites = await api('GET', '/sites');
     let pendingHtml = '';
     if (adminManage()) {
@@ -1337,12 +1389,12 @@ function applyCpListFilters() {
   cpListFilters.mode = document.getElementById('cpFilterMode').value;
   cpListFilters.cpstatus = document.getElementById('cpFilterStatus').value;
   cpListFilters.online = document.getElementById('cpFilterOnline').value;
-  renderChargepoints();
+  renderChargepoints(true);
 }
 
 function resetCpListFilters() {
   cpListFilters = { site_id: '', mode: '', cpstatus: '', online: '' };
-  renderChargepoints();
+  renderChargepoints(true);
 }
 
 async function showCreateChargepointModal() {
@@ -1426,7 +1478,7 @@ async function createChargepoint() {
     });
     closeModal();
     toast(t('chargepoint.cpCreated'), 'success');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1443,7 +1495,7 @@ async function updateChargepoint(id) {
     await api('PUT', `/chargepoints/${id}`, data);
     closeModal();
     toast(t('chargepoint.cpUpdated'), 'success');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1452,7 +1504,7 @@ async function deleteChargepoint(id, name) {
   try {
     await api('DELETE', `/chargepoints/${id}`);
     toast(t('chargepoint.cpDeleted'), 'success');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1509,7 +1561,7 @@ async function execAcceptPending(identity) {
   try {
     await api('POST', `/chargepoints/pending/${encodeURIComponent(identity)}/accept`, { site_id: siteId });
     toast(t('chargepoint.cpAccepted', { identity }), 'success');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1518,7 +1570,7 @@ async function rejectPendingChargepoint(identity) {
   try {
     await api('DELETE', `/chargepoints/pending/${encodeURIComponent(identity)}`);
     toast(`${t('chargepoint.cpRefused', { identity })}`, 'info');
-    renderChargepoints();
+    renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1529,6 +1581,10 @@ let currentDetailTab = 'infos';
 
 async function showChargepointDetail(id, tab) {
   currentPage = 'chargepointdetail';
+  if (currentDetailCpId !== id) {
+    cpLogsFilters = { date_from: _today(), date_to: _today() };
+    cpTxFilters = { from: _today(), to: _today() };
+  }
   currentDetailCpId = id;
   currentDetailTab = tab || 'infos';
   document.querySelectorAll('.sidebar-nav a').forEach(a => {
@@ -1783,10 +1839,30 @@ async function saveConnector(connectorId) {
 
 // ── Onglet Transactions ────────────────────────────────────────────
 async function renderDetailTabTransactions(cp) {
-  const transactions = await api('GET', `/transactions?chargepoint_id=${cp.id}`);
+  const queryParams = new URLSearchParams();
+  queryParams.set('chargepoint_id', cp.id);
+  if (cpTxFilters.from) queryParams.set('from', cpTxFilters.from);
+  if (cpTxFilters.to)   queryParams.set('to',   cpTxFilters.to);
+  queryParams.set('limit', '200');
+  queryParams.set('page', '1');
+  const { data: transactions, total: cpTxTotal } = await api('GET', '/transactions?' + queryParams.toString());
   document.getElementById('detailTabContent').innerHTML = `
+    <div class="card card-filters">
+      <div class="card-header"><h3>🔍 ${t('filters.filter')}</h3></div>
+      <div class="msg-filters">
+        <div class="form-group">
+          <label>${t('filters.dateFrom')}</label>
+          <input type="text" id="cpTxFilterFrom" readonly />
+        </div>
+        <div class="form-group">
+          <label>${t('filters.dateTo')}</label>
+          <input type="text" id="cpTxFilterTo" readonly />
+        </div>
+        <button class="btn btn-outline btn-sm" data-onclick="resetCpTxFilters(${cp.id})">${t('common.reset')}</button>
+      </div>
+    </div>
     <div class="card">
-      <div class="card-header"><h3>${t('transac.transactions', { count: transactions.length })}</h3></div>
+      <div class="card-header"><h3>${t('transac.transactions', { count: cpTxTotal })}</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noTransactions')}</p>` : `
       <table>
         <thead><tr><th>ID</th><th>${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th></tr></thead>
@@ -1808,11 +1884,66 @@ async function renderDetailTabTransactions(cp) {
       </table>`}
     </div>
   `;
+  const lc = getLocaleConfig();
+  const fpCpTxOpts = {
+    dateFormat: 'Y-m-d',
+    altInput: true,
+    altFormat: lc.dateFormat,
+    locale: getFlatpickrLocaleOption(lc),
+    maxDate: 'today',
+    onChange: () => applyCpTxFilters(cp),
+  };
+  flatpickr('#cpTxFilterFrom', { ...fpCpTxOpts, defaultDate: cpTxFilters.from || 'today' });
+  flatpickr('#cpTxFilterTo',   { ...fpCpTxOpts, defaultDate: cpTxFilters.to   || 'today' });
+}
+
+function applyCpTxFilters(cp) {
+  cpTxFilters = {
+    from: document.getElementById('cpTxFilterFrom')?.value || undefined,
+    to:   document.getElementById('cpTxFilterTo')?.value   || undefined,
+  };
+  renderDetailTabTransactions(cp);
+}
+
+async function resetCpTxFilters(cpId) {
+  cpTxFilters = { from: _today(), to: _today() };
+  const cp = await api('GET', `/chargepoints/${cpId}`);
+  renderDetailTabTransactions(cp);
 }
 
 // ── Onglet Messages Log ────────────────────────────────────────────
-const _today = () => new Date().toISOString().slice(0, 10);
+const _today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+function localDateToUtcStr(dateStr, endOfDay) {
+  const d = new Date(dateStr + (endOfDay ? 'T23:59:59' : 'T00:00:00'));
+  return d.toISOString().replace('T', ' ').slice(0, 19);
+}
 let cpLogsFilters = { date_from: _today(), date_to: _today() };
+let cpTxFilters = { from: _today(), to: _today() };
+
+function renderPaginationBar(currentPage, total, pageSize, callbackFn) {
+  if (total <= pageSize) return '';
+  const totalPages = Math.ceil(total / pageSize);
+  const from = (currentPage - 1) * pageSize + 1;
+  const to = Math.min(currentPage * pageSize, total);
+  const pages = [...new Set([1, totalPages, currentPage, currentPage - 1, currentPage + 1]
+    .filter(p => p >= 1 && p <= totalPages))].sort((a, b) => a - b);
+  let buttons = '';
+  let prev = null;
+  for (const p of pages) {
+    if (prev !== null && p - prev > 1) buttons += `<span class="page-ellipsis">…</span>`;
+    buttons += `<button class="btn btn-sm ${p === currentPage ? 'btn-primary' : 'btn-outline'} page-btn"
+      ${p === currentPage ? 'disabled' : ''} data-onclick="${callbackFn}(${p})">${p}</button>`;
+    prev = p;
+  }
+  return `<div class="pagination-bar">
+    <span class="page-info">${from}–${to} / ${total}</span>
+    <div class="page-buttons">
+      <button class="btn btn-sm btn-outline" ${currentPage <= 1 ? 'disabled' : ''} data-onclick="${callbackFn}(${currentPage - 1})">&#8249;</button>
+      ${buttons}
+      <button class="btn btn-sm btn-outline" ${currentPage >= totalPages ? 'disabled' : ''} data-onclick="${callbackFn}(${currentPage + 1})">&#8250;</button>
+    </div>
+  </div>`;
+}
 
 async function renderDetailTabLogs(cp) {
   const queryParams = new URLSearchParams();
@@ -1820,8 +1951,8 @@ async function renderDetailTabLogs(cp) {
   if (cpLogsFilters.origin) queryParams.set('origin', cpLogsFilters.origin);
   if (cpLogsFilters.message_type) queryParams.set('message_type', cpLogsFilters.message_type);
   if (cpLogsFilters.action) queryParams.set('action', cpLogsFilters.action);
-  if (cpLogsFilters.date_from) queryParams.set('date_from', cpLogsFilters.date_from);
-  if (cpLogsFilters.date_to)   queryParams.set('date_to',   cpLogsFilters.date_to);
+  if (cpLogsFilters.date_from) queryParams.set('date_from', localDateToUtcStr(cpLogsFilters.date_from, false));
+  if (cpLogsFilters.date_to)   queryParams.set('date_to',   localDateToUtcStr(cpLogsFilters.date_to, true));
 
   const messages = await api('GET', '/ocpp-messages?' + queryParams.toString());
 
@@ -1890,6 +2021,7 @@ async function renderDetailTabLogs(cp) {
     altInput: true,
     altFormat: lc.dateFormat,
     locale: getFlatpickrLocaleOption(lc),
+    maxDate: 'today',
     onChange: () => applyCpLogFilters(cp.id, cp.identity),
   };
   flatpickr('#cpLogFilterDateFrom', { ...fpLogOpts, defaultDate: cpLogsFilters.date_from || 'today' });
@@ -2081,7 +2213,7 @@ async function loadReservations(cpId) {
       container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('chargepoint.cpReservationsNone')}</p>`;
       return;
     }
-    const reservationBadgeClass = (s) => s === 'Active' || s === 'Fulfilled' ? 'badge-green' : s === 'Pending' ? 'badge-yellow' : 'badge-gray';
+    const reservationBadgeClass = (s) => s === 'Active' || s === 'Fulfilled' ? 'badge-green' : s === 'InUse' ? 'badge-blue' : s === 'Pending' ? 'badge-yellow' : 'badge-gray';
     container.innerHTML = `
       <div style="overflow-x:auto">
         <table>
@@ -2099,8 +2231,8 @@ async function loadReservations(cpId) {
               <tr>
                 <td>${r.connector_id}</td>
                 <td>${escapeHtml(r.id_tag)}</td>
-                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.expiry_date)}</td>
-                <td><span class="badge ${reservationBadgeClass(r.status)}">${r.status}</span></td>
+                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDateShort(r.expiry_date)}</td>
+                <td><span class="badge ${reservationBadgeClass(r.status)}">${t('chargepoint.cpReservationStatus' + r.status, { defaultValue: r.status })}</span></td>
                 <td class="text-muted" style="font-size:12px">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
                 <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.created_at)}</td>
                 ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}
@@ -2133,6 +2265,8 @@ async function showCreateReservationModal(cpId) {
     if (tag.user_id && tag.user_sites) return tag.user_sites.some(s => s.site_id === cp.site_id);
     return !tag.user_id;
   };
+  const now = new Date();
+  const isExpired = (tag) => tag.expiry_date && new Date(tag.expiry_date) < now;
   const visibleTags = tags.filter(tag => !isAutoTag(tag) && tag.active && tagMatchesSite(tag));
   const minExpiry = new Date(Date.now() + 60000);
   openModal(`
@@ -2145,8 +2279,11 @@ async function showCreateReservationModal(cpId) {
     </div>
     <div class="form-group">
       <label>${t('chargepoint.cpReservationIdTag')}</label>
-      <select id="resIdTag">
-        ${visibleTags.map(tag => `<option value="${escapeHtml(tag.id_tag)}">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}${tag.description ? ' — ' + escapeHtml(tag.description) : ''}</option>`).join('')}
+      <select id="resIdTag" data-onchange="onResTagChange(this)">
+        ${visibleTags.map(tag => isExpired(tag)
+          ? `<option value="${escapeHtml(tag.id_tag)}" data-expiry="${tag.expiry_date || ''}" disabled style="color:var(--text-muted)">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}${tag.description ? ' — ' + escapeHtml(tag.description) : ''} (${t('idtags.rfRespExpired')})</option>`
+          : `<option value="${escapeHtml(tag.id_tag)}" data-expiry="${tag.expiry_date || ''}">${escapeHtml(tag.id_tag)}${tag.username ? ' — ' + escapeHtml(tag.username) : ''}${tag.description ? ' — ' + escapeHtml(tag.description) : ''}</option>`
+        ).join('')}
       </select>
     </div>
     <div class="form-group">
@@ -2169,12 +2306,29 @@ async function showCreateReservationModal(cpId) {
     minDate: minExpiry,
     defaultDate: minExpiry,
   });
+  onResTagChange(document.getElementById('resIdTag'));
+}
+
+function onResTagChange(el) {
+  const tagExpiry = el?.options[el.selectedIndex]?.dataset.expiry;
+  const fp = document.getElementById('resExpiry')?._flatpickr;
+  if (!fp) return;
+  const maxDate = tagExpiry ? new Date(tagExpiry) : null;
+  fp.set('maxDate', maxDate);
+  if (maxDate && fp.selectedDates[0] && fp.selectedDates[0] > maxDate) {
+    fp.setDate(maxDate);
+  }
 }
 
 async function submitCreateReservation(cpId) {
   const connector_id = Number(document.getElementById('resConnectorId').value);
   const id_tag = document.getElementById('resIdTag').value;
   const expiry_date = new Date(document.getElementById('resExpiry').value).toISOString();
+  const tagExpiry = document.getElementById('resIdTag')?.selectedOptions[0]?.dataset.expiry;
+  if (tagExpiry && new Date(expiry_date) > new Date(tagExpiry)) {
+    toast(t('chargepoint.cpReservationExpiryExceedsTag'), 'error');
+    return;
+  }
   const result = await api('POST', `/chargepoints/${cpId}/reservations`, { connector_id, id_tag, expiry_date });
   if (result.status === 'Accepted') {
     closeModal();
@@ -2196,6 +2350,7 @@ async function cancelReservation(cpId, reservationId) {
   }
 }
 
+// ── Onglet Profils de Charge ─────────────────────────────────────────────
 function showProfileDetail(profileDbId) {
   const p = _cpProfilesById[profileDbId];
   if (!p) return;
@@ -2344,7 +2499,7 @@ async function showCreateProfileModal(cpId, isOnline) {
   `);
   // Init flatpickr on date fields
   const lc = getLocaleConfig();
-  const fpOpts = { enableTime: true, dateFormat: 'Z', altInput: true, altFormat: lc.dateTimeFormat, time_24hr: true, locale: getFlatpickrLocaleOption(lc) };
+  const fpOpts = { enableTime: true, dateFormat: 'Z', altInput: true, altFormat: lc.dateTimeFormat, time_24hr: true, locale: getFlatpickrLocaleOption(lc), minDate: new Date() };
   flatpickr('#cp_valid_from', fpOpts);
   flatpickr('#cp_valid_to', fpOpts);
   // Init conditional display
@@ -3000,8 +3155,13 @@ async function userStopCharge(chargepointId, transactionId, cpName, connId) {
 let idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
 let idTagsActiveTab = 'tags';
 
-async function renderIdTags(tab) {
-  idTagsActiveTab = tab || 'tags';
+async function renderIdTags(tab, keepState = false) {
+  if (tab !== undefined) idTagsActiveTab = tab;
+  else if (!keepState) idTagsActiveTab = 'tags';
+  if (!keepState) {
+    idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
+    idTagsEventsFilters = { status: '', chargepoint: '', id_tag: '', limit: '100' };
+  }
   const isAdmin = currentUser.role === 'admin';
   const managedSiteIds = isAdmin ? null : (currentUser.sites || []).filter(s => s.role === 'manager').map(s => s.site_id);
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-primary" data-onclick="showCreateIdTagModal()">+ ${t('idtags.rfBtnAdd')}</button>`;
@@ -3100,7 +3260,7 @@ async function renderIdTags(tab) {
                     ? tag.user_sites.map(s => `<span class="badge badge-green">${escapeHtml(s.site_name)}</span>`).join(' ')
                     : (tag.user_id ? '<span class="text-muted">-</span>' : `<span class="badge badge-yellow">${t('filters.all')}</span>`))}</td>
                 <td>${tag.description ? escapeHtml(tag.description) : '<span class="text-muted">-</span>'}</td>
-                <td>${tag.expiry_date ? formatDate(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
+                <td>${tag.expiry_date ? formatDateShort(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
                 <td class="text-muted">${formatDate(tag.created_at)}</td>
                 <td><div class="flex-gap">
                   ${!canEditTag(tag) ? (isAutoTag(tag) ? `<span class="badge badge-yellow" title="${t('idtags.rfVirtualHint')}">${t('idtags.rfVirtual')}</span>` : '') : `
@@ -3123,12 +3283,12 @@ function applyIdTagsFilters() {
   idTagsFilters.site_id = document.getElementById('idTagFilterSite').value;
   idTagsFilters.user = document.getElementById('idTagFilterUser').value;
   idTagsFilters.auto = document.getElementById('idTagFilterAuto').value;
-  renderIdTags();
+  renderIdTags(idTagsActiveTab, true);
 }
 
 function resetIdTagsFilters() {
   idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
-  renderIdTags();
+  renderIdTags(idTagsActiveTab, true);
 }
 
 async function showCreateIdTagModal() {
@@ -3175,7 +3335,8 @@ async function showCreateIdTagModal() {
     altInput: true,
     altFormat: lc.dateTimeFormat,
     time_24hr: true,
-    locale: getFlatpickrLocaleOption(lc)
+    locale: getFlatpickrLocaleOption(lc),
+    minDate: new Date()
   });
 }
 
@@ -3250,7 +3411,7 @@ async function createIdTag() {
     });
     closeModal();
     toast(t('idtags.rfAdded'), 'success');
-    renderIdTags();
+    renderIdTags(idTagsActiveTab, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -3270,7 +3431,7 @@ async function updateIdTag(id) {
     });
     closeModal();
     toast(t('idtags.rfUpdated'), 'success');
-    renderIdTags();
+    renderIdTags(idTagsActiveTab, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -3279,12 +3440,12 @@ async function deleteIdTag(id, name) {
   try {
     await api('DELETE', `/id-tags/${id}`);
     toast(t('idtags.rfDeleted'), 'success');
-    renderIdTags();
+    renderIdTags(idTagsActiveTab, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
 function switchIdTagsTab(tab) {
-  renderIdTags(tab);
+  renderIdTags(tab, true);
 }
 
 // ── Historique des badges ──
@@ -3386,12 +3547,12 @@ function applyIdTagsEventsFilters() {
   idTagsEventsFilters.chargepoint = document.getElementById('evtFilterCp').value;
   idTagsEventsFilters.id_tag = document.getElementById('evtFilterTag').value.trim();
   idTagsEventsFilters.limit = document.getElementById('evtFilterLimit').value;
-  renderIdTags();
+  renderIdTags(idTagsActiveTab, true);
 }
 
 function resetIdTagsEventsFilters() {
   idTagsEventsFilters = { status: '', chargepoint: '', id_tag: '', limit: '100' };
-  renderIdTags();
+  renderIdTags(idTagsActiveTab, true);
 }
 
 const eventReasonLabels = {
@@ -3441,12 +3602,12 @@ async function renderUsers() {
                 <td>${u.shortname ? escapeHtml(u.shortname) : '<span class="text-muted">-</span>'}</td>
                 <td>${formatRoleColumn(u)}</td>
                 <td>${formatUserSites(u.sites)}</td>
-                <td class="text-muted">${formatDate(u.created_at)}</td>
+                <td class="text-muted">${formatDateShort(u.created_at)}</td>
                 <td class="text-muted">${u.last_login ? formatDate(u.last_login) : '<span class="text-muted">-</span>'}</td>
                 <td>
                   <button class="btn btn-indigo btn-sm" data-onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
-                  ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
                   <button class="btn btn-teal btn-sm" data-onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
+                  ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
                   ${canDelete ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteUser(${u.id}, '${escapeAttr(u.useremail)}'))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
@@ -3669,9 +3830,12 @@ function onSiteCheckChange(siteId) {
 // ══════════════════════════════════════
 //  TRANSACTIONS
 // ══════════════════════════════════════
-let txFilters = {};
+let txFilters = { from: _today(), to: _today() };
+let txPage = 1;
+const TX_PAGE_SIZE = 50;
 
-async function renderTransactions() {
+async function renderTransactions(keepState = false) {
+  if (!keepState) { txFilters = { from: _today(), to: _today() }; txPage = 1; }
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-primary" data-onclick="exportTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
@@ -3686,43 +3850,31 @@ async function renderTransactions() {
     if (txFilters.status) queryParams.set('status', txFilters.status);
     if (txFilters.from) queryParams.set('from', txFilters.from);
     if (txFilters.to) queryParams.set('to', txFilters.to);
-    const qs = queryParams.toString();
-    const transactions = await api('GET', '/transactions' + (qs ? '?' + qs : ''));
+    queryParams.set('limit', TX_PAGE_SIZE);
+    queryParams.set('page', txPage);
+    const { data: transactions, total: txTotal, stats: txStats } = await api('GET', '/transactions?' + queryParams.toString());
 
     // Filtrer les bornes selon le site sélectionné
     const filteredCps = txFilters.site_id
       ? chargepoints.filter(cp => cp.site_id === Number(txFilters.site_id))
       : chargepoints;
 
-    // Calculer les stats
-    const totalEnergy = transactions.reduce((sum, tx) => {
-      if (tx.meter_stop != null && tx.meter_start != null) return sum + (tx.meter_stop - tx.meter_start);
-      return sum;
-    }, 0);
-    const completedCount = transactions.filter(tx => tx.status === 'Completed').length;
-    const activeCount = transactions.filter(tx => tx.status === 'Active').length;
-    let totalDuration = 0;
-    transactions.forEach(tx => {
-      if (tx.start_time && tx.stop_time) {
-        totalDuration += Math.floor((new Date(tx.stop_time) - new Date(tx.start_time)) / 60000);
-      }
-    });
-    const totalHours = formatDuree(totalDuration);
-    const activeFilterCount = Object.values(txFilters).filter(v => v).length;
+    const totalHours = formatDuree(txStats.totalMinutes);
+    const activeFilterCount = ['site_id', 'chargepoint_id', 'status'].filter(k => txFilters[k]).length;
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
         <div class="stat-card">
           <div class="stat-label">${t('transac.nbTransactions')}</div>
-          <div class="stat-value">${transactions.length}</div>
+          <div class="stat-value">${txTotal}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">${t('transac.chargedEnergy')}</div>
-          <div class="stat-value" style="color:var(--success)">${(totalEnergy / 1000).toFixed(2)} kWh</div>
+          <div class="stat-value" style="color:var(--success)">${(txStats.totalEnergy / 1000).toFixed(2)} kWh</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">${t('transac.inProgress')}</div>
-          <div class="stat-value" style="color:var(--primary)">${activeCount}</div>
+          <div class="stat-value" style="color:var(--primary)">${txStats.activeCount}</div>
         </div>
         <div class="stat-card">
           <div class="stat-label">${t('transac.totalDuration')}</div>
@@ -3767,7 +3919,7 @@ async function renderTransactions() {
       </div>
 
       <div class="card">
-        <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: transactions.length })})</h3></div>
+        <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: txTotal })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
         <table style="font-size: 0.85em;">
           <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
@@ -3790,7 +3942,8 @@ async function renderTransactions() {
               </tr>
             `).join('')}
           </tbody>
-        </table>`}
+        </table>
+        ${renderPaginationBar(txPage, txTotal, TX_PAGE_SIZE, 'goToTxPage')}`}
       </div>
     `;
     const lc = getLocaleConfig();
@@ -3799,7 +3952,7 @@ async function renderTransactions() {
       altInput: true,
       altFormat: lc.dateFormat,
       locale: getFlatpickrLocaleOption(lc),
-      defaultDate: null,
+      maxDate: 'today',
       onChange: function () { applyTxFilters(); }
     };
     flatpickr('#txFilterFrom', { ...fpOpts, defaultDate: txFilters.from || null });
@@ -3822,12 +3975,19 @@ function applyTxFilters() {
     from: document.getElementById('txFilterFrom')?.value || undefined,
     to: document.getElementById('txFilterTo')?.value || undefined,
   };
-  renderTransactions();
+  txPage = 1;
+  renderTransactions(true);
 }
 
 function resetTxFilters() {
-  txFilters = {};
-  renderTransactions();
+  txFilters = { from: _today(), to: _today() };
+  txPage = 1;
+  renderTransactions(true);
+}
+
+function goToTxPage(page) {
+  txPage = page;
+  renderTransactions(true);
 }
 
 function exportTransactionsCsv() {
@@ -3857,7 +4017,9 @@ function formatTxUser(tx) {
 // ══════════════════════════════════════
 //  MES TRANSACTIONS (utilisateur courant)
 // ══════════════════════════════════════
-let myTxFilters = {};
+let myTxFilters = { from: _today(), to: _today() };
+let myTxPage = 1;
+const MY_TX_PAGE_SIZE = 50;
 
 function myTxKpiCompare(current, previous) {
   if (!previous || previous === 0) return current > 0 ? '<div class="kpi-compare up">↑ new</div>' : '';
@@ -3870,7 +4032,8 @@ function myTxKpiCompare(current, previous) {
   return `<div class="kpi-compare ${cls}">${arrow} ${sign}${pct}% vs ${t('transac.kpiPrevMonth')}</div>`;
 }
 
-async function renderMyTransactions() {
+async function renderMyTransactions(keepState = false) {
+  if (!keepState) { myTxFilters = { from: _today(), to: _today() }; myTxPage = 1; }
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-primary" data-onclick="exportMyTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
@@ -3878,20 +4041,23 @@ async function renderMyTransactions() {
     if (myTxFilters.status) queryParams.set('status', myTxFilters.status);
     if (myTxFilters.from) queryParams.set('from', myTxFilters.from);
     if (myTxFilters.to) queryParams.set('to', myTxFilters.to);
-    const qs = queryParams.toString();
+    queryParams.set('limit', MY_TX_PAGE_SIZE);
+    queryParams.set('page', myTxPage);
 
     // Charger transactions + stats KPI en parallèle
     const statsParams = new URLSearchParams();
     if (myTxFilters.from) statsParams.set('from', myTxFilters.from);
     if (myTxFilters.to) statsParams.set('to', myTxFilters.to);
     const statsQs = statsParams.toString();
-    const [transactions, kpiStats] = await Promise.all([
-      api('GET', '/user/transactions' + (qs ? '?' + qs : '')),
+    const [txResponse, kpiStats] = await Promise.all([
+      api('GET', '/user/transactions?' + queryParams.toString()),
       api('GET', '/user/transactions/stats' + (statsQs ? '?' + statsQs : ''))
     ]);
+    const transactions = txResponse.data;
+    const myTxTotal = txResponse.total;
 
     const hasDateFilter = myTxFilters.from || myTxFilters.to;
-    const myActiveFilterCount = Object.values(myTxFilters).filter(v => v).length;
+    const myActiveFilterCount = ['status'].filter(k => myTxFilters[k]).length;
 
     // Déterminer les valeurs principales et secondaires selon le contexte
     const main = hasDateFilter && kpiStats.filtered ? kpiStats.filtered : kpiStats.currentMonth;
@@ -3958,7 +4124,7 @@ async function renderMyTransactions() {
       </div>
     </div>
     <div class="card">
-      <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: transactions.length })})</h3></div>
+      <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: myTxTotal })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
         <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.duration')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
@@ -3992,7 +4158,8 @@ async function renderMyTransactions() {
             </tr>`;
           }).join('')}
         </tbody>
-        </table>`}
+        </table>
+        ${renderPaginationBar(myTxPage, myTxTotal, MY_TX_PAGE_SIZE, 'goToMyTxPage')}`}
       </div>
     `;
     const lc = getLocaleConfig();
@@ -4001,6 +4168,7 @@ async function renderMyTransactions() {
       altInput: true,
       altFormat: lc.dateFormat,
       locale: getFlatpickrLocaleOption(lc),
+      maxDate: 'today',
       defaultDate: null,
       onChange: function () { applyMyTxFilters(); }
     };
@@ -4017,12 +4185,19 @@ function applyMyTxFilters() {
     from: document.getElementById('myTxFilterFrom')?.value || undefined,
     to: document.getElementById('myTxFilterTo')?.value || undefined,
   };
-  renderMyTransactions();
+  myTxPage = 1;
+  renderMyTransactions(true);
 }
 
 function resetMyTxFilters() {
-  myTxFilters = {};
-  renderMyTransactions();
+  myTxFilters = { from: _today(), to: _today() };
+  myTxPage = 1;
+  renderMyTransactions(true);
+}
+
+function goToMyTxPage(page) {
+  myTxPage = page;
+  renderMyTransactions(true);
 }
 
 function exportMyTransactionsCsv() {
@@ -5270,7 +5445,7 @@ async function renderSites() {
               <td style="font-weight:500">${escapeHtml(s.sname)}</td>
               <td>${s.address ? escapeHtml(s.address) : '-'}</td>
               <td>${cpCount}</td>
-              <td class="text-muted">${formatDate(s.created_at)}</td>
+              <td class="text-muted">${formatDateShort(s.created_at)}</td>
               <td>
                 ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, '${escapeAttr(s.sname)}')">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>
@@ -5346,11 +5521,12 @@ async function deleteSite(id, name) {
 let siteUsersContext = { siteId: null, siteName: null };
 let siteUsersFilters = {};
 
-async function renderSiteUsers(siteId, siteName) {
+async function renderSiteUsers(siteId, siteName, keepState = false) {
   if (siteId) {
     siteUsersContext.siteId = siteId;
     siteUsersContext.siteName = siteName;
   }
+  if (!keepState) siteUsersFilters = {};
   const sid = siteUsersContext.siteId;
   const sname = siteUsersContext.siteName;
   if (!sid) return navigate('sites');
@@ -5493,12 +5669,12 @@ function applySiteUsersFilters() {
     status: document.getElementById('suFilterStatus').value,
     search: document.getElementById('suFilterSearch').value,
   };
-  renderSiteUsers();
+  renderSiteUsers(null, null, true);
 }
 
 function resetSiteUsersFilters() {
   siteUsersFilters = {};
-  renderSiteUsers();
+  renderSiteUsers(null, null, true);
 }
 
 function showAddUserToSiteModal(siteId, siteName) {
@@ -5517,7 +5693,7 @@ async function toggleUserSiteAuth(userId, siteId, authorized, siteName) {
   try {
     await api('PATCH', `/sites/${siteId}/users/${userId}`, { authorized });
     toast(authorized ? t('sites.siteUserUnsuspended') : t('sites.siteUserSuspended'), 'success');
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5530,7 +5706,7 @@ async function toggleUserSiteRole(userId, siteId, newRole, siteName, userEmail) 
   try {
     await api('PATCH', `/sites/${siteId}/users/${userId}`, { role: newRole });
     toast(isPromote ? t('sites.siteUserPromoted') : t('sites.siteUserDemoted'), 'success');
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5546,7 +5722,7 @@ async function addUserToSite(siteId, siteName) {
       toast(t('sites.siteUserAdded'), 'info');
     }
     closeModal();
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5555,7 +5731,7 @@ async function addSelfToSite(siteId, siteName) {
   try {
     await api('POST', `/sites/${siteId}/users`, { useremail: currentUser.useremail });
     toast(t('sites.siteUserAdded'), 'info');
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5564,7 +5740,7 @@ async function removeUserFromSite(userId, siteId, siteName, userEmail) {
   try {
     await api('DELETE', `/sites/${siteId}/users/${userId}`);
     toast(t('sites.siteUserRemoved'), 'success');
-    renderSiteUsers();
+    renderSiteUsers(null, null, true);
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -5636,13 +5812,22 @@ function formatDate(str) {
     // On normalise en ajoutant 'T' et 'Z' pour que le navigateur les interprète correctement en UTC.
     const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str) ? str.replace(' ', 'T') + 'Z' : str;
     const d = new Date(normalized);
+    return d.toLocaleString(lc.dateFns, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch { return str; }
+}
+function formatDateShort(str) {
+  const lc = getLocaleConfig();
+  if (!str) return '-';
+  try {
+    const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(str) ? str.replace(' ', 'T') + 'Z' : str;
+    const d = new Date(normalized);
     return d.toLocaleString(lc.dateFns, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   } catch { return str; }
 }
 function formatDuree(minutes) {
   if (minutes == null) return '-';
   const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
+  const m = Math.floor(minutes % 60);
   //return minutes;
   return `${h}${t('common.unitHours')}${m.toString().padStart(2, '0')}${t('common.unitMinutes')}`;
 }

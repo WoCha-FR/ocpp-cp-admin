@@ -31,7 +31,11 @@ const mockDb = {
   getChargepointOverrideConfigs: jest.fn(() => []),
   getChargingProfiles: jest.fn(() => []),
   activateReservationByConnector: jest.fn(),
-  expireReservationByConnector: jest.fn(),
+  expireActiveReservationByConnector: jest.fn(),
+  fulfillInUseReservationByConnector: jest.fn(),
+  startUsingReservationByConnectorAndIdTag: jest.fn(() => 0),
+  getReservationByOcppId: jest.fn(),
+  fulfillReservationByConnectorAndIdTag: jest.fn(() => 0),
   updateTransactionChargingState: jest.fn(),
 };
 
@@ -53,6 +57,7 @@ const mockConnectedClients = new Map();
 const mockPendingRemoteStarts = new Map();
 const mockBroadcast = jest.fn();
 const mockTrackRepeatedAuthReject = jest.fn();
+const mockDebounceAvailabilityNotif = jest.fn((identity, connectorId, fn) => fn());
 
 jest.mock('../../src/ocpp-common', () => ({
   broadcast: mockBroadcast,
@@ -62,6 +67,7 @@ jest.mock('../../src/ocpp-common', () => ({
   registerCallClientImpl: jest.fn(),
   registerHandlersFn: jest.fn(),
   checkConnectorErrorCooldown: jest.fn().mockReturnValue(true),
+  debounceAvailabilityNotif: mockDebounceAvailabilityNotif,
 }));
 
 const { callClient16, register16Handlers, OCPP16_STANDARD_KEYS } = require('../../src/ocpp-server-16');
@@ -79,6 +85,7 @@ function makeClient(identity) {
     protocol: 'ocpp1.6',
     call: jest.fn().mockResolvedValue({}),
     handle: jest.fn(),
+    once: jest.fn(),
     _handlers: {},
   };
 }
@@ -111,8 +118,8 @@ describe('ocpp-server-16 — callClient16', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1 });
 
     await callClient16('CP001', 'Reset', { type: 'Soft' });
-    expect(mockBroadcast).toHaveBeenCalledWith('ocpp_message', expect.objectContaining({ message_type: 'CALL' }));
-    expect(mockBroadcast).toHaveBeenCalledWith('ocpp_message', expect.objectContaining({ message_type: 'CALLRESULT' }));
+    expect(mockBroadcast).toHaveBeenCalledWith('ocpp_message', expect.objectContaining({ message_type: 'CALL' }), null);
+    expect(mockBroadcast).toHaveBeenCalledWith('ocpp_message', expect.objectContaining({ message_type: 'CALLRESULT' }), null);
   });
 
   it('bulkUpserts config after GetConfiguration', async () => {
@@ -123,7 +130,7 @@ describe('ocpp-server-16 — callClient16', () => {
 
     await callClient16('CP002', 'GetConfiguration', {});
     expect(mockDb.bulkUpsertChargepointConfig).toHaveBeenCalledWith(2, configKey);
-    expect(mockBroadcast).toHaveBeenCalledWith('chargepoint_config_update', expect.any(Object));
+    expect(mockBroadcast).toHaveBeenCalledWith('chargepoint_config_update', expect.any(Object), null);
   });
 
   it('works when cp is null (no DB record)', async () => {
@@ -377,7 +384,7 @@ describe('ocpp-server-16 — Heartbeat', () => {
 
   it('broadcasts chargepoint_heartbeat', () => {
     client._handlers['Heartbeat']({});
-    expect(mockBroadcast).toHaveBeenCalledWith('chargepoint_heartbeat', expect.any(Object));
+    expect(mockBroadcast).toHaveBeenCalledWith('chargepoint_heartbeat', expect.any(Object), null);
   });
 });
 
@@ -673,6 +680,63 @@ describe('ocpp-server-16 — StopTransaction', () => {
     });
     expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 2, 6000);
   });
+
+  it('calls fulfillReservationByConnectorAndIdTag when InUse reservation matches', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      chargepoint_id: 1,
+      connector_id: 1,
+      id_tag: 'TAG001',
+      meter_start: 0,
+      meter_stop: 3000,
+      start_time: new Date(Date.now() - 1800000).toISOString(),
+      stop_time: new Date().toISOString(),
+    });
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.fulfillReservationByConnectorAndIdTag.mockReturnValue(1);
+
+    client._handlers['StopTransaction']({
+      transactionId: 42,
+      meterStop: 3000,
+      timestamp: new Date().toISOString(),
+      reason: 'Local',
+    });
+
+    expect(mockDb.fulfillReservationByConnectorAndIdTag).toHaveBeenCalledWith(1, 1, 'TAG001');
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'reservation_updated',
+      { chargepoint_id: 1 },
+      expect.anything()
+    );
+  });
+
+  it('does not broadcast reservation_updated when no InUse reservation matched', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      chargepoint_id: 1,
+      connector_id: 1,
+      id_tag: 'TAG001',
+      meter_start: 0,
+      meter_stop: 3000,
+      start_time: new Date(Date.now() - 1800000).toISOString(),
+      stop_time: new Date().toISOString(),
+    });
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.fulfillReservationByConnectorAndIdTag.mockReturnValue(0);
+
+    client._handlers['StopTransaction']({
+      transactionId: 42,
+      meterStop: 3000,
+      timestamp: new Date().toISOString(),
+      reason: 'Local',
+    });
+
+    expect(mockDb.fulfillReservationByConnectorAndIdTag).toHaveBeenCalledWith(1, 1, 'TAG001');
+    const reservationBroadcasts = mockBroadcast.mock.calls.filter(
+      (c) => c[0] === 'reservation_updated'
+    );
+    expect(reservationBroadcasts).toHaveLength(0);
+  });
 });
 
 // ── MeterValues ──
@@ -791,6 +855,78 @@ describe('ocpp-server-16 — MeterValues', () => {
     expect(result).toEqual({});
     expect(mockDb.updateTransactionPowerEnergy).not.toHaveBeenCalled();
   });
+
+  it('broadcasts transaction_updated when active transaction exists', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({ meter_start: 0 });
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [
+            { measurand: 'Power.Active.Import', value: '7.4', unit: 'kW' },
+            { measurand: 'Energy.Active.Import.Register', value: '5000', unit: 'Wh' },
+          ],
+        },
+      ],
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'transaction_updated',
+      expect.objectContaining({ transactionId: 42, power: 7400, energy: 5000 }),
+      null
+    );
+  });
+
+  it('does not broadcast transaction_updated without active transaction', () => {
+    mockDb.getActiveTransactionByConnector.mockReturnValue(null);
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [{ measurand: 'Power.Active.Import', value: '3.0', unit: 'kW' }],
+        },
+      ],
+    });
+    const txUpdatedCalls = mockBroadcast.mock.calls.filter((c) => c[0] === 'transaction_updated');
+    expect(txUpdatedCalls).toHaveLength(0);
+  });
+
+  it('broadcasts chargepoint_meter_update when energy measurand is present', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: null, meter_value: 2000 });
+    client._handlers['MeterValues']({
+      connectorId: 0,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [
+            { measurand: 'Energy.Active.Import.Register', value: '2000', unit: 'Wh' },
+          ],
+        },
+      ],
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'chargepoint_meter_update',
+      { identity: 'CP001', meter_value: 2000 },
+      null
+    );
+  });
+
+  it('does not broadcast chargepoint_meter_update when no energy measurand', () => {
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [{ measurand: 'Power.Active.Import', value: '3.0', unit: 'kW' }],
+        },
+      ],
+    });
+    const calls = mockBroadcast.mock.calls.filter((c) => c[0] === 'chargepoint_meter_update');
+    expect(calls).toHaveLength(0);
+  });
 });
 
 // ── DataTransfer ──
@@ -900,6 +1036,25 @@ describe('ocpp-server-16 — StatusNotification', () => {
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
     expect(mockDb.stopTransaction).not.toHaveBeenCalled();
   });
+
+  it('appelle debounceAvailabilityNotif pour connector_available (Unavailable → Available)', () => {
+    mockDb.getConnectorByChargepointAndId.mockReturnValue({ cnstatus: 'Unavailable', connector_id: 1 });
+    mockDebounceAvailabilityNotif.mockClear();
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError' });
+    expect(mockDebounceAvailabilityNotif).toHaveBeenCalledWith('CP001', 1, expect.any(Function));
+  });
+
+  it('appelle debounceAvailabilityNotif pour connector_unavailable', () => {
+    mockDebounceAvailabilityNotif.mockClear();
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Unavailable', errorCode: 'NoError' });
+    expect(mockDebounceAvailabilityNotif).toHaveBeenCalledWith('CP001', 1, expect.any(Function));
+  });
+
+  it('ne déclenche pas debounceAvailabilityNotif pour les statuts non Available/Unavailable', () => {
+    mockDebounceAvailabilityNotif.mockClear();
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
+    expect(mockDebounceAvailabilityNotif).not.toHaveBeenCalled();
+  });
 });
 
 // ── StatusNotification — reservation sync ──
@@ -919,20 +1074,32 @@ describe('ocpp-server-16 — StatusNotification reservation sync', () => {
     });
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Reserved', errorCode: 'NoError' });
     expect(mockDb.activateReservationByConnector).toHaveBeenCalledWith(1, 1);
-    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
   });
 
-  it.each(['Available', 'Faulted', 'Unavailable', 'Finishing'])(
-    'calls expireReservationByConnector when status=%s',
+  it.each(['Available', 'Faulted', 'Unavailable'])(
+    'calls expireActiveReservationByConnector and fulfillInUseReservationByConnector when status=%s',
     (status) => {
       mockDb.getChargepointByIdentity.mockReturnValue({
         id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 0,
       });
       client._handlers['StatusNotification']({ connectorId: 1, status, errorCode: 'NoError' });
-      expect(mockDb.expireReservationByConnector).toHaveBeenCalledWith(1, 1);
+      expect(mockDb.expireActiveReservationByConnector).toHaveBeenCalledWith(1, 1);
+      expect(mockDb.fulfillInUseReservationByConnector).toHaveBeenCalledWith(1, 1);
       expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
     }
   );
+
+  it('does not call any reservation function when status=Finishing', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 0,
+    });
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Finishing', errorCode: 'NoError' });
+    expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.fulfillInUseReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.startUsingReservationByConnectorAndIdTag).not.toHaveBeenCalled();
+  });
 
   it('does not call reservation functions for connectorId=0', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({
@@ -940,17 +1107,33 @@ describe('ocpp-server-16 — StatusNotification reservation sync', () => {
     });
     client._handlers['StatusNotification']({ connectorId: 0, status: 'Reserved', errorCode: 'NoError' });
     expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
-    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
   });
 
-  it('does not call reservation functions for status=Charging (not in trigger list)', () => {
+  it('does not call startUsingReservationByConnectorAndIdTag when Charging but no active transaction', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({
       id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 1,
     });
+    mockDb.getActiveTransactionByConnector.mockReturnValue(null);
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
     expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
-    expect(mockDb.expireReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
+    expect(mockDb.startUsingReservationByConnectorAndIdTag).not.toHaveBeenCalled();
   });
+
+  it.each(['Charging', 'SuspendedEV', 'SuspendedEVSE'])(
+    'calls startUsingReservationByConnectorAndIdTag when status=%s and active transaction found',
+    (status) => {
+      mockDb.getChargepointByIdentity.mockReturnValue({
+        id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1, feat_reservation: 1,
+      });
+      mockDb.getActiveTransactionByConnector.mockReturnValue({ id_tag: 'TAG001' });
+      client._handlers['StatusNotification']({ connectorId: 1, status, errorCode: 'NoError' });
+      expect(mockDb.startUsingReservationByConnectorAndIdTag).toHaveBeenCalledWith(1, 1, 'TAG001');
+      expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
+      expect(mockDb.expireActiveReservationByConnector).not.toHaveBeenCalled();
+    }
+  );
 });
 
 // ── StatusNotification — charging_state ──
@@ -996,6 +1179,16 @@ describe('ocpp-server-16 — StatusNotification charging_state', () => {
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError' });
     expect(mockDb.updateTransactionChargingState).not.toHaveBeenCalled();
   });
+
+  it('broadcasts transaction_updated when charging_state changes for active transaction', () => {
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 'tx-abc', connector_id: 1 }]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'transaction_updated',
+      expect.objectContaining({ transactionId: 'tx-abc', charging_state: 'Charging' }),
+      null
+    );
+  });
 });
 
 // ── DiagnosticsStatusNotification ──
@@ -1015,12 +1208,149 @@ describe('ocpp-server-16 — DiagnosticsStatusNotification', () => {
 
   it('broadcasts and notifies on Uploaded', () => {
     client._handlers['DiagnosticsStatusNotification']({ status: 'Uploaded' });
-    expect(mockBroadcast).toHaveBeenCalledWith('diagnostics_upload', expect.objectContaining({ status: 'Uploaded' }));
+    expect(mockBroadcast).toHaveBeenCalledWith('diagnostics_upload', expect.objectContaining({ status: 'Uploaded' }), null);
     expect(mockNotifications.emit).toHaveBeenCalledWith('diagnostics_upload', expect.any(Object));
   });
 
   it('does not broadcast on intermediate status', () => {
     client._handlers['DiagnosticsStatusNotification']({ status: 'Uploading' });
     expect(mockBroadcast).not.toHaveBeenCalled();
+  });
+});
+
+// ── FirmwareStatusNotification ──
+describe('ocpp-server-16 — FirmwareStatusNotification', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1' });
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('returns empty object', () => {
+    const result = client._handlers['FirmwareStatusNotification']({ status: 'Installed' });
+    expect(result).toEqual({});
+  });
+
+  it('always broadcasts on any status', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
+    expect(mockBroadcast).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'Downloading' }), null);
+  });
+
+  it('notifies on Installed', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Installed' });
+    expect(mockNotifications.emit).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'Installed' }));
+  });
+
+  it('notifies on InstallationFailed', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'InstallationFailed' });
+    expect(mockNotifications.emit).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'InstallationFailed' }));
+  });
+
+  it('notifies on DownloadFailed', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'DownloadFailed' });
+    expect(mockNotifications.emit).toHaveBeenCalledWith('firmware_status', expect.objectContaining({ status: 'DownloadFailed' }));
+  });
+
+  it('does not notify on intermediate status', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
+    expect(mockNotifications.emit).not.toHaveBeenCalled();
+  });
+});
+
+// ── StateRefresh (TriggerMessage on reconnect without BootNotification) ──
+describe('ocpp-server-16 — StateRefresh TriggerMessage', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('sends TriggerMessage(BootNotification) + TriggerMessage(StatusNotification) when initialized=1 and cpstatus=null after 8s', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })   // register16Handlers
+      .mockReturnValueOnce({ id: 1, connected: 1, cpstatus: null })     // timer check
+      .mockReturnValue({ id: 1 });                                        // callClient16 calls
+    mockConnectedClients.set('CP001', client);
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
+  });
+
+  it('does not send TriggerMessage when cpstatus is set before the timer fires', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })       // register16Handlers
+      .mockReturnValue({ id: 1, connected: 1, cpstatus: 'Available' });     // timer check (BootNotification already received)
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('does not set timer when initialized=0 (new chargepoint, full boot expected)', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 0, cpstatus: null });
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('does not set timer when cpRecord is null (unknown chargepoint)', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue(null);
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('registers close listener to cancel the timer', () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 1, cpstatus: null });
+
+    register16Handlers(client, makeLoggedHandle(client));
+
+    expect(client.once).toHaveBeenCalledWith('close', expect.any(Function));
+  });
+
+  it('does not send TriggerMessage when chargepoint disconnects before 8s', async () => {
+    const client = makeClient('CP001');
+    let closeCallback;
+    client.once = jest.fn((event, cb) => { if (event === 'close') closeCallback = cb; });
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 1, cpstatus: null });
+
+    register16Handlers(client, makeLoggedHandle(client));
+    closeCallback(); // simulate disconnect
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('does not send StatusNotification TriggerMessage when BootNotification TriggerMessage fails', async () => {
+    const client = makeClient('CP001');
+    client.call = jest.fn().mockRejectedValue(new Error('not connected'));
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })
+      .mockReturnValueOnce({ id: 1, connected: 1, cpstatus: null })
+      .mockReturnValue({ id: 1 });
+    mockConnectedClients.set('CP001', client);
+
+    register16Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
   });
 });
