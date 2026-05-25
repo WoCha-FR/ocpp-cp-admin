@@ -9,6 +9,7 @@ const {
   registerCallClientImpl,
   registerHandlersFn,
   checkConnectorErrorCooldown,
+  debounceAvailabilityNotif,
 } = require('./ocpp-common');
 
 const OCPP16_STANDARD_KEYS = [
@@ -556,38 +557,42 @@ function register16Handlers(client, loggedHandle) {
         safeStatus === 'Available' &&
         (previousStatus === 'Unavailable' || previousStatus === 'Faulted')
       ) {
-        notifications
-          .emit(
-            'connector_available',
-            {
-              identity,
-              connector_id: params.connectorId,
-              cp_name: updatedCp ? updatedCp.cpname : null,
-              cn_name:
-                connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
-                null,
-              site_name: updatedCp ? updatedCp.site_name : null,
-            },
-            { siteId: updatedCp ? updatedCp.site_id : null }
-          )
-          .catch(() => {});
+        debounceAvailabilityNotif(identity, params.connectorId, () => {
+          notifications
+            .emit(
+              'connector_available',
+              {
+                identity,
+                connector_id: params.connectorId,
+                cp_name: updatedCp ? updatedCp.cpname : null,
+                cn_name:
+                  connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                  null,
+                site_name: updatedCp ? updatedCp.site_name : null,
+              },
+              { siteId: updatedCp ? updatedCp.site_id : null }
+            )
+            .catch(() => {});
+        });
       }
       if (safeStatus === 'Unavailable') {
-        notifications
-          .emit(
-            'connector_unavailable',
-            {
-              identity,
-              connector_id: params.connectorId,
-              cp_name: updatedCp ? updatedCp.cpname : null,
-              cn_name:
-                connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
-                null,
-              site_name: updatedCp ? updatedCp.site_name : null,
-            },
-            { siteId: updatedCp ? updatedCp.site_id : null }
-          )
-          .catch(() => {});
+        debounceAvailabilityNotif(identity, params.connectorId, () => {
+          notifications
+            .emit(
+              'connector_unavailable',
+              {
+                identity,
+                connector_id: params.connectorId,
+                cp_name: updatedCp ? updatedCp.cpname : null,
+                cn_name:
+                  connectors.find((c) => c.connector_id === params.connectorId)?.connector_name ||
+                  null,
+                site_name: updatedCp ? updatedCp.site_name : null,
+              },
+              { siteId: updatedCp ? updatedCp.site_id : null }
+            )
+            .catch(() => {});
+        });
       }
       if (safeStatus === 'Faulted' || safeErrorCode !== 'NoError') {
         logger.warn(

@@ -507,6 +507,7 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
   "flapWindowMinutes": 2,
   "refusedCooldownMinutes": 60,
   "reconnectGracePeriodSeconds": 60,
+  "availabilityDebounceSeconds": 5,
   "mail": {
     "enabled": false,
     "from": "CPADMIN <noreply@cpadmin.local>",
@@ -537,6 +538,7 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 | `flapWindowMinutes` | Fenêtre de temps pour la détection de flapping (minutes) |
 | `refusedCooldownMinutes` | Délai entre deux notifications `chargepoint_refused` pour la même identité (défaut : 60 min) |
 | `reconnectGracePeriodSeconds` | Délai de grâce en secondes avant l'envoi de la notification hors ligne. Si la borne se reconnecte dans ce délai, les notifications offline et online sont supprimées (défaut : `60`) |
+| `availabilityDebounceSeconds` | Délai de debounce (secondes) avant envoi des notifications Available/Unavailable. Évite les alertes parasites des bornes qui alternent rapidement le statut à la connexion (défaut : `5`) |
 | `mail.enabled` | Activer les notifications par email |
 | `mail.from` | Adresse d'expéditeur |
 | `mail.transport` | Configuration du transport SMTP (Nodemailer) |

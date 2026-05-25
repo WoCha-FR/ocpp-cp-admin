@@ -512,6 +512,7 @@ Required fields are validated before saving. The application restarts automatica
   "flapWindowMinutes": 2,
   "refusedCooldownMinutes": 60,
   "reconnectGracePeriodSeconds": 60,
+  "availabilityDebounceSeconds": 5,
   "mail": {
     "enabled": false,
     "from": "CPADMIN <noreply@cpadmin.local>",
@@ -542,6 +543,7 @@ Required fields are validated before saving. The application restarts automatica
 | `flapWindowMinutes` | Time window for flapping detection (minutes) |
 | `refusedCooldownMinutes` | Cooldown between two `chargepoint_refused` notifications for the same identity (default: 60 min) |
 | `reconnectGracePeriodSeconds` | Grace period in seconds before sending the offline notification. If the chargepoint reconnects within this delay, both offline and online notifications are suppressed (default: `60`) |
+| `availabilityDebounceSeconds` | Debounce delay (seconds) before sending Available/Unavailable notifications. Prevents spurious alerts from chargepoints that rapidly toggle status on connection (default: `5`) |
 | `mail.enabled` | Enable email notifications |
 | `mail.from` | Sender address |
 | `mail.transport` | SMTP transport configuration (Nodemailer) |

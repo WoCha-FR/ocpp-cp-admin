@@ -80,6 +80,10 @@ const ENV_OVERRIDES = [
     env: 'CPADMIN_NOTIF_RECONNECT_GRACE_PERIOD',
     path: ['notifs', 'reconnectGracePeriodSeconds'],
   },
+  {
+    env: 'CPADMIN_NOTIF_AVAILABILITY_DEBOUNCE',
+    path: ['notifs', 'availabilityDebounceSeconds'],
+  },
   { env: 'CPADMIN_GOOGLE_AUTH_ENABLED', path: ['auth', 'google', 'enabled'] },
   // ── Métriques ──
   { env: 'CPADMIN_METRICS_TOKEN', path: ['metrics', 'bearerToken'], type: 'string' },
@@ -354,6 +358,13 @@ const CONFIG_FIELDS = [
   },
   {
     key: 'notifs.reconnectGracePeriodSeconds',
+    section: 'notifs',
+    type: 'number',
+    required: false,
+    sensitive: false,
+  },
+  {
+    key: 'notifs.availabilityDebounceSeconds',
     section: 'notifs',
     type: 'number',
     required: false,

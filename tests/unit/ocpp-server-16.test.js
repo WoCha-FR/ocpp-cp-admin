@@ -57,6 +57,7 @@ const mockConnectedClients = new Map();
 const mockPendingRemoteStarts = new Map();
 const mockBroadcast = jest.fn();
 const mockTrackRepeatedAuthReject = jest.fn();
+const mockDebounceAvailabilityNotif = jest.fn((identity, connectorId, fn) => fn());
 
 jest.mock('../../src/ocpp-common', () => ({
   broadcast: mockBroadcast,
@@ -66,6 +67,7 @@ jest.mock('../../src/ocpp-common', () => ({
   registerCallClientImpl: jest.fn(),
   registerHandlersFn: jest.fn(),
   checkConnectorErrorCooldown: jest.fn().mockReturnValue(true),
+  debounceAvailabilityNotif: mockDebounceAvailabilityNotif,
 }));
 
 const { callClient16, register16Handlers, OCPP16_STANDARD_KEYS } = require('../../src/ocpp-server-16');
@@ -1033,6 +1035,25 @@ describe('ocpp-server-16 — StatusNotification', () => {
     mockDb.getTransactions.mockReturnValue([{ transaction_id: 99, connector_id: 1, meter_start: 500 }]);
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
     expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+  });
+
+  it('appelle debounceAvailabilityNotif pour connector_available (Unavailable → Available)', () => {
+    mockDb.getConnectorByChargepointAndId.mockReturnValue({ cnstatus: 'Unavailable', connector_id: 1 });
+    mockDebounceAvailabilityNotif.mockClear();
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError' });
+    expect(mockDebounceAvailabilityNotif).toHaveBeenCalledWith('CP001', 1, expect.any(Function));
+  });
+
+  it('appelle debounceAvailabilityNotif pour connector_unavailable', () => {
+    mockDebounceAvailabilityNotif.mockClear();
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Unavailable', errorCode: 'NoError' });
+    expect(mockDebounceAvailabilityNotif).toHaveBeenCalledWith('CP001', 1, expect.any(Function));
+  });
+
+  it('ne déclenche pas debounceAvailabilityNotif pour les statuts non Available/Unavailable', () => {
+    mockDebounceAvailabilityNotif.mockClear();
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
+    expect(mockDebounceAvailabilityNotif).not.toHaveBeenCalled();
   });
 });
 

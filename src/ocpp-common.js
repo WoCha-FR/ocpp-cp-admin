@@ -14,6 +14,7 @@ const authRejectTracker = new Map();
 const reconnectTracker = new Map();
 const refusedNotifCooldown = new Map();
 const connectorErrorCooldown = new Map();
+const availabilityDebounceTimers = new Map();
 const pendingOfflineNotifs = new Map();
 
 const wsRateTracker = new Map();
@@ -60,6 +61,19 @@ function checkConnectorErrorCooldown(identity, connectorId, errorCode) {
     return true;
   }
   return false;
+}
+
+function debounceAvailabilityNotif(identity, connectorId, notifFn) {
+  const config = getConfig();
+  const delayMs = ((config.notifs && config.notifs.availabilityDebounceSeconds) || 5) * 1000;
+  const key = `${identity}:${connectorId}`;
+  const existing = availabilityDebounceTimers.get(key);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    availabilityDebounceTimers.delete(key);
+    notifFn();
+  }, delayMs);
+  availabilityDebounceTimers.set(key, timer);
 }
 
 function setBroadcast(fn) {
@@ -766,5 +780,6 @@ module.exports = {
   pendingRemoteStarts,
   pendingChargepoints,
   checkConnectorErrorCooldown,
+  debounceAvailabilityNotif,
   getSiteIdByIdentity,
 };
