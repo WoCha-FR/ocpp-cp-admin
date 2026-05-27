@@ -635,7 +635,29 @@
     "myNotifications": "Mes Notifications",
     "myProfile": "Mon profil",
     "configEditor": "Configuration",
-    "adminSpace": "Administration"
+    "adminSpace": "Administration",
+    "errorEvents": "Alertes"
+  },
+  "errorEvents": {
+    "title": "Historique des alertes",
+    "eventTypeAll": "Tous les types",
+    "eventTypeStatusError": "Erreur connecteur",
+    "eventTypeDisconnect": "Déconnexion",
+    "eventTypeHeartbeatTimeout": "Timeout heartbeat",
+    "noEvents": "Aucun événement d'erreur enregistré.",
+    "count": "{{count}} événement",
+    "count_plural": "{{count}} événements",
+    "colDate": "Date",
+    "colChargepoint": "Borne",
+    "colConnector": "Connecteur",
+    "colType": "Type",
+    "colErrorCode": "Code erreur",
+    "colVendorError": "Code fournisseur",
+    "colInfo": "Info",
+    "colProtocol": "Protocole",
+    "filterLimit": "Limite",
+    "filterFrom": "Depuis",
+    "filterTo": "Jusqu'au"
   },
   "notifications": {
     "common": {

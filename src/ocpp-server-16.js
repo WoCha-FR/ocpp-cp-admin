@@ -598,6 +598,16 @@ function register16Handlers(client, loggedHandle) {
         logger.warn(
           `Connector error on ${identity} #${params.connectorId}: status=${safeStatus} errorCode=${safeErrorCode}`
         );
+        db.insertErrorEvent(cp.id, 'status_error', {
+          ocpp_version: '1.6',
+          connector_id: params.connectorId,
+          status: safeStatus,
+          error_code: safeErrorCode,
+          vendor_id: safeVendorId,
+          vendor_error_code: safeVendorErrorCode,
+          info: safeInfo,
+        });
+        broadcast('error_event', { chargepoint_id: cp.id }, cp.site_id ?? null);
         if (checkConnectorErrorCooldown(identity, params.connectorId, safeErrorCode)) {
           notifications
             .emit(

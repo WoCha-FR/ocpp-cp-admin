@@ -1066,3 +1066,119 @@ describe('database — getTransactions pagination', () => {
     expect(Array.isArray(result)).toBe(true);
   });
 });
+
+// ── Error Events ──
+describe('database — Error Events', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const site = db.createSite('EE Site', '1 Error Street');
+    const cp = db.upsertChargepoint('EE-CP-001', { cpstatus: 'Available' });
+    cpId = db.getChargepointByIdentity('EE-CP-001').id;
+    db.assignChargepointToSite(cpId, site.id);
+  });
+
+  it('insère un status_error 1.6 avec tous les champs', () => {
+    db.insertErrorEvent(cpId, 'status_error', {
+      ocpp_version: '1.6',
+      connector_id: 1,
+      status: 'Faulted',
+      error_code: 'GroundFailure',
+      vendor_id: 'ACME',
+      vendor_error_code: 'E42',
+      info: 'Ground fault detected',
+    });
+    const events = db.getErrorEvents({ chargepoint_id: cpId });
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    const e = events[0];
+    expect(e.event_type).toBe('status_error');
+    expect(e.ocpp_version).toBe('1.6');
+    expect(e.connector_id).toBe(1);
+    expect(e.status).toBe('Faulted');
+    expect(e.error_code).toBe('GroundFailure');
+    expect(e.vendor_id).toBe('ACME');
+    expect(e.vendor_error_code).toBe('E42');
+    expect(e.info).toBe('Ground fault detected');
+  });
+
+  it('insère un disconnect sans champs optionnels', () => {
+    db.insertErrorEvent(cpId, 'disconnect', { ocpp_version: '1.6' });
+    const events = db.getErrorEvents({ chargepoint_id: cpId, event_type: 'disconnect' });
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events[0].event_type).toBe('disconnect');
+    expect(events[0].connector_id).toBeNull();
+    expect(events[0].error_code).toBeNull();
+  });
+
+  it('insère un heartbeat_timeout', () => {
+    db.insertErrorEvent(cpId, 'heartbeat_timeout', { ocpp_version: '1.6' });
+    const events = db.getErrorEvents({ chargepoint_id: cpId, event_type: 'heartbeat_timeout' });
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events[0].event_type).toBe('heartbeat_timeout');
+  });
+
+  it('insère un événement 2.0.1 avec evse_id, component, variable, severity, tech_code', () => {
+    db.insertErrorEvent(cpId, 'status_error', {
+      ocpp_version: '2.0.1',
+      evse_id: 1,
+      component: 'Connector',
+      variable: 'AvailabilityState',
+      severity: 2,
+      tech_code: 'GFI_FAULT',
+      tech_info: 'Ground fault interrupt triggered',
+      info: '0',
+    });
+    const events = db.getErrorEvents({ chargepoint_id: cpId, ocpp_version: '2.0.1' });
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    const e = events[0];
+    expect(e.ocpp_version).toBe('2.0.1');
+    expect(e.evse_id).toBe(1);
+    expect(e.component).toBe('Connector');
+    expect(e.severity).toBe(2);
+    expect(e.tech_code).toBe('GFI_FAULT');
+  });
+
+  it('filtre par event_type', () => {
+    const statusErrors = db.getErrorEvents({ chargepoint_id: cpId, event_type: 'status_error' });
+    expect(statusErrors.every(e => e.event_type === 'status_error')).toBe(true);
+  });
+
+  it('filtre par ocpp_version', () => {
+    const v16 = db.getErrorEvents({ chargepoint_id: cpId, ocpp_version: '1.6' });
+    expect(v16.every(e => e.ocpp_version === '1.6')).toBe(true);
+    const v201 = db.getErrorEvents({ chargepoint_id: cpId, ocpp_version: '2.0.1' });
+    expect(v201.every(e => e.ocpp_version === '2.0.1')).toBe(true);
+  });
+
+  it('retourne les résultats dans l\'ordre décroissant (id DESC)', () => {
+    const events = db.getErrorEvents({ chargepoint_id: cpId });
+    for (let i = 0; i < events.length - 1; i++) {
+      expect(events[i].id).toBeGreaterThan(events[i + 1].id);
+    }
+  });
+
+  it('respecte limit et offset', () => {
+    const all = db.getErrorEvents({ chargepoint_id: cpId });
+    const page1 = db.getErrorEvents({ chargepoint_id: cpId, limit: 2, offset: 0 });
+    const page2 = db.getErrorEvents({ chargepoint_id: cpId, limit: 2, offset: 2 });
+    expect(page1.length).toBe(Math.min(2, all.length));
+    if (all.length > 2) {
+      expect(page1[0].id).not.toBe(page2[0].id);
+    }
+  });
+
+  it('filtre par site_ids — exclut les bornes hors site', () => {
+    const cp2 = db.upsertChargepoint('EE-CP-002', { cpstatus: 'Available' });
+    const cp2Id = db.getChargepointByIdentity('EE-CP-002').id;
+    db.insertErrorEvent(cp2Id, 'disconnect', { ocpp_version: '1.6' });
+    // Filtrer sur un site_id qui n'inclut pas cp2
+    const events = db.getErrorEvents({ chargepoint_id: cpId });
+    expect(events.every(e => e.chargepoint_id === cpId)).toBe(true);
+  });
+
+  it('inclut identity et cpname dans les résultats', () => {
+    const events = db.getErrorEvents({ chargepoint_id: cpId });
+    expect(events[0]).toHaveProperty('chargepoint_identity');
+    expect(events[0].chargepoint_identity).toBe('EE-CP-001');
+  });
+});

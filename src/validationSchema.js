@@ -535,6 +535,54 @@ const IdTagEventsQuery = {
   },
 };
 
+const ErrorEventsQuery = {
+  chargepoint_id: {
+    in: ['query'],
+    optional: true,
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_CHARGEPOINT_ID',
+  },
+  event_type: {
+    in: ['query'],
+    optional: true,
+    isIn: { options: [['status_error', 'disconnect', 'heartbeat_timeout']] },
+    errorMessage: 'VALIDATION_EVENT_TYPE',
+  },
+  ocpp_version: {
+    in: ['query'],
+    optional: true,
+    isIn: { options: [['1.6', '2.0.1']] },
+    errorMessage: 'VALIDATION_OCPP_VERSION',
+  },
+  from: {
+    in: ['query'],
+    optional: true,
+    isISO8601: true,
+    errorMessage: 'VALIDATION_DATE_FROM',
+  },
+  to: {
+    in: ['query'],
+    optional: true,
+    isISO8601: true,
+    errorMessage: 'VALIDATION_DATE_TO',
+  },
+  limit: {
+    in: ['query'],
+    optional: true,
+    isInt: { options: { min: 1, max: 500 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_LIMIT',
+  },
+  offset: {
+    in: ['query'],
+    optional: true,
+    isInt: { options: { min: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_OFFSET',
+  },
+};
+
 const OcppCommand = {
   method: {
     in: ['body'],
@@ -873,6 +921,7 @@ module.exports = {
   UserTransactionsQuery,
   OcppMessagesQuery,
   IdTagEventsQuery,
+  ErrorEventsQuery,
   OcppCommand,
   ChargepointConfigUpdate,
   InitConfig,

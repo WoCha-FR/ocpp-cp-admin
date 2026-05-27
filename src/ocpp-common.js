@@ -513,6 +513,12 @@ function createOCPPServerBase(options = {}) {
               { siteId: cpOffline ? cpOffline.site_id : null }
             )
             .catch(() => {});
+          if (cpOffline) {
+            db.insertErrorEvent(cpOffline.id, 'disconnect', {
+              ocpp_version: cpOffline.ocpp_version || '1.6',
+            });
+            broadcast('error_event', { chargepoint_id: cpOffline.id }, cpOffline.site_id ?? null);
+          }
         }, graceMs);
         pendingOfflineNotifs.set(identity, timerId);
       }
@@ -682,6 +688,10 @@ function startHeartbeatWatchdog() {
             { siteId: cp.site_id }
           )
           .catch(() => {});
+        db.insertErrorEvent(cp.id, 'heartbeat_timeout', {
+          ocpp_version: cp.ocpp_version || '1.6',
+        });
+        broadcast('error_event', { chargepoint_id: cp.id }, cp.site_id ?? null);
         disconnectChargepoint(identity, 'heartbeat_timeout');
       }
     }

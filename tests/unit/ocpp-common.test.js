@@ -41,6 +41,7 @@ const mockDb = {
   getExpiredActiveReservations: jest.fn(() => []),
   updateReservationStatus: jest.fn(),
   resetConnectorsByChargepoint: jest.fn(),
+  insertErrorEvent: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);

@@ -2005,6 +2005,28 @@ router.get(
 );
 
 // ══════════════════════════════════════
+//  ERROR EVENTS
+// ══════════════════════════════════════
+router.get(
+  '/error-events',
+  requireManager,
+  ...validateSchema(schema.ErrorEventsQuery),
+  (req, res) => {
+    const filters = {};
+    if (req.query.chargepoint_id) filters.chargepoint_id = Number(req.query.chargepoint_id);
+    if (req.query.event_type) filters.event_type = req.query.event_type;
+    if (req.query.ocpp_version) filters.ocpp_version = req.query.ocpp_version;
+    if (req.query.from) filters.from = req.query.from;
+    if (req.query.to) filters.to = req.query.to;
+    if (req.query.limit) filters.limit = Number(req.query.limit);
+    if (req.query.offset) filters.offset = Number(req.query.offset);
+    const siteIds = getUserSiteIds(req);
+    if (siteIds !== null) filters.site_ids = siteIds;
+    res.json(db.getErrorEvents(filters));
+  }
+);
+
+// ══════════════════════════════════════
 //  DASHBOARD STATS
 // ══════════════════════════════════════
 router.get('/dashboard', requireManager, (req, res) => {

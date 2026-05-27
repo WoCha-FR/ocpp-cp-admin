@@ -1728,6 +1728,88 @@ function deletePushSubscriptionsByUser(userId) {
   db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(userId);
 }
 
+// ── Error Events ──
+function insertErrorEvent(
+  chargepointId,
+  eventType,
+  {
+    ocpp_version = '1.6',
+    connector_id,
+    status,
+    error_code,
+    vendor_id,
+    vendor_error_code,
+    evse_id,
+    component,
+    variable,
+    severity,
+    tech_code,
+    tech_info,
+    info,
+  } = {}
+) {
+  db.prepare(
+    `INSERT INTO error_events
+      (chargepoint_id, ocpp_version, event_type,
+       connector_id, status, error_code, vendor_id, vendor_error_code,
+       evse_id, component, variable, severity, tech_code, tech_info, info)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    chargepointId,
+    ocpp_version,
+    eventType,
+    connector_id ?? null,
+    status ?? null,
+    error_code ?? null,
+    vendor_id ?? null,
+    vendor_error_code ?? null,
+    evse_id ?? null,
+    component ?? null,
+    variable ?? null,
+    severity ?? null,
+    tech_code ?? null,
+    tech_info ?? null,
+    info ?? null
+  );
+}
+
+function getErrorEvents(filters = {}) {
+  let query = `SELECT ee.*, cp.identity AS chargepoint_identity, cp.cpname AS chargepoint_name, cp.site_id
+    FROM error_events ee
+    LEFT JOIN chargepoints cp ON cp.id = ee.chargepoint_id
+    WHERE 1=1`;
+  const params = [];
+  if (filters.chargepoint_id) {
+    query += ' AND ee.chargepoint_id = ?';
+    params.push(filters.chargepoint_id);
+  }
+  if (filters.event_type) {
+    query += ' AND ee.event_type = ?';
+    params.push(filters.event_type);
+  }
+  if (filters.ocpp_version) {
+    query += ' AND ee.ocpp_version = ?';
+    params.push(filters.ocpp_version);
+  }
+  if (filters.from) {
+    query += ' AND ee.created_at >= ?';
+    params.push(filters.from);
+  }
+  if (filters.to) {
+    query += ' AND ee.created_at <= ?';
+    params.push(filters.to);
+  }
+  if (filters.site_ids && filters.site_ids.length > 0) {
+    query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
+    params.push(...filters.site_ids);
+  }
+  const limit = Math.min(filters.limit || 100, 500);
+  const offset = filters.offset || 0;
+  query += ' ORDER BY ee.id DESC LIMIT ? OFFSET ?';
+  params.push(limit, offset);
+  return db.prepare(query).all(...params);
+}
+
 // ── Notification Log ──
 function addNotificationLog(userId, eventType, channel, title, body, success, errorMessage) {
   db.prepare(
@@ -2190,4 +2272,6 @@ module.exports = {
   getExpiredActiveReservations,
   resetStateOnStartup,
   resetConnectorsByChargepoint,
+  insertErrorEvent,
+  getErrorEvents,
 };
