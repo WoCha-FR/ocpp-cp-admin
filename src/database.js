@@ -1752,6 +1752,48 @@ function deletePushSubscriptionsByUser(userId) {
   db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(userId);
 }
 
+// ── OCPP 2.0.1 — EVSEs & Variables ──
+function upsertEvse(chargepointId, evseId, status) {
+  const existing = db
+    .prepare('SELECT id FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
+    .get(chargepointId, evseId);
+  if (existing) {
+    db.prepare(
+      "UPDATE evses SET status = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND evse_id = ?"
+    ).run(status || 'Available', chargepointId, evseId);
+  } else {
+    db.prepare('INSERT INTO evses (chargepoint_id, evse_id, status) VALUES (?, ?, ?)').run(
+      chargepointId,
+      evseId,
+      status || 'Available'
+    );
+  }
+}
+
+function getEvsesByChargepoint(chargepointId) {
+  return db
+    .prepare('SELECT * FROM evses WHERE chargepoint_id = ? ORDER BY evse_id')
+    .all(chargepointId);
+}
+
+function upsertChargepointVariable(chargepointId, component, variable, attribute, value) {
+  const attr = attribute || 'Actual';
+  const existing = db
+    .prepare(
+      'SELECT id FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?'
+    )
+    .get(chargepointId, component, variable, attr);
+  if (existing) {
+    db.prepare(
+      "UPDATE chargepoint_variables SET value = ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(value ?? null, existing.id);
+  } else {
+    db.prepare(
+      'INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value) VALUES (?, ?, ?, ?, ?)'
+    ).run(chargepointId, component, variable, attr, value ?? null);
+  }
+}
+
 // ── Error Events ──
 function insertErrorEvent(
   chargepointId,
@@ -2298,4 +2340,7 @@ module.exports = {
   resetConnectorsByChargepoint,
   insertErrorEvent,
   getErrorEvents,
+  upsertEvse,
+  getEvsesByChargepoint,
+  upsertChargepointVariable,
 };

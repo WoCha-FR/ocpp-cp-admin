@@ -758,7 +758,7 @@ function stopReservationCleanupWatchdog() {
 async function remoteStopTransaction(identity, transactionId) {
   const cp = db.getChargepointByIdentity(identity);
   if (cp?.ocpp_version === '2.0.1') {
-    throw new Error('remoteStopTransaction: OCPP 2.0.1 not implemented');
+    return callClient(identity, 'RequestStopTransaction', { transactionId });
   }
   return callClient(identity, 'RemoteStopTransaction', { transactionId: Number(transactionId) });
 }
@@ -766,7 +766,10 @@ async function remoteStopTransaction(identity, transactionId) {
 async function remoteStartTransaction(identity, connectorId, idToken) {
   const cp = db.getChargepointByIdentity(identity);
   if (cp?.ocpp_version === '2.0.1') {
-    throw new Error('remoteStartTransaction: OCPP 2.0.1 not implemented');
+    return callClient(identity, 'RequestStartTransaction', {
+      evseId: connectorId,
+      idToken: { idToken, type: 'ISO14443' },
+    });
   }
   return callClient(identity, 'RemoteStartTransaction', { connectorId, idTag: idToken });
 }

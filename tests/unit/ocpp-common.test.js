@@ -538,3 +538,86 @@ describe('ocpp-common — période de grâce offline', () => {
     );
   });
 });
+
+// ── remoteStopTransaction ──
+describe('ocpp-common — remoteStopTransaction', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('calls RequestStopTransaction with string transactionId for 2.0.1', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('2.0.1', impl);
+
+    await ocppCommon.remoteStopTransaction('CP001', 'TX-STRING-001');
+
+    expect(impl).toHaveBeenCalledWith('CP001', 'RequestStopTransaction', { transactionId: 'TX-STRING-001' });
+  });
+
+  it('keeps transactionId as string (not coerced to Number) for 2.0.1', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('2.0.1', impl);
+
+    await ocppCommon.remoteStopTransaction('CP001', 'TX-ABC-123');
+
+    const [, , params] = impl.mock.calls[0];
+    expect(typeof params.transactionId).toBe('string');
+    expect(params.transactionId).toBe('TX-ABC-123');
+  });
+
+  it('calls RemoteStopTransaction with Number transactionId for 1.6', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('1.6', impl);
+
+    await ocppCommon.remoteStopTransaction('CP001', '42');
+
+    expect(impl).toHaveBeenCalledWith('CP001', 'RemoteStopTransaction', { transactionId: 42 });
+  });
+});
+
+// ── remoteStartTransaction ──
+describe('ocpp-common — remoteStartTransaction', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('calls RequestStartTransaction with evseId and idToken object for 2.0.1', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('2.0.1', impl);
+
+    await ocppCommon.remoteStartTransaction('CP001', 2, 'TAG001');
+
+    expect(impl).toHaveBeenCalledWith('CP001', 'RequestStartTransaction', {
+      evseId: 2,
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+    });
+  });
+
+  it('idToken.type is always ISO14443 for 2.0.1', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('2.0.1', impl);
+
+    await ocppCommon.remoteStartTransaction('CP001', 1, 'WEB-5');
+
+    const [, , params] = impl.mock.calls[0];
+    expect(params.idToken.type).toBe('ISO14443');
+  });
+
+  it('calls RemoteStartTransaction with connectorId and idTag for 1.6', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('1.6', impl);
+
+    await ocppCommon.remoteStartTransaction('CP001', 1, 'TAG001');
+
+    expect(impl).toHaveBeenCalledWith('CP001', 'RemoteStartTransaction', {
+      connectorId: 1,
+      idTag: 'TAG001',
+    });
+  });
+});

@@ -931,10 +931,28 @@ router.post(
     if (valid_to) csChargingProfiles.validTo = valid_to;
 
     try {
-      const result = await callClient(cp.identity, 'SetChargingProfile', {
-        connectorId: connector_id,
-        csChargingProfiles,
-      });
+      let result;
+      if (cp.ocpp_version === '2.0.1') {
+        const chargingProfile201 = {
+          id: profile_id,
+          stackLevel: stack_level,
+          chargingProfilePurpose: profile_purpose,
+          chargingProfileKind: profile_kind,
+          chargingSchedule: [{ id: 1, ...chargingSchedule }],
+        };
+        if (recurrency_kind) chargingProfile201.recurrencyKind = recurrency_kind;
+        if (valid_from) chargingProfile201.validFrom = valid_from;
+        if (valid_to) chargingProfile201.validTo = valid_to;
+        result = await callClient(cp.identity, 'SetChargingProfile', {
+          evseId: connector_id,
+          chargingProfile: chargingProfile201,
+        });
+      } else {
+        result = await callClient(cp.identity, 'SetChargingProfile', {
+          connectorId: connector_id,
+          csChargingProfiles,
+        });
+      }
       const status = result?.status ?? 'Rejected';
       db.updateChargingProfileStatus(dbId, status);
       broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
@@ -1035,10 +1053,28 @@ router.post(
       if (p.valid_to) csChargingProfiles.validTo = p.valid_to;
 
       try {
-        const result = await callClient(cp.identity, 'SetChargingProfile', {
-          connectorId: p.connector_id,
-          csChargingProfiles,
-        });
+        let result;
+        if (cp.ocpp_version === '2.0.1') {
+          const chargingProfile201 = {
+            id: p.profile_id,
+            stackLevel: p.stack_level,
+            chargingProfilePurpose: p.profile_purpose,
+            chargingProfileKind: p.profile_kind,
+            chargingSchedule: [{ id: 1, ...chargingSchedule }],
+          };
+          if (p.recurrency_kind) chargingProfile201.recurrencyKind = p.recurrency_kind;
+          if (p.valid_from) chargingProfile201.validFrom = p.valid_from;
+          if (p.valid_to) chargingProfile201.validTo = p.valid_to;
+          result = await callClient(cp.identity, 'SetChargingProfile', {
+            evseId: p.evse_id ?? p.connector_id ?? 0,
+            chargingProfile: chargingProfile201,
+          });
+        } else {
+          result = await callClient(cp.identity, 'SetChargingProfile', {
+            connectorId: p.connector_id,
+            csChargingProfiles,
+          });
+        }
         const status = result?.status ?? 'Rejected';
         db.updateChargingProfileStatus(p.id, status);
         status === 'Accepted' ? accepted++ : rejected++;
@@ -1164,17 +1200,28 @@ router.post(
     const reservation_id = db.getNextReservationId(cp.id);
 
     try {
-      const result = await callClient(cp.identity, 'ReserveNow', {
-        connectorId: connector_id,
-        expiryDate: expiry_date,
-        idTag: id_tag,
-        reservationId: reservation_id,
-      });
+      let result;
+      if (cp.ocpp_version === '2.0.1') {
+        result = await callClient(cp.identity, 'ReserveNow', {
+          id: reservation_id,
+          expiryDateTime: expiry_date,
+          idToken: { idToken: id_tag, type: 'ISO14443' },
+          evseId: connector_id,
+        });
+      } else {
+        result = await callClient(cp.identity, 'ReserveNow', {
+          connectorId: connector_id,
+          expiryDate: expiry_date,
+          idTag: id_tag,
+          reservationId: reservation_id,
+        });
+      }
       const status = result?.status ?? 'Rejected';
       if (status !== 'Accepted') return res.status(422).json({ status });
       const id = db.createReservation({
         chargepoint_id: cp.id,
-        connector_id,
+        connector_id: cp.ocpp_version === '2.0.1' ? null : connector_id,
+        evse_id: cp.ocpp_version === '2.0.1' ? connector_id : null,
         reservation_id,
         id_tag,
         expiry_date,
