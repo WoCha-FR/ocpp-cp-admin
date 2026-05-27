@@ -11,7 +11,8 @@ let configDir = null;
 function resolveConfigPath() {
   const env = process.env.NODE_ENV;
   if (env && env !== 'production') {
-    const envFile = path.join(CONFIG_DIR_DEFAULT, `config.${env}.json`);
+    const fileName = env === 'development' ? 'config.dev.json' : `config.${env}.json`;
+    const envFile = path.join(CONFIG_DIR_DEFAULT, fileName);
     if (fs.existsSync(envFile)) {
       return { file: envFile, dir: CONFIG_DIR_DEFAULT };
     }

@@ -37,6 +37,7 @@ const mockDb = {
   getReservationByOcppId: jest.fn(),
   fulfillReservationByConnectorAndIdTag: jest.fn(() => 0),
   updateTransactionChargingState: jest.fn(),
+  insertErrorEvent: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);

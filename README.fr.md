@@ -65,10 +65,16 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 
 ### Transactions et suivi de charge
 - Suivi des transactions actives et terminées
-- Données temps réel : énergie (Wh), puissance (W), courant (A par phase), état de charge (SOC %)
+- Données temps réel : énergie (Wh), puissance (W), courant (A par phase), état de charge (SOC %), température (°C), tension (V par phase), fréquence (Hz)
 - Historique des transactions avec filtres
 - Export CSV des transactions
 - Tableau de bord personnel pour les utilisateurs
+
+### Historique des événements d'erreur
+- Journal persistant des erreurs matérielles/réseau : fautes `StatusNotification`, déconnexions (après la période de grâce), timeouts heartbeat
+- Vue globale filtrable par borne, type d'événement, version OCPP et plage de dates
+- Accessible aux managers et administrateurs
+- Mise à jour temps réel via WebSocket
 
 ### Gestion des badges RFID
 - Création et gestion de badges (ID Tags)
@@ -822,6 +828,17 @@ Accès limité à la recharge :
 
 ---
 
+## API REST (endpoints sélectionnés)
+
+| Méthode | Endpoint | Accès | Description |
+|---|---|---|---|
+| `GET` | `/api/error-events` | manager+ | Journal paginé des événements d'erreur. Paramètres : `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
+| `GET` | `/api/transactions/:id/values` | auth | Séries de comptage d'une transaction : `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
+| `GET` | `/api/metrics` | token optionnel | Métriques au format Prometheus |
+| `GET` | `/healthz` | public | Vérification de santé |
+
+---
+
 ## Protocole OCPP 1.6
 
 L'application implémente le protocole OCPP 1.6-J (JSON sur WebSocket) pour la communication avec les bornes de recharge.
@@ -838,7 +855,7 @@ L'application implémente le protocole OCPP 1.6-J (JSON sur WebSocket) pour la c
 | **Authorize** | Demande d'autorisation d'un badge RFID |
 | **StartTransaction** | Début de session de charge |
 | **StopTransaction** | Fin de session de charge (raison d'arrêt, énergie consommée) |
-| **MeterValues** | Données de comptage temps réel (énergie, puissance, courant, SOC) |
+| **MeterValues** | Données de comptage temps réel (énergie, puissance, courant, SOC, température, tension, fréquence) |
 | **DataTransfer** | Échange de données propriétaires constructeur |
 | **DiagnosticsStatusNotification** | Statut de l'upload de diagnostics |
 | **FirmwareStatusNotification** | Statut d'avancement de la mise à jour firmware |
@@ -1141,6 +1158,7 @@ backup:
 | `users_password_resets` | Jetons de réinitialisation de mot de passe |
 | `charging_profiles` | Profils de charge appliqués sur les bornes |
 | `reservations` | Réservations de connecteurs actives et historiques |
+| `error_events` | Journal persistant des erreurs matérielles/réseau (fautes StatusNotification, déconnexions, timeouts heartbeat) |
 
 ---
 

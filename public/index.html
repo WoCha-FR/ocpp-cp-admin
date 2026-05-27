@@ -157,6 +157,9 @@
       <a data-onclick="navigate('transactions')" data-page="transactions" id="navTransactions" class="hidden">
         <span class="icon">💳</span> <span data-i18n="navigation.transactions">Transactions</span>
       </a>
+      <a data-onclick="navigate('errorevents')" data-page="errorevents" id="navErrorEvents" class="hidden">
+        <span class="icon">⚠️</span> <span data-i18n="navigation.errorEvents">Alertes</span>
+      </a>
       <a data-onclick="navigate('users')" data-page="users" id="navUsers" class="hidden">
         <span class="icon">👥</span> <span data-i18n="navigation.users">Utilisateurs</span>
       </a>
@@ -732,6 +735,7 @@ function showApp() {
   document.getElementById('navConnectors').classList.toggle('hidden', !canManage());
   document.getElementById('navIdTags').classList.toggle('hidden', !canManage());
   document.getElementById('navTransactions').classList.toggle('hidden', !canManage());
+  document.getElementById('navErrorEvents').classList.toggle('hidden', !canManage());
   document.getElementById('navUsers').classList.toggle('hidden', currentUser.role !== 'admin');
   // Séparateur visible uniquement si la zone admin/manager est visible
   const showDivider = canManage();
@@ -801,6 +805,7 @@ function shouldRefreshDetail(eventType, cpIdentity, cpId) {
       dashboard:      ['chargepoint_connected', 'chargepoint_disconnected', 'status_update', 'transaction_start', 'transaction_stop', 'transaction_updated'],
       chargepoints:   ['chargepoint_connected', 'chargepoint_disconnected', 'chargepoint_heartbeat', 'chargepoint_update', 'pending_chargepoint'],
       connectors:     ['chargepoint_connected', 'chargepoint_disconnected', 'status_update', 'transaction_updated', 'transaction_start', 'transaction_stop'],
+      errorevents:    ['error_event'],
       transactions:   ['transaction_start', 'transaction_stop', 'transaction_updated'],
       mytransactions: ['transaction_start', 'transaction_stop', 'transaction_updated'],
       mycharge:       ['chargepoint_connected', 'chargepoint_disconnected', 'status_update', 'transaction_updated', 'transaction_start', 'transaction_stop'],
@@ -895,6 +900,12 @@ function handleRealtimeEvent(type, data) {
     case 'reservation_updated':
       if (currentPage === 'chargepointdetail' && currentDetailTab === 'reservations' && data.chargepoint_id == currentDetailCpId) loadReservations(data.chargepoint_id);
       break;
+    case 'error_event':
+      if (currentPage === 'errorevents') {
+        const activeFilter = errorEventsFilters.chargepoint_id;
+        if (!activeFilter || String(data.chargepoint_id) === String(activeFilter)) renderErrorEvents(true);
+      }
+      break;
     case 'pending_chargepoint':
       if (currentUser && currentUser.role === 'admin') {
         toast(t('realTime.cpPending', { identity: data.identity }), 'warning');
@@ -969,7 +980,7 @@ function navigate(page, silent = false) {
     return navigate('dashboard');
   }
   // Bloquer l'accès aux pages manager sans droits
-  if ((page === 'idtags' || page === 'sites') && !canManage()) {
+  if ((page === 'idtags' || page === 'sites' || page === 'errorevents') && !canManage()) {
     return navigate('dashboard');
   }
   // Afficher la page mycharge dans le menu dashboard pour les utilisateurs simples (fusionnée)
@@ -997,12 +1008,13 @@ function navigate(page, silent = false) {
     notifications: t('navigation.myNotifications'),
     profile: t('navigation.myProfile'),
     configeditor: t('navigation.configEditor'),
+    errorevents: t('errorEvents.title'),
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
 
   // Les utilisateurs simples ont leur propre dashboard
   const dashboardRenderer = canManage() ? renderDashboard : renderUserDashboard;
-  const renderers = { dashboard: dashboardRenderer, chargepoints: renderChargepoints, sites: renderSites, siteusers: renderSiteUsers, transactions: renderTransactions, connectors: renderConnectors, mycharge: renderUserDashboard, mytransactions: renderMyTransactions, idtags: renderIdTags, users: renderUsers, notifications: renderNotifications, profile: renderProfile, transactiondetail: refreshTransactionDetail, configeditor: renderConfigEditor };
+  const renderers = { dashboard: dashboardRenderer, chargepoints: renderChargepoints, sites: renderSites, siteusers: renderSiteUsers, transactions: renderTransactions, connectors: renderConnectors, mycharge: renderUserDashboard, mytransactions: renderMyTransactions, idtags: renderIdTags, users: renderUsers, notifications: renderNotifications, profile: renderProfile, transactiondetail: refreshTransactionDetail, configeditor: renderConfigEditor, errorevents: renderErrorEvents };
   if (renderers[page]) renderers[page]();
 }
 
@@ -2083,6 +2095,7 @@ let _cpProfilesById = {};
 let _cpConnectors = [];
 
 async function renderDetailTabChargingProfiles(cp) {
+  _cpConnectors = cp.connectors || [];
   document.getElementById('detailTabContent').innerHTML = `
     <div class="card">
       <div class="card-header">
@@ -2129,7 +2142,6 @@ async function renderDetailTabChargingProfiles(cp) {
       <div id="compScheduleResult" style="padding:0 16px 12px"></div>
     </div>
   `;
-  _cpConnectors = cp.connectors || [];
   await loadChargingProfiles(cp.id);
 }
 
@@ -4246,7 +4258,7 @@ function formatReason(reason) {
 // ══════════════════════════════════════
 //  DÉTAIL TRANSACTION (graphiques)
 // ══════════════════════════════════════
-let txDetailCharts = { energie: null, courant: null, soc: null };
+let txDetailCharts = { energie: null, courant: null, soc: null, tempfreq: null };
 let txDetailContext = { transactionId: null, lastPage: null, data: null };
 
 async function showTransactionDetail(transactionId, lastPage) {
@@ -4270,6 +4282,10 @@ async function showTransactionDetail(transactionId, lastPage) {
       <div class="chart-card" id="chartCardSoc">
         <h3>🔋 ${t('charts.cSoCTitle')}</h3>
         <div style="height:300px;"><canvas id="chartTxSoc"></canvas></div>
+      </div>
+      <div class="chart-card" id="chartCardTempFreq" style="display:none;">
+        <h3>🌡️ ${t('charts.cTempFreqTitle')}</h3>
+        <div style="height:300px;"><canvas id="chartTxTempFreq"></canvas></div>
       </div>
     </div>
     <p id="txDetailLoading" class="text-muted">${t('charts.cLoading')}</p>
@@ -4309,6 +4325,10 @@ function refreshTransactionDetail() {
       <div class="chart-card" id="chartCardSoc">
         <h3>🔋 ${t('charts.cSoCTitle')}</h3>
         <div style="height:300px;"><canvas id="chartTxSoc"></canvas></div>
+      </div>
+      <div class="chart-card" id="chartCardTempFreq" style="display:none;">
+        <h3>🌡️ ${t('charts.cTempFreqTitle')}</h3>
+        <div style="height:300px;"><canvas id="chartTxTempFreq"></canvas></div>
       </div>
     </div>
   `;
@@ -4401,29 +4421,66 @@ function renderTransactionCharts(data) {
     ctxE.parentElement.innerHTML = `<p class="text-muted" style="padding:20px;">${t('charts.noEnergy')}</p>`;
   }
 
-  // ── Courant ──
+  // ── Courant & Tension ──
   if (txDetailCharts.courant) txDetailCharts.courant.destroy();
   const ctxC = document.getElementById('chartTxCourant');
-  if (ctxC && data.courant.length > 0) {
+  const hasCourant = data.courant.length > 0;
+  const hasTension = data.tension && data.tension.length > 0;
+  if (ctxC && (hasCourant || hasTension)) {
     const datasets = [];
-    const colors = { l1: '#dc2626', l2: '#2563eb', l3: '#16a34a', offer: '#d97706' };
-    const labels = { l1: t('charts.l1name'), l2: t('charts.l2name'), l3: t('charts.l3name'), offer: t('charts.offerA') };
-    for (const key of ['offer', 'l1', 'l2', 'l3']) {
-      if (data.courant.some(c => c[key] != null)) {
+    const cardCourant = document.getElementById('chartCardCourant');
+    if (cardCourant) cardCourant.querySelector('h3').textContent = hasTension ? t('charts.cCurrentVoltageTitle') : t('charts.cCurrentTitle');
+    if (hasCourant) {
+      const colors = { l1: '#dc2626', l2: '#2563eb', l3: '#16a34a', offer: '#d97706' };
+      const labels = { l1: t('charts.l1name'), l2: t('charts.l2name'), l3: t('charts.l3name'), offer: t('charts.offerA') };
+      for (const key of ['offer', 'l1', 'l2', 'l3']) {
+        if (data.courant.some(c => c[key] != null)) {
+          datasets.push({
+            label: labels[key],
+            data: data.courant,
+            parsing: { xAxisKey: 'x', yAxisKey: key },
+            borderColor: colors[key],
+            borderDash: key === 'offer' ? [5, 3] : [],
+            tension: 0.3, borderWidth: 2, pointRadius: 2, yAxisID: 'y',
+          });
+        }
+      }
+    }
+    if (hasTension) {
+      const vColors = { l1: '#dc2626', l2: '#2563eb', l3: '#16a34a' };
+      const hasPhases = data.tension.some(t => t.l2 != null || t.l3 != null);
+      if (hasPhases) {
+        for (const key of ['l1', 'l2', 'l3']) {
+          if (data.tension.some(t => t[key] != null)) {
+            const vLabels = { l1: t('charts.voltageL1'), l2: t('charts.voltageL2'), l3: t('charts.voltageL3') };
+            datasets.push({
+              label: vLabels[key],
+              data: data.tension,
+              parsing: { xAxisKey: 'x', yAxisKey: key },
+              borderColor: vColors[key],
+              borderDash: [4, 2],
+              tension: 0.3, borderWidth: 2, pointRadius: 1, yAxisID: 'yV',
+            });
+          }
+        }
+      } else {
         datasets.push({
-          label: labels[key],
-          data: data.courant,
-          parsing: { xAxisKey: 'x', yAxisKey: key },
-          borderColor: colors[key],
-          borderDash: key === 'offer' ? [5, 3] : [],
-          tension: 0.3, borderWidth: 2, pointRadius: 2,
+          label: t('charts.voltageMono'),
+          data: data.tension,
+          parsing: { xAxisKey: 'x', yAxisKey: 'l1' },
+          borderColor: '#7c3aed',
+          borderDash: [4, 2],
+          tension: 0.3, borderWidth: 2, pointRadius: 1, yAxisID: 'yV',
         });
       }
     }
     const courantOpts = JSON.parse(JSON.stringify(timeOpts));
-    courantOpts.scales.y.title = { display: true, text: 'A' };
+    courantOpts.scales.y = { beginAtZero: true, title: { display: true, text: 'A' }, ticks: { font: { size: 11 } } };
     courantOpts.scales.x.ticks.callback = timeOpts.scales.x.ticks.callback;
     courantOpts.plugins.tooltip.callbacks.title = timeOpts.plugins.tooltip.callbacks.title;
+    if (hasTension) {
+      courantOpts.scales.yV = { position: 'right', beginAtZero: false, grid: { drawOnChartArea: false }, title: { display: true, text: 'V' }, ticks: { font: { size: 11 } } };
+    }
     txDetailCharts.courant = new Chart(ctxC, { type: 'line', data: { datasets }, options: courantOpts });
   } else {
     const card = document.getElementById('chartCardCourant');
@@ -4458,6 +4515,168 @@ function renderTransactionCharts(data) {
     const card = document.getElementById('chartCardSoc');
     if (card) card.style.display = 'none';
   }
+
+  // ── Température & Fréquence ──
+  if (txDetailCharts.tempfreq) txDetailCharts.tempfreq.destroy();
+  const ctxTF = document.getElementById('chartTxTempFreq');
+  const hasTemp = data.temperature && data.temperature.length > 0;
+  const hasFreq = data.frequence && data.frequence.length > 0;
+  const cardTF = document.getElementById('chartCardTempFreq');
+  if (ctxTF && (hasTemp || hasFreq)) {
+    if (cardTF) cardTF.style.display = '';
+    const datasets = [];
+    if (hasTemp) {
+      datasets.push({
+        label: t('charts.temperature'),
+        data: data.temperature,
+        parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+        borderColor: '#f97316',
+        backgroundColor: 'rgba(249,115,22,0.08)',
+        fill: true, tension: 0.3, borderWidth: 2, pointRadius: 2, yAxisID: 'yT',
+      });
+    }
+    if (hasFreq) {
+      datasets.push({
+        label: t('charts.frequence'),
+        data: data.frequence,
+        parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+        borderColor: '#8b5cf6',
+        tension: 0.3, borderWidth: 2, pointRadius: 2, yAxisID: 'yF',
+      });
+    }
+    const tfOpts = JSON.parse(JSON.stringify(timeOpts));
+    tfOpts.scales.x.ticks.callback = timeOpts.scales.x.ticks.callback;
+    tfOpts.plugins.tooltip.callbacks.title = timeOpts.plugins.tooltip.callbacks.title;
+    tfOpts.scales.yT = { position: 'left', beginAtZero: false, title: { display: hasTemp, text: '°C' }, ticks: { font: { size: 11 } }, display: hasTemp };
+    tfOpts.scales.yF = { position: 'right', beginAtZero: false, grid: { drawOnChartArea: false }, title: { display: hasFreq, text: 'Hz' }, ticks: { font: { size: 11 } }, display: hasFreq };
+    delete tfOpts.scales.y;
+    txDetailCharts.tempfreq = new Chart(ctxTF, { type: 'line', data: { datasets }, options: tfOpts });
+  } else {
+    if (cardTF) cardTF.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════
+//  ERROR EVENTS
+// ══════════════════════════════════════
+let errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+
+async function renderErrorEvents(keepState = false) {
+  if (!keepState) errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+  document.getElementById('topbarActions').innerHTML = '';
+  try {
+    const params = new URLSearchParams();
+    if (errorEventsFilters.chargepoint_id) params.set('chargepoint_id', errorEventsFilters.chargepoint_id);
+    if (errorEventsFilters.event_type) params.set('event_type', errorEventsFilters.event_type);
+    if (errorEventsFilters.from) params.set('from', errorEventsFilters.from);
+    if (errorEventsFilters.to) params.set('to', errorEventsFilters.to);
+    if (errorEventsFilters.limit) params.set('limit', errorEventsFilters.limit);
+    const qs = params.toString() ? '?' + params.toString() : '';
+    const events = await api('GET', '/error-events' + qs);
+
+    const cpMap = new Map();
+    events.forEach(e => { if (e.chargepoint_id) cpMap.set(e.chargepoint_id, e.chargepoint_name || e.chargepoint_identity || String(e.chargepoint_id)); });
+    const uniqueCps = [...cpMap.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+
+    const activeFilterCount = Object.entries(errorEventsFilters).filter(([k, v]) => v !== '' && k !== 'limit').length;
+
+    function eventTypeBadge(type) {
+      if (type === 'status_error') return `<span class="badge badge-red">${t('errorEvents.eventTypeStatusError')}</span>`;
+      if (type === 'disconnect') return `<span class="badge badge-gray">${t('errorEvents.eventTypeDisconnect')}</span>`;
+      if (type === 'heartbeat_timeout') return `<span class="badge badge-yellow">${t('errorEvents.eventTypeHeartbeatTimeout')}</span>`;
+      return `<span class="badge">${escapeHtml(type)}</span>`;
+    }
+
+    document.getElementById('pageContent').innerHTML = `
+    <div class="card card-filters">
+      <div class="card-header"><h3>🔍 ${t('filters.filter')}${activeFilterCount ? ` (${t('filters.nbfilter', { count: activeFilterCount })})` : ''}</h3></div>
+      <div class="msg-filters">
+        <div class="form-group">
+          <label>${t('common.chargepoint_one')}</label>
+          <select id="eeFilterCp" data-onchange="applyErrorEventsFilters()">
+            <option value="">${t('filters.allf')}</option>
+            ${uniqueCps.map(([id, name]) => `<option value="${id}" ${errorEventsFilters.chargepoint_id === String(id) ? 'selected' : ''}>${escapeHtml(name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>${t('errorEvents.colType')}</label>
+          <select id="eeFilterType" data-onchange="applyErrorEventsFilters()">
+            <option value="">${t('errorEvents.eventTypeAll')}</option>
+            <option value="status_error" ${errorEventsFilters.event_type === 'status_error' ? 'selected' : ''}>${t('errorEvents.eventTypeStatusError')}</option>
+            <option value="disconnect" ${errorEventsFilters.event_type === 'disconnect' ? 'selected' : ''}>${t('errorEvents.eventTypeDisconnect')}</option>
+            <option value="heartbeat_timeout" ${errorEventsFilters.event_type === 'heartbeat_timeout' ? 'selected' : ''}>${t('errorEvents.eventTypeHeartbeatTimeout')}</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>${t('errorEvents.filterFrom')}</label>
+          <input type="date" id="eeFilterFrom" value="${escapeAttr(errorEventsFilters.from)}" data-onchange="applyErrorEventsFilters()" />
+        </div>
+        <div class="form-group">
+          <label>${t('errorEvents.filterTo')}</label>
+          <input type="date" id="eeFilterTo" value="${escapeAttr(errorEventsFilters.to)}" data-onchange="applyErrorEventsFilters()" />
+        </div>
+        <div class="form-group">
+          <label>${t('errorEvents.filterLimit')}</label>
+          <select id="eeFilterLimit" data-onchange="applyErrorEventsFilters()">
+            <option value="50" ${errorEventsFilters.limit === '50' ? 'selected' : ''}>50</option>
+            <option value="100" ${errorEventsFilters.limit === '100' ? 'selected' : ''}>100</option>
+            <option value="200" ${errorEventsFilters.limit === '200' ? 'selected' : ''}>200</option>
+            <option value="500" ${errorEventsFilters.limit === '500' ? 'selected' : ''}>500</option>
+          </select>
+        </div>
+        <button class="btn btn-outline btn-sm" data-onclick="resetErrorEventsFilters()">${t('common.reset')}</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>${events.length === 1 ? t('errorEvents.count', { count: 1 }) : t('errorEvents.count_plural', { count: events.length })}</h3></div>
+      ${events.length === 0 ? `<p class="text-muted" style="padding:16px;">${t('errorEvents.noEvents')}</p>` : `
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>${t('errorEvents.colDate')}</th>
+          <th>${t('errorEvents.colChargepoint')}</th>
+          <th>${t('errorEvents.colConnector')}</th>
+          <th>${t('errorEvents.colType')}</th>
+          <th>${t('errorEvents.colErrorCode')}</th>
+          <th>${t('errorEvents.colVendorError')}</th>
+          <th>${t('errorEvents.colInfo')}</th>
+          <th>${t('errorEvents.colProtocol')}</th>
+        </tr></thead>
+        <tbody>
+          ${events.map(e => `
+            <tr>
+              <td class="text-muted" style="white-space:nowrap;">${formatDate(e.created_at)}</td>
+              <td>${e.chargepoint_name ? escapeHtml(e.chargepoint_name) : (e.chargepoint_identity ? escapeHtml(e.chargepoint_identity) : '<span class="text-muted">-</span>')}</td>
+              <td>${e.connector_id != null ? '#' + e.connector_id : (e.evse_id != null ? 'EVSE #' + e.evse_id : '<span class="text-muted">-</span>')}</td>
+              <td>${eventTypeBadge(e.event_type)}</td>
+              <td>${e.error_code ? `<code>${escapeHtml(e.error_code)}</code>` : (e.tech_code ? `<code>${escapeHtml(e.tech_code)}</code>` : '<span class="text-muted">-</span>')}</td>
+              <td>${e.vendor_error_code ? escapeHtml(e.vendor_error_code) : '<span class="text-muted">-</span>'}</td>
+              <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${e.info ? escapeAttr(e.info) : ''}">${e.info ? escapeHtml(e.info) : '<span class="text-muted">-</span>'}</td>
+              <td><span class="badge badge-blue">${escapeHtml(e.ocpp_version)}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      </div>`}
+    </div>
+    `;
+  } catch (err) {
+    document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+function applyErrorEventsFilters() {
+  errorEventsFilters.chargepoint_id = document.getElementById('eeFilterCp').value;
+  errorEventsFilters.event_type = document.getElementById('eeFilterType').value;
+  errorEventsFilters.from = document.getElementById('eeFilterFrom').value;
+  errorEventsFilters.to = document.getElementById('eeFilterTo').value;
+  errorEventsFilters.limit = document.getElementById('eeFilterLimit').value;
+  renderErrorEvents(true);
+}
+
+function resetErrorEventsFilters() {
+  errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+  renderErrorEvents();
 }
 
 // ══════════════════════════════════════

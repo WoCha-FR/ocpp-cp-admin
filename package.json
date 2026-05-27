@@ -1,6 +1,6 @@
 {
   "name": "ocpp-cp-admin",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "OCPP 1.6 Charge Point Management System (CSMS) for operating and monitoring EV charging infrastructure.",
   "main": "src/server.js",
   "scripts": {
@@ -21,7 +21,7 @@
     "audit:deps": "npm audit --audit-level=high",
     "lint:check": "eslint src/",
     "format:check": "prettier --check \"src/**/*.js\" \"*.json\" \"*.js\""
- },
+  },
   "homepage": "https://github.com/WoCha-FR/ocpp-cp-admin#readme",
   "bugs": {
     "url": "https://github.com/WoCha-FR/ocpp-cp-admin/issues"
@@ -57,9 +57,9 @@
     "express-validator": "^7.3.2",
     "flatpickr": "^4.6.13",
     "helmet": "^8.2.0",
-    "i18next": "^26.2.0",
+    "i18next": "^26.3.0",
     "marked": "^18.0.4",
-    "nodemailer": "^8.0.8",
+    "nodemailer": "^8.0.9",
     "ocpp-rpc": "2.1.2",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",

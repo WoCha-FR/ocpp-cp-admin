@@ -525,7 +525,15 @@
     "l2name": "Phase 2",
     "l3name": "Phase 3",
     "offerA": "Disponible",
-    "soc": "État de charge"
+    "soc": "État de charge",
+    "cCurrentVoltageTitle": "Courant & Tension",
+    "cTempFreqTitle": "Température & Fréquence",
+    "voltageL1": "Tension Phase 1 (V)",
+    "voltageL2": "Tension Phase 2 (V)",
+    "voltageL3": "Tension Phase 3 (V)",
+    "voltageMono": "Tension (V)",
+    "temperature": "Température (°C)",
+    "frequence": "Fréquence (Hz)"
   },
   "push": {
     "notSupported": "Les notifications Push ne sont pas supportées par votre navigateur.",
@@ -635,7 +643,29 @@
     "myNotifications": "Mes Notifications",
     "myProfile": "Mon profil",
     "configEditor": "Configuration",
-    "adminSpace": "Administration"
+    "adminSpace": "Administration",
+    "errorEvents": "Alertes"
+  },
+  "errorEvents": {
+    "title": "Historique des alertes",
+    "eventTypeAll": "Tous les types",
+    "eventTypeStatusError": "Erreur connecteur",
+    "eventTypeDisconnect": "Déconnexion",
+    "eventTypeHeartbeatTimeout": "Timeout heartbeat",
+    "noEvents": "Aucun événement d'erreur enregistré.",
+    "count": "{{count}} événement",
+    "count_plural": "{{count}} événements",
+    "colDate": "Date",
+    "colChargepoint": "Borne",
+    "colConnector": "Connecteur",
+    "colType": "Type",
+    "colErrorCode": "Code erreur",
+    "colVendorError": "Code fournisseur",
+    "colInfo": "Info",
+    "colProtocol": "Protocole",
+    "filterLimit": "Limite",
+    "filterFrom": "Depuis",
+    "filterTo": "Jusqu'au"
   },
   "notifications": {
     "common": {
