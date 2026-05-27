@@ -4582,7 +4582,7 @@ async function renderErrorEvents(keepState = false) {
 
     function eventTypeBadge(type) {
       if (type === 'status_error') return `<span class="badge badge-red">${t('errorEvents.eventTypeStatusError')}</span>`;
-      if (type === 'disconnect') return `<span class="badge badge-orange">${t('errorEvents.eventTypeDisconnect')}</span>`;
+      if (type === 'disconnect') return `<span class="badge badge-gray">${t('errorEvents.eventTypeDisconnect')}</span>`;
       if (type === 'heartbeat_timeout') return `<span class="badge badge-yellow">${t('errorEvents.eventTypeHeartbeatTimeout')}</span>`;
       return `<span class="badge">${escapeHtml(type)}</span>`;
     }

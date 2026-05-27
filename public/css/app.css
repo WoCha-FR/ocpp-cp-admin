@@ -589,6 +589,10 @@
     .msg-filters { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; align-items: flex-end; }
     .msg-filters .form-group { margin-bottom: 0; min-width: 150px; }
     .msg-filters > .btn { align-self: flex-end; padding: 8px 16px; font-size: 14px; }
+    @media (max-width: 768px) {
+      .msg-filters { flex-direction: column; gap: 8px; align-items: stretch; }
+      .msg-filters .form-group { min-width: 100%; }
+    }
     .msg-payload { font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; max-width: min(400px, 60vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; color: var(--text-primary); }
     .msg-payload:hover { white-space: normal; word-break: break-all; }
 
