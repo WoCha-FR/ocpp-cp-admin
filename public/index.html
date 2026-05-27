@@ -2083,6 +2083,7 @@ let _cpProfilesById = {};
 let _cpConnectors = [];
 
 async function renderDetailTabChargingProfiles(cp) {
+  _cpConnectors = cp.connectors || [];
   document.getElementById('detailTabContent').innerHTML = `
     <div class="card">
       <div class="card-header">
@@ -2129,7 +2130,6 @@ async function renderDetailTabChargingProfiles(cp) {
       <div id="compScheduleResult" style="padding:0 16px 12px"></div>
     </div>
   `;
-  _cpConnectors = cp.connectors || [];
   await loadChargingProfiles(cp.id);
 }
 
