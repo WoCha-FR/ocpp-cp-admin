@@ -559,7 +559,7 @@
       }
 
       /* Filtres messages */
-      .msg-filters { flex-direction: column; gap: 8px; }
+      .msg-filters { flex-direction: column; gap: 8px; align-items: stretch; }
       .msg-filters .form-group { min-width: 100%; }
 
       /* Login card padding réduit */
