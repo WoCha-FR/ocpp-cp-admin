@@ -64,10 +64,16 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 
 ### Transactions and Charge Monitoring
 - Active and completed transaction tracking
-- Real-time data: energy (Wh), power (W), current (A per phase), state of charge (SOC %)
+- Real-time data: energy (Wh), power (W), current (A per phase), state of charge (SOC %), temperature (°C), voltage (V per phase), frequency (Hz)
 - Transaction history with filters
 - CSV export of transactions
 - Personal dashboard for users
+
+### Error Event History
+- Persistent log of hardware/network errors: `StatusNotification` faults, disconnections (after grace period), heartbeat timeouts
+- Global view filterable by charge point, event type, OCPP version, and date range
+- Accessible to managers and admins
+- Real-time updates via WebSocket
 
 ### RFID Badge Management
 - Badge creation and management (ID Tags)
@@ -827,6 +833,17 @@ Limited access for charging:
 
 ---
 
+## REST API (selected endpoints)
+
+| Method | Endpoint | Access | Description |
+|---|---|---|---|
+| `GET` | `/api/error-events` | manager+ | Paginated error event log. Query params: `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
+| `GET` | `/api/transactions/:id/values` | auth | Real-time metering series for a transaction: `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
+| `GET` | `/api/metrics` | optional token | Prometheus-format metrics |
+| `GET` | `/healthz` | public | Health check |
+
+---
+
 ## OCPP 1.6 Protocol
 
 The application implements the OCPP 1.6-J protocol (JSON over WebSocket) for communication with charge points.
@@ -843,7 +860,7 @@ The application implements the OCPP 1.6-J protocol (JSON over WebSocket) for com
 | **Authorize** | RFID badge authorization request |
 | **StartTransaction** | Charging session start |
 | **StopTransaction** | Charging session end (stop reason, energy consumed) |
-| **MeterValues** | Real-time metering data (energy, power, current, SOC) |
+| **MeterValues** | Real-time metering data (energy, power, current, SOC, temperature, voltage, frequency) |
 | **DataTransfer** | Vendor-specific data exchange |
 | **DiagnosticsStatusNotification** | Diagnostics upload status |
 | **FirmwareStatusNotification** | Firmware update progress status |
@@ -1146,6 +1163,7 @@ backup:
 | `users_password_resets` | Password reset tokens |
 | `charging_profiles` | Charging profiles applied to charge points |
 | `reservations` | Active and historical connector reservations |
+| `error_events` | Persistent log of hardware/network errors (StatusNotification faults, disconnections, heartbeat timeouts) |
 
 ---
 

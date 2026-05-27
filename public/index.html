@@ -4258,7 +4258,7 @@ function formatReason(reason) {
 // ══════════════════════════════════════
 //  DÉTAIL TRANSACTION (graphiques)
 // ══════════════════════════════════════
-let txDetailCharts = { energie: null, courant: null, soc: null };
+let txDetailCharts = { energie: null, courant: null, soc: null, tempfreq: null };
 let txDetailContext = { transactionId: null, lastPage: null, data: null };
 
 async function showTransactionDetail(transactionId, lastPage) {
@@ -4282,6 +4282,10 @@ async function showTransactionDetail(transactionId, lastPage) {
       <div class="chart-card" id="chartCardSoc">
         <h3>🔋 ${t('charts.cSoCTitle')}</h3>
         <div style="height:300px;"><canvas id="chartTxSoc"></canvas></div>
+      </div>
+      <div class="chart-card" id="chartCardTempFreq" style="display:none;">
+        <h3>🌡️ ${t('charts.cTempFreqTitle')}</h3>
+        <div style="height:300px;"><canvas id="chartTxTempFreq"></canvas></div>
       </div>
     </div>
     <p id="txDetailLoading" class="text-muted">${t('charts.cLoading')}</p>
@@ -4321,6 +4325,10 @@ function refreshTransactionDetail() {
       <div class="chart-card" id="chartCardSoc">
         <h3>🔋 ${t('charts.cSoCTitle')}</h3>
         <div style="height:300px;"><canvas id="chartTxSoc"></canvas></div>
+      </div>
+      <div class="chart-card" id="chartCardTempFreq" style="display:none;">
+        <h3>🌡️ ${t('charts.cTempFreqTitle')}</h3>
+        <div style="height:300px;"><canvas id="chartTxTempFreq"></canvas></div>
       </div>
     </div>
   `;
@@ -4413,29 +4421,66 @@ function renderTransactionCharts(data) {
     ctxE.parentElement.innerHTML = `<p class="text-muted" style="padding:20px;">${t('charts.noEnergy')}</p>`;
   }
 
-  // ── Courant ──
+  // ── Courant & Tension ──
   if (txDetailCharts.courant) txDetailCharts.courant.destroy();
   const ctxC = document.getElementById('chartTxCourant');
-  if (ctxC && data.courant.length > 0) {
+  const hasCourant = data.courant.length > 0;
+  const hasTension = data.tension && data.tension.length > 0;
+  if (ctxC && (hasCourant || hasTension)) {
     const datasets = [];
-    const colors = { l1: '#dc2626', l2: '#2563eb', l3: '#16a34a', offer: '#d97706' };
-    const labels = { l1: t('charts.l1name'), l2: t('charts.l2name'), l3: t('charts.l3name'), offer: t('charts.offerA') };
-    for (const key of ['offer', 'l1', 'l2', 'l3']) {
-      if (data.courant.some(c => c[key] != null)) {
+    const cardCourant = document.getElementById('chartCardCourant');
+    if (cardCourant) cardCourant.querySelector('h3').textContent = hasTension ? t('charts.cCurrentVoltageTitle') : t('charts.cCurrentTitle');
+    if (hasCourant) {
+      const colors = { l1: '#dc2626', l2: '#2563eb', l3: '#16a34a', offer: '#d97706' };
+      const labels = { l1: t('charts.l1name'), l2: t('charts.l2name'), l3: t('charts.l3name'), offer: t('charts.offerA') };
+      for (const key of ['offer', 'l1', 'l2', 'l3']) {
+        if (data.courant.some(c => c[key] != null)) {
+          datasets.push({
+            label: labels[key],
+            data: data.courant,
+            parsing: { xAxisKey: 'x', yAxisKey: key },
+            borderColor: colors[key],
+            borderDash: key === 'offer' ? [5, 3] : [],
+            tension: 0.3, borderWidth: 2, pointRadius: 2, yAxisID: 'y',
+          });
+        }
+      }
+    }
+    if (hasTension) {
+      const vColors = { l1: '#dc2626', l2: '#2563eb', l3: '#16a34a' };
+      const hasPhases = data.tension.some(t => t.l2 != null || t.l3 != null);
+      if (hasPhases) {
+        for (const key of ['l1', 'l2', 'l3']) {
+          if (data.tension.some(t => t[key] != null)) {
+            const vLabels = { l1: t('charts.voltageL1'), l2: t('charts.voltageL2'), l3: t('charts.voltageL3') };
+            datasets.push({
+              label: vLabels[key],
+              data: data.tension,
+              parsing: { xAxisKey: 'x', yAxisKey: key },
+              borderColor: vColors[key],
+              borderDash: [4, 2],
+              tension: 0.3, borderWidth: 2, pointRadius: 1, yAxisID: 'yV',
+            });
+          }
+        }
+      } else {
         datasets.push({
-          label: labels[key],
-          data: data.courant,
-          parsing: { xAxisKey: 'x', yAxisKey: key },
-          borderColor: colors[key],
-          borderDash: key === 'offer' ? [5, 3] : [],
-          tension: 0.3, borderWidth: 2, pointRadius: 2,
+          label: t('charts.voltageMono'),
+          data: data.tension,
+          parsing: { xAxisKey: 'x', yAxisKey: 'l1' },
+          borderColor: '#7c3aed',
+          borderDash: [4, 2],
+          tension: 0.3, borderWidth: 2, pointRadius: 1, yAxisID: 'yV',
         });
       }
     }
     const courantOpts = JSON.parse(JSON.stringify(timeOpts));
-    courantOpts.scales.y.title = { display: true, text: 'A' };
+    courantOpts.scales.y = { beginAtZero: true, title: { display: true, text: 'A' }, ticks: { font: { size: 11 } } };
     courantOpts.scales.x.ticks.callback = timeOpts.scales.x.ticks.callback;
     courantOpts.plugins.tooltip.callbacks.title = timeOpts.plugins.tooltip.callbacks.title;
+    if (hasTension) {
+      courantOpts.scales.yV = { position: 'right', beginAtZero: false, grid: { drawOnChartArea: false }, title: { display: true, text: 'V' }, ticks: { font: { size: 11 } } };
+    }
     txDetailCharts.courant = new Chart(ctxC, { type: 'line', data: { datasets }, options: courantOpts });
   } else {
     const card = document.getElementById('chartCardCourant');
@@ -4469,6 +4514,45 @@ function renderTransactionCharts(data) {
   } else {
     const card = document.getElementById('chartCardSoc');
     if (card) card.style.display = 'none';
+  }
+
+  // ── Température & Fréquence ──
+  if (txDetailCharts.tempfreq) txDetailCharts.tempfreq.destroy();
+  const ctxTF = document.getElementById('chartTxTempFreq');
+  const hasTemp = data.temperature && data.temperature.length > 0;
+  const hasFreq = data.frequence && data.frequence.length > 0;
+  const cardTF = document.getElementById('chartCardTempFreq');
+  if (ctxTF && (hasTemp || hasFreq)) {
+    if (cardTF) cardTF.style.display = '';
+    const datasets = [];
+    if (hasTemp) {
+      datasets.push({
+        label: t('charts.temperature'),
+        data: data.temperature,
+        parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+        borderColor: '#f97316',
+        backgroundColor: 'rgba(249,115,22,0.08)',
+        fill: true, tension: 0.3, borderWidth: 2, pointRadius: 2, yAxisID: 'yT',
+      });
+    }
+    if (hasFreq) {
+      datasets.push({
+        label: t('charts.frequence'),
+        data: data.frequence,
+        parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+        borderColor: '#8b5cf6',
+        tension: 0.3, borderWidth: 2, pointRadius: 2, yAxisID: 'yF',
+      });
+    }
+    const tfOpts = JSON.parse(JSON.stringify(timeOpts));
+    tfOpts.scales.x.ticks.callback = timeOpts.scales.x.ticks.callback;
+    tfOpts.plugins.tooltip.callbacks.title = timeOpts.plugins.tooltip.callbacks.title;
+    tfOpts.scales.yT = { position: 'left', beginAtZero: false, title: { display: hasTemp, text: '°C' }, ticks: { font: { size: 11 } }, display: hasTemp };
+    tfOpts.scales.yF = { position: 'right', beginAtZero: false, grid: { drawOnChartArea: false }, title: { display: hasFreq, text: 'Hz' }, ticks: { font: { size: 11 } }, display: hasFreq };
+    delete tfOpts.scales.y;
+    txDetailCharts.tempfreq = new Chart(ctxTF, { type: 'line', data: { datasets }, options: tfOpts });
+  } else {
+    if (cardTF) cardTF.style.display = 'none';
   }
 }
 

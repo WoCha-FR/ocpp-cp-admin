@@ -1060,7 +1060,10 @@ function getTransactionValues(transactionId) {
 }
 
 // ── Transactions Values ──
-function upsertTransactionValues(transactionId, { energieEntry, courantEntry, socEntry } = {}) {
+function upsertTransactionValues(
+  transactionId,
+  { energieEntry, courantEntry, socEntry, tempEntry, tensionEntry, freqEntry } = {}
+) {
   transactionId = String(transactionId);
   const existing = db
     .prepare('SELECT * FROM transactions_values WHERE transaction_id = ?')
@@ -1086,6 +1089,24 @@ function upsertTransactionValues(transactionId, { energieEntry, courantEntry, so
       updates.push('energie = ?');
       params.push(JSON.stringify(arr));
     }
+    if (tempEntry) {
+      const arr = existing.temperature ? JSON.parse(existing.temperature) : [];
+      arr.push(tempEntry);
+      updates.push('temperature = ?');
+      params.push(JSON.stringify(arr));
+    }
+    if (tensionEntry) {
+      const arr = existing.tension ? JSON.parse(existing.tension) : [];
+      arr.push(tensionEntry);
+      updates.push('tension = ?');
+      params.push(JSON.stringify(arr));
+    }
+    if (freqEntry) {
+      const arr = existing.frequence ? JSON.parse(existing.frequence) : [];
+      arr.push(freqEntry);
+      updates.push('frequence = ?');
+      params.push(JSON.stringify(arr));
+    }
     if (updates.length > 0) {
       params.push(transactionId);
       db.prepare(
@@ -1094,12 +1115,15 @@ function upsertTransactionValues(transactionId, { energieEntry, courantEntry, so
     }
   } else {
     db.prepare(
-      'INSERT INTO transactions_values (transaction_id, energie, courant, soc) VALUES (?, ?, ?, ?)'
+      'INSERT INTO transactions_values (transaction_id, energie, courant, soc, temperature, tension, frequence) VALUES (?, ?, ?, ?, ?, ?, ?)'
     ).run(
       transactionId,
       energieEntry ? JSON.stringify([energieEntry]) : null,
       courantEntry ? JSON.stringify([courantEntry]) : null,
-      socEntry ? JSON.stringify([socEntry]) : null
+      socEntry ? JSON.stringify([socEntry]) : null,
+      tempEntry ? JSON.stringify([tempEntry]) : null,
+      tensionEntry ? JSON.stringify([tensionEntry]) : null,
+      freqEntry ? JSON.stringify([freqEntry]) : null
     );
   }
 }

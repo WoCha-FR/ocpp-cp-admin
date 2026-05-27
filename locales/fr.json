@@ -525,7 +525,15 @@
     "l2name": "Phase 2",
     "l3name": "Phase 3",
     "offerA": "Disponible",
-    "soc": "État de charge"
+    "soc": "État de charge",
+    "cCurrentVoltageTitle": "Courant & Tension",
+    "cTempFreqTitle": "Température & Fréquence",
+    "voltageL1": "Tension Phase 1 (V)",
+    "voltageL2": "Tension Phase 2 (V)",
+    "voltageL3": "Tension Phase 3 (V)",
+    "voltageMono": "Tension (V)",
+    "temperature": "Température (°C)",
+    "frequence": "Fréquence (Hz)"
   },
   "push": {
     "notSupported": "Les notifications Push ne sont pas supportées par votre navigateur.",

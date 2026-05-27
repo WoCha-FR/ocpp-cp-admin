@@ -1796,11 +1796,22 @@ router.get(
   (req, res) => {
     const transactionId = req.params.transactionId;
     const values = db.getTransactionValues(transactionId);
-    if (!values) return res.json({ energie: [], courant: [], soc: [] });
+    if (!values)
+      return res.json({
+        energie: [],
+        courant: [],
+        soc: [],
+        temperature: [],
+        tension: [],
+        frequence: [],
+      });
     res.json({
       energie: values.energie ? JSON.parse(values.energie) : [],
       courant: values.courant ? JSON.parse(values.courant) : [],
       soc: values.soc ? JSON.parse(values.soc) : [],
+      temperature: values.temperature ? JSON.parse(values.temperature) : [],
+      tension: values.tension ? JSON.parse(values.tension) : [],
+      frequence: values.frequence ? JSON.parse(values.frequence) : [],
     });
   }
 );

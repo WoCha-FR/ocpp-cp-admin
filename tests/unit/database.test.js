@@ -1182,3 +1182,86 @@ describe('database — Error Events', () => {
     expect(events[0].chargepoint_identity).toBe('EE-CP-001');
   });
 });
+
+// ── Transaction Values (nouvelles métriques) ──
+describe('database — Transaction Values (nouvelles métriques)', () => {
+  let cpId;
+  let txId;
+
+  beforeAll(() => {
+    db.upsertChargepoint('TV-CP-001', { cpstatus: 'Available' });
+    cpId = db.getChargepointByIdentity('TV-CP-001').id;
+    const tx = db.createTransaction(cpId, 1, 'TV-TAG', 0, '2026-01-01T10:00:00Z', 'local');
+    txId = tx.transaction_id;
+  });
+
+  it('insère une entrée temperature (INSERT)', () => {
+    db.upsertTransactionValues(txId, { tempEntry: { x: 1000, y: 42.5 } });
+    const row = db.getTransactionValues(txId);
+    const temp = JSON.parse(row.temperature);
+    expect(temp).toHaveLength(1);
+    expect(temp[0]).toEqual({ x: 1000, y: 42.5 });
+  });
+
+  it('appende une entrée temperature (UPDATE)', () => {
+    db.upsertTransactionValues(txId, { tempEntry: { x: 1060, y: 43.1 } });
+    const row = db.getTransactionValues(txId);
+    const temp = JSON.parse(row.temperature);
+    expect(temp).toHaveLength(2);
+    expect(temp[1].y).toBeCloseTo(43.1);
+  });
+
+  it('insère une entrée tension triphasée', () => {
+    db.upsertTransactionValues(txId, { tensionEntry: { x: 1000, l1: 230.1, l2: 229.8, l3: 231.0 } });
+    const row = db.getTransactionValues(txId);
+    const tension = JSON.parse(row.tension);
+    expect(tension).toHaveLength(1);
+    expect(tension[0].l1).toBeCloseTo(230.1);
+    expect(tension[0].l2).toBeCloseTo(229.8);
+    expect(tension[0].l3).toBeCloseTo(231.0);
+  });
+
+  it('appende une entrée tension (UPDATE)', () => {
+    db.upsertTransactionValues(txId, { tensionEntry: { x: 1060, l1: 228.5, l2: null, l3: null } });
+    const row = db.getTransactionValues(txId);
+    const tension = JSON.parse(row.tension);
+    expect(tension).toHaveLength(2);
+  });
+
+  it('insère une entrée frequence', () => {
+    db.upsertTransactionValues(txId, { freqEntry: { x: 1000, y: 50.02 } });
+    const row = db.getTransactionValues(txId);
+    const freq = JSON.parse(row.frequence);
+    expect(freq).toHaveLength(1);
+    expect(freq[0].y).toBeCloseTo(50.02);
+  });
+
+  it('appende une entrée frequence (UPDATE)', () => {
+    db.upsertTransactionValues(txId, { freqEntry: { x: 1060, y: 49.98 } });
+    const row = db.getTransactionValues(txId);
+    const freq = JSON.parse(row.frequence);
+    expect(freq).toHaveLength(2);
+  });
+
+  it('insère toutes les nouvelles métriques en une seule opération', () => {
+    const tx2 = db.createTransaction(cpId, 1, 'TV-TAG-2', 0, '2026-01-02T10:00:00Z', 'local');
+    db.upsertTransactionValues(tx2.transaction_id, {
+      tempEntry: { x: 2000, y: 35.0 },
+      tensionEntry: { x: 2000, l1: 230.0, l2: null, l3: null },
+      freqEntry: { x: 2000, y: 50.0 },
+    });
+    const row = db.getTransactionValues(tx2.transaction_id);
+    expect(JSON.parse(row.temperature)).toHaveLength(1);
+    expect(JSON.parse(row.tension)).toHaveLength(1);
+    expect(JSON.parse(row.frequence)).toHaveLength(1);
+  });
+
+  it('les colonnes nouvelles restent null si non fournies', () => {
+    const tx3 = db.createTransaction(cpId, 1, 'TV-TAG-3', 0, '2026-01-03T10:00:00Z', 'local');
+    db.upsertTransactionValues(tx3.transaction_id, { energieEntry: { x: 3000, power: 7000, offer: null, energy: 100 } });
+    const row = db.getTransactionValues(tx3.transaction_id);
+    expect(row.temperature).toBeNull();
+    expect(row.tension).toBeNull();
+    expect(row.frequence).toBeNull();
+  });
+});

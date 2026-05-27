@@ -999,6 +999,11 @@ function register16Handlers(client, loggedHandle) {
       let currentL1 = null;
       let currentL2 = null;
       let currentL3 = null;
+      let tempValue = null;
+      let voltageL1 = null;
+      let voltageL2 = null;
+      let voltageL3 = null;
+      let freqValue = null;
       let timestamp = null;
 
       for (const mv of params.meterValue) {
@@ -1033,6 +1038,20 @@ function register16Handlers(client, loggedHandle) {
             if (phase === 'L1') currentL1 = val;
             else if (phase === 'L2') currentL2 = val;
             else if (phase === 'L3') currentL3 = val;
+          }
+          if (sv.measurand === 'Temperature') {
+            tempValue = parseFloat(sv.value);
+          }
+          if (sv.measurand === 'Voltage') {
+            const phase = sv.phase || 'L1';
+            const val = parseFloat(sv.value);
+            if (phase === 'L1' || phase === 'L1-N') voltageL1 = val;
+            else if (phase === 'L2' || phase === 'L2-N') voltageL2 = val;
+            else if (phase === 'L3' || phase === 'L3-N') voltageL3 = val;
+            else voltageL1 = val;
+          }
+          if (sv.measurand === 'Frequency') {
+            freqValue = parseFloat(sv.value);
           }
         }
       }
@@ -1097,6 +1116,10 @@ function register16Handlers(client, loggedHandle) {
             };
           }
           if (socValue !== null) tvData.socEntry = { x: unixTs, y: socValue };
+          if (tempValue !== null) tvData.tempEntry = { x: unixTs, y: tempValue };
+          if (voltageL1 !== null || voltageL2 !== null || voltageL3 !== null)
+            tvData.tensionEntry = { x: unixTs, l1: voltageL1, l2: voltageL2, l3: voltageL3 };
+          if (freqValue !== null) tvData.freqEntry = { x: unixTs, y: freqValue };
           if (Object.keys(tvData).length > 0) {
             db.upsertTransactionValues(txId, tvData);
           }
