@@ -1,6 +1,6 @@
 {
   "name": "ocpp-cp-admin",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "OCPP 1.6 Charge Point Management System (CSMS) for operating and monitoring EV charging infrastructure.",
   "main": "src/server.js",
   "scripts": {

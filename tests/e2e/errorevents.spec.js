@@ -15,10 +15,11 @@ test.describe('Page Alertes (historique d\'erreurs)', () => {
     await expect(title).toBeVisible({ timeout: 10000 });
   });
 
-  test('affiche les filtres (borne, type, période)', async ({ loggedInPage: page }) => {
+  test('affiche les filtres (site, borne, type, période)', async ({ loggedInPage: page }) => {
     await page.locator('#navErrorEvents').click();
     await page.locator('#eeFilterCp').waitFor({ timeout: 10000 });
 
+    await expect(page.locator('#eeFilterSite')).toBeVisible();
     await expect(page.locator('#eeFilterCp')).toBeVisible();
     await expect(page.locator('#eeFilterType')).toBeVisible();
     await expect(page.locator('#eeFilterFrom')).toBeVisible();

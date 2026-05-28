@@ -1798,9 +1798,10 @@ function insertErrorEvent(
 }
 
 function getErrorEvents(filters = {}) {
-  let query = `SELECT ee.*, cp.identity AS chargepoint_identity, cp.cpname AS chargepoint_name, cp.site_id
+  let query = `SELECT ee.*, cp.identity AS chargepoint_identity, cp.cpname AS chargepoint_name, cp.site_id, s.sname AS site_name
     FROM error_events ee
     LEFT JOIN chargepoints cp ON cp.id = ee.chargepoint_id
+    LEFT JOIN sites s ON s.id = cp.site_id
     WHERE 1=1`;
   const params = [];
   if (filters.chargepoint_id) {
@@ -1822,6 +1823,10 @@ function getErrorEvents(filters = {}) {
   if (filters.to) {
     query += ' AND ee.created_at <= ?';
     params.push(filters.to);
+  }
+  if (filters.site_id) {
+    query += ' AND cp.site_id = ?';
+    params.push(filters.site_id);
   }
   if (filters.site_ids && filters.site_ids.length > 0) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;

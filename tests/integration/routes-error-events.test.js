@@ -93,17 +93,22 @@ function createApp() {
 
   // Route sous test
   app.get('/api/error-events', requireManager, (req, res) => {
-    const { chargepoint_id, event_type, ocpp_version, from, to, limit, offset } = req.query;
+    const { chargepoint_id, site_id, event_type, ocpp_version, from, to, limit, offset } = req.query;
 
     // Validation manuelle des params (simule express-validator)
     if (chargepoint_id && !/^\d+$/.test(chargepoint_id)) return res.status(400).json({ error: 'VALIDATION_CHARGEPOINT_ID' });
+    if (site_id && !/^\d+$/.test(site_id)) return res.status(400).json({ error: 'VALIDATION_SITE_ID' });
     if (event_type && !['status_error', 'disconnect', 'heartbeat_timeout'].includes(event_type)) return res.status(400).json({ error: 'VALIDATION_EVENT_TYPE' });
     if (ocpp_version && !['1.6', '2.0.1'].includes(ocpp_version)) return res.status(400).json({ error: 'VALIDATION_OCPP_VERSION' });
 
-    let query = `SELECT ee.*, cp.identity AS chargepoint_identity, cp.cpname AS chargepoint_name, cp.site_id
-      FROM error_events ee LEFT JOIN chargepoints cp ON cp.id = ee.chargepoint_id WHERE 1=1`;
+    let query = `SELECT ee.*, cp.identity AS chargepoint_identity, cp.cpname AS chargepoint_name, cp.site_id, s.sname AS site_name
+      FROM error_events ee
+      LEFT JOIN chargepoints cp ON cp.id = ee.chargepoint_id
+      LEFT JOIN sites s ON s.id = cp.site_id
+      WHERE 1=1`;
     const params = [];
     if (chargepoint_id) { query += ' AND ee.chargepoint_id = ?'; params.push(Number(chargepoint_id)); }
+    if (site_id) { query += ' AND cp.site_id = ?'; params.push(Number(site_id)); }
     if (event_type) { query += ' AND ee.event_type = ?'; params.push(event_type); }
     if (ocpp_version) { query += ' AND ee.ocpp_version = ?'; params.push(ocpp_version); }
     if (from) { query += ' AND ee.created_at >= ?'; params.push(from); }
@@ -235,5 +240,43 @@ describe('GET /api/error-events', () => {
     const res = await agent.get(`/api/error-events?chargepoint_id=${cpId}&ocpp_version=2.0.1`);
     expect(res.status).toBe(200);
     expect(res.body.every(e => e.ocpp_version === '2.0.1')).toBe(true);
+  });
+
+  it('retourne site_name dans les événements', async () => {
+    const siteId = db.prepare("INSERT INTO sites (sname) VALUES ('Site Alpha')").run().lastInsertRowid;
+    const cpId = db.prepare("INSERT INTO chargepoints (identity, cpstatus, site_id) VALUES ('EE-CP-F', 'Available', ?)").run(siteId).lastInsertRowid;
+    db.prepare("INSERT INTO error_events (chargepoint_id, ocpp_version, event_type) VALUES (?, '1.6', 'disconnect')").run(cpId);
+
+    const agent = request.agent(app);
+    await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.get('/api/error-events');
+    expect(res.status).toBe(200);
+    const e = res.body.find(x => x.chargepoint_id === cpId);
+    expect(e).toBeDefined();
+    expect(e.site_name).toBe('Site Alpha');
+    expect(e.site_id).toBe(siteId);
+  });
+
+  it('filtre par site_id', async () => {
+    const site1 = db.prepare("INSERT INTO sites (sname) VALUES ('Site Beta')").run().lastInsertRowid;
+    const site2 = db.prepare("INSERT INTO sites (sname) VALUES ('Site Gamma')").run().lastInsertRowid;
+    const cp1 = db.prepare("INSERT INTO chargepoints (identity, cpstatus, site_id) VALUES ('EE-CP-G', 'Available', ?)").run(site1).lastInsertRowid;
+    const cp2 = db.prepare("INSERT INTO chargepoints (identity, cpstatus, site_id) VALUES ('EE-CP-H', 'Available', ?)").run(site2).lastInsertRowid;
+    db.prepare("INSERT INTO error_events (chargepoint_id, ocpp_version, event_type) VALUES (?, '1.6', 'status_error')").run(cp1);
+    db.prepare("INSERT INTO error_events (chargepoint_id, ocpp_version, event_type) VALUES (?, '1.6', 'status_error')").run(cp2);
+
+    const agent = request.agent(app);
+    await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.get(`/api/error-events?site_id=${site1}`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
+    expect(res.body.every(e => e.site_id === site1)).toBe(true);
+  });
+
+  it('rejette un site_id non entier avec 400', async () => {
+    const agent = request.agent(app);
+    await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.get('/api/error-events?site_id=abc');
+    expect(res.status).toBe(400);
   });
 });

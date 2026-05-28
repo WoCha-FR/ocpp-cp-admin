@@ -543,6 +543,13 @@ const ErrorEventsQuery = {
     toInt: true,
     errorMessage: 'VALIDATION_CHARGEPOINT_ID',
   },
+  site_id: {
+    in: ['query'],
+    optional: true,
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_SITE_ID',
+  },
   event_type: {
     in: ['query'],
     optional: true,

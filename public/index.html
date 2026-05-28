@@ -4559,24 +4559,29 @@ function renderTransactionCharts(data) {
 // ══════════════════════════════════════
 //  ERROR EVENTS
 // ══════════════════════════════════════
-let errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+let errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
 
 async function renderErrorEvents(keepState = false) {
-  if (!keepState) errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+  if (!keepState) errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
   document.getElementById('topbarActions').innerHTML = '';
   try {
     const params = new URLSearchParams();
+    if (errorEventsFilters.site_id) params.set('site_id', errorEventsFilters.site_id);
     if (errorEventsFilters.chargepoint_id) params.set('chargepoint_id', errorEventsFilters.chargepoint_id);
     if (errorEventsFilters.event_type) params.set('event_type', errorEventsFilters.event_type);
     if (errorEventsFilters.from) params.set('from', errorEventsFilters.from);
     if (errorEventsFilters.to) params.set('to', errorEventsFilters.to);
     if (errorEventsFilters.limit) params.set('limit', errorEventsFilters.limit);
     const qs = params.toString() ? '?' + params.toString() : '';
-    const events = await api('GET', '/error-events' + qs);
+    const [events, allSites] = await Promise.all([
+      api('GET', '/error-events' + qs),
+      api('GET', '/sites'),
+    ]);
 
     const cpMap = new Map();
     events.forEach(e => { if (e.chargepoint_id) cpMap.set(e.chargepoint_id, e.chargepoint_name || e.chargepoint_identity || String(e.chargepoint_id)); });
     const uniqueCps = [...cpMap.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    const uniqueSites = [...allSites].sort((a, b) => a.sname.localeCompare(b.sname));
 
     const activeFilterCount = Object.entries(errorEventsFilters).filter(([k, v]) => v !== '' && k !== 'limit').length;
 
@@ -4591,6 +4596,13 @@ async function renderErrorEvents(keepState = false) {
     <div class="card card-filters">
       <div class="card-header"><h3>🔍 ${t('filters.filter')}${activeFilterCount ? ` (${t('filters.nbfilter', { count: activeFilterCount })})` : ''}</h3></div>
       <div class="msg-filters">
+        <div class="form-group">
+          <label>${t('common.site_one')}</label>
+          <select id="eeFilterSite" data-onchange="applyErrorEventsFilters()">
+            <option value="">${t('filters.allf')}</option>
+            ${uniqueSites.map(s => `<option value="${s.id}" ${errorEventsFilters.site_id === String(s.id) ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
+          </select>
+        </div>
         <div class="form-group">
           <label>${t('common.chargepoint_one')}</label>
           <select id="eeFilterCp" data-onchange="applyErrorEventsFilters()">
@@ -4609,11 +4621,11 @@ async function renderErrorEvents(keepState = false) {
         </div>
         <div class="form-group">
           <label>${t('errorEvents.filterFrom')}</label>
-          <input type="date" id="eeFilterFrom" value="${escapeAttr(errorEventsFilters.from)}" data-onchange="applyErrorEventsFilters()" />
+          <input type="text" id="eeFilterFrom" />
         </div>
         <div class="form-group">
           <label>${t('errorEvents.filterTo')}</label>
-          <input type="date" id="eeFilterTo" value="${escapeAttr(errorEventsFilters.to)}" data-onchange="applyErrorEventsFilters()" />
+          <input type="text" id="eeFilterTo" />
         </div>
         <div class="form-group">
           <label>${t('errorEvents.filterLimit')}</label>
@@ -4634,6 +4646,7 @@ async function renderErrorEvents(keepState = false) {
       <table>
         <thead><tr>
           <th>${t('errorEvents.colDate')}</th>
+          <th>${t('common.site_one')}</th>
           <th>${t('errorEvents.colChargepoint')}</th>
           <th>${t('errorEvents.colConnector')}</th>
           <th>${t('errorEvents.colType')}</th>
@@ -4646,6 +4659,7 @@ async function renderErrorEvents(keepState = false) {
           ${events.map(e => `
             <tr>
               <td class="text-muted" style="white-space:nowrap;">${formatDate(e.created_at)}</td>
+              <td>${e.site_name ? escapeHtml(e.site_name) : '<span class="text-muted">-</span>'}</td>
               <td>${e.chargepoint_name ? escapeHtml(e.chargepoint_name) : (e.chargepoint_identity ? escapeHtml(e.chargepoint_identity) : '<span class="text-muted">-</span>')}</td>
               <td>${e.connector_id != null ? '#' + e.connector_id : (e.evse_id != null ? 'EVSE #' + e.evse_id : '<span class="text-muted">-</span>')}</td>
               <td>${eventTypeBadge(e.event_type)}</td>
@@ -4660,12 +4674,24 @@ async function renderErrorEvents(keepState = false) {
       </div>`}
     </div>
     `;
+    const lc = getLocaleConfig();
+    const fpEeOpts = {
+      dateFormat: 'Y-m-d',
+      altInput: true,
+      altFormat: lc.dateFormat,
+      locale: getFlatpickrLocaleOption(lc),
+      maxDate: 'today',
+      onChange: function () { applyErrorEventsFilters(); },
+    };
+    flatpickr('#eeFilterFrom', { ...fpEeOpts, defaultDate: errorEventsFilters.from || null });
+    flatpickr('#eeFilterTo',   { ...fpEeOpts, defaultDate: errorEventsFilters.to   || null });
   } catch (err) {
     document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
 function applyErrorEventsFilters() {
+  errorEventsFilters.site_id = document.getElementById('eeFilterSite').value;
   errorEventsFilters.chargepoint_id = document.getElementById('eeFilterCp').value;
   errorEventsFilters.event_type = document.getElementById('eeFilterType').value;
   errorEventsFilters.from = document.getElementById('eeFilterFrom').value;
@@ -4675,7 +4701,7 @@ function applyErrorEventsFilters() {
 }
 
 function resetErrorEventsFilters() {
-  errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+  errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
   renderErrorEvents();
 }
 

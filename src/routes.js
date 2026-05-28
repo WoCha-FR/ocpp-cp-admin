@@ -2025,6 +2025,7 @@ router.get(
   (req, res) => {
     const filters = {};
     if (req.query.chargepoint_id) filters.chargepoint_id = Number(req.query.chargepoint_id);
+    if (req.query.site_id) filters.site_id = Number(req.query.site_id);
     if (req.query.event_type) filters.event_type = req.query.event_type;
     if (req.query.ocpp_version) filters.ocpp_version = req.query.ocpp_version;
     if (req.query.from) filters.from = req.query.from;
