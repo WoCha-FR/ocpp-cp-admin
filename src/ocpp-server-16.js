@@ -206,6 +206,7 @@ function register16Handlers(client, loggedHandle) {
   const identity = client.identity;
   const cpRecord = db.getChargepointByIdentity(identity);
   const chargepointId = cpRecord ? cpRecord.id : null;
+  let pendingStatusAfterBootCallback = null;
 
   // ── BootNotification ──
   loggedHandle('BootNotification', (params) => {
@@ -449,6 +450,10 @@ function register16Handlers(client, loggedHandle) {
 
   // ── StatusNotification ──
   loggedHandle('StatusNotification', (params) => {
+    if (pendingStatusAfterBootCallback) {
+      pendingStatusAfterBootCallback();
+      pendingStatusAfterBootCallback = null;
+    }
     const cp = db.getChargepointByIdentity(identity);
     if (cp) {
       const safeStatus = sanitizeEnum(params.status, OCPP16_CONNECTOR_STATUSES, 'Unavailable');
@@ -1268,6 +1273,28 @@ function register16Handlers(client, loggedHandle) {
       } catch (e) {
         logger.warn(
           `[StateRefresh] ${identity}: TriggerMessage(BootNotification) échoué: ${e.message}`
+        );
+        return;
+      }
+
+      // Attendre que la borne complète sa séquence de boot (certaines envoient
+      // StatusNotification automatiquement en réponse au trigger BootNotification)
+      const statusReceived = await new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          pendingStatusAfterBootCallback = null;
+          resolve(false);
+        }, 10000);
+        pendingStatusAfterBootCallback = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+      });
+
+      if (!db.getChargepointByIdentity(identity)?.connected) return;
+
+      if (statusReceived) {
+        logger.info(
+          `[StateRefresh] ${identity}: StatusNotification auto-reçu, skip TriggerMessage(StatusNotification)`
         );
         return;
       }

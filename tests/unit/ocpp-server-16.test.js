@@ -1344,16 +1344,46 @@ describe('ocpp-server-16 — StateRefresh TriggerMessage', () => {
   it('sends TriggerMessage(BootNotification) + TriggerMessage(StatusNotification) when initialized=1 and cpstatus=null after 8s', async () => {
     const client = makeClient('CP001');
     mockDb.getChargepointByIdentity
-      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })   // register16Handlers
-      .mockReturnValueOnce({ id: 1, connected: 1, cpstatus: null })     // timer check
-      .mockReturnValue({ id: 1 });                                        // callClient16 calls
+      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })  // register16Handlers
+      .mockReturnValueOnce({ id: 1, connected: 1, cpstatus: null })    // timer check
+      .mockReturnValue({ id: 1, connected: 1 });                        // callClient16 + afterBoot + callClient16
     mockConnectedClients.set('CP001', client);
 
     register16Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(18001); // 8s outer + 10s inner wait
 
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
+  });
+
+  it('skips TriggerMessage(StatusNotification) when StatusNotification arrives automatically during boot sequence', async () => {
+    const client = makeClient('CP001');
+    const lh = makeLoggedHandle(client);
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, cpstatus: null })
+      .mockReturnValueOnce({ id: 1, connected: 1, cpstatus: null })
+      .mockReturnValue({ id: 1, connected: 1, cpstatus: 'Available', site_id: null });
+    mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+    mockDb.getTransactions.mockReturnValue([]);
+    mockConnectedClients.set('CP001', client);
+
+    register16Handlers(client, lh);
+
+    // Fire the 8s timer → TriggerMessage(Boot) sent, 10s inner wait begins
+    await jest.advanceTimersByTimeAsync(8001);
+
+    // Simulate StatusNotification arriving automatically (borne type EV-BOX)
+    client._handlers['StatusNotification']({
+      connectorId: 1,
+      status: 'Available',
+      errorCode: 'NoError',
+    });
+    // Drain microtasks so the Promise resolves and StateRefresh continues
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
   });
 
   it('does not send TriggerMessage when cpstatus is set before the timer fires', async () => {
