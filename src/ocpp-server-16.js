@@ -897,25 +897,67 @@ function register16Handlers(client, loggedHandle) {
 
   // ── StopTransaction ──
   loggedHandle('StopTransaction', (params) => {
-    db.stopTransaction(params.transactionId, params.meterStop, params.timestamp, params.reason);
+    // Valider meterStop : si la borne envoie meterStop <= meter_start alors que de l'énergie
+    // a été consommée (firmware en Suspended EV), corriger avec meter_start + energy
+    let meterStop = params.meterStop;
+    const preTx = db.getTransactionByTransactionId(String(params.transactionId));
+    if (
+      preTx &&
+      preTx.status === 'Active' &&
+      preTx.energy != null &&
+      preTx.energy > 0 &&
+      (meterStop == null || meterStop <= preTx.meter_start)
+    ) {
+      const corrected = preTx.meter_start + preTx.energy;
+      logger.warn(
+        `StopTransaction meterStop incohérent (${meterStop}) sur ${identity} tx ${params.transactionId}, corrigé à ${corrected}`
+      );
+      meterStop = corrected;
+    }
 
+    db.stopTransaction(params.transactionId, meterStop, params.timestamp, params.reason);
+
+    let stoppedTx = db.getTransactionByTransactionId(params.transactionId);
+    // Fallback : si le transactionId est inconnu, chercher une tx active sur ce chargeur
+    if (!stoppedTx) {
+      const cp = db.getChargepointByIdentity(identity);
+      if (cp) {
+        const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
+        if (activeTxs.length >= 1) {
+          const activeTx = activeTxs.sort(
+            (a, b) => new Date(b.start_time) - new Date(a.start_time)
+          )[0];
+          db.stopTransaction(
+            activeTx.transaction_id,
+            meterStop,
+            params.timestamp,
+            params.reason || 'Other'
+          );
+          stoppedTx = db.getTransactionByTransactionId(activeTx.transaction_id);
+          logger.warn(
+            `[Recovery] StopTransaction txId inconnu ${params.transactionId} sur ${identity}, ` +
+              `${activeTxs.length > 1 ? `${activeTxs.length} tx actives — ` : ''}tx ${activeTx.transaction_id} fermée`
+          );
+        } else {
+          logger.warn(
+            `[Recovery] StopTransaction txId inconnu ${params.transactionId} sur ${identity}, aucune tx active`
+          );
+        }
+      }
+    }
+
+    const resolvedTransactionId = stoppedTx?.transaction_id ?? params.transactionId;
     broadcast(
       'transaction_stop',
-      {
-        identity,
-        transactionId: params.transactionId,
-        meterStop: params.meterStop,
-        reason: params.reason,
-      },
+      { identity, transactionId: resolvedTransactionId, meterStop, reason: params.reason },
       db.getChargepointByIdentity(identity)?.site_id ?? null
     );
 
-    const stoppedTx = db.getTransactionByTransactionId(params.transactionId);
     logger.info(`StopTransaction from ${identity} #${stoppedTx?.connector_id ?? '?'}`);
     if (stoppedTx) {
       const cpForTx = db.getChargepointById(stoppedTx.chargepoint_id);
-      if (cpForTx && params.meterStop != null) {
-        db.updateConnectorMeterValue(cpForTx.id, stoppedTx.connector_id, params.meterStop);
+      if (cpForTx && meterStop != null) {
+        db.updateConnectorMeterValue(cpForTx.id, stoppedTx.connector_id, meterStop);
       }
       const siteId = cpForTx ? cpForTx.site_id : null;
       const tag = stoppedTx.id_tag ? db.getIdTagByTag(stoppedTx.id_tag, siteId) : null;
@@ -960,7 +1002,7 @@ function register16Handlers(client, loggedHandle) {
               connector_id: stoppedTx.connector_id,
               energy_kwh: energyKwh,
               duration,
-              transaction_id: params.transactionId,
+              transaction_id: resolvedTransactionId,
               stop_reason: params.reason || 'Local',
               cp_name: cpForTx ? cpForTx.cpname : null,
               cn_name:
@@ -1072,10 +1114,25 @@ function register16Handlers(client, loggedHandle) {
       }
 
       if (txId) {
-        // Transaction connue ?
-        const tx = db.getTransactionByTransactionId(txId);
+        let tx = db.getTransactionByTransactionId(txId);
         if (!tx) {
-          logger.warn(`Received MeterValues for unknown transaction ${txId} from ${identity}`);
+          const activeTx = db.getActiveTransactionByConnector(cp.id, params.connectorId);
+          if (activeTx) {
+            logger.warn(
+              `MeterValues txId inconnu ${txId} depuis ${identity}, redirigé vers tx active ${activeTx.transaction_id}`
+            );
+            txId = activeTx.transaction_id;
+            tx = activeTx;
+          } else {
+            logger.warn(`Received MeterValues for unknown transaction ${txId} from ${identity}`);
+            return {};
+          }
+        }
+        if (tx.status !== 'Active') {
+          logger.warn(
+            `MeterValues pour transaction clôturée ${txId} depuis ${identity} — ignorés` +
+              (energyWh !== null ? ` (énergie reçue: ${Math.round(energyWh)} Wh)` : '')
+          );
           return {};
         }
         // Oui, on traite le meter value

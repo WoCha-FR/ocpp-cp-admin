@@ -2147,6 +2147,11 @@ function resetStateOnStartup() {
            stop_reason = 'Other',
            charging_state = NULL,
            power = NULL,
+           meter_stop = CASE
+                          WHEN energy IS NOT NULL AND meter_start IS NOT NULL
+                          THEN meter_start + energy
+                          ELSE meter_stop
+                        END,
            energy = NULL
        WHERE status = 'Active'`
     )

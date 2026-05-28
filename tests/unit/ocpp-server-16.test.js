@@ -711,6 +711,44 @@ describe('ocpp-server-16 — StopTransaction', () => {
     );
   });
 
+  it('corrects meterStop when incoherent (meterStop <= meter_start with energy > 0)', () => {
+    mockDb.getTransactionByTransactionId
+      .mockReturnValueOnce({ status: 'Active', meter_start: 5000, energy: 2000 }) // pre-check
+      .mockReturnValue({ chargepoint_id: 1, connector_id: 1, id_tag: null, meter_start: 5000, meter_stop: 7000, start_time: new Date(Date.now() - 3600000).toISOString(), stop_time: new Date().toISOString() }); // stoppedTx
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+
+    client._handlers['StopTransaction']({
+      transactionId: 42,
+      meterStop: 5000,
+      timestamp: new Date().toISOString(),
+      reason: 'DeAuthorized',
+    });
+    // meterStop corrigé à 5000 + 2000 = 7000
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(42, 7000, expect.any(String), 'DeAuthorized');
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 7000);
+  });
+
+  it('fallback : ferme la tx active du chargeur si transactionId inconnu', () => {
+    mockDb.getTransactionByTransactionId
+      .mockReturnValueOnce(null) // pre-check : pas de correction
+      .mockReturnValueOnce(null) // stoppedTx après stopTransaction : null → fallback
+      .mockReturnValue({ chargepoint_id: 1, connector_id: 1, id_tag: null, meter_start: 0, meter_stop: 1000, start_time: new Date(Date.now() - 3600000).toISOString(), stop_time: new Date().toISOString() }); // après fallback stopTransaction
+    mockDb.getTransactions.mockReturnValue([
+      { transaction_id: '888', start_time: new Date(Date.now() - 3600000).toISOString() },
+    ]);
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+
+    client._handlers['StopTransaction']({
+      transactionId: 0,
+      meterStop: 1000,
+      timestamp: new Date().toISOString(),
+      reason: 'Other',
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('888', 1000, expect.any(String), 'Other');
+  });
+
   it('does not broadcast reservation_updated when no InUse reservation matched', () => {
     mockDb.getTransactionByTransactionId.mockReturnValue({
       chargepoint_id: 1,
@@ -747,7 +785,7 @@ describe('ocpp-server-16 — MeterValues', () => {
   beforeEach(() => {
     client = makeClient('CP001');
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1 });
-    mockDb.getTransactionByTransactionId.mockReturnValue({ meter_start: 0 });
+    mockDb.getTransactionByTransactionId.mockReturnValue({ meter_start: 0, status: 'Active' });
     register16Handlers(client, makeLoggedHandle(client));
   });
 
@@ -841,8 +879,9 @@ describe('ocpp-server-16 — MeterValues', () => {
     expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 3500);
   });
 
-  it('returns {} and skips DB update for unknown transactionId', () => {
+  it('returns {} and skips DB update for unknown transactionId (no active tx on connector)', () => {
     mockDb.getTransactionByTransactionId.mockReturnValue(null);
+    mockDb.getActiveTransactionByConnector.mockReturnValue(null);
     const result = client._handlers['MeterValues']({
       connectorId: 1,
       transactionId: 99999,
@@ -857,8 +896,40 @@ describe('ocpp-server-16 — MeterValues', () => {
     expect(mockDb.updateTransactionPowerEnergy).not.toHaveBeenCalled();
   });
 
+  it('redirects MeterValues to active tx on connector when txId unknown', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue(null);
+    mockDb.getActiveTransactionByConnector.mockReturnValue({ transaction_id: '777', meter_start: 1000, status: 'Active' });
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 99999,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [{ measurand: 'Power.Active.Import', value: '3.0', unit: 'kW' }],
+        },
+      ],
+    });
+    expect(mockDb.updateTransactionPowerEnergy).toHaveBeenCalledWith('777', 3000, null);
+  });
+
+  it('returns {} and logs energy for MeterValues on Completed transaction', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({ meter_start: 0, status: 'Completed' });
+    const result = client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [
+        {
+          timestamp: new Date().toISOString(),
+          sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '5000', unit: 'Wh' }],
+        },
+      ],
+    });
+    expect(result).toEqual({});
+    expect(mockDb.updateTransactionPowerEnergy).not.toHaveBeenCalled();
+  });
+
   it('broadcasts transaction_updated when active transaction exists', () => {
-    mockDb.getTransactionByTransactionId.mockReturnValue({ meter_start: 0 });
+    mockDb.getTransactionByTransactionId.mockReturnValue({ meter_start: 0, status: 'Active' });
     client._handlers['MeterValues']({
       connectorId: 1,
       transactionId: 42,
