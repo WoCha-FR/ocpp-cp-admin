@@ -414,8 +414,13 @@ const TransactionsQuery = {
   limit: {
     in: ['query'],
     optional: true,
-    isInt: { options: { min: 1, max: 200 } },
-    toInt: true,
+    custom: {
+      options: (value) => {
+        if (value === 'all') return true;
+        const n = parseInt(value, 10);
+        return Number.isInteger(n) && n >= 1 && n <= 200;
+      },
+    },
     errorMessage: 'VALIDATION_LIMIT',
   },
   page: {
@@ -439,8 +444,13 @@ const UserTransactionsQuery = {
   limit: {
     in: ['query'],
     optional: true,
-    isInt: { options: { min: 1, max: 200 } },
-    toInt: true,
+    custom: {
+      options: (value) => {
+        if (value === 'all') return true;
+        const n = parseInt(value, 10);
+        return Number.isInteger(n) && n >= 1 && n <= 200;
+      },
+    },
     errorMessage: 'VALIDATION_LIMIT',
   },
   page: {

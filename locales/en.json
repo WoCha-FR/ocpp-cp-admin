@@ -53,7 +53,8 @@
     "energy": "Energy",
     "power": "Power",
     "email": "Email address",
-    "password": "Password"
+    "password": "Password",
+    "filterLimit": "Limit"
   },
   "sites": {
     "siteBtnAdd": "New Site",
@@ -663,7 +664,6 @@
     "colVendorError": "Vendor code",
     "colInfo": "Info",
     "colProtocol": "Protocol",
-    "filterLimit": "Limit",
     "filterFrom": "From",
     "filterTo": "To"
   },

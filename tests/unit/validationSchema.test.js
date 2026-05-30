@@ -352,6 +352,17 @@ describe('validationSchema — TransactionsQuery', () => {
     const result = await runSchema(schema.TransactionsQuery, {}, {}, { page: 'abc' });
     expect(result.isEmpty()).toBe(false);
   });
+
+  it('passes with limit = all', async () => {
+    const result = await runSchema(schema.TransactionsQuery, {}, {}, { limit: 'all' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('fails with limit as arbitrary string', async () => {
+    const result = await runSchema(schema.TransactionsQuery, {}, {}, { limit: 'beaucoup' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_LIMIT');
+  });
 });
 
 // ── UserTransactionsQuery ──
@@ -371,5 +382,16 @@ describe('validationSchema — UserTransactionsQuery', () => {
     const result = await runSchema(schema.UserTransactionsQuery, {}, {}, { page: '-1' });
     expect(result.isEmpty()).toBe(false);
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_PAGE');
+  });
+
+  it('passes with limit = all', async () => {
+    const result = await runSchema(schema.UserTransactionsQuery, {}, {}, { limit: 'all' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('fails with limit as arbitrary string', async () => {
+    const result = await runSchema(schema.UserTransactionsQuery, {}, {}, { limit: 'beaucoup' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_LIMIT');
   });
 });

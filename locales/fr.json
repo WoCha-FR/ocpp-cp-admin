@@ -53,7 +53,8 @@
     "energy": "Énergie",
     "power": "Puissance",
     "email": "Adresse e-mail",
-    "password": "Mot de passe"
+    "password": "Mot de passe",
+    "filterLimit": "Limite"
   },
   "sites": {
     "siteBtnAdd": "Nouveau site",
@@ -663,7 +664,6 @@
     "colVendorError": "Code fournisseur",
     "colInfo": "Info",
     "colProtocol": "Protocole",
-    "filterLimit": "Limite",
     "filterFrom": "Depuis",
     "filterTo": "Jusqu'au"
   },

@@ -22,9 +22,9 @@ test.describe('Page Alertes (historique d\'erreurs)', () => {
     await expect(page.locator('#eeFilterSite')).toBeVisible();
     await expect(page.locator('#eeFilterCp')).toBeVisible();
     await expect(page.locator('#eeFilterType')).toBeVisible();
-    // flatpickr avec altInput masque l'input original — on vérifie l'alt input visible
-    await expect(page.locator('#eeFilterFrom + input.flatpickr-input')).toBeVisible();
-    await expect(page.locator('#eeFilterTo + input.flatpickr-input')).toBeVisible();
+    // flatpickr crée un alt input (class="form-control input") comme sibling de l'input original
+    await expect(page.locator('#eeFilterFrom + input')).toBeVisible();
+    await expect(page.locator('#eeFilterTo + input')).toBeVisible();
   });
 
   test('affiche un tableau ou un message vide (pas d\'erreur JS)', async ({ loggedInPage: page }) => {

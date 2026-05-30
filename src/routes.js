@@ -1684,9 +1684,14 @@ router.get(
     if (req.query.status) filters.status = req.query.status;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
-    const { limit, offset } = parsePagination(req);
-    filters.limit = limit;
-    filters.offset = offset;
+    if (req.query.limit === 'all') {
+      filters.limit = 999999;
+      filters.offset = 0;
+    } else {
+      const { limit, offset } = parsePagination(req);
+      filters.limit = limit;
+      filters.offset = offset;
+    }
 
     const user = req.user;
     if (user.role !== 'admin') {
@@ -2255,9 +2260,14 @@ router.get(
     if (req.query.status) filters.status = req.query.status;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
-    const { limit, offset } = parsePagination(req);
-    filters.limit = limit;
-    filters.offset = offset;
+    if (req.query.limit === 'all') {
+      filters.limit = 999999;
+      filters.offset = 0;
+    } else {
+      const { limit, offset } = parsePagination(req);
+      filters.limit = limit;
+      filters.offset = offset;
+    }
     res.json(db.getUserTransactions(req.user.id, filters));
   }
 );
