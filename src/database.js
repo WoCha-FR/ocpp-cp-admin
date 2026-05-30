@@ -1832,10 +1832,14 @@ function getErrorEvents(filters = {}) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
   }
-  const limit = Math.min(filters.limit || 100, 500);
-  const offset = filters.offset || 0;
-  query += ' ORDER BY ee.id DESC LIMIT ? OFFSET ?';
-  params.push(limit, offset);
+  if (filters.limit === null) {
+    query += ' ORDER BY ee.id DESC';
+  } else {
+    const limit = Math.min(filters.limit || 100, 500);
+    const offset = filters.offset || 0;
+    query += ' ORDER BY ee.id DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+  }
   return db.prepare(query).all(...params);
 }
 

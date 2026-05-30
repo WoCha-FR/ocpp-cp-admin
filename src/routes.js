@@ -2030,7 +2030,11 @@ router.get(
     if (req.query.ocpp_version) filters.ocpp_version = req.query.ocpp_version;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
-    if (req.query.limit) filters.limit = Number(req.query.limit);
+    if (req.query.limit === 'all') {
+      filters.limit = null;
+    } else if (req.query.limit) {
+      filters.limit = Number(req.query.limit);
+    }
     if (req.query.offset) filters.offset = Number(req.query.offset);
     const siteIds = getUserSiteIds(req);
     if (siteIds !== null) filters.site_ids = siteIds;

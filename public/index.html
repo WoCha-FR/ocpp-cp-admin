@@ -4559,10 +4559,10 @@ function renderTransactionCharts(data) {
 // ══════════════════════════════════════
 //  ERROR EVENTS
 // ══════════════════════════════════════
-let errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+let errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '50' };
 
 async function renderErrorEvents(keepState = false) {
-  if (!keepState) errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+  if (!keepState) errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '50' };
   document.getElementById('topbarActions').innerHTML = '';
   try {
     const params = new URLSearchParams();
@@ -4633,7 +4633,7 @@ async function renderErrorEvents(keepState = false) {
             <option value="50" ${errorEventsFilters.limit === '50' ? 'selected' : ''}>50</option>
             <option value="100" ${errorEventsFilters.limit === '100' ? 'selected' : ''}>100</option>
             <option value="200" ${errorEventsFilters.limit === '200' ? 'selected' : ''}>200</option>
-            <option value="500" ${errorEventsFilters.limit === '500' ? 'selected' : ''}>500</option>
+            <option value="all" ${errorEventsFilters.limit === 'all' ? 'selected' : ''}>${t('filters.allf')}</option>
           </select>
         </div>
         <button class="btn btn-outline btn-sm" data-onclick="resetErrorEventsFilters()">${t('common.reset')}</button>

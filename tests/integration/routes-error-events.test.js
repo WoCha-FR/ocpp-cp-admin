@@ -113,10 +113,14 @@ function createApp() {
     if (ocpp_version) { query += ' AND ee.ocpp_version = ?'; params.push(ocpp_version); }
     if (from) { query += ' AND ee.created_at >= ?'; params.push(from); }
     if (to) { query += ' AND ee.created_at <= ?'; params.push(to); }
-    const lim = Math.min(Number(limit) || 100, 500);
+    const lim = limit === 'all' ? null : Math.min(Number(limit) || 100, 500);
     const off = Number(offset) || 0;
-    query += ' ORDER BY ee.id DESC LIMIT ? OFFSET ?';
-    params.push(lim, off);
+    if (lim !== null) {
+      query += ' ORDER BY ee.id DESC LIMIT ? OFFSET ?';
+      params.push(lim, off);
+    } else {
+      query += ' ORDER BY ee.id DESC';
+    }
     res.json(testDb.prepare(query).all(...params));
   });
 
@@ -228,6 +232,18 @@ describe('GET /api/error-events', () => {
     const res = await agent.get(`/api/error-events?chargepoint_id=${cpId}&limit=3`);
     expect(res.status).toBe(200);
     expect(res.body.length).toBe(3);
+  });
+
+  it('retourne tous les événements avec limit=all', async () => {
+    const cpId = db.prepare("INSERT INTO chargepoints (identity, cpstatus) VALUES ('EE-CP-ALL', 'Available')").run().lastInsertRowid;
+    for (let i = 0; i < 5; i++) {
+      db.prepare("INSERT INTO error_events (chargepoint_id, ocpp_version, event_type) VALUES (?, '1.6', 'disconnect')").run(cpId);
+    }
+    const agent = request.agent(app);
+    await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.get(`/api/error-events?chargepoint_id=${cpId}&limit=all`);
+    expect(res.status).toBe(200);
+    expect(res.body.length).toBe(5);
   });
 
   it('filtre par ocpp_version', async () => {

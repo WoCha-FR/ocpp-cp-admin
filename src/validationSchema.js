@@ -577,8 +577,13 @@ const ErrorEventsQuery = {
   limit: {
     in: ['query'],
     optional: true,
-    isInt: { options: { min: 1, max: 500 } },
-    toInt: true,
+    custom: {
+      options: (value) => {
+        if (value === 'all') return true;
+        const n = parseInt(value, 10);
+        return Number.isInteger(n) && n >= 1 && n <= 500;
+      },
+    },
     errorMessage: 'VALIDATION_LIMIT',
   },
   offset: {
