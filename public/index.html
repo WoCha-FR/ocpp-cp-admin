@@ -1851,12 +1851,12 @@ async function saveConnector(connectorId) {
 
 // ── Onglet Transactions ────────────────────────────────────────────
 async function renderDetailTabTransactions(cp) {
+  _cpTxCurrent = cp;
   const queryParams = new URLSearchParams();
   queryParams.set('chargepoint_id', cp.id);
   if (cpTxFilters.from) queryParams.set('from', cpTxFilters.from);
   if (cpTxFilters.to)   queryParams.set('to',   cpTxFilters.to);
-  queryParams.set('limit', '200');
-  queryParams.set('page', '1');
+  queryParams.set('limit', cpTxFilters.limit || '50');
   const { data: transactions, total: cpTxTotal } = await api('GET', '/transactions?' + queryParams.toString());
   document.getElementById('detailTabContent').innerHTML = `
     <div class="card card-filters">
@@ -1869,6 +1869,15 @@ async function renderDetailTabTransactions(cp) {
         <div class="form-group">
           <label>${t('filters.dateTo')}</label>
           <input type="text" id="cpTxFilterTo" readonly />
+        </div>
+        <div class="form-group">
+          <label>${t('common.filterLimit')}</label>
+          <select id="cpTxFilterLimit" data-onchange="applyCpTxFilters()">
+            <option value="50"  ${cpTxFilters.limit === '50'  ? 'selected' : ''}>50</option>
+            <option value="100" ${cpTxFilters.limit === '100' ? 'selected' : ''}>100</option>
+            <option value="200" ${cpTxFilters.limit === '200' ? 'selected' : ''}>200</option>
+            <option value="all" ${cpTxFilters.limit === 'all' ? 'selected' : ''}>${t('filters.allf')}</option>
+          </select>
         </div>
         <button class="btn btn-outline btn-sm" data-onclick="resetCpTxFilters(${cp.id})">${t('common.reset')}</button>
       </div>
@@ -1903,22 +1912,23 @@ async function renderDetailTabTransactions(cp) {
     altFormat: lc.dateFormat,
     locale: getFlatpickrLocaleOption(lc),
     maxDate: 'today',
-    onChange: () => applyCpTxFilters(cp),
+    onChange: () => applyCpTxFilters(),
   };
-  flatpickr('#cpTxFilterFrom', { ...fpCpTxOpts, defaultDate: cpTxFilters.from || 'today' });
-  flatpickr('#cpTxFilterTo',   { ...fpCpTxOpts, defaultDate: cpTxFilters.to   || 'today' });
+  flatpickr('#cpTxFilterFrom', { ...fpCpTxOpts, defaultDate: cpTxFilters.from || null });
+  flatpickr('#cpTxFilterTo',   { ...fpCpTxOpts, defaultDate: cpTxFilters.to   || null });
 }
 
-function applyCpTxFilters(cp) {
+function applyCpTxFilters() {
   cpTxFilters = {
-    from: document.getElementById('cpTxFilterFrom')?.value || undefined,
-    to:   document.getElementById('cpTxFilterTo')?.value   || undefined,
+    from:  document.getElementById('cpTxFilterFrom')?.value  || undefined,
+    to:    document.getElementById('cpTxFilterTo')?.value    || undefined,
+    limit: document.getElementById('cpTxFilterLimit')?.value || '50',
   };
-  renderDetailTabTransactions(cp);
+  renderDetailTabTransactions(_cpTxCurrent);
 }
 
 async function resetCpTxFilters(cpId) {
-  cpTxFilters = { from: _today(), to: _today() };
+  cpTxFilters = { from: '', to: '', limit: '50' };
   const cp = await api('GET', `/chargepoints/${cpId}`);
   renderDetailTabTransactions(cp);
 }
@@ -1930,7 +1940,8 @@ function localDateToUtcStr(dateStr, endOfDay) {
   return d.toISOString().replace('T', ' ').slice(0, 19);
 }
 let cpLogsFilters = { date_from: _today(), date_to: _today() };
-let cpTxFilters = { from: _today(), to: _today() };
+let cpTxFilters = { from: '', to: '', limit: '50' };
+let _cpTxCurrent = null;
 
 function renderPaginationBar(currentPage, total, pageSize, callbackFn) {
   if (total <= pageSize) return '';
@@ -3842,12 +3853,10 @@ function onSiteCheckChange(siteId) {
 // ══════════════════════════════════════
 //  TRANSACTIONS
 // ══════════════════════════════════════
-let txFilters = { from: _today(), to: _today() };
-let txPage = 1;
-const TX_PAGE_SIZE = 50;
+let txFilters = { from: '', to: '', limit: '50' };
 
 async function renderTransactions(keepState = false) {
-  if (!keepState) { txFilters = { from: _today(), to: _today() }; txPage = 1; }
+  if (!keepState) txFilters = { from: '', to: '', limit: '50' };
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-primary" data-onclick="exportTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
@@ -3862,8 +3871,7 @@ async function renderTransactions(keepState = false) {
     if (txFilters.status) queryParams.set('status', txFilters.status);
     if (txFilters.from) queryParams.set('from', txFilters.from);
     if (txFilters.to) queryParams.set('to', txFilters.to);
-    queryParams.set('limit', TX_PAGE_SIZE);
-    queryParams.set('page', txPage);
+    queryParams.set('limit', txFilters.limit || '50');
     const { data: transactions, total: txTotal, stats: txStats } = await api('GET', '/transactions?' + queryParams.toString());
 
     // Filtrer les bornes selon le site sélectionné
@@ -3872,7 +3880,7 @@ async function renderTransactions(keepState = false) {
       : chargepoints;
 
     const totalHours = formatDuree(txStats.totalMinutes);
-    const activeFilterCount = ['site_id', 'chargepoint_id', 'status'].filter(k => txFilters[k]).length;
+    const activeFilterCount = ['site_id', 'chargepoint_id', 'status', 'from', 'to'].filter(k => txFilters[k]).length;
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
@@ -3926,6 +3934,15 @@ async function renderTransactions(keepState = false) {
             <label>${t('filters.dateTo')}</label>
             <input type="text" id="txFilterTo" placeholder="${t('common.select')}" />
           </div>
+          <div class="form-group">
+            <label>${t('common.filterLimit')}</label>
+            <select id="txFilterLimit" data-onchange="applyTxFilters()">
+              <option value="50"  ${txFilters.limit === '50'  ? 'selected' : ''}>50</option>
+              <option value="100" ${txFilters.limit === '100' ? 'selected' : ''}>100</option>
+              <option value="200" ${txFilters.limit === '200' ? 'selected' : ''}>200</option>
+              <option value="all" ${txFilters.limit === 'all' ? 'selected' : ''}>${t('filters.allf')}</option>
+            </select>
+          </div>
           <button class="btn btn-outline btn-sm" data-onclick="resetTxFilters()">${t('common.reset')}</button>
         </div>
       </div>
@@ -3954,8 +3971,7 @@ async function renderTransactions(keepState = false) {
               </tr>
             `).join('')}
           </tbody>
-        </table>
-        ${renderPaginationBar(txPage, txTotal, TX_PAGE_SIZE, 'goToTxPage')}`}
+        </table>`}
       </div>
     `;
     const lc = getLocaleConfig();
@@ -3986,19 +4002,13 @@ function applyTxFilters() {
     status: document.getElementById('txFilterStatus')?.value || undefined,
     from: document.getElementById('txFilterFrom')?.value || undefined,
     to: document.getElementById('txFilterTo')?.value || undefined,
+    limit: document.getElementById('txFilterLimit')?.value || '50',
   };
-  txPage = 1;
   renderTransactions(true);
 }
 
 function resetTxFilters() {
-  txFilters = { from: _today(), to: _today() };
-  txPage = 1;
-  renderTransactions(true);
-}
-
-function goToTxPage(page) {
-  txPage = page;
+  txFilters = { from: '', to: '', limit: '50' };
   renderTransactions(true);
 }
 
@@ -4029,9 +4039,7 @@ function formatTxUser(tx) {
 // ══════════════════════════════════════
 //  MES TRANSACTIONS (utilisateur courant)
 // ══════════════════════════════════════
-let myTxFilters = { from: _today(), to: _today() };
-let myTxPage = 1;
-const MY_TX_PAGE_SIZE = 50;
+let myTxFilters = { from: '', to: '', limit: '50' };
 
 function myTxKpiCompare(current, previous) {
   if (!previous || previous === 0) return current > 0 ? '<div class="kpi-compare up">↑ new</div>' : '';
@@ -4045,7 +4053,7 @@ function myTxKpiCompare(current, previous) {
 }
 
 async function renderMyTransactions(keepState = false) {
-  if (!keepState) { myTxFilters = { from: _today(), to: _today() }; myTxPage = 1; }
+  if (!keepState) myTxFilters = { from: '', to: '', limit: '50' };
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-primary" data-onclick="exportMyTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
@@ -4053,8 +4061,7 @@ async function renderMyTransactions(keepState = false) {
     if (myTxFilters.status) queryParams.set('status', myTxFilters.status);
     if (myTxFilters.from) queryParams.set('from', myTxFilters.from);
     if (myTxFilters.to) queryParams.set('to', myTxFilters.to);
-    queryParams.set('limit', MY_TX_PAGE_SIZE);
-    queryParams.set('page', myTxPage);
+    queryParams.set('limit', myTxFilters.limit || '50');
 
     // Charger transactions + stats KPI en parallèle
     const statsParams = new URLSearchParams();
@@ -4069,7 +4076,7 @@ async function renderMyTransactions(keepState = false) {
     const myTxTotal = txResponse.total;
 
     const hasDateFilter = myTxFilters.from || myTxFilters.to;
-    const myActiveFilterCount = ['status'].filter(k => myTxFilters[k]).length;
+    const myActiveFilterCount = ['status', 'from', 'to'].filter(k => myTxFilters[k]).length;
 
     // Déterminer les valeurs principales et secondaires selon le contexte
     const main = hasDateFilter && kpiStats.filtered ? kpiStats.filtered : kpiStats.currentMonth;
@@ -4132,6 +4139,15 @@ async function renderMyTransactions(keepState = false) {
           <label>${t('filters.dateTo')}</label>
           <input type="text" id="myTxFilterTo" placeholder="${t('common.select')}" />
         </div>
+        <div class="form-group">
+          <label>${t('common.filterLimit')}</label>
+          <select id="myTxFilterLimit" data-onchange="applyMyTxFilters()">
+            <option value="50"  ${myTxFilters.limit === '50'  ? 'selected' : ''}>50</option>
+            <option value="100" ${myTxFilters.limit === '100' ? 'selected' : ''}>100</option>
+            <option value="200" ${myTxFilters.limit === '200' ? 'selected' : ''}>200</option>
+            <option value="all" ${myTxFilters.limit === 'all' ? 'selected' : ''}>${t('filters.allf')}</option>
+          </select>
+        </div>
         <button class="btn btn-outline btn-sm" data-onclick="resetMyTxFilters()">${t('common.reset')}</button>
       </div>
     </div>
@@ -4170,8 +4186,7 @@ async function renderMyTransactions(keepState = false) {
             </tr>`;
           }).join('')}
         </tbody>
-        </table>
-        ${renderPaginationBar(myTxPage, myTxTotal, MY_TX_PAGE_SIZE, 'goToMyTxPage')}`}
+        </table>`}
       </div>
     `;
     const lc = getLocaleConfig();
@@ -4196,19 +4211,13 @@ function applyMyTxFilters() {
     status: document.getElementById('myTxFilterStatus')?.value || undefined,
     from: document.getElementById('myTxFilterFrom')?.value || undefined,
     to: document.getElementById('myTxFilterTo')?.value || undefined,
+    limit: document.getElementById('myTxFilterLimit')?.value || '50',
   };
-  myTxPage = 1;
   renderMyTransactions(true);
 }
 
 function resetMyTxFilters() {
-  myTxFilters = { from: _today(), to: _today() };
-  myTxPage = 1;
-  renderMyTransactions(true);
-}
-
-function goToMyTxPage(page) {
-  myTxPage = page;
+  myTxFilters = { from: '', to: '', limit: '50' };
   renderMyTransactions(true);
 }
 
@@ -4559,24 +4568,29 @@ function renderTransactionCharts(data) {
 // ══════════════════════════════════════
 //  ERROR EVENTS
 // ══════════════════════════════════════
-let errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+let errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '50' };
 
 async function renderErrorEvents(keepState = false) {
-  if (!keepState) errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+  if (!keepState) errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '50' };
   document.getElementById('topbarActions').innerHTML = '';
   try {
     const params = new URLSearchParams();
+    if (errorEventsFilters.site_id) params.set('site_id', errorEventsFilters.site_id);
     if (errorEventsFilters.chargepoint_id) params.set('chargepoint_id', errorEventsFilters.chargepoint_id);
     if (errorEventsFilters.event_type) params.set('event_type', errorEventsFilters.event_type);
     if (errorEventsFilters.from) params.set('from', errorEventsFilters.from);
     if (errorEventsFilters.to) params.set('to', errorEventsFilters.to);
     if (errorEventsFilters.limit) params.set('limit', errorEventsFilters.limit);
     const qs = params.toString() ? '?' + params.toString() : '';
-    const events = await api('GET', '/error-events' + qs);
+    const [events, allSites] = await Promise.all([
+      api('GET', '/error-events' + qs),
+      api('GET', '/sites'),
+    ]);
 
     const cpMap = new Map();
     events.forEach(e => { if (e.chargepoint_id) cpMap.set(e.chargepoint_id, e.chargepoint_name || e.chargepoint_identity || String(e.chargepoint_id)); });
     const uniqueCps = [...cpMap.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    const uniqueSites = [...allSites].sort((a, b) => a.sname.localeCompare(b.sname));
 
     const activeFilterCount = Object.entries(errorEventsFilters).filter(([k, v]) => v !== '' && k !== 'limit').length;
 
@@ -4591,6 +4605,13 @@ async function renderErrorEvents(keepState = false) {
     <div class="card card-filters">
       <div class="card-header"><h3>🔍 ${t('filters.filter')}${activeFilterCount ? ` (${t('filters.nbfilter', { count: activeFilterCount })})` : ''}</h3></div>
       <div class="msg-filters">
+        <div class="form-group">
+          <label>${t('common.site_one')}</label>
+          <select id="eeFilterSite" data-onchange="applyErrorEventsFilters()">
+            <option value="">${t('filters.allf')}</option>
+            ${uniqueSites.map(s => `<option value="${s.id}" ${errorEventsFilters.site_id === String(s.id) ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
+          </select>
+        </div>
         <div class="form-group">
           <label>${t('common.chargepoint_one')}</label>
           <select id="eeFilterCp" data-onchange="applyErrorEventsFilters()">
@@ -4609,19 +4630,19 @@ async function renderErrorEvents(keepState = false) {
         </div>
         <div class="form-group">
           <label>${t('errorEvents.filterFrom')}</label>
-          <input type="date" id="eeFilterFrom" value="${escapeAttr(errorEventsFilters.from)}" data-onchange="applyErrorEventsFilters()" />
+          <input type="text" id="eeFilterFrom" />
         </div>
         <div class="form-group">
           <label>${t('errorEvents.filterTo')}</label>
-          <input type="date" id="eeFilterTo" value="${escapeAttr(errorEventsFilters.to)}" data-onchange="applyErrorEventsFilters()" />
+          <input type="text" id="eeFilterTo" />
         </div>
         <div class="form-group">
-          <label>${t('errorEvents.filterLimit')}</label>
+          <label>${t('common.filterLimit')}</label>
           <select id="eeFilterLimit" data-onchange="applyErrorEventsFilters()">
             <option value="50" ${errorEventsFilters.limit === '50' ? 'selected' : ''}>50</option>
             <option value="100" ${errorEventsFilters.limit === '100' ? 'selected' : ''}>100</option>
             <option value="200" ${errorEventsFilters.limit === '200' ? 'selected' : ''}>200</option>
-            <option value="500" ${errorEventsFilters.limit === '500' ? 'selected' : ''}>500</option>
+            <option value="all" ${errorEventsFilters.limit === 'all' ? 'selected' : ''}>${t('filters.allf')}</option>
           </select>
         </div>
         <button class="btn btn-outline btn-sm" data-onclick="resetErrorEventsFilters()">${t('common.reset')}</button>
@@ -4634,6 +4655,7 @@ async function renderErrorEvents(keepState = false) {
       <table>
         <thead><tr>
           <th>${t('errorEvents.colDate')}</th>
+          <th>${t('common.site_one')}</th>
           <th>${t('errorEvents.colChargepoint')}</th>
           <th>${t('errorEvents.colConnector')}</th>
           <th>${t('errorEvents.colType')}</th>
@@ -4646,6 +4668,7 @@ async function renderErrorEvents(keepState = false) {
           ${events.map(e => `
             <tr>
               <td class="text-muted" style="white-space:nowrap;">${formatDate(e.created_at)}</td>
+              <td>${e.site_name ? escapeHtml(e.site_name) : '<span class="text-muted">-</span>'}</td>
               <td>${e.chargepoint_name ? escapeHtml(e.chargepoint_name) : (e.chargepoint_identity ? escapeHtml(e.chargepoint_identity) : '<span class="text-muted">-</span>')}</td>
               <td>${e.connector_id != null ? '#' + e.connector_id : (e.evse_id != null ? 'EVSE #' + e.evse_id : '<span class="text-muted">-</span>')}</td>
               <td>${eventTypeBadge(e.event_type)}</td>
@@ -4660,12 +4683,24 @@ async function renderErrorEvents(keepState = false) {
       </div>`}
     </div>
     `;
+    const lc = getLocaleConfig();
+    const fpEeOpts = {
+      dateFormat: 'Y-m-d',
+      altInput: true,
+      altFormat: lc.dateFormat,
+      locale: getFlatpickrLocaleOption(lc),
+      maxDate: 'today',
+      onChange: function () { applyErrorEventsFilters(); },
+    };
+    flatpickr('#eeFilterFrom', { ...fpEeOpts, defaultDate: errorEventsFilters.from || null });
+    flatpickr('#eeFilterTo',   { ...fpEeOpts, defaultDate: errorEventsFilters.to   || null });
   } catch (err) {
     document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
 function applyErrorEventsFilters() {
+  errorEventsFilters.site_id = document.getElementById('eeFilterSite').value;
   errorEventsFilters.chargepoint_id = document.getElementById('eeFilterCp').value;
   errorEventsFilters.event_type = document.getElementById('eeFilterType').value;
   errorEventsFilters.from = document.getElementById('eeFilterFrom').value;
@@ -4675,7 +4710,7 @@ function applyErrorEventsFilters() {
 }
 
 function resetErrorEventsFilters() {
-  errorEventsFilters = { chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
+  errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
   renderErrorEvents();
 }
 

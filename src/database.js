@@ -1840,9 +1840,10 @@ function insertErrorEvent(
 }
 
 function getErrorEvents(filters = {}) {
-  let query = `SELECT ee.*, cp.identity AS chargepoint_identity, cp.cpname AS chargepoint_name, cp.site_id
+  let query = `SELECT ee.*, cp.identity AS chargepoint_identity, cp.cpname AS chargepoint_name, cp.site_id, s.sname AS site_name
     FROM error_events ee
     LEFT JOIN chargepoints cp ON cp.id = ee.chargepoint_id
+    LEFT JOIN sites s ON s.id = cp.site_id
     WHERE 1=1`;
   const params = [];
   if (filters.chargepoint_id) {
@@ -1865,14 +1866,22 @@ function getErrorEvents(filters = {}) {
     query += ' AND ee.created_at <= ?';
     params.push(filters.to);
   }
+  if (filters.site_id) {
+    query += ' AND cp.site_id = ?';
+    params.push(filters.site_id);
+  }
   if (filters.site_ids && filters.site_ids.length > 0) {
     query += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
   }
-  const limit = Math.min(filters.limit || 100, 500);
-  const offset = filters.offset || 0;
-  query += ' ORDER BY ee.id DESC LIMIT ? OFFSET ?';
-  params.push(limit, offset);
+  if (filters.limit === null) {
+    query += ' ORDER BY ee.id DESC';
+  } else {
+    const limit = Math.min(filters.limit || 100, 500);
+    const offset = filters.offset || 0;
+    query += ' ORDER BY ee.id DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+  }
   return db.prepare(query).all(...params);
 }
 
@@ -2184,6 +2193,11 @@ function resetStateOnStartup() {
            stop_reason = 'Other',
            charging_state = NULL,
            power = NULL,
+           meter_stop = CASE
+                          WHEN energy IS NOT NULL AND meter_start IS NOT NULL
+                          THEN meter_start + energy
+                          ELSE meter_stop
+                        END,
            energy = NULL
        WHERE status = 'Active'`
     )

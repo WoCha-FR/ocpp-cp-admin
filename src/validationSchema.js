@@ -414,8 +414,13 @@ const TransactionsQuery = {
   limit: {
     in: ['query'],
     optional: true,
-    isInt: { options: { min: 1, max: 200 } },
-    toInt: true,
+    custom: {
+      options: (value) => {
+        if (value === 'all') return true;
+        const n = parseInt(value, 10);
+        return Number.isInteger(n) && n >= 1 && n <= 200;
+      },
+    },
     errorMessage: 'VALIDATION_LIMIT',
   },
   page: {
@@ -439,8 +444,13 @@ const UserTransactionsQuery = {
   limit: {
     in: ['query'],
     optional: true,
-    isInt: { options: { min: 1, max: 200 } },
-    toInt: true,
+    custom: {
+      options: (value) => {
+        if (value === 'all') return true;
+        const n = parseInt(value, 10);
+        return Number.isInteger(n) && n >= 1 && n <= 200;
+      },
+    },
     errorMessage: 'VALIDATION_LIMIT',
   },
   page: {
@@ -543,6 +553,13 @@ const ErrorEventsQuery = {
     toInt: true,
     errorMessage: 'VALIDATION_CHARGEPOINT_ID',
   },
+  site_id: {
+    in: ['query'],
+    optional: true,
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_SITE_ID',
+  },
   event_type: {
     in: ['query'],
     optional: true,
@@ -570,8 +587,13 @@ const ErrorEventsQuery = {
   limit: {
     in: ['query'],
     optional: true,
-    isInt: { options: { min: 1, max: 500 } },
-    toInt: true,
+    custom: {
+      options: (value) => {
+        if (value === 'all') return true;
+        const n = parseInt(value, 10);
+        return Number.isInteger(n) && n >= 1 && n <= 500;
+      },
+    },
     errorMessage: 'VALIDATION_LIMIT',
   },
   offset: {
