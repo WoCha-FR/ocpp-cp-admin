@@ -1292,3 +1292,122 @@ describe('database — Transaction Values (nouvelles métriques)', () => {
     expect(row.frequence).toBeNull();
   });
 });
+
+// ── getChargepointVariables ──
+describe('database — getChargepointVariables', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('VAR-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertChargepointVariable(cpId, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '600');
+    db.upsertChargepointVariable(cpId, 'TxCtrlr', 'EVConnectionTimeOut', 'Actual', '60');
+  });
+
+  it('returns all variables for the chargepoint', () => {
+    const vars = db.getChargepointVariables(cpId);
+    expect(vars.length).toBeGreaterThanOrEqual(2);
+    expect(vars.some((v) => v.component === 'OCPPCommCtrlr' && v.variable === 'HeartbeatInterval')).toBe(true);
+  });
+
+  it('returns empty array for unknown chargepoint', () => {
+    const vars = db.getChargepointVariables(999999);
+    expect(vars).toEqual([]);
+  });
+
+  it('returns rows ordered by component, variable, attribute', () => {
+    const vars = db.getChargepointVariables(cpId);
+    const sorted = [...vars].sort((a, b) =>
+      a.component.localeCompare(b.component) || a.variable.localeCompare(b.variable)
+    );
+    expect(vars.map((v) => v.id)).toEqual(sorted.map((v) => v.id));
+  });
+});
+
+// ── getEvsesByChargepoint ──
+describe('database — getEvsesByChargepoint', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('EVSE-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertEvse(cpId, 1, 'Available');
+    db.upsertEvse(cpId, 2, 'Charging');
+  });
+
+  it('returns EVSEs for chargepoint', () => {
+    const evses = db.getEvsesByChargepoint(cpId);
+    expect(evses.length).toBe(2);
+    expect(evses[0].evse_id).toBe(1);
+    expect(evses[1].evse_id).toBe(2);
+  });
+
+  it('returns empty array for unknown chargepoint', () => {
+    expect(db.getEvsesByChargepoint(999999)).toEqual([]);
+  });
+
+  it('updates EVSE status on upsert', () => {
+    db.upsertEvse(cpId, 1, 'Faulted');
+    const evses = db.getEvsesByChargepoint(cpId);
+    const evse1 = evses.find((e) => e.evse_id === 1);
+    expect(evse1.status).toBe('Faulted');
+  });
+});
+
+// ── chargepoint_init_variables CRUD ──
+describe('database — Init Variables CRUD (OCPP 2.0.1)', () => {
+  let entryId;
+  // Utiliser un composant/variable unique pour éviter le conflit avec les données initiales
+  const TEST_COMPONENT = 'TestCtrlr';
+  const TEST_VARIABLE = 'TestInterval';
+
+  it('creates an init variable entry', () => {
+    const result = db.createInitialChargepointVariable(
+      TEST_COMPONENT,
+      TEST_VARIABLE,
+      'Actual',
+      '999',
+      true
+    );
+    expect(result.changes).toBe(1);
+    entryId = result.lastInsertRowid;
+  });
+
+  it('gets all init variable entries', () => {
+    const rows = db.getInitialChargepointVariables();
+    expect(rows.some((r) => r.component === TEST_COMPONENT && r.variable === TEST_VARIABLE)).toBe(true);
+  });
+
+  it('gets only enabled entries', () => {
+    db.createInitialChargepointVariable(TEST_COMPONENT, 'TestDisabled', 'Actual', '0', false);
+    const enabled = db.getEnabledInitialChargepointVariables();
+    expect(enabled.some((r) => r.variable === TEST_VARIABLE)).toBe(true);
+    expect(enabled.some((r) => r.variable === 'TestDisabled')).toBe(false);
+  });
+
+  it('updates an init variable entry', () => {
+    db.updateInitialChargepointVariable(entryId, { value: '300' });
+    const rows = db.getInitialChargepointVariables();
+    const entry = rows.find((r) => r.id === entryId);
+    expect(entry.value).toBe('300');
+  });
+
+  it('toggles enabled flag', () => {
+    db.updateInitialChargepointVariable(entryId, { enabled: false });
+    const rows = db.getInitialChargepointVariables();
+    const entry = rows.find((r) => r.id === entryId);
+    expect(entry.enabled).toBe(0);
+  });
+
+  it('deletes an init variable entry', () => {
+    db.deleteInitialChargepointVariable(entryId);
+    const rows = db.getInitialChargepointVariables();
+    expect(rows.some((r) => r.id === entryId)).toBe(false);
+  });
+});

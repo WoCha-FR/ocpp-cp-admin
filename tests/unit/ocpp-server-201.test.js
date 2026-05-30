@@ -670,6 +670,7 @@ describe('ocpp-server-201 — TransactionEvent Updated', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 1 });
     mockDb.getTransactionByTransactionId.mockReturnValue({
       transaction_id: 'TX-001',
+      status: 'Active',
       meter_start: 0,
       connector_id: 1,
     });

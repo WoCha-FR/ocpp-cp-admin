@@ -686,6 +686,62 @@ const InitConfigUpdate = {
   },
 };
 
+const OCPP_VAR_COMPONENT_REGEX = /^[a-zA-Z0-9_.-]+$/;
+const OCPP_VAR_NAME_REGEX = /^[a-zA-Z0-9_.-]+$/;
+const OCPP_ATTRIBUTE_VALUES = ['Actual', 'Target', 'MinSet', 'MaxSet'];
+
+const InitVariable = {
+  component: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 1, max: 64 } },
+    matches: { options: OCPP_VAR_COMPONENT_REGEX },
+    errorMessage: 'VALIDATION_VARIABLE_COMPONENT',
+  },
+  variable: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 1, max: 64 } },
+    matches: { options: OCPP_VAR_NAME_REGEX },
+    errorMessage: 'VALIDATION_VARIABLE_NAME',
+  },
+  attribute: {
+    in: ['body'],
+    isString: true,
+    isIn: { options: [OCPP_ATTRIBUTE_VALUES] },
+    optional: { options: { nullable: true } },
+    errorMessage: 'VALIDATION_VARIABLE_ATTRIBUTE',
+  },
+  value: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 0, max: 1024 } },
+    errorMessage: 'VALIDATION_CONFIG_VALUE',
+  },
+  enabled: {
+    in: ['body'],
+    isBoolean: true,
+    toBoolean: true,
+    optional: { options: { nullable: true } },
+  },
+};
+
+const InitVariableUpdate = {
+  value: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 0, max: 1024 } },
+    optional: { options: { nullable: true } },
+    errorMessage: 'VALIDATION_CONFIG_VALUE',
+  },
+  enabled: {
+    in: ['body'],
+    isBoolean: true,
+    toBoolean: true,
+    optional: { options: { nullable: true } },
+  },
+};
+
 const NotificationPreferences = {
   preferences: {
     in: ['body'],
@@ -948,6 +1004,8 @@ module.exports = {
   ChargepointConfigUpdate,
   InitConfig,
   InitConfigUpdate,
+  InitVariable,
+  InitVariableUpdate,
   NotificationPreferences,
   PushSubscribe,
   PushUnsubscribe,

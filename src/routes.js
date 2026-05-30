@@ -346,6 +346,8 @@ router.get('/appsettings', (req, res) => {
     google: googleAuthEnabled,
     supportedLanguages: SUPPORTED_LANGUAGES,
     languageLabels,
+    v16Enabled: config.ocpp?.v16?.enabled ?? true,
+    v201Enabled: config.ocpp?.v201?.enabled ?? false,
   });
 });
 
@@ -1416,6 +1418,18 @@ router.post(
   }
 );
 
+// ── EVSEs de la borne (OCPP 2.0.1) ──
+router.get(
+  '/chargepoints/:id/evses',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    res.json(db.getEvsesByChargepoint(cp.id));
+  }
+);
+
 // ── Configuration de la borne ──
 router.get(
   '/chargepoints/:id/config',
@@ -1424,6 +1438,7 @@ router.get(
   (req, res) => {
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (cp.ocpp_version === '2.0.1') return res.json(db.getChargepointVariables(cp.id));
     res.json(db.getChargepointConfig(cp.id));
   }
 );
@@ -1442,7 +1457,7 @@ router.post(
     if (client.protocol === 'ocpp2.0.1') {
       try {
         const result = await callClient(cp.identity, 'GetVariables', {});
-        return res.json({ result, config: db.getChargepointConfig(cp.id) });
+        return res.json({ result, config: db.getChargepointVariables(cp.id) });
       } catch (e) {
         return errorResponse(res, 500, e.message);
       }
@@ -1533,6 +1548,29 @@ router.put(
 
     if (value === undefined || value === null) {
       return res.status(400).json({ error: 'ERR_VALUE_REQUIRED' });
+    }
+
+    if (client.protocol === 'ocpp2.0.1') {
+      try {
+        const dotIdx = key.indexOf('.');
+        if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+        const component = key.slice(0, dotIdx);
+        const variable = key.slice(dotIdx + 1);
+        const result = await callClient(cp.identity, 'SetVariables', {
+          setVariableData: [
+            {
+              component: { name: component },
+              variable: { name: variable },
+              attributeType: 'Actual',
+              attributeValue: String(value),
+            },
+          ],
+        });
+        db.upsertChargepointVariable(cp.id, component, variable, 'Actual', String(value));
+        return res.json({ result });
+      } catch (e) {
+        return errorResponse(res, 500, e.message);
+      }
     }
 
     const GLOBAL_ONLY_KEYS = ['HeartbeatInterval'];
@@ -1627,6 +1665,57 @@ router.delete(
   }
 );
 
+// ── Init-config variables OCPP 2.0.1 (CRUD) ──
+router.get('/init-config/variables', requireRole('admin'), (req, res) => {
+  res.json(db.getInitialChargepointVariables());
+});
+
+router.post(
+  '/init-config/variables',
+  requireRole('admin'),
+  ...validateSchema(schema.InitVariable),
+  (req, res) => {
+    const { component, variable, attribute, value, enabled } = matchedData(req);
+    try {
+      const result = db.createInitialChargepointVariable(
+        component,
+        variable,
+        attribute || 'Actual',
+        value,
+        enabled ?? false
+      );
+      res.json({ id: result.lastInsertRowid });
+    } catch (e) {
+      if (e.message?.includes('UNIQUE')) {
+        return errorResponse(res, 409, 'INIT_VARIABLE_EXISTS');
+      }
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+router.put(
+  '/init-config/variables/:id',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam, schema.InitVariableUpdate),
+  (req, res) => {
+    const { id } = req.params;
+    const data = matchedData(req, { locations: ['body'] });
+    db.updateInitialChargepointVariable(Number(id), data);
+    res.json({ ok: true });
+  }
+);
+
+router.delete(
+  '/init-config/variables/:id',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    db.deleteInitialChargepointVariable(Number(req.params.id));
+    res.json({ ok: true });
+  }
+);
+
 router.post(
   '/init-config/chargepoint/:id/apply',
   requireRole('admin'),
@@ -1637,6 +1726,42 @@ router.post(
 
     const client = getConnectedClients().get(cp.identity);
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    if (cp.ocpp_version === '2.0.1') {
+      const vars = db.getEnabledInitialChargepointVariables();
+      for (const v of vars) {
+        try {
+          const result = await callClient(cp.identity, 'SetVariables', {
+            setVariableData: [
+              {
+                component: { name: v.component },
+                variable: { name: v.variable },
+                attributeType: v.attribute || 'Actual',
+                attributeValue: v.value,
+              },
+            ],
+          });
+          const setResult = result?.setVariableResult?.[0];
+          if (
+            setResult?.attributeStatus === 'Accepted' ||
+            setResult?.attributeStatus === 'RebootRequired'
+          ) {
+            db.upsertChargepointVariable(
+              cp.id,
+              v.component,
+              v.variable,
+              v.attribute || 'Actual',
+              v.value
+            );
+          }
+        } catch (e) {
+          logger.warn(
+            `[InitSeq] ${cp.identity} SetVariables ${v.component}.${v.variable}: ${e.message}`
+          );
+        }
+      }
+      return res.json({ ok: true });
+    }
 
     const globals = db.getEnabledInitialChargepointConfig();
     for (const cfg of globals) {

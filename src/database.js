@@ -1281,6 +1281,14 @@ function deleteChargepointConfig(chargepointId, key) {
   );
 }
 
+function getChargepointVariables(chargepointId) {
+  return db
+    .prepare(
+      'SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? ORDER BY component, variable, attribute'
+    )
+    .all(chargepointId);
+}
+
 function getInitialChargepointConfig() {
   return db.prepare('SELECT * FROM chargepoint_init_config ORDER BY key').all();
 }
@@ -1318,6 +1326,51 @@ function updateInitialChargepointConfig(id, data) {
 
 function deleteInitialChargepointConfig(id) {
   db.prepare('DELETE FROM chargepoint_init_config WHERE id = ?').run(id);
+}
+
+function getInitialChargepointVariables() {
+  return db
+    .prepare('SELECT * FROM chargepoint_init_variables ORDER BY component, variable, attribute')
+    .all();
+}
+
+function getEnabledInitialChargepointVariables() {
+  return db
+    .prepare(
+      'SELECT * FROM chargepoint_init_variables WHERE enabled = 1 ORDER BY component, variable, attribute'
+    )
+    .all();
+}
+
+function createInitialChargepointVariable(component, variable, attribute, value, enabled) {
+  return db
+    .prepare(
+      'INSERT INTO chargepoint_init_variables (component, variable, attribute, value, enabled) VALUES (?, ?, ?, ?, ?)'
+    )
+    .run(component, variable, attribute || 'Actual', value, enabled ? 1 : 0);
+}
+
+function updateInitialChargepointVariable(id, data) {
+  const fields = [];
+  const values = [];
+  if (data.value !== undefined) {
+    fields.push('value = ?');
+    values.push(data.value);
+  }
+  if (data.enabled !== undefined) {
+    fields.push('enabled = ?');
+    values.push(data.enabled ? 1 : 0);
+  }
+  if (fields.length === 0) return;
+  fields.push("updated_at = datetime('now')");
+  values.push(id);
+  db.prepare(`UPDATE chargepoint_init_variables SET ${fields.join(', ')} WHERE id = ?`).run(
+    ...values
+  );
+}
+
+function deleteInitialChargepointVariable(id) {
+  db.prepare('DELETE FROM chargepoint_init_variables WHERE id = ?').run(id);
 }
 
 function markChargepointInitialized(chargepointId) {
@@ -1758,9 +1811,11 @@ function upsertEvse(chargepointId, evseId, status) {
     .prepare('SELECT id FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
     .get(chargepointId, evseId);
   if (existing) {
-    db.prepare(
-      "UPDATE evses SET status = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND evse_id = ?"
-    ).run(status || 'Available', chargepointId, evseId);
+    db.prepare('UPDATE evses SET status = ? WHERE chargepoint_id = ? AND evse_id = ?').run(
+      status || 'Available',
+      chargepointId,
+      evseId
+    );
   } else {
     db.prepare('INSERT INTO evses (chargepoint_id, evse_id, status) VALUES (?, ?, ?)').run(
       chargepointId,
@@ -2295,12 +2350,18 @@ module.exports = {
   setChargepointConfigOverride,
   getChargepointOverrideConfigs,
   deleteChargepointConfig,
+  getChargepointVariables,
   getInitialChargepointConfig,
   getEnabledInitialChargepointConfig,
   getInitialChargepointConfigByKey,
   createInitialChargepointConfig,
   updateInitialChargepointConfig,
   deleteInitialChargepointConfig,
+  getInitialChargepointVariables,
+  getEnabledInitialChargepointVariables,
+  createInitialChargepointVariable,
+  updateInitialChargepointVariable,
+  deleteInitialChargepointVariable,
   markChargepointInitialized,
   resetChargepointInitialized,
   getAllIdTags,

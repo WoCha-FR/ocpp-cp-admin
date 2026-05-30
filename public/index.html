@@ -1370,7 +1370,7 @@ async function renderChargepoints(keepState = false) {
                 <td>${cp.site_name ? escapeHtml(cp.site_name) : `<span class="text-muted">${t('chargepoint.cpNotAssigned')}</span>`}</td>
                 <td>
                   <span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span>
-                  <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>
+                  <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>${cp.ocpp_version === '2.0.1' ? ' <span class="badge badge-purple" style="font-size:0.7em">2.0.1</span>' : ''}
                 </td>
                 <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? `${t('common.unknown')}` : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>`}</td>
                 <td>${cp.cpname ? escapeHtml(cp.cpname) : '-'}</td>
@@ -1613,6 +1613,7 @@ async function showChargepointDetail(id, tab) {
       <div class="tabs">
         <button class="tab ${currentDetailTab === 'infos' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'infos')">ℹ️ ${t('common.chargepoint_one')}</button>
         <button class="tab ${currentDetailTab === 'connecteurs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'connecteurs')">🔌 ${t('common.connector_other')}</button>
+        ${cp.ocpp_version === '2.0.1' ? `<button class="tab ${currentDetailTab === 'evses' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'evses')">📡 EVSEs</button>` : ''}
         <button class="tab ${currentDetailTab === 'reservations' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'reservations')">🗓 ${t('chargepoint.cpReservationsTitle')}</button>
         <button class="tab ${currentDetailTab === 'transactions' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'transactions')">⚡ ${t('navigation.transactions')}</button>
         <button class="tab ${currentDetailTab === 'logs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'logs')">📨 ${t('chargepoint.cpLogsTitle')}</button>
@@ -1621,7 +1622,7 @@ async function showChargepointDetail(id, tab) {
       </div>
       <div class="card">
         <div class="card-header">
-          <h3><span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span> ${cp.cpname && cp.cpname !== cp.identity ? `${escapeHtml(cp.identity)} - ${escapeHtml(cp.cpname)}` : escapeHtml(cp.identity)} (${cp.site_name ? escapeHtml(cp.site_name) : t('chargepoint.cpNotAssigned')})</h3>
+          <h3><span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span> ${cp.cpname && cp.cpname !== cp.identity ? `${escapeHtml(cp.identity)} - ${escapeHtml(cp.cpname)}` : escapeHtml(cp.identity)} (${cp.site_name ? escapeHtml(cp.site_name) : t('chargepoint.cpNotAssigned')})${cp.ocpp_version === '2.0.1' ? ' <span class="badge badge-purple">OCPP 2.0.1</span>' : ''}</h3>
           <span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? t('common.unknown') : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>
         </div>
       </div>
@@ -1643,6 +1644,8 @@ async function showChargepointDetail(id, tab) {
       await renderDetailTabChargingProfiles(cp);
     } else if (currentDetailTab === 'reservations') {
       await renderDetailTabReservations(cp);
+    } else if (currentDetailTab === 'evses') {
+      await renderDetailTabEvses(cp);
     }
   } catch (err) {
     toast(err.message, 'error');
@@ -1789,12 +1792,12 @@ async function renderDetailTabConnectors(cp) {
                 <div class="cmd-subgroups">
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: ${c.connector_id}})">${t('connectors.cSetAvailable')}</button>
-                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: ${c.connector_id}})">${t('connectors.cSetUnavailable')}</button>
+                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? JSON.stringify({type:'Operative', evseId: c.connector_id}) : JSON.stringify({type:'Operative', connectorId: c.connector_id})})">${t('connectors.cSetAvailable')}</button>
+                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? JSON.stringify({type:'Inoperative', evseId: c.connector_id}) : JSON.stringify({type:'Inoperative', connectorId: c.connector_id})})">${t('connectors.cSetUnavailable')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔓 ${t('connectors.cUnlock')}</span>
-                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', {connectorId: ${c.connector_id}})">${t('connectors.cUnlockConnector')}</button>
+                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', ${cp.ocpp_version === '2.0.1' ? JSON.stringify({evseId: c.connector_id}) : JSON.stringify({connectorId: c.connector_id})})">${t('connectors.cUnlockConnector')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
@@ -2270,6 +2273,43 @@ async function loadReservations(cpId) {
   }
 }
 
+async function renderDetailTabEvses(cp) {
+  document.getElementById('detailTabContent').innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3>📡 EVSEs</h3></div>
+      <div id="evsesTableContainer">
+        <p class="text-muted" style="padding:12px 16px">${t('common.loading', { defaultValue: 'Chargement…' })}</p>
+      </div>
+    </div>
+  `;
+  try {
+    const evses = await api('GET', `/chargepoints/${cp.id}/evses`);
+    const container = document.getElementById('evsesTableContainer');
+    if (!container) return;
+    if (evses.length === 0) {
+      container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('common.noData', { defaultValue: 'Aucun EVSE enregistré.' })}</p>`;
+      return;
+    }
+    container.innerHTML = `
+      <table>
+        <thead><tr><th>EVSE ID</th><th>${t('common.status')}</th><th>${t('common.date')}</th></tr></thead>
+        <tbody>
+          ${evses.map(e => `
+            <tr>
+              <td><strong>#${e.evse_id}</strong></td>
+              <td><span class="badge ${statusBadgeClass(e.status)}">${escapeHtml(e.status)}</span></td>
+              <td class="text-muted" style="font-size:12px">${e.created_at ? formatDate(e.created_at) : '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    const container = document.getElementById('evsesTableContainer');
+    if (container) container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
 async function showCreateReservationModal(cpId) {
   let cp, connectors = [], tags = [];
   try {
@@ -2718,10 +2758,11 @@ async function renderDetailTabConfig(cp) {
       </div>
     </div>
   `;
-  loadChargepointConfig(cp.id, cp.online);
+  window._currentCpOcppVersion = cp.ocpp_version || '1.6';
+  loadChargepointConfig(cp.id, cp.online, cp.ocpp_version);
 }
 
-async function loadChargepointConfig(cpId, isOnline) {
+async function loadChargepointConfig(cpId, isOnline, ocppVersion) {
   const container = document.getElementById('configTableContainer');
   if (!container) return;
   try {
@@ -2733,16 +2774,40 @@ async function loadChargepointConfig(cpId, isOnline) {
         </p>`;
       return;
     }
-    renderConfigTable(cpId, config, isOnline);
+    renderConfigTable(cpId, config, isOnline, ocppVersion);
   } catch (err) {
     container.innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
-function renderConfigTable(cpId, config, isOnline) {
+function renderConfigTable(cpId, config, isOnline, ocppVersion) {
   const container = document.getElementById('configTableContainer');
   if (!container) return;
   window._cpConfigData = config;
+  const is201 = ocppVersion === '2.0.1' || (config.length > 0 && config[0].component !== undefined);
+  if (is201) {
+    container.innerHTML = `
+    <table id="configTable">
+      <thead><tr><th>Component</th><th>Variable</th><th>Attribute</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
+      <tbody>
+        ${config.map(c => `
+          <tr data-key="${escapeAttr(c.component + '.' + c.variable)}">
+            <td style="font-family:monospace;font-size:13px;">${escapeHtml(c.component)}</td>
+            <td style="font-weight:500;font-family:monospace;font-size:13px;">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
+            <td class="text-muted" style="font-size:12px">${escapeHtml(c.attribute || 'Actual')}</td>
+            <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
+            <td class="text-muted">${formatDate(c.updated_at)}</td>
+            ${adminManage() ? `<td style="white-space:nowrap;">
+              ${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button>` : isOnline ? '<span class="text-muted">- </span>' : ''}
+            </td>` : ''}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <p class="text-muted mt-2">${t('chargepoint.cpConfNbKeys', { count: config.length })}</p>
+  `;
+    return;
+  }
   container.innerHTML = `
   <table id="configTable">
     <thead><tr><th>${t('chargepoint.cpConfKey')}</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfReadOnly')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
@@ -2782,7 +2847,7 @@ async function refreshChargepointConfig(cpId) {
     const data = await api('POST', `/chargepoints/${cpId}/config/refresh`);
     toast(t('chargepoint.cpConfUpdated'), 'success');
     if (data.config) {
-      renderConfigTable(cpId, data.config, true);
+      renderConfigTable(cpId, data.config, true, window._currentCpOcppVersion);
     }
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
@@ -2812,7 +2877,7 @@ async function toggleConfigOverride(cpId, key, isOverride, isOnline) {
   try {
     await api('PATCH', `/chargepoints/${cpId}/config/${encodeURIComponent(key)}/override`, { is_override: isOverride });
     toast(t(isOverride ? 'chargepoint.cpConfOverrideSetOk' : 'chargepoint.cpConfOverrideRemovedOk', { key }), 'success');
-    loadChargepointConfig(cpId, isOnline);
+    loadChargepointConfig(cpId, isOnline, window._currentCpOcppVersion);
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
   }
@@ -2850,7 +2915,7 @@ async function getChargepointConfigKey(cpId) {
   } else {
     toast(t('chargepoint.cpConfGetKeyNotFound', { key }), 'info');
   }
-  loadChargepointConfig(cpId, true);
+  loadChargepointConfig(cpId, true, window._currentCpOcppVersion);
 }
 
 async function updateChargepointConfig(cpId, key) {
@@ -2862,11 +2927,13 @@ async function updateChargepointConfig(cpId, key) {
       toast(t('chargepoint.cpConfSetAccepted', { key }), 'success');
     } else if (data.status === 'RebootRequired') {
       toast(t('chargepoint.cpConfSetRebootRequired', { key }), 'info');
+    } else if (data.result) {
+      toast(t('chargepoint.cpConfUpdated', { defaultValue: 'Variable mise à jour.' }), 'success');
     } else {
       toast(t('chargepoint.cpConfSetError', { status: data.status }), 'error');
     }
     // Recharger la config
-    loadChargepointConfig(cpId, true);
+    loadChargepointConfig(cpId, true, window._currentCpOcppVersion);
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
   }
@@ -3269,8 +3336,12 @@ async function renderIdTags(tab, keepState = false) {
       <div class="card">
         <div class="card-header"><h3>${t('idtags.rfidsTag')} (${filtered.length}${filtered.length !== visibleTags.length ? ' / ' + visibleTags.length : ''})</h3></div>
         ${filtered.length === 0 ? `<p class="text-muted" style="padding: 16px;">${t('idtags.rfNoData')}</p>` : `
-        <table>
-          <thead><tr><th>${t('idtags.rfTag')}</th><th>${t('common.status')}</th><th>${t('common.user')}</th><th>${t('common.site_one')}</th><th>${t('idtags.rfDescription')}</th><th>${t('idtags.rfExpiryDate')}</th><th>${t('common.createdAt')}</th><th>${t('common.actions')}</th></tr></thead>
+        ${(() => {
+          const hasNonDefault201 = filtered.some(tag => tag.token_type && tag.token_type !== 'ISO14443');
+          const hasGroupToken = filtered.some(tag => tag.group_id_token);
+          const tokenTypeBadgeClass = (type) => type === 'NoAuthorization' ? 'badge-gray' : type === 'ISO14443' ? 'badge-blue' : 'badge-orange';
+          return `<table>
+          <thead><tr><th>${t('idtags.rfTag')}</th><th>${t('common.status')}</th><th>${t('common.user')}</th><th>${t('common.site_one')}</th>${hasNonDefault201 ? '<th>Token Type</th>' : ''}${hasGroupToken ? '<th>Group Token</th>' : ''}<th>${t('idtags.rfDescription')}</th><th>${t('idtags.rfExpiryDate')}</th><th>${t('common.createdAt')}</th><th>${t('common.actions')}</th></tr></thead>
           <tbody>
             ${filtered.map(tag => `
               <tr>
@@ -3282,6 +3353,8 @@ async function renderIdTags(tab, keepState = false) {
                   : (tag.user_sites && tag.user_sites.length > 0
                     ? tag.user_sites.map(s => `<span class="badge badge-green">${escapeHtml(s.site_name)}</span>`).join(' ')
                     : (tag.user_id ? '<span class="text-muted">-</span>' : `<span class="badge badge-yellow">${t('filters.all')}</span>`))}</td>
+                ${hasNonDefault201 ? `<td>${tag.token_type && tag.token_type !== 'ISO14443' ? `<span class="badge ${tokenTypeBadgeClass(tag.token_type)}">${escapeHtml(tag.token_type)}</span>` : '<span class="text-muted">-</span>'}</td>` : ''}
+                ${hasGroupToken ? `<td style="font-family:monospace;font-size:12px;">${tag.group_id_token ? escapeHtml(tag.group_id_token) : '<span class="text-muted">-</span>'}</td>` : ''}
                 <td>${tag.description ? escapeHtml(tag.description) : '<span class="text-muted">-</span>'}</td>
                 <td>${tag.expiry_date ? formatDateShort(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
                 <td class="text-muted">${formatDate(tag.created_at)}</td>
@@ -3293,7 +3366,8 @@ async function renderIdTags(tab, keepState = false) {
               </tr>
             `).join('')}
           </tbody>
-        </table>`}
+        </table>`;
+        })()}`}
       </div>
     `;
   } catch (err) {
@@ -3346,6 +3420,20 @@ async function showCreateIdTagModal() {
     ${isAdmin ? `<div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfAllSitesHint')}</div>` : ''}
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="tagDescription" placeholder="${t('idtags.rfDescriptionHint')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')}))</label><input type="text" id="tagExpiry" placeholder="${t('common.select')}" /></div>
+    ${appSettings.v201Enabled ? `
+    <div class="form-group">
+      <label>Token Type (OCPP 2.0.1)</label>
+      <select id="tagTokenType">
+        <option value="ISO14443">ISO14443 (défaut)</option>
+        <option value="KeyCode">KeyCode</option>
+        <option value="Central">Central</option>
+        <option value="eMAID">eMAID</option>
+        <option value="NoAuthorization">NoAuthorization</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Group ID Token (OCPP 2.0.1, ${t('idtags.rfOptionnal')})</label><input type="text" id="tagGroupIdToken" placeholder="ex: GROUP-001" /></div>
+    ` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
       <button class="btn btn-primary" data-onclick="withBtn(this, createIdTag)">${t('common.create')}</button>
@@ -3402,6 +3490,20 @@ async function showEditIdTagModal(id) {
     </div>
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagDescription" value="${escapeAttr(tag.description || '')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagExpiry" placeholder="${t('common.select')}" /></div>
+    ${appSettings.v201Enabled ? `
+    <div class="form-group">
+      <label>Token Type (OCPP 2.0.1)</label>
+      <select id="editTagTokenType">
+        <option value="ISO14443" ${(!tag.token_type || tag.token_type === 'ISO14443') ? 'selected' : ''}>ISO14443 (défaut)</option>
+        <option value="KeyCode" ${tag.token_type === 'KeyCode' ? 'selected' : ''}>KeyCode</option>
+        <option value="Central" ${tag.token_type === 'Central' ? 'selected' : ''}>Central</option>
+        <option value="eMAID" ${tag.token_type === 'eMAID' ? 'selected' : ''}>eMAID</option>
+        <option value="NoAuthorization" ${tag.token_type === 'NoAuthorization' ? 'selected' : ''}>NoAuthorization</option>
+        <option value="Other" ${tag.token_type === 'Other' ? 'selected' : ''}>Other</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Group ID Token (OCPP 2.0.1, ${t('idtags.rfOptionnal')})</label><input type="text" id="editTagGroupIdToken" value="${escapeAttr(tag.group_id_token || '')}" placeholder="ex: GROUP-001" /></div>
+    ` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
       <button class="btn btn-primary" data-onclick="withBtn(this, () => updateIdTag(${id}))">${t('common.save')}</button>
@@ -3431,6 +3533,8 @@ async function createIdTag() {
       site_id: siteId ? Number(siteId) : null,
       description: document.getElementById('tagDescription').value || null,
       expiry_date: expiry || null,
+      token_type: document.getElementById('tagTokenType')?.value || null,
+      group_id_token: document.getElementById('tagGroupIdToken')?.value || null,
     });
     closeModal();
     toast(t('idtags.rfAdded'), 'success');
@@ -3451,6 +3555,8 @@ async function updateIdTag(id) {
       site_id: siteId ? Number(siteId) : null,
       description: document.getElementById('editTagDescription').value || null,
       expiry_date: expiry || null,
+      token_type: document.getElementById('editTagTokenType')?.value || null,
+      group_id_token: document.getElementById('editTagGroupIdToken')?.value || null,
     });
     closeModal();
     toast(t('idtags.rfUpdated'), 'success');
@@ -3949,15 +4055,17 @@ async function renderTransactions(keepState = false) {
 
       <div class="card">
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: txTotal })})</h3></div>
-        ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
+        ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : (() => {
+          const hasEvse = transactions.some(tx => tx.evse_id != null);
+          return `
         <table style="font-size: 0.85em;">
-          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th>${hasEvse ? '<th>EVSE</th>' : ''}<th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
                 <td>${tx.transaction_id}</td>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
-                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
+                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>${hasEvse ? `<td>${tx.evse_id != null ? tx.evse_id : ''}</td>` : ''}
                 <td>${cleanIdTag(tx.id_tag) || '-'}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
@@ -3971,7 +4079,8 @@ async function renderTransactions(keepState = false) {
               </tr>
             `).join('')}
           </tbody>
-        </table>`}
+        </table>`;
+        })()}
       </div>
     `;
     const lc = getLocaleConfig();
@@ -5240,17 +5349,50 @@ const OCPP16_STANDARD_KEYS = [
   'SendLocalListMaxLength','ReserveConnectorZeroSupported',
 ];
 
+let _initConfigTab = '1.6';
+
 async function renderConfigTabChargepoints() {
+  const show16 = appSettings.v16Enabled !== false;
+  const show201 = appSettings.v201Enabled === true;
+
+  // Si les deux sont actifs, afficher des onglets ; sinon, déterminer l'onglet actif
+  if (!show16 && !show201) {
+    document.getElementById('configTabContent').innerHTML = `<p class="text-muted">Aucun protocole OCPP activé.</p>`;
+    return;
+  }
+  if (!show16) _initConfigTab = '2.0.1';
+  if (!show201) _initConfigTab = '1.6';
+
+  const tabBar = (show16 && show201) ? `
+    <div class="tabs" style="margin-bottom:12px;">
+      <button class="tab ${_initConfigTab === '1.6' ? 'active' : ''}" data-onclick="_switchInitConfigTab('1.6')">OCPP 1.6</button>
+      <button class="tab ${_initConfigTab === '2.0.1' ? 'active' : ''}" data-onclick="_switchInitConfigTab('2.0.1')">OCPP 2.0.1</button>
+    </div>` : '';
+
+  document.getElementById('configTabContent').innerHTML = `${tabBar}<div id="initConfigInner"></div>`;
+
+  if (_initConfigTab === '1.6') {
+    await _renderInitConfig16();
+  } else {
+    await _renderInitConfig201();
+  }
+}
+
+function _switchInitConfigTab(tab) {
+  _initConfigTab = tab;
+  renderConfigTabChargepoints();
+}
+
+async function _renderInitConfig16() {
+  const container = document.getElementById('initConfigInner');
   let rows;
   try {
     rows = await api('GET', '/init-config');
   } catch (err) {
-    document.getElementById('configTabContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
-
   let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description')}</p>`;
-
   html += `<div class="card"><table class="data-table">
     <thead><tr>
       <th>${t('initConfig.key')}</th>
@@ -5258,11 +5400,9 @@ async function renderConfigTabChargepoints() {
       <th>${t('initConfig.enabled')}</th>
       <th>${t('common.actions')}</th>
     </tr></thead><tbody>`;
-
   if (rows.length === 0) {
     html += `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted);">—</td></tr>`;
   }
-
   for (const r of rows) {
     const isGlobalOnly = GLOBAL_ONLY_KEYS.includes(r.key);
     html += `<tr>
@@ -5275,13 +5415,139 @@ async function renderConfigTabChargepoints() {
       </td>
     </tr>`;
   }
-
   html += `</tbody></table></div>`;
-
-  document.getElementById('configTabContent').innerHTML = html;
+  container.innerHTML = html;
   document.getElementById('topbarActions').innerHTML = `
     <button class="btn btn-secondary btn-sm" data-onclick="cascadeAllInitConfig()">↓ ${t('initConfig.cascadeBtn')}</button>
     <button class="btn btn-primary btn-sm" data-onclick="showCreateInitConfigModal()">+ ${t('initConfig.addBtn')}</button>`;
+}
+
+async function _renderInitConfig201() {
+  const container = document.getElementById('initConfigInner');
+  let rows;
+  try {
+    rows = await api('GET', '/init-config/variables');
+  } catch (err) {
+    container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  let html = `<div class="card"><table class="data-table">
+    <thead><tr>
+      <th>Component</th><th>Variable</th><th>Attribute</th>
+      <th>${t('initConfig.value')}</th>
+      <th>${t('initConfig.enabled')}</th>
+      <th>${t('common.actions')}</th>
+    </tr></thead><tbody>`;
+  if (rows.length === 0) {
+    html += `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">—</td></tr>`;
+  }
+  for (const r of rows) {
+    html += `<tr>
+      <td style="font-family:monospace;font-size:12px;">${escapeHtml(r.component)}</td>
+      <td style="font-weight:500;font-family:monospace;font-size:12px;">${escapeHtml(r.variable)}</td>
+      <td class="text-muted" style="font-size:12px;">${escapeHtml(r.attribute || 'Actual')}</td>
+      <td>${escapeHtml(r.value)}</td>
+      <td><input type="checkbox" ${r.enabled ? 'checked' : ''} data-onchange="toggleInitVariable(${r.id}, this.checked)"></td>
+      <td>
+        <button class="btn btn-sm btn-secondary" data-onclick="showEditInitVariableModal(${r.id}, '${escapeAttr(r.component)}', '${escapeAttr(r.variable)}', '${escapeAttr(r.attribute || 'Actual')}', '${escapeAttr(r.value)}', ${!!r.enabled})">${t('common.edit')}</button>
+        <button class="btn btn-sm btn-danger" data-onclick="withBtn(this, () => deleteInitVariable(${r.id}))">${t('common.delete')}</button>
+      </td>
+    </tr>`;
+  }
+  html += `</tbody></table></div>`;
+  container.innerHTML = html;
+  document.getElementById('topbarActions').innerHTML = `
+    <button class="btn btn-primary btn-sm" data-onclick="showCreateInitVariableModal()">+ Ajouter</button>`;
+}
+
+function showCreateInitVariableModal() {
+  openModal(`
+    <h3>Nouvelle variable OCPP 2.0.1</h3>
+    <div class="form-group"><label>Component</label><input type="text" id="initVarComponent" required /></div>
+    <div class="form-group"><label>Variable</label><input type="text" id="initVarVariable" required /></div>
+    <div class="form-group">
+      <label>Attribute</label>
+      <select id="initVarAttribute">
+        <option value="Actual">Actual</option>
+        <option value="Target">Target</option>
+        <option value="MinSet">MinSet</option>
+        <option value="MaxSet">MaxSet</option>
+      </select>
+    </div>
+    <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="initVarValue" required /></div>
+    <div class="form-group"><label><input type="checkbox" id="initVarEnabled" checked> ${t('initConfig.enabled')}</label></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, createInitVariable)">${t('common.create')}</button>
+    </div>
+  `);
+}
+
+async function createInitVariable() {
+  const component = document.getElementById('initVarComponent').value.trim();
+  const variable = document.getElementById('initVarVariable').value.trim();
+  const attribute = document.getElementById('initVarAttribute').value;
+  const value = document.getElementById('initVarValue').value.trim();
+  const enabled = document.getElementById('initVarEnabled').checked;
+  if (!component || !variable || !value) return;
+  try {
+    await api('POST', '/init-config/variables', { component, variable, attribute, value, enabled });
+    closeModal();
+    _renderInitConfig201();
+  } catch (err) {
+    if (err.message?.includes('409')) {
+      toast('Cette variable existe déjà.', 'error');
+    } else {
+      toast(err.message, 'error');
+    }
+  }
+}
+
+function showEditInitVariableModal(id, component, variable, attribute, value, enabled) {
+  openModal(`
+    <h3>Modifier la variable OCPP 2.0.1</h3>
+    <div class="form-group"><label>Component</label><input type="text" value="${escapeAttr(component)}" disabled class="form-control" /></div>
+    <div class="form-group"><label>Variable</label><input type="text" value="${escapeAttr(variable)}" disabled class="form-control" /></div>
+    <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="editInitVarValue" value="${escapeAttr(value)}" required /></div>
+    <div class="form-group"><label><input type="checkbox" id="editInitVarEnabled" ${enabled ? 'checked' : ''}> ${t('initConfig.enabled')}</label></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => updateInitVariable(${id}))">${t('common.save')}</button>
+    </div>
+  `);
+}
+
+async function updateInitVariable(id) {
+  const value = document.getElementById('editInitVarValue').value.trim();
+  const enabled = document.getElementById('editInitVarEnabled').checked;
+  if (!value) return;
+  try {
+    await api('PUT', `/init-config/variables/${id}`, { value, enabled });
+    closeModal();
+    _renderInitConfig201();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function toggleInitVariable(id, enabled) {
+  try {
+    await api('PUT', `/init-config/variables/${id}`, { enabled });
+  } catch (err) {
+    toast(err.message, 'error');
+    _renderInitConfig201();
+  }
+}
+
+async function deleteInitVariable(id) {
+  const ok = await confirmDialog(t('initConfig.deleteConfirm', { defaultValue: 'Supprimer cette entrée ?' }), { danger: true });
+  if (!ok) return;
+  try {
+    await api('DELETE', `/init-config/variables/${id}`);
+    _renderInitConfig201();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 // ── Init Config CRUD ──
