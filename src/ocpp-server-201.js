@@ -442,7 +442,7 @@ function register201Handlers(client, loggedHandle) {
       timestamp,
     } = params;
 
-    const txId = transactionInfo.transactionId;
+    let txId = transactionInfo.transactionId;
     const evseId = evse.id ?? null;
     // connector_id en DB = evseId (mapping 1:1 EVSE→connecteur pour le cas standard)
     const connectorDbId = evseId ?? 1;
@@ -582,9 +582,24 @@ function register201Handlers(client, loggedHandle) {
     // ── Updated ──
     if (eventType === 'Updated') {
       if (!cp || !txId) return {};
-      const tx = db.getTransactionByTransactionId(txId);
+      let tx = db.getTransactionByTransactionId(txId);
       if (!tx) {
-        logger.warn(`[2.0.1] TransactionEvent Updated for unknown transaction ${txId}`);
+        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId);
+        if (activeTx) {
+          logger.warn(
+            `[2.0.1] MeterValues txId inconnu ${txId} depuis ${identity}, redirigé vers tx active ${activeTx.transaction_id}`
+          );
+          txId = activeTx.transaction_id;
+          tx = activeTx;
+        } else {
+          logger.warn(`[2.0.1] TransactionEvent Updated for unknown transaction ${txId}`);
+          return {};
+        }
+      }
+      if (tx.status !== 'Active') {
+        logger.warn(
+          `[2.0.1] TransactionEvent Updated pour transaction clôturée ${txId} depuis ${identity} — ignorés`
+        );
         return {};
       }
 
@@ -691,17 +706,54 @@ function register201Handlers(client, loggedHandle) {
       logger.info(`[2.0.1] TransactionEvent Ended from ${identity} txId=${txId}`);
       if (!txId) return {};
 
-      const meterStop = extractMeterEnergy(meterValue);
+      let meterStop = extractMeterEnergy(meterValue);
       const stopReason = TRIGGER_TO_STOP_REASON[triggerReason] || triggerReason || 'Local';
 
+      // Corriger meterStop si la borne envoie une valeur <= meter_start alors que de l'énergie a été consommée
+      const preTx = db.getTransactionByTransactionId(txId);
+      if (
+        preTx &&
+        preTx.status === 'Active' &&
+        preTx.energy != null &&
+        preTx.energy > 0 &&
+        (meterStop == null || meterStop <= preTx.meter_start)
+      ) {
+        const corrected = preTx.meter_start + preTx.energy;
+        logger.warn(
+          `[2.0.1] TransactionEvent Ended meterStop incohérent (${meterStop}) sur ${identity} tx ${txId}, corrigé à ${corrected}`
+        );
+        meterStop = corrected;
+      }
+
       db.stopTransaction(txId, meterStop, timestamp, stopReason);
+
+      let stoppedTx = db.getTransactionByTransactionId(txId);
+      // Fallback : si le transactionId est inconnu, chercher une tx active sur ce chargeur
+      if (!stoppedTx && cp) {
+        const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
+        if (activeTxs.length >= 1) {
+          const activeTx = activeTxs.sort(
+            (a, b) => new Date(b.start_time) - new Date(a.start_time)
+          )[0];
+          db.stopTransaction(activeTx.transaction_id, meterStop, timestamp, stopReason || 'Other');
+          stoppedTx = db.getTransactionByTransactionId(activeTx.transaction_id);
+          logger.warn(
+            `[2.0.1] [Recovery] TransactionEvent Ended txId inconnu ${txId} sur ${identity}, ` +
+              `${activeTxs.length > 1 ? `${activeTxs.length} tx actives — ` : ''}tx ${activeTx.transaction_id} fermée`
+          );
+        } else {
+          logger.warn(
+            `[2.0.1] [Recovery] TransactionEvent Ended txId inconnu ${txId} sur ${identity}, aucune tx active`
+          );
+        }
+      }
+
+      const resolvedTransactionId = stoppedTx?.transaction_id ?? txId;
       broadcast(
         'transaction_stop',
-        { identity, transactionId: txId, meterStop, reason: stopReason },
+        { identity, transactionId: resolvedTransactionId, meterStop, reason: stopReason },
         cp?.site_id ?? null
       );
-
-      const stoppedTx = db.getTransactionByTransactionId(txId);
       if (stoppedTx) {
         const cpForTx = db.getChargepointById(stoppedTx.chargepoint_id);
         if (cpForTx && meterStop != null) {
@@ -756,7 +808,7 @@ function register201Handlers(client, loggedHandle) {
                   connector_id: stoppedTx.connector_id,
                   energy_kwh: energyKwh,
                   duration,
-                  transaction_id: txId,
+                  transaction_id: resolvedTransactionId,
                   stop_reason: stopReason,
                   cp_name: cpForTx.cpname ?? null,
                   cn_name: cnName,
