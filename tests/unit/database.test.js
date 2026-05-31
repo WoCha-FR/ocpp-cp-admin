@@ -1411,3 +1411,18 @@ describe('database — Init Variables CRUD (OCPP 2.0.1)', () => {
     expect(rows.some((r) => r.id === entryId)).toBe(false);
   });
 });
+
+describe('database — getInitialChargepointVariableByKey', () => {
+  it('returns the variable when it exists (seeded by migration)', () => {
+    const row = db.getInitialChargepointVariableByKey('OCPPCommCtrlr', 'HeartbeatInterval');
+    expect(row).not.toBeNull();
+    expect(row.component).toBe('OCPPCommCtrlr');
+    expect(row.variable).toBe('HeartbeatInterval');
+    expect(row.attribute).toBe('Actual');
+  });
+
+  it('returns undefined for an unknown key', () => {
+    const row = db.getInitialChargepointVariableByKey('Unknown', 'NonExistent');
+    expect(row).toBeUndefined();
+  });
+});

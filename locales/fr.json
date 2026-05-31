@@ -883,6 +883,7 @@
     "ERR_TAG_ALREADY_EXISTS": "Ce tag existe déjà pour ce site",
     "ERR_AUTOTAG_READONLY": "Les tags auto-générés ne peuvent pas être modifiés",
     "ERR_AUTOTAG_NO_DELETE": "Les tags auto-générés ne peuvent pas être supprimés",
+    "ERR_VAR_NOT_DELETABLE": "Cette variable système ne peut pas être supprimée",
     "ERR_CANNOT_DELETE_SELF": "Impossible de supprimer votre propre compte",
     "ERR_CANNOT_DELETE_LAST_ADMIN": "Impossible de supprimer le dernier administrateur",
     "ERR_CANNOT_DEMOTE_LAST_ADMIN": "Impossible de rétrograder le dernier administrateur",

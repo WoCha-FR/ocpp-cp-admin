@@ -1706,11 +1706,20 @@ router.put(
   }
 );
 
+const GLOBAL_ONLY_VARS_201 = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
+
 router.delete(
   '/init-config/variables/:id',
   requireRole('admin'),
   ...validateSchema(schema.IdParam),
   (req, res) => {
+    const row = db.getInitialChargepointVariables().find((v) => v.id === Number(req.params.id));
+    if (
+      row &&
+      GLOBAL_ONLY_VARS_201.some((g) => g.component === row.component && g.variable === row.variable)
+    ) {
+      return errorResponse(res, 400, 'ERR_VAR_NOT_DELETABLE');
+    }
     db.deleteInitialChargepointVariable(Number(req.params.id));
     res.json({ ok: true });
   }

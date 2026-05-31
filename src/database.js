@@ -1342,6 +1342,14 @@ function getEnabledInitialChargepointVariables() {
     .all();
 }
 
+function getInitialChargepointVariableByKey(component, variable) {
+  return db
+    .prepare(
+      "SELECT * FROM chargepoint_init_variables WHERE component = ? AND variable = ? AND attribute = 'Actual' LIMIT 1"
+    )
+    .get(component, variable);
+}
+
 function createInitialChargepointVariable(component, variable, attribute, value, enabled) {
   return db
     .prepare(
@@ -2359,6 +2367,7 @@ module.exports = {
   deleteInitialChargepointConfig,
   getInitialChargepointVariables,
   getEnabledInitialChargepointVariables,
+  getInitialChargepointVariableByKey,
   createInitialChargepointVariable,
   updateInitialChargepointVariable,
   deleteInitialChargepointVariable,

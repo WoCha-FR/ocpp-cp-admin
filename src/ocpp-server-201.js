@@ -227,7 +227,7 @@ function register201Handlers(client, loggedHandle) {
     const cp = db.getChargepointByIdentity(identity);
     broadcast('chargepoint_update', cp, cp?.site_id ?? null);
 
-    const hbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
+    const hbConfig = db.getInitialChargepointVariableByKey('OCPPCommCtrlr', 'HeartbeatInterval');
     const heartbeatInterval = hbConfig ? parseInt(hbConfig.value, 10) : 300;
     return {
       status: 'Accepted',

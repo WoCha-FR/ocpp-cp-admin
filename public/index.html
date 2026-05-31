@@ -5341,6 +5341,7 @@ async function renderConfigTabApp() {
 }
 
 const GLOBAL_ONLY_KEYS = ['HeartbeatInterval'];
+const GLOBAL_ONLY_VARS_201 = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
 
 const OCPP16_STANDARD_KEYS = [
   'AllowOfflineTxForUnknownId','AuthorizationCacheEnabled','AuthorizeRemoteTxRequests',
@@ -5421,15 +5422,18 @@ async function _renderInitConfig201() {
     html += `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">—</td></tr>`;
   }
   for (const r of rows) {
+    const isGlobalOnly = GLOBAL_ONLY_VARS_201.some(
+      (v) => v.component === r.component && v.variable === r.variable
+    );
     html += `<tr>
       <td style="font-family:monospace;font-size:12px;">${escapeHtml(r.component)}</td>
-      <td style="font-weight:500;font-family:monospace;font-size:12px;">${escapeHtml(r.variable)}</td>
+      <td style="font-weight:500;font-family:monospace;font-size:12px;">${escapeHtml(r.variable)}${isGlobalOnly ? ` <span class="badge badge-blue" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>` : ''}</td>
       <td class="text-muted" style="font-size:12px;">${escapeHtml(r.attribute || 'Actual')}</td>
       <td>${escapeHtml(r.value)}</td>
-      <td><input type="checkbox" ${r.enabled ? 'checked' : ''} data-onchange="toggleInitVariable(${r.id}, this.checked)"></td>
+      <td><input type="checkbox" ${r.enabled || isGlobalOnly ? 'checked' : ''} ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : `data-onchange="toggleInitVariable(${r.id}, this.checked)"`}></td>
       <td>
         <button class="btn btn-sm btn-secondary" data-onclick="showEditInitVariableModal(${r.id}, '${escapeAttr(r.component)}', '${escapeAttr(r.variable)}', '${escapeAttr(r.attribute || 'Actual')}', '${escapeAttr(r.value)}', ${!!r.enabled})">${t('common.edit')}</button>
-        <button class="btn btn-sm btn-danger" data-onclick="withBtn(this, () => deleteInitVariable(${r.id}))">${t('common.delete')}</button>
+        ${isGlobalOnly ? '' : `<button class="btn btn-sm btn-danger" data-onclick="withBtn(this, () => deleteInitVariable(${r.id}))">${t('common.delete')}</button>`}
       </td>
     </tr>`;
   }
