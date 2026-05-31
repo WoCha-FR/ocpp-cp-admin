@@ -553,7 +553,7 @@ function attachUIWebSocket(server, label) {
     sessionMiddleware(req, {}, () => {
       const userId = req.session?.passport?.user;
       if (!userId) {
-        ws.close(401, 'Unauthorized');
+        ws.close(4401, 'Unauthorized');
         return;
       }
       const dbUser = db.getUserById(userId);
