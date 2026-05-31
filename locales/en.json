@@ -1010,6 +1010,7 @@
   },
   "initConfig": {
     "description": "ChangeConfiguration parameters automatically sent to every chargepoint on its first connection, if their values differ from current ones.",
+    "description201": "SetVariables parameters automatically sent to every OCPP 2.0.1 chargepoint on its first connection.",
     "key": "Key",
     "value": "Value",
     "enabled": "Enabled",
@@ -1023,6 +1024,7 @@
     "cascadeBtn": "Apply to all chargepoints",
     "cascadeConfirmTitle": "Apply configuration to all chargepoints",
     "cascadeConfirmBody": "All currently enabled values will be sent via ChangeConfiguration to all connected chargepoints. Offline chargepoints will be re-initialized to receive the config on next boot. Values with per-chargepoint overrides will be skipped.",
+    "cascadeConfirmBody201": "All currently enabled variables will be sent via SetVariables to all connected OCPP 2.0.1 chargepoints. Offline chargepoints will be re-initialized to receive the config on next boot.",
     "cascadeResultTitle": "Application result",
     "cascadeApplied": "config(s) applied",
     "cascadeQueued": "chargepoint(s) offline (re-initialization scheduled)",

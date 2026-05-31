@@ -5256,18 +5256,29 @@ async function renderConfigEditor() {
   if (currentUser.role !== 'admin') return navigate('dashboard');
   document.getElementById('topbarActions').innerHTML = '';
 
+  const show16 = appSettings.v16Enabled !== false;
+  const show201 = appSettings.v201Enabled === true;
+
+  if (currentConfigTab === 'chargepoints16' && !show16) currentConfigTab = 'app';
+  if (currentConfigTab === 'chargepoints201' && !show201) currentConfigTab = 'app';
+
   const html = `
     <div class="tabs">
       <button class="tab ${currentConfigTab === 'app' ? 'active' : ''}" data-onclick="switchConfigTab('app')">${t('configEditor.tabApp')}</button>
-      <button class="tab ${currentConfigTab === 'chargepoints' ? 'active' : ''}" data-onclick="switchConfigTab('chargepoints')">${t('configEditor.tabChargepoints')}</button>
+      ${show16 ? `<button class="tab ${currentConfigTab === 'chargepoints16' ? 'active' : ''}" data-onclick="switchConfigTab('chargepoints16')">Bornes OCPP 1.6</button>` : ''}
+      ${show201 ? `<button class="tab ${currentConfigTab === 'chargepoints201' ? 'active' : ''}" data-onclick="switchConfigTab('chargepoints201')">Bornes OCPP 2.0.1</button>` : ''}
     </div>
     <div id="configTabContent"></div>`;
   document.getElementById('pageContent').innerHTML = html;
 
   if (currentConfigTab === 'app') {
     await renderConfigTabApp();
-  } else {
-    await renderConfigTabChargepoints();
+  } else if (currentConfigTab === 'chargepoints16') {
+    document.getElementById('configTabContent').innerHTML = '<div id="initConfigInner"></div>';
+    await _renderInitConfig16();
+  } else if (currentConfigTab === 'chargepoints201') {
+    document.getElementById('configTabContent').innerHTML = '<div id="initConfigInner"></div>';
+    await _renderInitConfig201();
   }
 }
 
@@ -5349,39 +5360,6 @@ const OCPP16_STANDARD_KEYS = [
   'SendLocalListMaxLength','ReserveConnectorZeroSupported',
 ];
 
-let _initConfigTab = '1.6';
-
-async function renderConfigTabChargepoints() {
-  const show16 = appSettings.v16Enabled !== false;
-  const show201 = appSettings.v201Enabled === true;
-
-  // Si les deux sont actifs, afficher des onglets ; sinon, déterminer l'onglet actif
-  if (!show16 && !show201) {
-    document.getElementById('configTabContent').innerHTML = `<p class="text-muted">Aucun protocole OCPP activé.</p>`;
-    return;
-  }
-  if (!show16) _initConfigTab = '2.0.1';
-  if (!show201) _initConfigTab = '1.6';
-
-  const tabBar = (show16 && show201) ? `
-    <div class="tabs" style="margin-bottom:12px;">
-      <button class="tab ${_initConfigTab === '1.6' ? 'active' : ''}" data-onclick="_switchInitConfigTab('1.6')">OCPP 1.6</button>
-      <button class="tab ${_initConfigTab === '2.0.1' ? 'active' : ''}" data-onclick="_switchInitConfigTab('2.0.1')">OCPP 2.0.1</button>
-    </div>` : '';
-
-  document.getElementById('configTabContent').innerHTML = `${tabBar}<div id="initConfigInner"></div>`;
-
-  if (_initConfigTab === '1.6') {
-    await _renderInitConfig16();
-  } else {
-    await _renderInitConfig201();
-  }
-}
-
-function _switchInitConfigTab(tab) {
-  _initConfigTab = tab;
-  renderConfigTabChargepoints();
-}
 
 async function _renderInitConfig16() {
   const container = document.getElementById('initConfigInner');
@@ -5431,7 +5409,8 @@ async function _renderInitConfig201() {
     container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
-  let html = `<div class="card"><table class="data-table">
+  let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description201')}</p>`;
+  html += `<div class="card"><table class="data-table">
     <thead><tr>
       <th>Component</th><th>Variable</th><th>Attribute</th>
       <th>${t('initConfig.value')}</th>
@@ -5457,7 +5436,8 @@ async function _renderInitConfig201() {
   html += `</tbody></table></div>`;
   container.innerHTML = html;
   document.getElementById('topbarActions').innerHTML = `
-    <button class="btn btn-primary btn-sm" data-onclick="showCreateInitVariableModal()">+ Ajouter</button>`;
+    <button class="btn btn-secondary btn-sm" data-onclick="cascadeAllInitVariables()">↓ ${t('initConfig.cascadeBtn')}</button>
+    <button class="btn btn-primary btn-sm" data-onclick="showCreateInitVariableModal()">+ ${t('initConfig.addBtn')}</button>`;
 }
 
 function showCreateInitVariableModal() {
@@ -5571,7 +5551,7 @@ async function createInitConfig() {
   try {
     await api('POST', '/init-config', { key, value });
     closeModal();
-    renderConfigTabChargepoints();
+    _renderInitConfig16();
   } catch (err) {
     if (err.message?.includes('409')) {
       toast(t('initConfig.keyExists'), 'error');
@@ -5601,7 +5581,7 @@ async function updateInitConfig(id) {
   try {
     await api('PUT', `/init-config/${id}`, { value, enabled });
     closeModal();
-    renderConfigTabChargepoints();
+    _renderInitConfig16();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -5612,7 +5592,7 @@ async function toggleInitConfig(id, enabled) {
     await api('PUT', `/init-config/${id}`, { enabled });
   } catch (err) {
     toast(err.message, 'error');
-    renderConfigTabChargepoints();
+    _renderInitConfig16();
   }
 }
 
@@ -5621,7 +5601,7 @@ async function deleteInitConfig(id) {
   if (!ok) return;
   try {
     await api('DELETE', `/init-config/${id}`);
-    renderConfigTabChargepoints();
+    _renderInitConfig16();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -5663,6 +5643,65 @@ async function cascadeAllInitConfig() {
         `<tr><td>${s.identity}</td><td><code>${s.key}</code></td><td><span class="badge">${s.reason}</span></td></tr>`
       ).join(''),
       cols: cpCol + keyReasonCols,
+    },
+    {
+      labelKey: 'cascadeQueued',
+      count: result.queued.length,
+      rows: result.queued.map(q => `<tr><td>${q.identity}</td></tr>`).join(''),
+      cols: cpCol,
+    },
+  ];
+  const renderSection = ({ labelKey, count, rows, cols, open }) => {
+    const label = `${count} ${t(`initConfig.${labelKey}`)}`;
+    if (!count || !rows) return `<div>${label}</div>`;
+    return `
+    <details ${open ? 'open' : ''} style="margin-top:4px;">
+      <summary style="cursor:pointer;">${label}</summary>
+      <table style="width:100%;margin-top:8px;">
+        <thead><tr>${cols}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </details>`;
+  };
+  openModal(`
+    <strong>${t('initConfig.cascadeResultTitle')}</strong>
+    <div style="display:flex;flex-direction:column;gap:4px;margin-top:8px;">
+      ${sections.map(renderSection).join('')}
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn btn-primary" data-onclick="closeModal()">${t('common.close')}</button>
+    </div>
+  `);
+}
+
+async function cascadeAllInitVariables() {
+  const ok = await confirmDialog(
+    `${t('initConfig.cascadeConfirmTitle')}\n\n${t('initConfig.cascadeConfirmBody201')}`
+  );
+  if (!ok) return;
+  let result;
+  try {
+    result = await api('POST', '/init-config/variables/cascade-all');
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  const cpCol = `<th>${t('chargepoint.cpIdentity')}</th>`;
+  const keyReasonCols = `<th>Variable</th><th>Raison</th>`;
+  const sections = [
+    {
+      labelKey: 'cascadeApplied',
+      count: result.applied.length,
+      rows: null,
+    },
+    {
+      labelKey: 'cascadeErrors',
+      count: result.errors.length,
+      rows: result.errors.map(e =>
+        `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
+      ).join(''),
+      cols: cpCol + keyReasonCols,
+      open: true,
     },
     {
       labelKey: 'cascadeQueued',

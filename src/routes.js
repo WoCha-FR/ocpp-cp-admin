@@ -1716,6 +1716,71 @@ router.delete(
   }
 );
 
+router.post('/init-config/variables/cascade-all', requireRole('admin'), async (req, res) => {
+  const vars = db.getEnabledInitialChargepointVariables();
+  const chargepoints = db.getAllChargepoints().filter((cp) => cp.ocpp_version === '2.0.1');
+  const clients = getConnectedClients();
+
+  const applied = [];
+  const queued = [];
+  const skipped = [];
+  const errors = [];
+
+  for (const cp of chargepoints) {
+    const isOnline = clients.has(cp.identity);
+    let cpQueued = false;
+
+    for (const v of vars) {
+      if (isOnline) {
+        try {
+          const result = await callClient(cp.identity, 'SetVariables', {
+            setVariableData: [
+              {
+                component: { name: v.component },
+                variable: { name: v.variable },
+                attributeType: v.attribute || 'Actual',
+                attributeValue: v.value,
+              },
+            ],
+          });
+          const setResult = result?.setVariableResult?.[0];
+          if (
+            setResult?.attributeStatus === 'Accepted' ||
+            setResult?.attributeStatus === 'RebootRequired'
+          ) {
+            db.upsertChargepointVariable(
+              cp.id,
+              v.component,
+              v.variable,
+              v.attribute || 'Actual',
+              v.value
+            );
+            applied.push({ identity: cp.identity, key: `${v.component}.${v.variable}` });
+          } else {
+            errors.push({
+              identity: cp.identity,
+              key: `${v.component}.${v.variable}`,
+              reason: setResult?.attributeStatus,
+            });
+          }
+        } catch (e) {
+          errors.push({
+            identity: cp.identity,
+            key: `${v.component}.${v.variable}`,
+            reason: e.message,
+          });
+        }
+      } else if (!cpQueued) {
+        db.resetChargepointInitialized(cp.id);
+        queued.push({ identity: cp.identity });
+        cpQueued = true;
+      }
+    }
+  }
+
+  res.json({ applied, queued, skipped, errors });
+});
+
 router.post(
   '/init-config/chargepoint/:id/apply',
   requireRole('admin'),
