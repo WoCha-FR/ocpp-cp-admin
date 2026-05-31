@@ -802,6 +802,33 @@ describe('database — resetStateOnStartup', () => {
     expect(tx.charging_state).toBeNull();
   });
 
+  it('calcule meter_stop = meter_start + energy si energy est renseigné', () => {
+    // start_time dans le passé lointain pour ne pas polluer les tests KPI (filtre 7/30 jours)
+    const oldDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
+    db.upsertChargepoint('CP-RST-ENERGY', { connected: 1, initialized: 1 });
+    const cpE = db.getChargepointByIdentity('CP-RST-ENERGY').id;
+    const tx = db.createTransaction(cpE, 1, 'RSTENERGY', 10000, oldDate, 'rfid');
+    // updateTransactionPowerEnergy stocke energy = energyWh - meter_start
+    // donc on passe 12500 (absolu) → energy = 12500 - 10000 = 2500
+    db.updateTransactionPowerEnergy(tx.transaction_id, 3000, 12500);
+    db.resetStateOnStartup();
+    const closed = db.getTransactionByTransactionId(tx.transaction_id);
+    expect(closed.status).toBe('Completed');
+    expect(closed.meter_stop).toBe(12500); // meter_start(10000) + energy(2500)
+    expect(closed.energy).toBeNull();
+  });
+
+  it('laisse meter_stop à null si energy est null', () => {
+    const oldDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
+    db.upsertChargepoint('CP-RST-NOENERGY', { connected: 1, initialized: 1 });
+    const cpN = db.getChargepointByIdentity('CP-RST-NOENERGY').id;
+    const tx = db.createTransaction(cpN, 1, 'RSTNOENERGY', 5000, oldDate, 'rfid');
+    db.resetStateOnStartup();
+    const closed = db.getTransactionByTransactionId(tx.transaction_id);
+    expect(closed.status).toBe('Completed');
+    expect(closed.meter_stop).toBeNull();
+  });
+
   it('remet cnstatus=null sur tous les connecteurs', () => {
     const connectors = db.getConnectorsByChargepoint(cpId1);
     expect(connectors[0].cnstatus).toBeNull();
