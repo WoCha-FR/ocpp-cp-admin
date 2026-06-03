@@ -219,6 +219,7 @@ function register201Handlers(client, loggedHandle) {
   const identity = client.identity;
   const cpRecord = db.getChargepointByIdentity(identity);
   const chargepointId = cpRecord ? cpRecord.id : null;
+  let pendingStatusAfterBootCallback = null;
 
   // ── BootNotification ──
   loggedHandle('BootNotification', (params) => {
@@ -354,6 +355,10 @@ function register201Handlers(client, loggedHandle) {
   // evseId=0 : statut au niveau borne entière
   // evseId>0 : statut d'un connecteur — on utilise evseId comme connector_id en DB
   loggedHandle('StatusNotification', (params) => {
+    if (pendingStatusAfterBootCallback) {
+      pendingStatusAfterBootCallback();
+      pendingStatusAfterBootCallback = null;
+    }
     const cp = db.getChargepointByIdentity(identity);
     if (!cp) return {};
 
@@ -1076,9 +1081,25 @@ function register201Handlers(client, loggedHandle) {
         return;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 10000));
+      const statusReceived = await new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          pendingStatusAfterBootCallback = null;
+          resolve(false);
+        }, 10000);
+        pendingStatusAfterBootCallback = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+      });
 
       if (!db.getChargepointByIdentity(identity)?.connected) return;
+
+      if (statusReceived) {
+        logger.info(
+          `[StateRefresh201] ${identity}: StatusNotification auto-reçu, skip TriggerMessage(StatusNotification)`
+        );
+        return;
+      }
 
       try {
         await callClient201(identity, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
