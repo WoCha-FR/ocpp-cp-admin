@@ -2015,6 +2015,7 @@ async function renderDetailTabLogs(cp) {
           <input type="text" id="cpLogFilterDateTo" readonly />
         </div>
         <button class="btn btn-outline btn-sm" data-onclick="resetCpLogFilters(${cp.id})">${t('common.reset')}</button>
+        <button class="btn btn-primary btn-sm" data-onclick="exportCpLogsCsv(${cp.id})">📥 ${t('common.csvExport')}</button>
         ${adminManage() ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => clearCpLogMessages(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('chargepoint.cpLogsDelete')}</button>` : ''}
       </div>
     </div>
@@ -2089,6 +2090,17 @@ async function resetCpLogFilters(cpId) {
   cpLogsFilters = { date_from: _today(), date_to: _today() };
   const cp = await api('GET', `/chargepoints/${cpId}`);
   renderDetailTabLogs(cp);
+}
+
+function exportCpLogsCsv(cpId) {
+  const queryParams = new URLSearchParams();
+  queryParams.set('chargepoint_id', cpId);
+  if (cpLogsFilters.origin) queryParams.set('origin', cpLogsFilters.origin);
+  if (cpLogsFilters.message_type) queryParams.set('message_type', cpLogsFilters.message_type);
+  if (cpLogsFilters.action) queryParams.set('action', cpLogsFilters.action);
+  if (cpLogsFilters.date_from) queryParams.set('date_from', localDateToUtcStr(cpLogsFilters.date_from, false));
+  if (cpLogsFilters.date_to) queryParams.set('date_to', localDateToUtcStr(cpLogsFilters.date_to, true));
+  window.location.href = '/api/ocpp-messages/csv?' + queryParams.toString();
 }
 
 async function clearCpLogMessages(cpId, identity) {

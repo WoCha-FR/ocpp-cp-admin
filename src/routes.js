@@ -1861,6 +1861,62 @@ router.delete(
   }
 );
 
+router.get(
+  '/ocpp-messages/csv',
+  requireManager,
+  ...validateSchema(schema.OcppMessagesQuery),
+  (req, res) => {
+    const filters = {};
+    if (req.query.chargepoint_id) filters.chargepoint_id = Number(req.query.chargepoint_id);
+    if (req.query.origin) filters.origin = req.query.origin;
+    if (req.query.message_type) filters.message_type = req.query.message_type;
+    if (req.query.action) filters.action = req.query.action;
+    if (req.query.date_from) filters.date_from = req.query.date_from;
+    if (req.query.date_to) filters.date_to = req.query.date_to;
+
+    if (req.user.role !== 'admin') {
+      const siteIds = getUserSiteIds(req);
+      if (siteIds && siteIds.length > 0) {
+        filters.site_ids = siteIds;
+      } else if (siteIds && siteIds.length === 0) {
+        return res.json([]);
+      }
+    }
+
+    const messages = db.getOcppMessages(filters);
+    const lng = req.user.langue || 'fr';
+    const headers = [
+      trad('csvExportTitle.log_timestamp', { lng }),
+      trad('csvExportTitle.chargepoint', { lng }),
+      trad('csvExportTitle.log_origin', { lng }),
+      trad('csvExportTitle.log_message_type', { lng }),
+      trad('csvExportTitle.log_action', { lng }),
+      trad('csvExportTitle.log_payload', { lng }),
+    ];
+    const csvRows = [headers.join(';')];
+    for (const m of messages) {
+      const row = [
+        m.timestamp || '',
+        m.chargepoint_identity || '',
+        m.origin || '',
+        m.message_type || '',
+        m.action || '',
+        m.payload || '',
+      ].map((v) => `"${String(v).replace(/"/g, '""').replace(/;/g, ',')}"`);
+      csvRows.push(row.join(';'));
+    }
+
+    const csv = '﻿' + csvRows.join('\r\n');
+    const cpIdentity = req.query.chargepoint_id
+      ? messages[0]?.chargepoint_identity || req.query.chargepoint_id
+      : 'all';
+    const filename = `logs-${cpIdentity}-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  }
+);
+
 // ══════════════════════════════════════
 //  ID TAGS
 // ══════════════════════════════════════
