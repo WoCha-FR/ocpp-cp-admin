@@ -485,9 +485,20 @@ const OcppMessagesQuery = {
   action: {
     in: ['query'],
     optional: true,
-    isString: true,
-    isLength: { options: { min: 1, max: 64 } },
-    trim: true,
+    customSanitizer: {
+      options: (value) => {
+        if (!value) return undefined;
+        const arr = Array.isArray(value) ? value : [value];
+        return arr.map((v) => String(v).trim()).filter((v) => v.length > 0);
+      },
+    },
+    custom: {
+      options: (value) => {
+        if (!value) return true;
+        const arr = Array.isArray(value) ? value : [value];
+        return arr.every((v) => typeof v === 'string' && v.length >= 1 && v.length <= 64);
+      },
+    },
     errorMessage: 'VALIDATION_OCPP_ACTION',
   },
   date_from: {

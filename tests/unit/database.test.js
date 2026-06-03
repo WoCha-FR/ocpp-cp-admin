@@ -929,6 +929,49 @@ describe('database — OCPP Messages date filter', () => {
   });
 });
 
+// ── OCPP Messages multi-action filter ──
+describe('database — OCPP Messages multi-action filter', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const site = db.createSite('MultiActSite', null);
+    const cp = db.createChargepoint('TEST-MULTIACT-01', 'MultiAct CP', 'pass', 1, site.id);
+    cpId = cp.id;
+    const raw = db.getDb();
+    const ins = raw.prepare(
+      `INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, action, payload) VALUES (?, ?, ?, ?, ?)`
+    );
+    ins.run(cpId, 'chargepoint', 'CALL',       'BootNotification',   '{}');
+    ins.run(cpId, 'chargepoint', 'CALL',       'Heartbeat',          '{}');
+    ins.run(cpId, 'csms',        'CALLRESULT',  'StatusNotification', '{}');
+  });
+
+  afterAll(() => {
+    db.clearOcppMessages(cpId);
+  });
+
+  it('filtre sur une seule action', () => {
+    const msgs = db.getOcppMessages({ chargepoint_id: cpId, actions: ['Heartbeat'] });
+    expect(msgs.length).toBe(1);
+    expect(msgs[0].action).toBe('Heartbeat');
+  });
+
+  it('filtre sur plusieurs actions (OR)', () => {
+    const msgs = db.getOcppMessages({ chargepoint_id: cpId, actions: ['Heartbeat', 'BootNotification'] });
+    expect(msgs.length).toBe(2);
+  });
+
+  it('filtre LIKE insensible à la casse', () => {
+    const msgs = db.getOcppMessages({ chargepoint_id: cpId, actions: ['heartbeat'] });
+    expect(msgs.length).toBe(1);
+  });
+
+  it('retourne tous les messages si actions est vide', () => {
+    const msgs = db.getOcppMessages({ chargepoint_id: cpId, actions: [] });
+    expect(msgs.length).toBe(3);
+  });
+});
+
 // ── getDashboardChartData / getChargingKpi ──
 describe('database — getDashboardChartData / getChargingKpi', () => {
   let cpId;

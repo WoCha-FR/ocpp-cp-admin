@@ -984,7 +984,12 @@
     "energy": "Énergie (kWh)",
     "duration": "Durée (min)",
     "status": "État",
-    "stop_reason": "Raison arrêt"
+    "stop_reason": "Raison arrêt",
+    "log_timestamp": "Horodatage",
+    "log_origin": "Origine",
+    "log_message_type": "Type",
+    "log_action": "Action",
+    "log_payload": "Payload JSON"
   },
   "configEditor": {
     "title": "Éditeur de configuration",
