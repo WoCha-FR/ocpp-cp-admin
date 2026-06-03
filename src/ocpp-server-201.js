@@ -150,6 +150,18 @@ function extractMeterEnergy(meterValue = []) {
   return null;
 }
 
+const initSeqVersions201 = new Map();
+
+function isDisconnectionError(e) {
+  const msg = e.message || '';
+  return (
+    msg.includes('not connected') ||
+    msg.toLowerCase().includes('disconnected') ||
+    msg.includes('going away') ||
+    msg.includes('socket not open')
+  );
+}
+
 // ── Commandes CSMS → borne (OCPP 2.0.1) ──
 async function callClient201(identity, method, params) {
   const client = getConnectedClients().get(identity);
@@ -226,6 +238,96 @@ function register201Handlers(client, loggedHandle) {
 
     const cp = db.getChargepointByIdentity(identity);
     broadcast('chargepoint_update', cp, cp?.site_id ?? null);
+
+    const seqVersion = (initSeqVersions201.get(identity) || 0) + 1;
+    initSeqVersions201.set(identity, seqVersion);
+
+    setImmediate(async (cpSnap, seqVersion) => {
+      if (!cpSnap || cpSnap.initialized) return;
+
+      const isSuperseded = () => initSeqVersions201.get(identity) !== seqVersion;
+      let disconnectedDuringInit = false;
+      let lastFailedStep = null;
+
+      // Step 1/4 — ClearCache
+      if (isSuperseded()) return;
+      try {
+        logger.debug(`[InitSeq201] ${identity} step 1/4 — ClearCache`);
+        await callClient201(identity, 'ClearCache', {});
+      } catch (e) {
+        logger.warn(`[InitSeq201] ${identity} ClearCache: ${e.message}`);
+        if (isDisconnectionError(e)) { disconnectedDuringInit = true; lastFailedStep = 'ClearCache'; }
+      }
+
+      // Step 2/4 — ClearChargingProfile (si aucun profil géré)
+      if (isSuperseded()) return;
+      try {
+        const existingProfiles = db.getChargingProfiles(cpSnap.id);
+        if (existingProfiles.length === 0) {
+          logger.debug(`[InitSeq201] ${identity} step 2/4 — ClearChargingProfile`);
+          await callClient201(identity, 'ClearChargingProfile', {});
+        } else {
+          logger.debug(`[InitSeq201] ${identity} step 2/4 — skipped (${existingProfiles.length} profil(s) géré(s))`);
+        }
+      } catch (e) {
+        logger.warn(`[InitSeq201] ${identity} ClearChargingProfile: ${e.message}`);
+        if (isDisconnectionError(e)) { disconnectedDuringInit = true; lastFailedStep = 'ClearChargingProfile'; }
+      }
+
+      // Step 3/4 — GetVariables (synchronise l'état courant en DB)
+      if (isSuperseded()) return;
+      try {
+        logger.debug(`[InitSeq201] ${identity} step 3/4 — GetVariables`);
+        await callClient201(identity, 'GetVariables', {});
+      } catch (e) {
+        logger.warn(`[InitSeq201] ${identity} GetVariables: ${e.message}`);
+        if (isDisconnectionError(e)) { disconnectedDuringInit = true; lastFailedStep = 'GetVariables'; }
+      }
+
+      // Step 4/4 — SetVariables (application des variables initiales)
+      if (isSuperseded()) return;
+      const vars = db.getEnabledInitialChargepointVariables();
+      const rebootVars = [];
+      for (const v of vars) {
+        if (isSuperseded()) break;
+        try {
+          logger.debug(`[InitSeq201] ${identity} step 4/4 — SetVariables ${v.component}.${v.variable}`);
+          const result = await callClient201(identity, 'SetVariables', {
+            setVariableData: [{
+              component: { name: v.component },
+              variable: { name: v.variable },
+              attributeType: v.attribute || 'Actual',
+              attributeValue: v.value,
+            }],
+          });
+          const setResult = result?.setVariableResult?.[0];
+          if (setResult?.attributeStatus === 'Accepted' || setResult?.attributeStatus === 'RebootRequired') {
+            const refreshedCp = db.getChargepointByIdentity(identity);
+            if (refreshedCp) db.upsertChargepointVariable(refreshedCp.id, v.component, v.variable, v.attribute || 'Actual', v.value);
+            if (setResult.attributeStatus === 'RebootRequired') rebootVars.push(`${v.component}.${v.variable}`);
+          } else {
+            logger.warn(`[InitSeq201] ${identity} SetVariables ${v.component}.${v.variable}: ${setResult?.attributeStatus}`);
+          }
+        } catch (e) {
+          logger.warn(`[InitSeq201] ${identity} SetVariables ${v.component}.${v.variable}: ${e.message}`);
+          if (isDisconnectionError(e)) { disconnectedDuringInit = true; lastFailedStep = `SetVariables(${v.component}.${v.variable})`; break; }
+        }
+      }
+
+      if (isSuperseded()) return;
+
+      if (disconnectedDuringInit) {
+        logger.warn(`[InitSeq201] ${identity} initialisation interrompue à "${lastFailedStep}" — retry à la reconnexion`);
+        return;
+      }
+
+      if (rebootVars.length > 0) {
+        notifications.emit('init_config_result', { identity, rebootKeys: rebootVars, rejectedKeys: [], notSupportedKeys: [] }).catch(() => {});
+      }
+
+      db.markChargepointInitialized(cpSnap.id);
+      logger.debug(`[InitSeq201] ${identity} séquence d'initialisation terminée`);
+    }, cp, seqVersion);
 
     const hbConfig = db.getInitialChargepointVariableByKey('OCPPCommCtrlr', 'HeartbeatInterval');
     const heartbeatInterval = hbConfig ? parseInt(hbConfig.value, 10) : 300;
@@ -909,6 +1011,84 @@ function register201Handlers(client, loggedHandle) {
     }
     return {};
   });
+
+  // ── DataTransfer ──
+  loggedHandle('DataTransfer', (_params) => {
+    return { status: 'Accepted' };
+  });
+
+  // ── FirmwareStatusNotification ──
+  loggedHandle('FirmwareStatusNotification', (params) => {
+    const cp = db.getChargepointByIdentity(identity);
+    broadcast('firmware_status', { identity, status: params.status }, cp?.site_id ?? null);
+    if (['Installed', 'InstallationFailed', 'DownloadFailed'].includes(params.status)) {
+      notifications
+        .emit('firmware_status', {
+          identity,
+          status: params.status,
+          cp_name: cp?.cpname ?? null,
+          site_name: cp?.site_name ?? null,
+        })
+        .catch(() => {});
+    }
+    return {};
+  });
+
+  // ── LogStatusNotification (équivalent 2.0.1 de DiagnosticsStatusNotification) ──
+  loggedHandle('LogStatusNotification', (params) => {
+    if (params.status === 'Uploaded' || params.status === 'UploadFailed') {
+      const cp = db.getChargepointByIdentity(identity);
+      broadcast(
+        'diagnostics_upload',
+        { identity, status: params.status },
+        cp?.site_id ?? null
+      );
+    }
+    return {};
+  });
+
+  // ── SecurityEventNotification ──
+  loggedHandle('SecurityEventNotification', (params) => {
+    const cp = db.getChargepointByIdentity(identity);
+    if (cp) {
+      logger.warn(`[2.0.1] SecurityEvent on ${identity}: type=${params.type} tech=${params.techInfo ?? ''}`);
+      db.insertErrorEvent(cp.id, 'security_event', {
+        ocpp_version: '2.0.1',
+        tech_code: params.type,
+        tech_info: params.techInfo ?? null,
+      });
+      broadcast('error_event', { chargepoint_id: cp.id }, cp.site_id ?? null);
+    }
+    return {};
+  });
+
+  // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
+  if (cpRecord && cpRecord.initialized) {
+    const refreshTimer = setTimeout(async () => {
+      const current = db.getChargepointByIdentity(identity);
+      if (!current || !current.connected) return;
+
+      logger.info(`[StateRefresh201] ${identity}: reconnecté sans BootNotification, envoi TriggerMessage`);
+      try {
+        await callClient201(identity, 'TriggerMessage', { requestedMessage: 'BootNotification' });
+      } catch (e) {
+        logger.warn(`[StateRefresh201] ${identity}: TriggerMessage(BootNotification) échoué: ${e.message}`);
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 10000));
+
+      if (!db.getChargepointByIdentity(identity)?.connected) return;
+
+      try {
+        await callClient201(identity, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
+      } catch (e) {
+        logger.warn(`[StateRefresh201] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`);
+      }
+    }, 8000);
+
+    client.once('close', () => clearTimeout(refreshTimer));
+  }
 }
 
 // ── Enregistrement au chargement du module ──

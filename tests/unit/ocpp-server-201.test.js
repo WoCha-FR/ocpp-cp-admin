@@ -24,6 +24,10 @@ const mockDb = {
   upsertTransactionValues: jest.fn(),
   updateTransactionChargingState: jest.fn(),
   getInitialChargepointConfigByKey: jest.fn(() => ({ value: '300' })),
+  getInitialChargepointVariableByKey: jest.fn(() => ({ value: '300' })),
+  getEnabledInitialChargepointVariables: jest.fn(() => []),
+  getChargingProfiles: jest.fn(() => []),
+  markChargepointInitialized: jest.fn(),
   upsertChargepointVariable: jest.fn(),
   activateReservationByConnector: jest.fn(),
   expireActiveReservationByConnector: jest.fn(),
@@ -214,8 +218,8 @@ describe('ocpp-server-201 — BootNotification', () => {
     );
   });
 
-  it('uses default 300s interval when config not found', () => {
-    mockDb.getInitialChargepointConfigByKey.mockReturnValue(null);
+  it('uses default 300s interval when variable not found', () => {
+    mockDb.getInitialChargepointVariableByKey.mockReturnValue(null);
     const result = client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
     expect(result.interval).toBe(300);
   });
@@ -1172,5 +1176,381 @@ describe('ocpp-server-201 — ReservationStatusUpdate', () => {
       });
     }).not.toThrow();
     expect(mockDb.updateReservationStatus).not.toHaveBeenCalled();
+  });
+});
+
+// ── BootNotification — séquence d'init async (setImmediate) ──
+describe('ocpp-server-201 — BootNotification init sequence', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: false, site_id: 1 });
+    mockConnectedClients.set('CP001', client);
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('envoie ClearCache', async () => {
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.call).toHaveBeenCalledWith('ClearCache', {});
+  });
+
+  it('envoie ClearChargingProfile quand aucun profil en DB', async () => {
+    mockDb.getChargingProfiles.mockReturnValue([]);
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.call).toHaveBeenCalledWith('ClearChargingProfile', {});
+  });
+
+  it('saute ClearChargingProfile quand des profils gérés existent', async () => {
+    mockDb.getChargingProfiles.mockReturnValue([{ id: 1 }]);
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.call).not.toHaveBeenCalledWith('ClearChargingProfile', expect.anything());
+  });
+
+  it('envoie GetVariables', async () => {
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.call).toHaveBeenCalledWith('GetVariables', {});
+  });
+
+  it('envoie SetVariables pour chaque variable initiale activée', async () => {
+    mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
+      { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' },
+    ]);
+    client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.call).toHaveBeenCalledWith('SetVariables', {
+      setVariableData: [{
+        component: { name: 'OCPPCommCtrlr' },
+        variable: { name: 'HeartbeatInterval' },
+        attributeType: 'Actual',
+        attributeValue: '60',
+      }],
+    });
+  });
+
+  it('upsert la variable en DB après SetVariables Accepted', async () => {
+    mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
+      { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' },
+    ]);
+    client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60'
+    );
+  });
+
+  it('appelle markChargepointInitialized après la séquence réussie', async () => {
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockDb.markChargepointInitialized).toHaveBeenCalledWith(1);
+  });
+
+  it('saute la séquence si la borne est déjà initialisée', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: true, site_id: 1 });
+    const client2 = makeClient('CP002');
+    mockConnectedClients.set('CP002', client2);
+    register201Handlers(client2, makeLoggedHandle(client2));
+    client2._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client2.call).not.toHaveBeenCalledWith('ClearCache', expect.anything());
+    expect(mockDb.markChargepointInitialized).not.toHaveBeenCalled();
+  });
+
+  it("n'appelle pas markChargepointInitialized en cas d'erreur de déconnexion", async () => {
+    client.call.mockRejectedValue(new Error('not connected'));
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockDb.markChargepointInitialized).not.toHaveBeenCalled();
+  });
+
+  it("n'upsert pas la variable en DB si SetVariables retourne un statut non-Accepted", async () => {
+    mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
+      { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' },
+    ]);
+    client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Rejected' }] });
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockDb.upsertChargepointVariable).not.toHaveBeenCalled();
+  });
+});
+
+// ── DataTransfer ──
+describe('ocpp-server-201 — DataTransfer', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 1 });
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('enregistre le handler', () => {
+    expect(client._handlers['DataTransfer']).toBeDefined();
+  });
+
+  it('retourne status Accepted', () => {
+    const result = client._handlers['DataTransfer']({
+      vendorId: 'ACME', messageId: 'Ping', data: 'hello',
+    });
+    expect(result).toEqual({ status: 'Accepted' });
+  });
+
+  it('retourne Accepted même sans payload', () => {
+    const result = client._handlers['DataTransfer']({});
+    expect(result).toEqual({ status: 'Accepted' });
+  });
+});
+
+// ── FirmwareStatusNotification ──
+describe('ocpp-server-201 — FirmwareStatusNotification', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      id: 1, site_id: 10, cpname: 'CP-1', site_name: 'Site A',
+    });
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('enregistre le handler', () => {
+    expect(client._handlers['FirmwareStatusNotification']).toBeDefined();
+  });
+
+  it('retourne un objet vide', () => {
+    const result = client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
+    expect(result).toEqual({});
+  });
+
+  it('broadcast firmware_status pour tout statut', () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'firmware_status', { identity: 'CP001', status: 'Downloading' }, 10
+    );
+  });
+
+  it('émet une notification pour le statut Installed', async () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Installed' });
+    await Promise.resolve();
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'firmware_status', expect.objectContaining({ status: 'Installed' })
+    );
+  });
+
+  it('émet une notification pour InstallationFailed', async () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'InstallationFailed' });
+    await Promise.resolve();
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'firmware_status', expect.objectContaining({ status: 'InstallationFailed' })
+    );
+  });
+
+  it('émet une notification pour DownloadFailed', async () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'DownloadFailed' });
+    await Promise.resolve();
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'firmware_status', expect.objectContaining({ status: 'DownloadFailed' })
+    );
+  });
+
+  it("n'émet pas de notification pour Downloading", async () => {
+    client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
+    await Promise.resolve();
+    expect(mockNotifications.emit).not.toHaveBeenCalled();
+  });
+});
+
+// ── LogStatusNotification ──
+describe('ocpp-server-201 — LogStatusNotification', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 5 });
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('enregistre le handler', () => {
+    expect(client._handlers['LogStatusNotification']).toBeDefined();
+  });
+
+  it('retourne un objet vide', () => {
+    const result = client._handlers['LogStatusNotification']({ status: 'Uploading', requestId: 1 });
+    expect(result).toEqual({});
+  });
+
+  it('broadcast diagnostics_upload sur Uploaded', () => {
+    client._handlers['LogStatusNotification']({ status: 'Uploaded', requestId: 1 });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'diagnostics_upload', { identity: 'CP001', status: 'Uploaded' }, 5
+    );
+  });
+
+  it('broadcast diagnostics_upload sur UploadFailed', () => {
+    client._handlers['LogStatusNotification']({ status: 'UploadFailed', requestId: 1 });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'diagnostics_upload', { identity: 'CP001', status: 'UploadFailed' }, 5
+    );
+  });
+
+  it("ne broadcast pas pour le statut Uploading", () => {
+    client._handlers['LogStatusNotification']({ status: 'Uploading', requestId: 1 });
+    expect(mockBroadcast).not.toHaveBeenCalledWith(
+      'diagnostics_upload', expect.anything(), expect.anything()
+    );
+  });
+});
+
+// ── SecurityEventNotification ──
+describe('ocpp-server-201 — SecurityEventNotification', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 3 });
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('enregistre le handler', () => {
+    expect(client._handlers['SecurityEventNotification']).toBeDefined();
+  });
+
+  it('retourne un objet vide', () => {
+    const result = client._handlers['SecurityEventNotification']({
+      type: 'SettingSystemTime', timestamp: new Date().toISOString(),
+    });
+    expect(result).toEqual({});
+  });
+
+  it('insère un error_event en DB', () => {
+    client._handlers['SecurityEventNotification']({
+      type: 'SettingSystemTime', techInfo: 'NTP sync failed',
+    });
+    expect(mockDb.insertErrorEvent).toHaveBeenCalledWith(
+      1, 'security_event',
+      expect.objectContaining({ ocpp_version: '2.0.1', tech_code: 'SettingSystemTime', tech_info: 'NTP sync failed' })
+    );
+  });
+
+  it('stocke null pour techInfo quand absent', () => {
+    client._handlers['SecurityEventNotification']({ type: 'SettingSystemTime' });
+    expect(mockDb.insertErrorEvent).toHaveBeenCalledWith(
+      1, 'security_event', expect.objectContaining({ tech_info: null })
+    );
+  });
+
+  it('broadcast error_event', () => {
+    client._handlers['SecurityEventNotification']({ type: 'SettingSystemTime' });
+    expect(mockBroadcast).toHaveBeenCalledWith('error_event', { chargepoint_id: 1 }, 3);
+  });
+
+  it('ne fait rien si la borne est inconnue', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue(null);
+    expect(() => client._handlers['SecurityEventNotification']({ type: 'X' })).not.toThrow();
+    expect(mockDb.insertErrorEvent).not.toHaveBeenCalled();
+  });
+});
+
+// ── StateRefresh TriggerMessage ──
+describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('envoie TriggerMessage(BootNotification) + TriggerMessage(StatusNotification) après 8s si initialized=1', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 })  // cpRecord à l'enregistrement
+      .mockReturnValue({ id: 1, connected: 1, site_id: 1 });        // appels suivants
+    mockConnectedClients.set('CP001', client);
+
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(18001); // 8s outer + 10s inner
+
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
+  });
+
+  it("ne déclenche pas TriggerMessage si initialized=0 (nouvelle borne)", async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 0, site_id: 1 });
+
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('ne déclenche pas TriggerMessage si cpRecord est null (borne inconnue)', async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue(null);
+
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it('enregistre un listener close pour annuler le timer', () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 1, site_id: 1 });
+
+    register201Handlers(client, makeLoggedHandle(client));
+
+    expect(client.once).toHaveBeenCalledWith('close', expect.any(Function));
+  });
+
+  it('annule le TriggerMessage si la borne se déconnecte avant 8s', async () => {
+    const client = makeClient('CP001');
+    let closeCallback;
+    client.once = jest.fn((event, cb) => { if (event === 'close') closeCallback = cb; });
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 1, site_id: 1 });
+
+    register201Handlers(client, makeLoggedHandle(client));
+    closeCallback();
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
+  });
+
+  it("n'envoie pas TriggerMessage(StatusNotification) si TriggerMessage(BootNotification) échoue", async () => {
+    const client = makeClient('CP001');
+    client.call = jest.fn().mockRejectedValue(new Error('not connected'));
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 })
+      .mockReturnValue({ id: 1, connected: 1, site_id: 1 });
+    mockConnectedClients.set('CP001', client);
+
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(8001);
+
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
+  });
+
+  it("n'envoie pas TriggerMessage(StatusNotification) si la borne est déconnectée après le délai de 10s", async () => {
+    const client = makeClient('CP001');
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 })  // cpRecord
+      .mockReturnValueOnce({ id: 1, connected: 1, site_id: 1 })    // timer check
+      .mockReturnValueOnce({ id: 1, site_id: 1 })                   // callClient201 pour TriggerMessage Boot
+      .mockReturnValue({ id: 1, connected: 0, site_id: 1 });        // vérification après 10s: déconnecté
+    mockConnectedClients.set('CP001', client);
+
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(18001);
+
+    expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
   });
 });

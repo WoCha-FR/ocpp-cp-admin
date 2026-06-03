@@ -1677,13 +1677,13 @@ async function renderDetailTabBorne(cp) {
           <div class="cmd-subgroups">
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReboot')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Soft'})">${t('chargepoint.cpRebootSoft')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Hard'})">${t('chargepoint.cpRebootHard')}</button>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', ${cp.ocpp_version === '2.0.1' ? "{type:'Immediate'}" : "{type:'Soft'}"})">${t('chargepoint.cpRebootSoft')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', ${cp.ocpp_version === '2.0.1' ? "{type:'OnIdle'}" : "{type:'Hard'}"})">${t('chargepoint.cpRebootHard')}</button>
             </div>
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: 0})">${t('connectors.cSetAvailable')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: 0})">${t('connectors.cSetUnavailable')}</button>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? "{type:'Operative', evseId:0}" : "{type:'Operative', connectorId:0}"})">${t('connectors.cSetAvailable')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? "{type:'Inoperative', evseId:0}" : "{type:'Inoperative', connectorId:0}"})">${t('connectors.cSetUnavailable')}</button>
             </div>
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
@@ -1697,7 +1697,7 @@ async function renderDetailTabBorne(cp) {
               <span class="cmd-subgroup-label">🔧 ${t('chargepoint.cpManagement')}</span>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
-              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetDiagnostics', {location: '${ocppSettings.diagnosticsLocation || ''}'})">${t('chargepoint.cpGetDiagnostics')}</button>
+              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, ${cp.ocpp_version === '2.0.1' ? `'GetLog', {logType:'DiagnosticsLog', logParameters:{remoteLocation:'${ocppSettings.diagnosticsLocation || ''}'}}` : `'GetDiagnostics', {location:'${ocppSettings.diagnosticsLocation || ''}'}`})">${t('chargepoint.cpGetDiagnostics')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
@@ -1792,17 +1792,17 @@ async function renderDetailTabConnectors(cp) {
                 <div class="cmd-subgroups">
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? JSON.stringify({type:'Operative', evseId: c.connector_id}) : JSON.stringify({type:'Operative', connectorId: c.connector_id})})">${t('connectors.cSetAvailable')}</button>
-                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? JSON.stringify({type:'Inoperative', evseId: c.connector_id}) : JSON.stringify({type:'Inoperative', connectorId: c.connector_id})})">${t('connectors.cSetUnavailable')}</button>
+                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? `{type:'Operative', evseId:${c.connector_id}}` : `{type:'Operative', connectorId:${c.connector_id}}`})">${t('connectors.cSetAvailable')}</button>
+                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? `{type:'Inoperative', evseId:${c.connector_id}}` : `{type:'Inoperative', connectorId:${c.connector_id}}`})">${t('connectors.cSetUnavailable')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔓 ${t('connectors.cUnlock')}</span>
-                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', ${cp.ocpp_version === '2.0.1' ? JSON.stringify({evseId: c.connector_id}) : JSON.stringify({connectorId: c.connector_id})})">${t('connectors.cUnlockConnector')}</button>
+                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', ${cp.ocpp_version === '2.0.1' ? `{evseId:${c.connector_id}}` : `{connectorId:${c.connector_id}}`})">${t('connectors.cUnlockConnector')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: ${c.connector_id}})">${t('connectors.cTriggerMeter')}</button>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: ${c.connector_id}})">${t('connectors.cTriggerStatus')}</button>
+                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'MeterValues', evse:{id:${c.connector_id}}}` : `{requestedMessage:'MeterValues', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerMeter')}</button>
+                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'StatusNotification', evse:{id:${c.connector_id}}}` : `{requestedMessage:'StatusNotification', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerStatus')}</button>
                   </div>
                 </div>
               </div>` : ''}
@@ -5292,9 +5292,11 @@ async function renderConfigTabApp() {
   try {
     data = await api('GET', '/configeditor');
   } catch (err) {
+    if (currentConfigTab !== 'app') return;
     document.getElementById('configTabContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
+  if (currentConfigTab !== 'app') return;
 
   const sectionOrder = ['general', 'webui', 'ocpp', 'notifs', 'auth', 'metrics'];
   const bySection = {};
@@ -5368,9 +5370,11 @@ async function _renderInitConfig16() {
   try {
     rows = await api('GET', '/init-config');
   } catch (err) {
+    if (currentConfigTab !== 'chargepoints16') return;
     container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
+  if (currentConfigTab !== 'chargepoints16') return;
   let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description')}</p>`;
   html += `<div class="card"><table class="data-table">
     <thead><tr>
@@ -5407,9 +5411,11 @@ async function _renderInitConfig201() {
   try {
     rows = await api('GET', '/init-config/variables');
   } catch (err) {
+    if (currentConfigTab !== 'chargepoints201') return;
     container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
+  if (currentConfigTab !== 'chargepoints201') return;
   let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description201')}</p>`;
   html += `<div class="card"><table class="data-table">
     <thead><tr>
