@@ -1160,9 +1160,10 @@ function getOcppMessages(filters = {}) {
     query += ' AND om.message_type = ?';
     params.push(filters.message_type);
   }
-  if (filters.action) {
-    query += ' AND UPPER(om.action) LIKE UPPER(?)';
-    params.push(`%${filters.action}%`);
+  if (filters.actions && filters.actions.length > 0) {
+    const conditions = filters.actions.map(() => 'UPPER(om.action) LIKE UPPER(?)').join(' OR ');
+    query += ` AND (${conditions})`;
+    filters.actions.forEach((a) => params.push(`%${a}%`));
   }
   if (filters.date_from) {
     query += ' AND om.timestamp >= ?';

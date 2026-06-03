@@ -109,7 +109,12 @@ function createApp() {
     if (chargepoint_id) { query += ' AND om.chargepoint_id = ?'; params.push(Number(chargepoint_id)); }
     if (origin) { query += ' AND om.origin = ?'; params.push(origin); }
     if (message_type) { query += ' AND om.message_type = ?'; params.push(message_type); }
-    if (action) { query += ' AND UPPER(om.action) LIKE UPPER(?)'; params.push(`%${action}%`); }
+    const actions = action ? (Array.isArray(action) ? action : [action]) : [];
+    if (actions.length > 0) {
+      const conds = actions.map(() => 'UPPER(om.action) LIKE UPPER(?)').join(' OR ');
+      query += ` AND (${conds})`;
+      actions.forEach(a => params.push(`%${a}%`));
+    }
     if (date_from) { query += ' AND om.timestamp >= ?'; params.push(date_from); }
     if (date_to) { query += ' AND om.timestamp <= ?'; params.push(date_to); }
     query += ' ORDER BY om.id DESC';
@@ -342,5 +347,27 @@ describe('GET /api/ocpp-messages/csv', () => {
     const lines = res.text.replace(/^﻿/, '').split('\r\n').filter(Boolean);
     expect(lines[1]).not.toContain('val1;val2');
     expect(lines[1]).toContain('val1,val2');
+  });
+
+  it('filtre par plusieurs actions via multi-params', async () => {
+    const cpId = db
+      .prepare("INSERT INTO chargepoints (identity, cpstatus) VALUES ('CSV-MULTI-01', 'Available')")
+      .run().lastInsertRowid;
+    db.prepare("INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, action, payload) VALUES (?,?,?,?,?)")
+      .run(cpId, 'chargepoint', 'CALL',      'Heartbeat',          '{}');
+    db.prepare("INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, action, payload) VALUES (?,?,?,?,?)")
+      .run(cpId, 'chargepoint', 'CALL',      'BootNotification',   '{}');
+    db.prepare("INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, action, payload) VALUES (?,?,?,?,?)")
+      .run(cpId, 'csms',        'CALLRESULT', 'StatusNotification', '{}');
+
+    const agent = request.agent(app);
+    await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.get(`/api/ocpp-messages/csv?chargepoint_id=${cpId}&action=Heartbeat&action=BootNotification`);
+
+    const lines = res.text.replace(/^﻿/, '').split('\r\n').filter(Boolean);
+    expect(lines.length).toBe(3); // 1 entête + 2 messages
+    expect(lines.some(l => l.includes('"Heartbeat"'))).toBe(true);
+    expect(lines.some(l => l.includes('"BootNotification"'))).toBe(true);
+    expect(lines.some(l => l.includes('"StatusNotification"'))).toBe(false);
   });
 });
