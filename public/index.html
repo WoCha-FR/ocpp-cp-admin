@@ -1675,11 +1675,18 @@ async function renderDetailTabBorne(cp) {
         <div class="detail-section">
           <div class="detail-section-title">🛠️ ${t('connectors.cCommands')} ${!cp.online ? `<span class="cmd-offline-notice">● ${t('chargepoint.cpOffline')}</span>` : ''}</div>
           <div class="cmd-subgroups">
+            ${cp.ocpp_version !== '2.0.1' ? `
             <div class="cmd-subgroup">
-              <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReboot')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', ${cp.ocpp_version === '2.0.1' ? "{type:'Immediate'}" : "{type:'Soft'}"})">${t('chargepoint.cpRebootSoft')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', ${cp.ocpp_version === '2.0.1' ? "{type:'OnIdle'}" : "{type:'Hard'}"})">${t('chargepoint.cpRebootHard')}</button>
+              <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReset16Label')}</span>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'Reset',{type:'Soft'})">${t('chargepoint.cpReset16Soft')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'Reset',{type:'Hard'})">${t('chargepoint.cpReset16Hard')}</button>
             </div>
+            ` : `
+            <div class="cmd-subgroup">
+              <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReset201Label')}</span>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="showReset201Modal(${cp.id})">${t('chargepoint.cpReset201Label')}</button>
+            </div>
+            `}
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
               <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? "{type:'Operative', evseId:0}" : "{type:'Operative', connectorId:0}"})">${t('connectors.cSetAvailable')}</button>
@@ -1739,6 +1746,43 @@ async function sendCommand(event, cpId, method, params) {
     const result = await api('POST', `/chargepoints/${cpId}/command`, { method, params });
     toast(t('connectors.cCommandResult', { method, result: JSON.stringify(result.result) }), 'success');
   });
+}
+
+async function showReset201Modal(cpId) {
+  let evses = [];
+  try { evses = await api('GET', `/chargepoints/${cpId}/evses`); } catch {}
+  const evseOptions = [
+    `<option value="">${t('chargepoint.cpReset201TargetAll')}</option>`,
+    ...evses.map(e => `<option value="${e.evse_id}">EVSE #${e.evse_id}${e.status ? ` — ${e.status}` : ''}</option>`)
+  ].join('');
+  openModal(`
+    <h3 style="margin-bottom:16px">🔄 ${t('chargepoint.cpReset201Label')}</h3>
+    <div class="form-group">
+      <label>${t('chargepoint.cpReset201Target')}</label>
+      <select id="reset201EvseSelect" class="form-control">${evseOptions}</select>
+    </div>
+    <div class="flex-gap" style="margin-top:20px">
+      <button class="btn btn-orange btn-sm" id="btnReset201Immediate">${t('chargepoint.cpReset201Immediate')}</button>
+      <button class="btn btn-teal btn-sm" id="btnReset201OnIdle">${t('chargepoint.cpReset201OnIdle')}</button>
+      <button class="btn btn-secondary btn-sm" data-onclick="closeModal()">${t('common.cancel')}</button>
+    </div>
+  `);
+  async function doReset201(type) {
+    const evseVal = document.getElementById('reset201EvseSelect')?.value;
+    const params = { type, ...(evseVal ? { evseId: Number(evseVal) } : {}) };
+    closeModal();
+    try {
+      const result = await api('POST', `/chargepoints/${cpId}/command`, { method: 'Reset', params });
+      const res = result.result || {};
+      let msg = `Reset → ${res.status || JSON.stringify(res)}`;
+      if (res.statusInfo) {
+        msg += ` — ${res.statusInfo.reasonCode || ''}${res.statusInfo.additionalInfo ? ': ' + res.statusInfo.additionalInfo : ''}`;
+      }
+      toast(msg, res.status === 'Accepted' ? 'success' : 'warning');
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  document.getElementById('btnReset201Immediate')?.addEventListener('click', () => doReset201('Immediate'));
+  document.getElementById('btnReset201OnIdle')?.addEventListener('click', () => doReset201('OnIdle'));
 }
 
 async function reinitializeChargepoint(event, id) {
