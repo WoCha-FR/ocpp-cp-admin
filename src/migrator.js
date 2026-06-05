@@ -64,8 +64,28 @@ function runMigrations(db) {
     }
   });
 
+  db.pragma('foreign_keys = OFF');
   applyAll();
+  db.pragma('foreign_keys = ON');
   return pending.length;
 }
 
-module.exports = { runMigrations };
+/**
+ * Initialise une nouvelle base de données vierge :
+ * applique le schéma initial complet (001) et marque toutes les migrations comme appliquées.
+ */
+function initNewDatabase(db) {
+  const initialSql = fs.readFileSync(path.join(MIGRATIONS_DIR, '001-initial-schema.sql'), 'utf-8');
+  db.exec(initialSql);
+  initMigrationsTable(db);
+  const files = getMigrationFiles();
+  const markAll = db.transaction(() => {
+    for (const file of files) {
+      db.prepare('INSERT OR IGNORE INTO schema_migrations (filename) VALUES (?)').run(file);
+    }
+  });
+  markAll();
+  logger.info(`New database initialized (${files.length} migrations marked as applied)`);
+}
+
+module.exports = { runMigrations, initNewDatabase };
