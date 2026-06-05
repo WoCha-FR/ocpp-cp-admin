@@ -2,7 +2,7 @@ const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const { getConfig, getConfigDir } = require('./config');
-const { runMigrations } = require('./migrator');
+const { runMigrations, initNewDatabase } = require('./migrator');
 
 const config = getConfig();
 const DB_PATH = path.resolve(getConfigDir(), config.dbname);
@@ -15,10 +15,16 @@ function getDb() {
     const dir = path.dirname(DB_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
+    const isNewDb = !fs.existsSync(DB_PATH);
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
-    runMigrations(db);
+
+    if (isNewDb) {
+      initNewDatabase(db);
+    } else {
+      runMigrations(db);
+    }
   }
   return db;
 }

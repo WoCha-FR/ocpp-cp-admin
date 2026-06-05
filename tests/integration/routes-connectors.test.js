@@ -9,7 +9,7 @@ const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const Database = require('better-sqlite3');
 const { checkSchema, validationResult, matchedData } = require('express-validator');
-const { runMigrations } = require('../../src/migrator');
+const { initNewDatabase } = require('../../src/migrator');
 const schema = require('../../src/validationSchema');
 
 const CSRF_COOKIE = 'XSRF-TOKEN';
@@ -29,7 +29,7 @@ function createApp() {
   const testDb = new Database(':memory:');
   testDb.pragma('journal_mode = WAL');
   testDb.pragma('foreign_keys = ON');
-  runMigrations(testDb);
+  initNewDatabase(testDb);
 
   const hash = bcrypt.hashSync('Admin!123', 4);
   testDb
