@@ -284,16 +284,19 @@ function register201Handlers(client, loggedHandle) {
           }
         }
 
-        // Step 3/4 — GetVariables (synchronise l'état courant en DB)
+        // Step 3/4 — GetBaseReport (synchronise l'état courant en DB via NotifyReport)
         if (isSuperseded()) return;
         try {
-          logger.debug(`[InitSeq201] ${identity} step 3/4 — GetVariables`);
-          await callClient201(identity, 'GetVariables', {});
+          logger.debug(`[InitSeq201] ${identity} step 3/4 — GetBaseReport`);
+          await callClient201(identity, 'GetBaseReport', {
+            requestId: Date.now(),
+            reportBase: 'FullInventory',
+          });
         } catch (e) {
-          logger.warn(`[InitSeq201] ${identity} GetVariables: ${e.message}`);
+          logger.warn(`[InitSeq201] ${identity} GetBaseReport: ${e.message}`);
           if (isDisconnectionError(e)) {
             disconnectedDuringInit = true;
-            lastFailedStep = 'GetVariables';
+            lastFailedStep = 'GetBaseReport';
           }
         }
 

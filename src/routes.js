@@ -1472,7 +1472,10 @@ router.post(
 
     if (client.protocol === 'ocpp2.0.1') {
       try {
-        const result = await callClient(cp.identity, 'GetVariables', {});
+        const result = await callClient(cp.identity, 'GetBaseReport', {
+          requestId: Date.now(),
+          reportBase: 'FullInventory',
+        });
         return res.json({ result, config: db.getChargepointVariables(cp.id) });
       } catch (e) {
         return errorResponse(res, 500, e.message);

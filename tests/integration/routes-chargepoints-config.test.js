@@ -132,7 +132,7 @@ function createApp() {
 
     if (app._mockRefreshProtocol === 'ocpp2.0.1') {
       try {
-        const result = await app._mockRefreshCall('GetVariables', {});
+        const result = await app._mockRefreshCall('GetBaseReport', { requestId: Date.now(), reportBase: 'FullInventory' });
         return res.json({ result, config: config() });
       } catch (e) {
         return res.status(500).json({ error: e.message });
@@ -467,19 +467,19 @@ describe('POST /api/chargepoints/:id/config/refresh', () => {
     expect(res.body.error).toBe('ERR_CHARGEPOINT_OFFLINE');
   });
 
-  it('OCPP 2.0.1: returns 200 with result when GetVariables succeeds', async () => {
+  it('OCPP 2.0.1: returns 200 with result when GetBaseReport succeeds', async () => {
     const { id: cpId } = insertCp(db, 'REF02');
     app._mockRefreshProtocol = 'ocpp2.0.1';
-    app._mockRefreshCall = jest.fn().mockResolvedValue({ getVariableResult: [] });
+    app._mockRefreshCall = jest.fn().mockResolvedValue({ status: 'Accepted' });
     const agent = request.agent(app);
     const csrf = await loginAs(agent);
     const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('result');
-    expect(app._mockRefreshCall).toHaveBeenCalledWith('GetVariables', {});
+    expect(app._mockRefreshCall).toHaveBeenCalledWith('GetBaseReport', expect.objectContaining({ reportBase: 'FullInventory' }));
   });
 
-  it('OCPP 2.0.1: returns 500 when GetVariables fails', async () => {
+  it('OCPP 2.0.1: returns 500 when GetBaseReport fails', async () => {
     const { id: cpId } = insertCp(db, 'REF03');
     app._mockRefreshProtocol = 'ocpp2.0.1';
     app._mockRefreshCall = jest.fn().mockRejectedValue(new Error('timeout'));

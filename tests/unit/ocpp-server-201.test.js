@@ -1221,10 +1221,10 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     expect(client.call).not.toHaveBeenCalledWith('ClearChargingProfile', expect.anything());
   });
 
-  it('envoie GetVariables', async () => {
+  it('envoie GetBaseReport', async () => {
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
     await new Promise((resolve) => setImmediate(resolve));
-    expect(client.call).toHaveBeenCalledWith('GetVariables', {});
+    expect(client.call).toHaveBeenCalledWith('GetBaseReport', expect.objectContaining({ reportBase: 'FullInventory' }));
   });
 
   it('envoie SetVariables pour chaque variable initiale activée', async () => {
