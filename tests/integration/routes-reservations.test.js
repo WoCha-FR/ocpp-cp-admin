@@ -496,7 +496,7 @@ describe('POST /api/chargepoints/:id/reservations — OCPP 2.0.1', () => {
     const testDb = new Database(':memory:');
     testDb.pragma('journal_mode = WAL');
     testDb.pragma('foreign_keys = ON');
-    runMigrations(testDb);
+    initNewDatabase(testDb);
 
     const hash = bcrypt.hashSync('Admin!123', 4);
     testDb

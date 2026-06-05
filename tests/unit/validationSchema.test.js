@@ -395,3 +395,48 @@ describe('validationSchema — UserTransactionsQuery', () => {
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_LIMIT');
   });
 });
+
+// ── EvseDetails ──
+describe('validationSchema — EvseDetails', () => {
+  it('passes with a valid alphanumeric name', async () => {
+    const result = await runSchema(schema.EvseDetails, { evse_name: 'EVSE 01' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes with accented characters', async () => {
+    const result = await runSchema(schema.EvseDetails, { evse_name: 'Borne Electrique' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes with hyphens and underscores', async () => {
+    const result = await runSchema(schema.EvseDetails, { evse_name: 'EVSE-1_A' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes with exactly 50 characters', async () => {
+    const result = await runSchema(schema.EvseDetails, { evse_name: 'A'.repeat(50) });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes with empty string', async () => {
+    const result = await runSchema(schema.EvseDetails, { evse_name: '' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes when evse_name is absent (optional)', async () => {
+    const result = await runSchema(schema.EvseDetails, {});
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('fails with name containing special characters (XSS)', async () => {
+    const result = await runSchema(schema.EvseDetails, { evse_name: '<script>alert(1)</script>' });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_EVSE_NAME');
+  });
+
+  it('fails with name exceeding 50 characters', async () => {
+    const result = await runSchema(schema.EvseDetails, { evse_name: 'A'.repeat(51) });
+    expect(result.isEmpty()).toBe(false);
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_EVSE_NAME');
+  });
+});

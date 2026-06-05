@@ -399,6 +399,57 @@ describe('ocpp-common — pendingRemoteStarts', () => {
   });
 });
 
+// ── connexion chargepoint — ocpp_version ──
+describe('ocpp-common — connexion chargepoint — ocpp_version', () => {
+  const { EventEmitter } = require('events');
+
+  function makeVersionedClient(identity, protocol) {
+    const client = new EventEmitter();
+    client.identity = identity;
+    client.session = { remoteAddress: '1.2.3.4' };
+    client.protocol = protocol;
+    client.close = jest.fn();
+    client.handle = jest.fn();
+    return client;
+  }
+
+  beforeEach(() => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 1 });
+    ocppCommon.registerHandlersFn('1.6', jest.fn());
+    ocppCommon.registerHandlersFn('2.0.1', jest.fn());
+  });
+
+  it('appelle upsertChargepoint avec ocpp_version="2.0.1" pour un client ocpp2.0.1', () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP201-CONN', 'ocpp2.0.1');
+    server.emit('client', client);
+    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+      'CP201-CONN',
+      expect.objectContaining({ ocpp_version: '2.0.1' })
+    );
+  });
+
+  it('appelle upsertChargepoint avec ocpp_version="1.6" pour un client ocpp1.6', () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP16-CONN', 'ocpp1.6');
+    server.emit('client', client);
+    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+      'CP16-CONN',
+      expect.objectContaining({ ocpp_version: '1.6' })
+    );
+  });
+
+  it('fallback sur ocpp_version="1.6" pour un protocole inconnu', () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP-UNK-CONN', 'unknown');
+    server.emit('client', client);
+    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+      'CP-UNK-CONN',
+      expect.objectContaining({ ocpp_version: '1.6' })
+    );
+  });
+});
+
 // ── période de grâce offline (reconnectGracePeriodSeconds) ──
 describe('ocpp-common — période de grâce offline', () => {
   const { EventEmitter } = require('events');
