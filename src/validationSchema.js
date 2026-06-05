@@ -983,6 +983,17 @@ const ReservationIdParam = {
   },
 };
 
+const EvseDetails = {
+  evse_name: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
+    isLength: { options: { min: 0, max: 50 } },
+    trim: true,
+    errorMessage: 'VALIDATION_EVSE_NAME',
+  },
+};
+
 module.exports = {
   User,
   UserUpdate,
@@ -991,6 +1002,7 @@ module.exports = {
   ChargePoint,
   ChargePointSite,
   ConnectorDetails,
+  EvseDetails,
   IdTag,
   UserProfile,
   ForgotPassword,

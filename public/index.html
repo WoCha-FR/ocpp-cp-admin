@@ -1612,8 +1612,8 @@ async function showChargepointDetail(id, tab) {
     document.getElementById('pageContent').innerHTML = `
       <div class="tabs">
         <button class="tab ${currentDetailTab === 'infos' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'infos')">ℹ️ ${t('common.chargepoint_one')}</button>
-        <button class="tab ${currentDetailTab === 'connecteurs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'connecteurs')">🔌 ${t('common.connector_other')}</button>
         ${cp.ocpp_version === '2.0.1' ? `<button class="tab ${currentDetailTab === 'evses' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'evses')">📡 EVSEs</button>` : ''}
+        <button class="tab ${currentDetailTab === 'connecteurs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'connecteurs')">🔌 ${t('common.connector_other')}</button>
         <button class="tab ${currentDetailTab === 'reservations' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'reservations')">🗓 ${t('chargepoint.cpReservationsTitle')}</button>
         <button class="tab ${currentDetailTab === 'transactions' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'transactions')">⚡ ${t('navigation.transactions')}</button>
         <button class="tab ${currentDetailTab === 'logs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'logs')">📨 ${t('chargepoint.cpLogsTitle')}</button>
@@ -1891,6 +1891,33 @@ async function saveConnector(connectorId) {
     toast(t('connectors.cUpdated'), 'success');
     closeModal();
     if (currentDetailCpId) showChargepointDetail(currentDetailCpId, 'connecteurs');
+  } catch (err) {
+    toast(`${t('common.error')}: ${err.message}`, 'error');
+  }
+}
+
+function openEditEvseModal(cpId, evseId, name) {
+  openModal(`
+    <h3>EVSE #${evseId}</h3>
+    <div class="form-group">
+      <label>${t('common.name')}</label>
+      <input type="text" id="evse-modal-name" value="${escapeAttr(name)}" placeholder="${t('connectors.cNameHint')}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => saveEvseName(${cpId}, ${evseId}))">💾 ${t('common.save')}</button>
+    </div>
+  `);
+}
+
+async function saveEvseName(cpId, evseId) {
+  try {
+    const evse_name = document.getElementById('evse-modal-name').value;
+    await api('PUT', `/chargepoints/${cpId}/evses/${evseId}`, { evse_name });
+    toast(t('common.saved', { defaultValue: 'Enregistré' }), 'success');
+    closeModal();
+    const cp = await api('GET', `/chargepoints/${cpId}`);
+    await renderDetailTabEvses(cp);
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
   }
@@ -2376,13 +2403,15 @@ async function renderDetailTabEvses(cp) {
     }
     container.innerHTML = `
       <table>
-        <thead><tr><th>EVSE ID</th><th>${t('common.status')}</th><th>${t('common.date')}</th></tr></thead>
+        <thead><tr><th>EVSE ID</th><th>${t('common.name')}</th><th>${t('common.status')}</th><th>${t('common.date')}</th><th></th></tr></thead>
         <tbody>
           ${evses.map(e => `
             <tr>
               <td><strong>#${e.evse_id}</strong></td>
+              <td>${e.evse_name ? escapeHtml(e.evse_name) : '<span class="text-muted">-</span>'}</td>
               <td><span class="badge ${statusBadgeClass(e.status)}">${escapeHtml(e.status)}</span></td>
               <td class="text-muted" style="font-size:12px">${e.created_at ? formatDate(e.created_at) : '-'}</td>
+              <td><button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditEvseModal(${cp.id}, ${e.evse_id}, '${escapeAttr(e.evse_name || '')}')">✏️</button></td>
             </tr>
           `).join('')}
         </tbody>

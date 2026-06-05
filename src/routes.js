@@ -1430,6 +1430,23 @@ router.get(
   }
 );
 
+router.put(
+  '/chargepoints/:id/evses/:evseId',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam, schema.EvseDetails),
+  (req, res) => {
+    const result = validationResult(req);
+    if (!result.isEmpty())
+      return res.status(400).json({ error: result.array().map((e) => e.msg) });
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    const { evse_name } = matchedData(req);
+    const evse = db.updateEvseName(cp.id, Number(req.params.evseId), evse_name ?? null);
+    if (!evse) return res.status(404).json({ error: 'ERR_EVSE_NOT_FOUND' });
+    res.json(evse);
+  }
+);
+
 // ── Configuration de la borne ──
 router.get(
   '/chargepoints/:id/config',

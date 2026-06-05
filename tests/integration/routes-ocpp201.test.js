@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const Database = require('better-sqlite3');
-const { runMigrations } = require('../../src/migrator');
+const { initNewDatabase } = require('../../src/migrator');
 
 const CSRF_COOKIE = 'XSRF-TOKEN';
 const CSRF_HEADER = 'x-xsrf-token';
@@ -24,7 +24,7 @@ function createApp(connectedClients = new Map(), mockCallClient = jest.fn()) {
   const rawDb = new Database(':memory:');
   rawDb.pragma('journal_mode = WAL');
   rawDb.pragma('foreign_keys = ON');
-  runMigrations(rawDb);
+  initNewDatabase(rawDb);
 
   rawDb.prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)').run(
     'admin@test.com', bcrypt.hashSync('Admin!123', 4), 'admin', 'Admin'
@@ -108,6 +108,24 @@ function createApp(connectedClients = new Map(), mockCallClient = jest.fn()) {
     const cp = rawDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
     res.json(rawDb.prepare('SELECT * FROM evses WHERE chargepoint_id = ? ORDER BY evse_id').all(cp.id));
+  });
+
+  // ── PUT /api/chargepoints/:id/evses/:evseId ──
+  app.put('/api/chargepoints/:id/evses/:evseId', requireAuth, (req, res) => {
+    const cp = rawDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    const evse = rawDb
+      .prepare('SELECT * FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
+      .get(cp.id, Number(req.params.evseId));
+    if (!evse) return res.status(404).json({ error: 'ERR_EVSE_NOT_FOUND' });
+    const evse_name = req.body.evse_name ?? null;
+    rawDb
+      .prepare('UPDATE evses SET evse_name = ? WHERE chargepoint_id = ? AND evse_id = ?')
+      .run(evse_name || null, cp.id, Number(req.params.evseId));
+    res.json(
+      rawDb.prepare('SELECT * FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
+        .get(cp.id, Number(req.params.evseId))
+    );
   });
 
   // ── PUT /api/chargepoints/:id/config/:key (branch 2.0.1) ──
@@ -410,5 +428,69 @@ describe('CRUD /api/init-config/variables', () => {
   it('retourne 401 si non authentifié', async () => {
     const res = await request(app).get('/api/init-config/variables');
     expect(res.status).toBe(401);
+  });
+});
+
+describe('PUT /api/chargepoints/:id/evses/:evseId', () => {
+  let app, rawDb, agent, csrf, cpId;
+
+  beforeAll(async () => {
+    ({ app, rawDb } = createApp());
+    agent = request.agent(app);
+    csrf = await loginAndGetCsrf(agent);
+    const cp = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('EVSE-NAME-TEST', '2.0.1')")
+      .run();
+    cpId = cp.lastInsertRowid;
+    rawDb.prepare("INSERT INTO evses (chargepoint_id, evse_id, status) VALUES (?, 1, 'Available')").run(cpId);
+  });
+
+  afterAll(() => rawDb.close());
+
+  it('retourne 401 si non authentifié', async () => {
+    const unauth = request.agent(app);
+    const meRes = await unauth.get('/api/auth/me');
+    const c = readCsrfCookie(meRes.headers['set-cookie']);
+    const res = await unauth
+      .put(`/api/chargepoints/${cpId}/evses/1`)
+      .set('x-xsrf-token', c)
+      .send({ evse_name: 'Test' });
+    expect(res.status).toBe(401);
+  });
+
+  it('met à jour evse_name avec une valeur valide', async () => {
+    const res = await agent
+      .put(`/api/chargepoints/${cpId}/evses/1`)
+      .set('x-xsrf-token', csrf)
+      .send({ evse_name: 'EVSE Principal' });
+    expect(res.status).toBe(200);
+    expect(res.body.evse_name).toBe('EVSE Principal');
+  });
+
+  it('efface evse_name avec une chaîne vide', async () => {
+    const res = await agent
+      .put(`/api/chargepoints/${cpId}/evses/1`)
+      .set('x-xsrf-token', csrf)
+      .send({ evse_name: '' });
+    expect(res.status).toBe(200);
+    expect(res.body.evse_name).toBeNull();
+  });
+
+  it('retourne 404 pour une borne inexistante', async () => {
+    const res = await agent
+      .put('/api/chargepoints/999999/evses/1')
+      .set('x-xsrf-token', csrf)
+      .send({ evse_name: 'X' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('ERR_CHARGEPOINT_NOT_FOUND');
+  });
+
+  it('retourne 404 pour un evseId inexistant', async () => {
+    const res = await agent
+      .put(`/api/chargepoints/${cpId}/evses/99`)
+      .set('x-xsrf-token', csrf)
+      .send({ evse_name: 'X' });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('ERR_EVSE_NOT_FOUND');
   });
 });

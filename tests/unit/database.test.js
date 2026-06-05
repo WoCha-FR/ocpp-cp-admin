@@ -1403,6 +1403,31 @@ describe('database — getEvsesByChargepoint', () => {
   });
 });
 
+// ── updateEvseName ──
+describe('database — updateEvseName', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('EVSE-NAME-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertEvse(cpId, 1, 'Available');
+  });
+
+  it('met à jour evse_name et retourne l\'EVSE mis à jour', () => {
+    const updated = db.updateEvseName(cpId, 1, 'Mon EVSE');
+    expect(updated.evse_name).toBe('Mon EVSE');
+  });
+
+  it('efface evse_name avec null', () => {
+    db.updateEvseName(cpId, 1, 'Nom');
+    const updated = db.updateEvseName(cpId, 1, null);
+    expect(updated.evse_name).toBeNull();
+  });
+});
+
 // ── updateChargepointFeatures201 ──
 describe('database — updateChargepointFeatures201', () => {
   let cpId;

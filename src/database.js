@@ -1869,6 +1869,13 @@ function getEvsesByChargepoint(chargepointId) {
     .all(chargepointId);
 }
 
+function updateEvseName(chargepointId, evseId, name) {
+  db.prepare('UPDATE evses SET evse_name = ? WHERE chargepoint_id = ? AND evse_id = ?')
+    .run(name || null, chargepointId, evseId);
+  return db.prepare('SELECT * FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
+    .get(chargepointId, evseId);
+}
+
 function upsertChargepointVariable(chargepointId, component, variable, attribute, value) {
   const attr = attribute || 'Actual';
   const existing = db
@@ -2456,6 +2463,7 @@ module.exports = {
   getErrorEvents,
   upsertEvse,
   getEvsesByChargepoint,
+  updateEvseName,
   upsertChargepointVariable,
   updateChargepointFeatures201,
 };
