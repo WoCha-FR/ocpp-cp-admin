@@ -1250,6 +1250,29 @@ function updateChargepointFeatures(chargepointId, profilesString) {
   );
 }
 
+/**
+ * Met à jour les champs feat_* de la table chargepoints pour une borne OCPP 2.0.1
+ * en lisant la variable Available de chaque composant de capacité dans chargepoint_variables.
+ */
+function updateChargepointFeatures201(chargepointId) {
+  const rows = db
+    .prepare(
+      "SELECT component, value FROM chargepoint_variables WHERE chargepoint_id = ? AND variable = 'Available' AND attribute = 'Actual'"
+    )
+    .all(chargepointId);
+  const avail = {};
+  for (const r of rows) avail[r.component] = r.value === 'true';
+  db.prepare(
+    `UPDATE chargepoints SET feat_trigger = 1, feat_firmware = ?, feat_local_list = ?, feat_reservation = ?, feat_smartcharging = ? WHERE id = ?`
+  ).run(
+    avail['FirmwareCtrlr'] ? 1 : 0,
+    avail['LocalAuthListCtrlr'] ? 1 : 0,
+    avail['ReservationCtrlr'] ? 1 : 0,
+    avail['SmartChargingCtrlr'] ? 1 : 0,
+    chargepointId
+  );
+}
+
 function getChargepointConfig(chargepointId) {
   return db
     .prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? ORDER BY key')
@@ -2428,4 +2451,5 @@ module.exports = {
   upsertEvse,
   getEvsesByChargepoint,
   upsertChargepointVariable,
+  updateChargepointFeatures201,
 };

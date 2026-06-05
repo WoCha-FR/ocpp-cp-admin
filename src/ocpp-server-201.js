@@ -1041,6 +1041,7 @@ function register201Handlers(client, loggedHandle) {
     }
 
     if (!params.tbc) {
+      db.updateChargepointFeatures201(cp.id);
       broadcast('config_refreshed', { chargepointId: cp.id, identity }, cp.site_id ?? null);
       logger.info(`[2.0.1] NotifyReport complete for ${identity}`);
     }

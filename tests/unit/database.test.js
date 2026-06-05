@@ -1403,6 +1403,81 @@ describe('database — getEvsesByChargepoint', () => {
   });
 });
 
+// ── updateChargepointFeatures201 ──
+describe('database — updateChargepointFeatures201', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('FEAT201-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+  });
+
+  it('sets feat_trigger=1 and all others to 0 when no capability variables exist', () => {
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_trigger, feat_firmware, feat_local_list, feat_reservation, feat_smartcharging FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_trigger).toBe(1);
+    expect(cp.feat_firmware).toBe(0);
+    expect(cp.feat_local_list).toBe(0);
+    expect(cp.feat_reservation).toBe(0);
+    expect(cp.feat_smartcharging).toBe(0);
+  });
+
+  it('sets feat_local_list=1 when LocalAuthListCtrlr.Available=true', () => {
+    db.upsertChargepointVariable(cpId, 'LocalAuthListCtrlr', 'Available', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_local_list FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_local_list).toBe(1);
+  });
+
+  it('sets feat_reservation=1 when ReservationCtrlr.Available=true', () => {
+    db.upsertChargepointVariable(cpId, 'ReservationCtrlr', 'Available', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_reservation FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_reservation).toBe(1);
+  });
+
+  it('sets feat_smartcharging=1 when SmartChargingCtrlr.Available=true', () => {
+    db.upsertChargepointVariable(cpId, 'SmartChargingCtrlr', 'Available', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_smartcharging FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_smartcharging).toBe(1);
+  });
+
+  it('sets feat_firmware=1 when FirmwareCtrlr.Available=true', () => {
+    db.upsertChargepointVariable(cpId, 'FirmwareCtrlr', 'Available', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_firmware FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_firmware).toBe(1);
+  });
+
+  it('sets feat to 0 when Available=false', () => {
+    db.upsertChargepointVariable(cpId, 'LocalAuthListCtrlr', 'Available', 'Actual', 'false');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_local_list FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_local_list).toBe(0);
+  });
+
+  it('ignores Enabled variables — only reads Available', () => {
+    const rawDb = db.getDb();
+    // Reset : pas de LocalAuthListCtrlr.Available=true
+    rawDb.prepare("DELETE FROM chargepoint_variables WHERE chargepoint_id = ? AND component = 'LocalAuthListCtrlr'").run(cpId);
+    // Seul Enabled=true est présent, pas Available
+    db.upsertChargepointVariable(cpId, 'LocalAuthListCtrlr', 'Enabled', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const cp = rawDb.prepare('SELECT feat_local_list FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_local_list).toBe(0);
+  });
+});
+
 // ── chargepoint_init_variables CRUD ──
 describe('database — Init Variables CRUD (OCPP 2.0.1)', () => {
   let entryId;

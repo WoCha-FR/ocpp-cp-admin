@@ -29,6 +29,7 @@ const mockDb = {
   getChargingProfiles: jest.fn(() => []),
   markChargepointInitialized: jest.fn(),
   upsertChargepointVariable: jest.fn(),
+  updateChargepointFeatures201: jest.fn(),
   activateReservationByConnector: jest.fn(),
   expireActiveReservationByConnector: jest.fn(),
   fulfillInUseReservationByConnector: jest.fn(),
@@ -1097,6 +1098,16 @@ describe('ocpp-server-201 — NotifyReport', () => {
       expect.objectContaining({ identity: 'CP001' }),
       expect.anything()
     );
+  });
+
+  it('calls updateChargepointFeatures201 when tbc=false (last batch)', () => {
+    client._handlers['NotifyReport']({ seqNo: 0, tbc: false, reportData: [] });
+    expect(mockDb.updateChargepointFeatures201).toHaveBeenCalledWith(1);
+  });
+
+  it('does NOT call updateChargepointFeatures201 when tbc=true (more batches coming)', () => {
+    client._handlers['NotifyReport']({ seqNo: 0, tbc: true, reportData: [] });
+    expect(mockDb.updateChargepointFeatures201).not.toHaveBeenCalled();
   });
 
   it('skips entries with missing component or variable name', () => {
