@@ -1113,6 +1113,30 @@ function register201Handlers(client, loggedHandle) {
     return {};
   });
 
+  // ── NotifyEvent ──
+  loggedHandle('NotifyEvent', (params) => {
+    const cp = db.getChargepointByIdentity(identity);
+    if (cp) {
+      const ALERT_TRIGGERS = new Set(['Alerting', 'Critical']);
+      for (const ev of params.eventData ?? []) {
+        if (!ALERT_TRIGGERS.has(ev.trigger)) continue;
+        db.insertErrorEvent(cp.id, 'notify_event', {
+          ocpp_version: '2.0.1',
+          evse_id: ev.component?.evse?.id ?? null,
+          connector_id: ev.component?.evse?.connectorId ?? null,
+          component: ev.component?.name ?? null,
+          variable: ev.variable?.name ?? null,
+          severity: ev.severity ?? null,
+          tech_code: ev.techCode ?? ev.trigger ?? null,
+          tech_info: ev.techInfo ?? ev.eventNotificationType ?? null,
+          info: ev.actualValue ?? null,
+        });
+        broadcast('error_event', { chargepoint_id: cp.id }, cp.site_id ?? null);
+      }
+    }
+    return {};
+  });
+
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {
     const refreshTimer = setTimeout(async () => {

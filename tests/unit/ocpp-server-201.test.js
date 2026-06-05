@@ -1565,3 +1565,89 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
   });
 });
+
+describe('ocpp-server-201 — NotifyEvent', () => {
+  let client;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 3 });
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('enregistre le handler', () => {
+    expect(client._handlers['NotifyEvent']).toBeDefined();
+  });
+
+  it('retourne un objet vide', () => {
+    const result = client._handlers['NotifyEvent']({ generatedAt: new Date().toISOString(), seqNo: 0, eventData: [] });
+    expect(result).toEqual({});
+  });
+
+  it('insère un error_event pour un trigger Alerting', () => {
+    client._handlers['NotifyEvent']({
+      generatedAt: '2026-06-05T17:27:23.735Z', seqNo: 0,
+      eventData: [{
+        eventId: 1, timestamp: '2026-06-05T17:27:23.735Z',
+        trigger: 'Alerting', eventNotificationType: 'HardWiredNotification',
+        component: { name: 'Connector', evse: { id: 1, connectorId: 1 } },
+        variable: { name: 'Problem' }, actualValue: 'true',
+      }],
+    });
+    expect(mockDb.insertErrorEvent).toHaveBeenCalledWith(1, 'notify_event',
+      expect.objectContaining({
+        ocpp_version: '2.0.1', evse_id: 1, connector_id: 1,
+        component: 'Connector', variable: 'Problem',
+        tech_code: 'Alerting', tech_info: 'HardWiredNotification',
+        info: 'true',
+      })
+    );
+  });
+
+  it('utilise techCode en priorité sur trigger pour tech_code', () => {
+    client._handlers['NotifyEvent']({
+      eventData: [{ trigger: 'Alerting', techCode: 'SpecificCode', eventNotificationType: 'HardWiredNotification',
+        component: { name: 'Connector' }, variable: { name: 'Problem' } }],
+    });
+    expect(mockDb.insertErrorEvent).toHaveBeenCalledWith(1, 'notify_event',
+      expect.objectContaining({ tech_code: 'SpecificCode' })
+    );
+  });
+
+  it('ignore les événements Delta et Periodic', () => {
+    client._handlers['NotifyEvent']({
+      eventData: [
+        { trigger: 'Delta', component: { name: 'Meter' }, variable: { name: 'Energy' } },
+        { trigger: 'Periodic', component: { name: 'Meter' }, variable: { name: 'Power' } },
+      ],
+    });
+    expect(mockDb.insertErrorEvent).not.toHaveBeenCalled();
+    expect(mockBroadcast).not.toHaveBeenCalled();
+  });
+
+  it('insère uniquement les Alerting dans un tableau mixte', () => {
+    client._handlers['NotifyEvent']({
+      eventData: [
+        { trigger: 'Delta', component: { name: 'Meter' }, variable: { name: 'Energy' } },
+        { trigger: 'Alerting', component: { name: 'Connector' }, variable: { name: 'Problem' }, actualValue: 'true' },
+      ],
+    });
+    expect(mockDb.insertErrorEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it('broadcast error_event', () => {
+    client._handlers['NotifyEvent']({
+      eventData: [{ trigger: 'Alerting', component: { name: 'Connector' }, variable: { name: 'Problem' } }],
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith('error_event', { chargepoint_id: 1 }, 3);
+  });
+
+  it('ne fait rien si la borne est inconnue', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue(null);
+    expect(() => client._handlers['NotifyEvent']({
+      eventData: [{ trigger: 'Alerting', component: { name: 'X' }, variable: { name: 'Y' } }],
+    })).not.toThrow();
+    expect(mockDb.insertErrorEvent).not.toHaveBeenCalled();
+  });
+});
