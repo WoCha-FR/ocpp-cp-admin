@@ -1684,7 +1684,8 @@ async function renderDetailTabBorne(cp) {
             ` : `
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReset201Label')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="showReset201Modal(${cp.id})">${t('chargepoint.cpReset201Label')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'Immediate')">${t('chargepoint.cpReset201Immediate')}</button>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'OnIdle')">${t('chargepoint.cpReset201OnIdle')}</button>
             </div>
             `}
             <div class="cmd-subgroup">
@@ -1748,29 +1749,9 @@ async function sendCommand(event, cpId, method, params) {
   });
 }
 
-async function showReset201Modal(cpId) {
-  let evses = [];
-  try { evses = await api('GET', `/chargepoints/${cpId}/evses`); } catch {}
-  const evseOptions = [
-    `<option value="">${t('chargepoint.cpReset201TargetAll')}</option>`,
-    ...evses.map(e => `<option value="${e.evse_id}">EVSE #${e.evse_id}${e.status ? ` — ${e.status}` : ''}</option>`)
-  ].join('');
-  openModal(`
-    <h3 style="margin-bottom:16px">🔄 ${t('chargepoint.cpReset201Label')}</h3>
-    <div class="form-group">
-      <label>${t('chargepoint.cpReset201Target')}</label>
-      <select id="reset201EvseSelect" class="form-control">${evseOptions}</select>
-    </div>
-    <div class="flex-gap" style="margin-top:20px">
-      <button class="btn btn-orange btn-sm" id="btnReset201Immediate">${t('chargepoint.cpReset201Immediate')}</button>
-      <button class="btn btn-teal btn-sm" id="btnReset201OnIdle">${t('chargepoint.cpReset201OnIdle')}</button>
-      <button class="btn btn-secondary btn-sm" data-onclick="closeModal()">${t('common.cancel')}</button>
-    </div>
-  `);
-  async function doReset201(type) {
-    const evseVal = document.getElementById('reset201EvseSelect')?.value;
-    const params = { type, ...(evseVal ? { evseId: Number(evseVal) } : {}) };
-    closeModal();
+async function sendReset201(event, cpId, type, evseId = null) {
+  await withBtn(event?.currentTarget, async () => {
+    const params = { type, ...(evseId != null ? { evseId: Number(evseId) } : {}) };
     try {
       const result = await api('POST', `/chargepoints/${cpId}/command`, { method: 'Reset', params });
       const res = result.result || {};
@@ -1780,9 +1761,7 @@ async function showReset201Modal(cpId) {
       }
       toast(msg, res.status === 'Accepted' ? 'success' : 'warning');
     } catch (err) { toast(err.message, 'error'); }
-  }
-  document.getElementById('btnReset201Immediate')?.addEventListener('click', () => doReset201('Immediate'));
-  document.getElementById('btnReset201OnIdle')?.addEventListener('click', () => doReset201('OnIdle'));
+  });
 }
 
 async function reinitializeChargepoint(event, id) {
@@ -2403,7 +2382,7 @@ async function renderDetailTabEvses(cp) {
     }
     container.innerHTML = `
       <table>
-        <thead><tr><th>EVSE ID</th><th>${t('common.name')}</th><th>${t('common.status')}</th><th>${t('common.date')}</th><th></th></tr></thead>
+        <thead><tr><th>EVSE ID</th><th>${t('common.name')}</th><th>${t('common.status')}</th><th>${t('common.date')}</th><th>Reset</th><th></th></tr></thead>
         <tbody>
           ${evses.map(e => `
             <tr>
@@ -2411,6 +2390,10 @@ async function renderDetailTabEvses(cp) {
               <td>${e.evse_name ? escapeHtml(e.evse_name) : '<span class="text-muted">-</span>'}</td>
               <td><span class="badge ${statusBadgeClass(e.status)}">${escapeHtml(e.status)}</span></td>
               <td class="text-muted" style="font-size:12px">${e.created_at ? formatDate(e.created_at) : '-'}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'Immediate',${e.evse_id})">${t('chargepoint.cpReset201Immediate')}</button>
+                <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'OnIdle',${e.evse_id})">${t('chargepoint.cpReset201OnIdle')}</button>
+              </td>
               <td><button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditEvseModal(${cp.id}, ${e.evse_id}, '${escapeAttr(e.evse_name || '')}')">✏️</button></td>
             </tr>
           `).join('')}

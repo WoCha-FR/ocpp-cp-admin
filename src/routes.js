@@ -1436,8 +1436,7 @@ router.put(
   ...validateSchema(schema.IdParam, schema.EvseDetails),
   (req, res) => {
     const result = validationResult(req);
-    if (!result.isEmpty())
-      return res.status(400).json({ error: result.array().map((e) => e.msg) });
+    if (!result.isEmpty()) return res.status(400).json({ error: result.array().map((e) => e.msg) });
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
     const { evse_name } = matchedData(req);

@@ -1870,9 +1870,13 @@ function getEvsesByChargepoint(chargepointId) {
 }
 
 function updateEvseName(chargepointId, evseId, name) {
-  db.prepare('UPDATE evses SET evse_name = ? WHERE chargepoint_id = ? AND evse_id = ?')
-    .run(name || null, chargepointId, evseId);
-  return db.prepare('SELECT * FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
+  db.prepare('UPDATE evses SET evse_name = ? WHERE chargepoint_id = ? AND evse_id = ?').run(
+    name || null,
+    chargepointId,
+    evseId
+  );
+  return db
+    .prepare('SELECT * FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
     .get(chargepointId, evseId);
 }
 
