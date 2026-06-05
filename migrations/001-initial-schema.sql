@@ -350,45 +350,46 @@ INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
   ('MinimumStatusDuration', '0', 0),
   ('ResetRetries', '3', 0),
   ('LocalAuthListEnabled', 'false', 0);
-INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, value) VALUES
+INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, value, enabled) VALUES
   -- OCPPCommCtrlr — Communication OCPP
-  ('OCPPCommCtrlr', 'HeartbeatInterval',       '600'),   -- secondes (0 = utiliser intervalle réseau)
-  ('OCPPCommCtrlr', 'WebSocketPingInterval',   '60'),    -- secondes
-  ('OCPPCommCtrlr', 'ResetRetries',            '3'),
-  ('OCPPCommCtrlr', 'MessageTimeout',          '30'),    -- secondes
-  ('OCPPCommCtrlr', 'MessageAttempts',         '3'),     -- was TransactionMessageAttempts
-  ('OCPPCommCtrlr', 'MessageAttemptInterval',  '60'),    -- was TransactionMessageRetryInterval
+  ('OCPPCommCtrlr', 'HeartbeatInterval',       '600', 1),   -- secondes (0 = utiliser intervalle réseau)
+  ('OCPPCommCtrlr', 'WebSocketPingInterval',   '60', 0),    -- secondes
+  ('OCPPCommCtrlr', 'ResetRetries',            '3', 0),
+  ('OCPPCommCtrlr', 'MessageTimeout',          '30', 0),    -- secondes
+  ('OCPPCommCtrlr', 'MessageAttempts',         '3', 0),     -- was TransactionMessageAttempts
+  ('OCPPCommCtrlr', 'MessageAttemptInterval',  '60', 0),    -- was TransactionMessageRetryInterval
   -- TxCtrlr — Gestion des transactions
-  ('TxCtrlr', 'EVConnectionTimeOut',           '60'),    -- secondes, was ConnectionTimeOut
-  ('TxCtrlr', 'StopTxOnEVSideDisconnect',      'true'),  -- was StopTransactionOnEVSideDisconnect
-  ('TxCtrlr', 'StopTxOnInvalidId',             'true'),  -- was StopTransactionOnInvalidId
-  ('TxCtrlr', 'TxStartPoint',                  'PowerPathClosed'),
-  ('TxCtrlr', 'TxStopPoint',                   'EVConnected'),
-  ('TxCtrlr', 'MaxEnergyOnInvalidId',          '0'),     -- Wh, 0 = désactivé
+  ('TxCtrlr', 'EVConnectionTimeOut',           '60', 0),    -- secondes, was ConnectionTimeOut
+  ('TxCtrlr', 'StopTxOnEVSideDisconnect',      'true', 0),  -- was StopTransactionOnEVSideDisconnect
+  ('TxCtrlr', 'StopTxOnInvalidId',             'true', 0),  -- was StopTransactionOnInvalidId
+  ('TxCtrlr', 'TxStartPoint',                  'PowerPathClosed', 0),
+  ('TxCtrlr', 'TxStopPoint',                   'EVConnected', 0),
+  ('TxCtrlr', 'MaxEnergyOnInvalidId',          '0', 0),     -- Wh, 0 = désactivé
   -- SampledDataCtrlr — Mesures périodiques
-  ('SampledDataCtrlr', 'SampledDataEnabled',              'true'),
-  ('SampledDataCtrlr', 'SampledDataTxUpdatedInterval',    '60'),   -- secondes, was MeterValueSampleInterval
-  ('SampledDataCtrlr', 'SampledDataTxUpdatedMeasurands',  'Energy.Active.Import.Register,Power.Active.Import'),
-  ('SampledDataCtrlr', 'SampledDataTxStartedMeasurands',  ''),
-  ('SampledDataCtrlr', 'SampledDataTxEndedMeasurands',    'Energy.Active.Import.Register'),
-  ('SampledDataCtrlr', 'SampledDataAlignedDataInterval',  '0'),    -- was ClockAlignedDataInterval
+  ('SampledDataCtrlr', 'SampledDataEnabled',              'true', 0),
+  ('SampledDataCtrlr', 'SampledDataTxUpdatedInterval',    '60', 0),   -- secondes, was MeterValueSampleInterval
+  ('SampledDataCtrlr', 'SampledDataTxUpdatedMeasurands',  'Energy.Active.Import.Register,Power.Active.Import', 0),
+  ('SampledDataCtrlr', 'SampledDataTxStartedMeasurands',  '', 0),
+  ('SampledDataCtrlr', 'SampledDataTxEndedMeasurands',    'Energy.Active.Import.Register', 0),
+  ('SampledDataCtrlr', 'SampledDataAlignedDataInterval',  '0', 0),    -- was ClockAlignedDataInterval
   -- AuthCtrlr — Autorisation
-  ('AuthCtrlr', 'AuthorizeRemoteStart',        'false'),
-  ('AuthCtrlr', 'LocalAuthorizeOffline',       'true'),
-  ('AuthCtrlr', 'LocalPreAuthorize',           'true'),  -- was LocalPreAuthorize
-  ('AuthCtrlr', 'OfflineTxForUnknownIdEnabled','false'), -- was AllowOfflineTxForUnknownId
-  ('AuthCtrlr', 'DisableRemoteAuthorization',  'false'),
+  ('AuthCtrlr', 'AuthorizeRemoteStart',        'false', 0),
+  ('AuthCtrlr', 'LocalAuthorizeOffline',       'true', 0),
+  ('AuthCtrlr', 'LocalPreAuthorize',           'true', 0),  -- was LocalPreAuthorize
+  ('AuthCtrlr', 'OfflineTxForUnknownIdEnabled','false', 0), -- was AllowOfflineTxForUnknownId
+  ('AuthCtrlr', 'DisableRemoteAuthorization',  'false', 0),
   -- LocalAuthListCtrlr — Liste locale d'autorisation
-  ('LocalAuthListCtrlr', 'Enabled',            'false'), -- was LocalAuthListEnabled
+  ('LocalAuthListCtrlr', 'Enabled',            'false', 0), -- was LocalAuthListEnabled
   -- ClockCtrlr — Horloge
-  ('ClockCtrlr', 'TimeSource',                 'Heartbeat'),
-  ('ClockCtrlr', 'TimeOffset',                 'UTC+0'),
+  ('ClockCtrlr', 'TimeSource',                 'Heartbeat', 0),
+  ('ClockCtrlr', 'TimeOffset',                 'UTC+0', 0),
   -- ReservationCtrlr — Réservations
-  ('ReservationCtrlr', 'Enabled',              'false'),
-  ('ReservationCtrlr', 'NonEvseSpecific',       'false'),
+  ('ReservationCtrlr', 'Enabled',              'false', 0),
+  ('ReservationCtrlr', 'NonEvseSpecific',       'false', 0),
+  ('ReservationCtrlr', 'ReservationTimeOut',    '60', 0),    -- secondes
   -- SmartChargingCtrlr — Smart charging
-  ('SmartChargingCtrlr', 'Enabled',            'false'),
-  ('SmartChargingCtrlr', 'PeriodsPerSchedule', '3'),
-  ('SmartChargingCtrlr', 'Phases3to1',         'false'),
+  ('SmartChargingCtrlr', 'Enabled',            'false', 0),
+  ('SmartChargingCtrlr', 'PeriodsPerSchedule', '3', 0),
+  ('SmartChargingCtrlr', 'Phases3to1',         'false', 0),
   -- DisplayMessageCtrlr — Messages affichés
-  ('DisplayMessageCtrlr', 'Enabled',           'false');
+  ('DisplayMessageCtrlr', 'Enabled',           'false', 0);
