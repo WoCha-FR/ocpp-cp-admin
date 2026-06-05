@@ -36,6 +36,7 @@
       --badge-red-bg: #fee2e2; --badge-red-text: #991b1b;
       --badge-yellow-bg: #fef3c7; --badge-yellow-text: #92400e;
       --badge-blue-bg: #dbeafe; --badge-blue-text: #1e40af;
+      --badge-purple-bg: #ede9fe; --badge-purple-text: #5b21b6;
       --warning-surface: #fffbeb;
       --info-surface: #eff6ff;
       --success-surface: #f0fdf4;
@@ -78,6 +79,7 @@
       --badge-red-bg: #4a2020; --badge-red-text: #fecaca;
       --badge-yellow-bg: #4a3a20; --badge-yellow-text: #fde68a;
       --badge-blue-bg: #1e3550; --badge-blue-text: #bfdbfe;
+      --badge-purple-bg: #2e1a4d; --badge-purple-text: #ddd6fe;
       --warning-surface: #2d2510;
       --info-surface: #1a2a3b;
       --success-surface: #1a3a2a;
@@ -315,6 +317,7 @@
     .badge-red { background: var(--badge-red-bg); color: var(--badge-red-text); }
     .badge-yellow { background: var(--badge-yellow-bg); color: var(--badge-yellow-text); }
     .badge-blue { background: var(--badge-blue-bg); color: var(--badge-blue-text); }
+    .badge-purple { background: var(--badge-purple-bg); color: var(--badge-purple-text); }
     .badge-gray { background: var(--gray-200); color: var(--gray-700); }
 
     /* ── Status dot ── */
