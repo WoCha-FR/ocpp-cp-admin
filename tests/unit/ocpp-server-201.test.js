@@ -1475,6 +1475,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
   });
 
   afterEach(() => {
+    jest.clearAllTimers();
     jest.useRealTimers();
   });
 

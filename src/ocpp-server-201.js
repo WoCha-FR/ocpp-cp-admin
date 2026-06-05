@@ -1160,6 +1160,7 @@ function register201Handlers(client, loggedHandle) {
           pendingStatusAfterBootCallback = null;
           resolve(false);
         }, 10000);
+        timer.unref();
         pendingStatusAfterBootCallback = () => {
           clearTimeout(timer);
           resolve(true);
@@ -1183,6 +1184,7 @@ function register201Handlers(client, loggedHandle) {
         );
       }
     }, 8000);
+    refreshTimer.unref();
 
     client.once('close', () => clearTimeout(refreshTimer));
   }
