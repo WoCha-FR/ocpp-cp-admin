@@ -393,12 +393,14 @@ function createOCPPServerBase(options = {}) {
       }
     }
 
-    logger.info(`Chargepoint connected: ${identity}`);
+    const ocppVersion = client.protocol === 'ocpp2.0.1' ? '2.0.1' : '1.6';
+    logger.info(`Chargepoint connected: ${identity} (protocol: ${ocppVersion})`);
     connectedClients.set(identity, client);
     db.upsertChargepoint(identity, {
       connected: 1,
       connected_wss: isWSS ? 1 : 0,
       endpoint_address: client.session.remoteAddress || null,
+      ocpp_version: ocppVersion,
     });
     broadcast('chargepoint_connected', { identity }, getSiteIdByIdentity(identity));
 
