@@ -1189,7 +1189,7 @@ function register201Handlers(client, loggedHandle) {
   if (cpRecord && cpRecord.initialized) {
     const refreshTimer = setTimeout(async () => {
       const current = db.getChargepointByIdentity(identity);
-      if (!current || !current.connected) return;
+      if (!current || !current.connected || current.cpstatus) return;
 
       logger.info(
         `[StateRefresh201] ${identity}: reconnecté sans BootNotification, envoi TriggerMessage`
