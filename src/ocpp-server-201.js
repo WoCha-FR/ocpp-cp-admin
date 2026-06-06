@@ -976,10 +976,31 @@ function register201Handlers(client, loggedHandle) {
         { identity, transactionId: resolvedTransactionId, meterStop, reason: stopReason },
         cp?.site_id ?? null
       );
+      if (stoppedTx && stoppedTx.evse_id != null) {
+        db.updateConnectorCnstatus(
+          stoppedTx.chargepoint_id,
+          stoppedTx.connector_id,
+          stoppedTx.evse_id,
+          'Finishing'
+        );
+        db.upsertEvse(stoppedTx.chargepoint_id, stoppedTx.evse_id, 'Finishing');
+        const updatedCpF = db.getChargepointById(stoppedTx.chargepoint_id);
+        const connectorsF = db.getConnectorsByChargepoint(stoppedTx.chargepoint_id);
+        broadcast(
+          'status_update',
+          { chargepoint: updatedCpF, connectors: connectorsF },
+          updatedCpF?.site_id ?? null
+        );
+      }
       if (stoppedTx) {
         const cpForTx = db.getChargepointById(stoppedTx.chargepoint_id);
         if (cpForTx && meterStop != null) {
-          db.updateConnectorMeterValue(cpForTx.id, stoppedTx.connector_id, meterStop, stoppedTx.evse_id);
+          db.updateConnectorMeterValue(
+            cpForTx.id,
+            stoppedTx.connector_id,
+            meterStop,
+            stoppedTx.evse_id
+          );
         }
 
         let energyKwh = null;
