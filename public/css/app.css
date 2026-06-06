@@ -465,10 +465,7 @@
     /* ── Connector list (detail page, new layout) ── */
     .cn-list { display: flex; flex-direction: column; gap: 20px; }
     .cn-row-wrapper { border-bottom: 1px solid var(--border-color); padding-bottom: 20px; }
-    .cn-row-wrapper:last-child { border-bottom: none; padding-bottom: 0; }
-    .cn-evse-header { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; padding: 12px 0 2px; border-top: 1px solid var(--border-color); margin-top: -8px; }
-    .cn-evse-header:first-child { border-top: none; margin-top: 0; padding-top: 0; }
-    .cn-row-heading { display: flex; align-items: center; gap: 10px; padding: 0 0 12px 0; }
+    .cn-row-wrapper:last-child { border-bottom: none; padding-bottom: 0; }    .cn-row-heading { display: flex; align-items: center; gap: 10px; padding: 0 0 12px 0; }
     .cn-row-heading .cn-card-id { font-size: 16px; font-weight: 700; }
 
     .connector-card .connector-id { font-size: 13px; color: var(--text-secondary); margin-bottom: 4px; }

@@ -1791,7 +1791,7 @@ async function renderDetailTabConnectors(cp) {
 
               <div class="detail-section${hasError ? ' detail-section-error' : ''}">
                 <div class="detail-section-title">
-                  🔌 ${t('common.connector_one')} ${c.connector_id}${c.connector_name ? ' · ' + escapeHtml(c.connector_name) : ''}
+                  ${c.evse_id != null ? `⚡ EVSE ${c.evse_id}${c.evse_name ? ' · ' + escapeHtml(c.evse_name) : ''} · ` : ''}🔌 ${t('common.connector_one')} ${c.connector_id}${c.connector_name ? ' · ' + escapeHtml(c.connector_name) : ''}
                   ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
                   <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : (c.cnstatus ? escapeHtml(c.cnstatus) : t('common.unknown'))}</span>
                   ${hasError ? `<span class="badge badge-red">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}
@@ -1829,21 +1829,7 @@ async function renderDetailTabConnectors(cp) {
             </div>
           </div>`;
   };
-  const hasEvse = cp.connectors && cp.connectors.some(c => c.evse_id != null);
-  let listHtml;
-  if (hasEvse) {
-    const groups = new Map();
-    for (const c of cp.connectors) {
-      if (!groups.has(c.evse_id)) groups.set(c.evse_id, []);
-      groups.get(c.evse_id).push(c);
-    }
-    listHtml = [...groups.entries()].map(([evseId, connectors]) => {
-      const evseLabel = connectors[0].evse_name ? `EVSE ${evseId} · ${escapeHtml(connectors[0].evse_name)}` : `EVSE ${evseId}`;
-      return `<div class="cn-evse-header">⚡ ${evseLabel}</div>${connectors.map(renderConnectorRow).join('')}`;
-    }).join('');
-  } else {
-    listHtml = cp.connectors.map(renderConnectorRow).join('');
-  }
+  const listHtml = cp.connectors ? cp.connectors.map(renderConnectorRow).join('') : '';
   document.getElementById('detailTabContent').innerHTML = `
       ${(!cp.connectors || cp.connectors.length === 0) ? `<p class="text-muted">${t('connectors.cNoConnectors')}</p>` : `
       <div class="cn-list">
