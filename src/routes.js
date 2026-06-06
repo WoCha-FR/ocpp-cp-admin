@@ -852,6 +852,8 @@ router.post(
 );
 
 // ── Charging Profiles ──
+const mapPurposeTo201 = (p) => (p === 'ChargePointMaxProfile' ? 'ChargingStationMaxProfile' : p);
+
 router.get(
   '/chargepoints/:id/charging-profiles',
   requireManager,
@@ -938,7 +940,7 @@ router.post(
         const chargingProfile201 = {
           id: profile_id,
           stackLevel: stack_level,
-          chargingProfilePurpose: profile_purpose,
+          chargingProfilePurpose: mapPurposeTo201(profile_purpose),
           chargingProfileKind: profile_kind,
           chargingSchedule: [{ id: 1, ...chargingSchedule }],
         };
@@ -985,10 +987,19 @@ router.post(
     const { profile_id, connector_id, profile_purpose, stack_level } = req.body;
 
     const ocppParams = {};
-    if (profile_id != null) ocppParams.id = profile_id;
-    if (connector_id != null) ocppParams.connectorId = connector_id;
-    if (profile_purpose) ocppParams.chargingProfilePurpose = profile_purpose;
-    if (stack_level != null) ocppParams.stackLevel = stack_level;
+    if (cp.ocpp_version === '2.0.1') {
+      if (profile_id != null) ocppParams.chargingProfileId = profile_id;
+      const criteria = {};
+      if (connector_id != null) criteria.evseId = connector_id;
+      if (profile_purpose) criteria.chargingProfilePurpose = mapPurposeTo201(profile_purpose);
+      if (stack_level != null) criteria.stackLevel = stack_level;
+      if (Object.keys(criteria).length > 0) ocppParams.chargingProfileCriteria = criteria;
+    } else {
+      if (profile_id != null) ocppParams.id = profile_id;
+      if (connector_id != null) ocppParams.connectorId = connector_id;
+      if (profile_purpose) ocppParams.chargingProfilePurpose = profile_purpose;
+      if (stack_level != null) ocppParams.stackLevel = stack_level;
+    }
 
     try {
       const result = await callClient(cp.identity, 'ClearChargingProfile', ocppParams);
@@ -1060,7 +1071,7 @@ router.post(
           const chargingProfile201 = {
             id: p.profile_id,
             stackLevel: p.stack_level,
-            chargingProfilePurpose: p.profile_purpose,
+            chargingProfilePurpose: mapPurposeTo201(p.profile_purpose),
             chargingProfileKind: p.profile_kind,
             chargingSchedule: [{ id: 1, ...chargingSchedule }],
           };
@@ -1107,7 +1118,10 @@ router.post(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     const { connector_id, duration, charging_rate_unit } = req.body;
-    const ocppParams = { connectorId: connector_id, duration };
+    const ocppParams =
+      cp.ocpp_version === '2.0.1'
+        ? { evseId: connector_id, duration }
+        : { connectorId: connector_id, duration };
     if (charging_rate_unit) ocppParams.chargingRateUnit = charging_rate_unit;
 
     try {
@@ -1149,9 +1163,11 @@ router.delete(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
-      const result = await callClient(cp.identity, 'ClearChargingProfile', {
-        id: profile.profile_id,
-      });
+      const clearParams =
+        cp.ocpp_version === '2.0.1'
+          ? { chargingProfileId: profile.profile_id }
+          : { id: profile.profile_id };
+      const result = await callClient(cp.identity, 'ClearChargingProfile', clearParams);
       if (result?.status === 'Accepted') {
         db.deleteChargingProfileById(profileDbId);
         broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
