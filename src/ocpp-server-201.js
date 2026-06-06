@@ -403,7 +403,7 @@ function register201Handlers(client, loggedHandle) {
 
   // ── StatusNotification ──
   // evseId=0 : statut au niveau borne entière
-  // evseId>0 : statut d'un connecteur — on utilise evseId comme connector_id en DB
+  // evseId>0 : statut d'un connecteur EVSE — connector_id en DB = params.connectorId, evse_id = evseId
   loggedHandle('StatusNotification', (params) => {
     if (pendingStatusAfterBootCallback) {
       pendingStatusAfterBootCallback();
@@ -419,9 +419,8 @@ function register201Handlers(client, loggedHandle) {
     if (evseId === 0) {
       db.updateChargepointStatus(identity, cnstatus, true);
     } else {
-      // connector_id en DB = evseId (1 connecteur par EVSE dans le cas standard)
-      const connectorDbId = evseId;
-      const existingConnector = db.getConnectorByChargepointAndId(cp.id, connectorDbId);
+      const connectorDbId = params.connectorId ?? 1;
+      const existingConnector = db.getConnectorByChargepointAndId(cp.id, connectorDbId, evseId);
       const previousStatus = existingConnector?.cnstatus || null;
 
       db.upsertConnector(
@@ -601,8 +600,7 @@ function register201Handlers(client, loggedHandle) {
 
     let txId = transactionInfo.transactionId;
     const evseId = evse.id ?? null;
-    // connector_id en DB = evseId (mapping 1:1 EVSE→connecteur pour le cas standard)
-    const connectorDbId = evseId ?? 1;
+    const connectorDbId = evse.connectorId ?? 1;
     const cp = db.getChargepointByIdentity(identity);
 
     // ── Started ──
@@ -1000,7 +998,7 @@ function register201Handlers(client, loggedHandle) {
     if (!cp || !params.meterValue) return {};
 
     const evseId = params.evseId ?? 0;
-    const connectorDbId = evseId;
+    const connectorDbId = params.connectorId ?? evseId;
 
     for (const mv of params.meterValue) {
       const { energyWh, powerW } = parseSampledValues(mv.sampledValue || []);

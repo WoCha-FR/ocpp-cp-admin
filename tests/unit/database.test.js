@@ -850,6 +850,39 @@ describe('database — resetStateOnStartup', () => {
   });
 });
 
+// ── upsertConnector — clé composite evse_id + connector_id (OCPP 2.0.1) ──
+describe('database — upsertConnector composite evse_id + connector_id', () => {
+  let cpId;
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-EVSE-TEST', {});
+    cpId = db.getChargepointByIdentity('CP-EVSE-TEST').id;
+  });
+
+  it('crée deux lignes distinctes pour EVSE1-C1 et EVSE2-C1', () => {
+    db.upsertConnector(cpId, 1, 'Available', 'NoError', null, null, null, 1); // EVSE1-C1
+    db.upsertConnector(cpId, 1, 'Available', 'NoError', null, null, null, 2); // EVSE2-C1
+    const rows = db.getConnectorsByChargepoint(cpId);
+    expect(rows.length).toBe(2);
+    expect(rows.find((r) => r.evse_id === 1 && r.connector_id === 1)).toBeTruthy();
+    expect(rows.find((r) => r.evse_id === 2 && r.connector_id === 1)).toBeTruthy();
+  });
+
+  it('met à jour la bonne ligne sans toucher l\'autre', () => {
+    db.upsertConnector(cpId, 1, 'Charging', 'NoError', null, null, null, 1); // update EVSE1-C1
+    const rows = db.getConnectorsByChargepoint(cpId);
+    expect(rows.find((r) => r.evse_id === 1)?.cnstatus).toBe('Charging');
+    expect(rows.find((r) => r.evse_id === 2)?.cnstatus).toBe('Available');
+  });
+
+  it('getConnectorByChargepointAndId avec evse_id retourne le bon connecteur', () => {
+    const c1 = db.getConnectorByChargepointAndId(cpId, 1, 1); // EVSE1-C1
+    const c2 = db.getConnectorByChargepointAndId(cpId, 1, 2); // EVSE2-C1
+    expect(c1?.evse_id).toBe(1);
+    expect(c2?.evse_id).toBe(2);
+  });
+});
+
 // ── resetConnectorsByChargepoint ──
 describe('database — resetConnectorsByChargepoint', () => {
   let cpId;

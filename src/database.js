@@ -547,24 +547,53 @@ function upsertConnector(
   // Le connecteur 0 représente la borne elle-même, ses données sont stockées dans la table chargepoints
   if (connectorId === 0) return null;
   const rawStatus = cnstatus_raw !== null ? cnstatus_raw : status;
-  const existing = db
-    .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
-    .get(chargepointId, connectorId);
+  // Pour OCPP 2.0.1 (evse_id fourni), la clé unique est (chargepoint_id, evse_id, connector_id).
+  // Pour OCPP 1.6 (evse_id null), on utilise (chargepoint_id, connector_id).
+  const existing =
+    evse_id !== null
+      ? db
+          .prepare(
+            'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?'
+          )
+          .get(chargepointId, evse_id, connectorId)
+      : db
+          .prepare(
+            'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id IS NULL AND connector_id = ?'
+          )
+          .get(chargepointId, connectorId);
   if (existing) {
-    db.prepare(
-      `UPDATE connectors SET cnstatus = ?, cnstatus_raw = ?, evse_id = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
-      WHERE chargepoint_id = ? AND connector_id = ?`
-    ).run(
-      status,
-      rawStatus,
-      evse_id,
-      errorCode || 'NoError',
-      info || null,
-      vendorId || null,
-      vendorEC || null,
-      chargepointId,
-      connectorId
-    );
+    if (evse_id !== null) {
+      db.prepare(
+        `UPDATE connectors SET cnstatus = ?, cnstatus_raw = ?, evse_id = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
+        WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?`
+      ).run(
+        status,
+        rawStatus,
+        evse_id,
+        errorCode || 'NoError',
+        info || null,
+        vendorId || null,
+        vendorEC || null,
+        chargepointId,
+        evse_id,
+        connectorId
+      );
+    } else {
+      db.prepare(
+        `UPDATE connectors SET cnstatus = ?, cnstatus_raw = ?, evse_id = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
+        WHERE chargepoint_id = ? AND evse_id IS NULL AND connector_id = ?`
+      ).run(
+        status,
+        rawStatus,
+        null,
+        errorCode || 'NoError',
+        info || null,
+        vendorId || null,
+        vendorEC || null,
+        chargepointId,
+        connectorId
+      );
+    }
   } else {
     db.prepare(
       'INSERT INTO connectors (chargepoint_id, connector_id, cnstatus, cnstatus_raw, evse_id, error_code, info, vendor_id, vendor_error_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -580,9 +609,17 @@ function upsertConnector(
       vendorEC || null
     );
   }
-  return db
-    .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
-    .get(chargepointId, connectorId);
+  return evse_id !== null
+    ? db
+        .prepare(
+          'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?'
+        )
+        .get(chargepointId, evse_id, connectorId)
+    : db
+        .prepare(
+          'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id IS NULL AND connector_id = ?'
+        )
+        .get(chargepointId, connectorId);
 }
 
 function getConnectorById(connectorId) {
@@ -593,7 +630,13 @@ function getConnectorById(connectorId) {
     .get(connectorId);
 }
 
-function getConnectorByChargepointAndId(chargepointId, connectorId) {
+function getConnectorByChargepointAndId(chargepointId, connectorId, evse_id = null) {
+  if (evse_id !== null)
+    return db
+      .prepare(
+        'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?'
+      )
+      .get(chargepointId, evse_id, connectorId);
   return db
     .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
     .get(chargepointId, connectorId);

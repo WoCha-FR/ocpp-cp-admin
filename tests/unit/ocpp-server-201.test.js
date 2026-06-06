@@ -373,6 +373,34 @@ describe('ocpp-server-201 — StatusNotification', () => {
       timestamp: TS,
     });
     expect(mockDb.upsertEvse).toHaveBeenCalledWith(1, 2, 'Available');
+    // connector_id en DB doit être params.connectorId (1), pas evseId (2)
+    expect(mockDb.upsertConnector).toHaveBeenCalledWith(
+      1, 1, 'Available', 'NoError', null, null, null, 2, 'Available'
+    );
+  });
+
+  it('EVSE1-Connector2 et EVSE2-Connector1 appellent upsertConnector avec le bon connectorId', () => {
+    jest.clearAllMocks();
+    client._handlers['StatusNotification']({
+      evseId: 1,
+      connectorId: 2,
+      connectorStatus: 'Available',
+      timestamp: TS,
+    });
+    expect(mockDb.upsertConnector).toHaveBeenCalledWith(
+      1, 2, 'Available', 'NoError', null, null, null, 1, 'Available'
+    );
+
+    jest.clearAllMocks();
+    client._handlers['StatusNotification']({
+      evseId: 2,
+      connectorId: 1,
+      connectorStatus: 'Available',
+      timestamp: TS,
+    });
+    expect(mockDb.upsertConnector).toHaveBeenCalledWith(
+      1, 1, 'Available', 'NoError', null, null, null, 2, 'Available'
+    );
   });
 
   it('activates reservation and broadcasts when status is Reserved', () => {
