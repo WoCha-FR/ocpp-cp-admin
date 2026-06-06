@@ -768,9 +768,11 @@ async function remoteStopTransaction(identity, transactionId) {
 async function remoteStartTransaction(identity, connectorId, idToken) {
   const cp = db.getChargepointByIdentity(identity);
   if (cp?.ocpp_version === '2.0.1') {
+    const tag = db.getIdTagByTag(idToken, cp.site_id);
+    const tokenType = tag?.token_type || 'ISO14443';
     return callClient(identity, 'RequestStartTransaction', {
       evseId: connectorId,
-      idToken: { idToken, type: 'ISO14443' },
+      idToken: { idToken, type: tokenType },
     });
   }
   return callClient(identity, 'RemoteStartTransaction', { connectorId, idTag: idToken });

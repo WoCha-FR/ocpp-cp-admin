@@ -2243,7 +2243,9 @@ router.post('/id-tags', requireManager, checkSchema(schema.IdTag), (req, res) =>
       data.user_id,
       data.site_id,
       data.description,
-      data.expiry_date
+      data.expiry_date,
+      data.active,
+      data.token_type
     );
     res.status(201).json(tag);
   } catch (e) {

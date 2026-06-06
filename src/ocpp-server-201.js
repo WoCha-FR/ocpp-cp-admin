@@ -549,6 +549,7 @@ function register201Handlers(client, loggedHandle) {
   loggedHandle('Authorize', (params) => {
     const idTokenObj = params.idToken || {};
     const idTag = idTokenObj.idToken || '';
+    const idTokenType = idTokenObj.type || null;
     const AUTO_TAG_PREFIXES = ['WEB-', 'ADMIN', 'MGR-'];
 
     if (AUTO_TAG_PREFIXES.some((p) => idTag.startsWith(p))) {
@@ -560,7 +561,7 @@ function register201Handlers(client, loggedHandle) {
 
     const cp = db.getChargepointByIdentity(identity);
     const siteId = cp?.site_id ?? null;
-    const authResult = db.authorizeIdTag(idTag, siteId);
+    const authResult = db.authorizeIdTag(idTag, siteId, idTokenType);
 
     if (cp && cp.mode === 3) {
       logger.info(`[2.0.1] Authorize ${identity}: Accepted (free mode)`);
@@ -625,7 +626,7 @@ function register201Handlers(client, loggedHandle) {
           authStatus = 'Blocked';
           authReason = 'auto_tag_rfid';
         } else {
-          const authResult = db.authorizeIdTag(idTag, cp.site_id);
+          const authResult = db.authorizeIdTag(idTag, cp.site_id, idToken?.type || null);
           authStatus = authResult.status;
           authReason = authResult.reason;
         }

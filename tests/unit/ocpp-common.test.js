@@ -42,6 +42,7 @@ const mockDb = {
   updateReservationStatus: jest.fn(),
   resetConnectorsByChargepoint: jest.fn(),
   insertErrorEvent: jest.fn(),
+  getIdTagByTag: jest.fn(() => null),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -636,7 +637,8 @@ describe('ocpp-common — remoteStartTransaction', () => {
   });
 
   it('calls RequestStartTransaction with evseId and idToken object for 2.0.1', async () => {
-    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1' });
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1', site_id: 1 });
+    mockDb.getIdTagByTag.mockReturnValue({ token_type: 'ISO14443' });
     const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
     ocppCommon.registerCallClientImpl('2.0.1', impl);
 
@@ -648,8 +650,9 @@ describe('ocpp-common — remoteStartTransaction', () => {
     });
   });
 
-  it('idToken.type is always ISO14443 for 2.0.1', async () => {
-    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1' });
+  it('idToken.type falls back to ISO14443 when tag not found in DB', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1', site_id: 1 });
+    mockDb.getIdTagByTag.mockReturnValue(null);
     const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
     ocppCommon.registerCallClientImpl('2.0.1', impl);
 
@@ -657,6 +660,18 @@ describe('ocpp-common — remoteStartTransaction', () => {
 
     const [, , params] = impl.mock.calls[0];
     expect(params.idToken.type).toBe('ISO14443');
+  });
+
+  it('idToken.type uses stored token_type from DB for 2.0.1', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1', site_id: 1 });
+    mockDb.getIdTagByTag.mockReturnValue({ token_type: 'KeyCode' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('2.0.1', impl);
+
+    await ocppCommon.remoteStartTransaction('CP001', 1, 'KEY001');
+
+    const [, , params] = impl.mock.calls[0];
+    expect(params.idToken.type).toBe('KeyCode');
   });
 
   it('calls RemoteStartTransaction with connectorId and idTag for 1.6', async () => {

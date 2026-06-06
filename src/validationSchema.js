@@ -153,6 +153,27 @@ const IdTag = {
     trim: true,
     errorMessage: 'VALIDATION_IDTAG_FORMAT',
   },
+  token_type: {
+    in: ['body'],
+    optional: true,
+    isIn: {
+      options: [
+        [
+          'ISO14443',
+          'ISO15693',
+          'KeyCode',
+          'Local',
+          'MacAddress',
+          'eMA',
+          'EVCCID',
+          'NoAuthorization',
+          'Central',
+          'DirectPayment',
+        ],
+      ],
+    },
+    errorMessage: 'VALIDATION_IDTAG_TOKEN_TYPE',
+  },
   user_id: { in: ['body'], optional: { options: { nullable: true } }, isInt: true },
   site_id: { in: ['body'], optional: { options: { nullable: true } }, isInt: true },
   description: {

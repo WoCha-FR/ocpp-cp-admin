@@ -1736,10 +1736,13 @@ function getAvailableConnectorsForUser(userId) {
     .all(userId);
 }
 
-function authorizeIdTag(idTag, siteId) {
+function authorizeIdTag(idTag, siteId, tokenType) {
   const tag = getIdTagByTag(idTag, siteId);
   if (!tag) {
     return { status: 'Invalid', reason: 'unknown_tag', tag: null };
+  }
+  if (tokenType && tag.token_type && tag.token_type !== tokenType) {
+    return { status: 'Invalid', reason: 'type_mismatch', tag };
   }
   if (!tag.active) {
     return { status: 'Blocked', reason: 'inactive_tag', tag };

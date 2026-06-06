@@ -281,7 +281,23 @@ describe('ocpp-server-201 — Authorize', () => {
 
   it('reads idToken from idToken.idToken (not flat idTag)', () => {
     client._handlers['Authorize']({ idToken: { idToken: 'TAG002', type: 'ISO14443' } });
-    expect(mockDb.authorizeIdTag).toHaveBeenCalledWith('TAG002', 1);
+    expect(mockDb.authorizeIdTag).toHaveBeenCalledWith('TAG002', 1, 'ISO14443');
+  });
+
+  it('passes token type to authorizeIdTag for type validation', () => {
+    client._handlers['Authorize']({ idToken: { idToken: 'TAG003', type: 'KeyCode' } });
+    expect(mockDb.authorizeIdTag).toHaveBeenCalledWith('TAG003', 1, 'KeyCode');
+  });
+
+  it('passes null token type when idToken has no type field', () => {
+    client._handlers['Authorize']({ idToken: { idToken: 'TAG004' } });
+    expect(mockDb.authorizeIdTag).toHaveBeenCalledWith('TAG004', 1, null);
+  });
+
+  it('returns Invalid when token type mismatches stored type', () => {
+    mockDb.authorizeIdTag.mockReturnValue({ status: 'Invalid', reason: 'type_mismatch', tag: {} });
+    const result = client._handlers['Authorize']({ idToken: { idToken: 'TAG005', type: 'KeyCode' } });
+    expect(result.idTokenInfo.status).toBe('Invalid');
   });
 
   it('returns idTokenInfo.status Invalid for unknown tag and tracks rejection', () => {
