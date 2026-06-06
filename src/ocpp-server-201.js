@@ -692,7 +692,7 @@ function register201Handlers(client, loggedHandle) {
           }
         );
 
-        if (meterStart > 0) db.updateConnectorMeterValue(cp.id, connectorDbId, meterStart, evseId);
+        if (meterStart > 0) db.updateEvseMeterValue(cp.id, evseId, meterStart);
 
         broadcast(
           'transaction_start',
@@ -838,7 +838,7 @@ function register201Handlers(client, loggedHandle) {
         if (powerW !== null) lastPowerW = powerW;
         if (energyWh !== null) {
           lastEnergyWh = energyWh;
-          db.updateConnectorMeterValue(cp.id, connectorDbId, energyWh, evseId);
+          db.updateEvseMeterValue(cp.id, evseId, energyWh);
         }
 
         db.updateTransactionPowerEnergy(
@@ -994,13 +994,8 @@ function register201Handlers(client, loggedHandle) {
       }
       if (stoppedTx) {
         const cpForTx = db.getChargepointById(stoppedTx.chargepoint_id);
-        if (cpForTx && meterStop != null) {
-          db.updateConnectorMeterValue(
-            cpForTx.id,
-            stoppedTx.connector_id,
-            meterStop,
-            stoppedTx.evse_id
-          );
+        if (cpForTx && meterStop != null && stoppedTx.evse_id != null) {
+          db.updateEvseMeterValue(cpForTx.id, stoppedTx.evse_id, meterStop);
         }
 
         let energyKwh = null;
@@ -1093,7 +1088,7 @@ function register201Handlers(client, loggedHandle) {
 
       if (energyWh !== null) {
         if (evseId === 0) db.updateChargepointMeterValue(cp.id, energyWh);
-        else db.updateConnectorMeterValue(cp.id, connectorDbId, energyWh, evseId);
+        else db.updateEvseMeterValue(cp.id, evseId, energyWh);
 
         const updatedCp = db.getChargepointByIdentity(identity);
         broadcast(
@@ -1104,7 +1099,7 @@ function register201Handlers(client, loggedHandle) {
       }
       broadcast(
         'meter_values',
-        { identity, connectorId: connectorDbId, meterValue: [mv] },
+        { identity, evseId, connectorId: connectorDbId, meterValue: [mv] },
         cp.site_id ?? null
       );
       void powerW;

@@ -1782,7 +1782,12 @@ async function renderDetailTabConnectors(cp) {
     t('connectors.type.homeSocket')
   ];
   const renderConnectorRow = c => {
-    const meterKwh = c.meter_value != null ? (c.meter_value / 1000).toFixed(2) : null;
+    const isFirstOfEvse = c.evse_id == null || firstEvseConnectorDbIds.has(c.id);
+    const rawMeter = isFirstOfEvse
+      ? (c.evse_id != null ? (evseMeter[c.evse_id] ?? null) : c.meter_value)
+      : null;
+    const meterKwh = rawMeter != null ? (rawMeter / 1000).toFixed(2) : null;
+    const meterLabel = c.evse_id != null ? 'Compteur EVSE' : t('connectors.cCounter');
     const hasError = c.error_code && c.error_code !== 'NoError';
     const manage = canManage();
     return `
@@ -1796,10 +1801,10 @@ async function renderDetailTabConnectors(cp) {
                   <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : (c.cnstatus ? escapeHtml(c.cnstatus) : t('common.unknown'))}</span>
                   ${hasError ? `<span class="badge badge-red">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}
                 </div>
-                <div class="detail-row">
-                  <span class="detail-label">${t('connectors.cCounter')}</span>
+                ${isFirstOfEvse ? `<div class="detail-row">
+                  <span class="detail-label">${meterLabel}</span>
                   <span class="detail-value" style="font-size:16px;font-weight:700;color:var(--primary)">${meterKwh !== null ? meterKwh + ' kWh' : '—'}</span>
-                </div>
+                </div>` : ''}
                 <div class="detail-row"><span class="detail-label">${t('common.name')}</span><span class="detail-value">${c.connector_name ? escapeHtml(c.connector_name) : '<span class="text-muted">-</span>'}</span></div>
                 <div class="detail-row"><span class="detail-label">${t('common.power')}</span><span class="detail-value">${c.connector_power != null ? c.connector_power + ' kW' : '<span class="text-muted">-</span>'}</span></div>
                 <div class="detail-row"><span class="detail-label">${t('connectors.cType')}</span><span class="detail-value">${c.connector_type ? escapeHtml(c.connector_type) : '<span class="text-muted">-</span>'}</span></div>
@@ -1821,7 +1826,7 @@ async function renderDetailTabConnectors(cp) {
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'MeterValues', evse:{id:${c.connector_id}}}` : `{requestedMessage:'MeterValues', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerMeter')}</button>
+                    ${isFirstOfEvse ? `<button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'MeterValues', evse:{id:${c.evse_id}}}` : `{requestedMessage:'MeterValues', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerMeter')}</button>` : ''}
                     <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'StatusNotification', evse:{id:${c.connector_id}}}` : `{requestedMessage:'StatusNotification', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerStatus')}</button>
                   </div>
                 </div>
@@ -1829,6 +1834,16 @@ async function renderDetailTabConnectors(cp) {
             </div>
           </div>`;
   };
+  const evseMeter = {};
+  const firstEvseConnectorDbIds = new Set();
+  const evsesSeen = new Set();
+  for (const c of cp.connectors || []) {
+    if (c.evse_id != null && !evsesSeen.has(c.evse_id)) {
+      evsesSeen.add(c.evse_id);
+      firstEvseConnectorDbIds.add(c.id);
+      evseMeter[c.evse_id] = c.meter_value;
+    }
+  }
   const listHtml = cp.connectors ? cp.connectors.map(renderConnectorRow).join('') : '';
   document.getElementById('detailTabContent').innerHTML = `
       ${(!cp.connectors || cp.connectors.length === 0) ? `<p class="text-muted">${t('connectors.cNoConnectors')}</p>` : `

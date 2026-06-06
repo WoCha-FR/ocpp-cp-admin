@@ -1081,6 +1081,22 @@ function recalcChargepointMeterValue(chargepointId) {
   db.prepare(`UPDATE chargepoints SET meter_value = ? WHERE id = ?`).run(row.total, chargepointId);
 }
 
+function updateEvseMeterValue(chargepointId, evseId, meterValue) {
+  const first = db
+    .prepare(
+      `SELECT connector_id FROM connectors WHERE chargepoint_id = ? AND evse_id = ? AND connector_id > 0 ORDER BY connector_id LIMIT 1`
+    )
+    .get(chargepointId, evseId);
+  if (!first) return;
+  db.prepare(
+    `UPDATE connectors SET meter_value = NULL WHERE chargepoint_id = ? AND evse_id = ? AND connector_id != ?`
+  ).run(chargepointId, evseId, first.connector_id);
+  db.prepare(
+    `UPDATE connectors SET meter_value = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND connector_id = ? AND evse_id = ?`
+  ).run(meterValue, chargepointId, first.connector_id, evseId);
+  recalcChargepointMeterValue(chargepointId);
+}
+
 function updateTransactionPowerEnergy(transactionId, power, energyWh) {
   const updates = [];
   const params = [];
@@ -2451,6 +2467,7 @@ module.exports = {
   getTransactionValues,
   updateChargepointMeterValue,
   updateConnectorMeterValue,
+  updateEvseMeterValue,
   recalcChargepointMeterValue,
   updateTransactionPowerEnergy,
   upsertTransactionValues,

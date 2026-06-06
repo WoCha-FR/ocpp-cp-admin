@@ -19,6 +19,7 @@ const mockDb = {
   addIdTagEvent: jest.fn(),
   getIdTagByTag: jest.fn(),
   updateConnectorMeterValue: jest.fn(),
+  updateEvseMeterValue: jest.fn(),
   updateChargepointMeterValue: jest.fn(),
   updateTransactionPowerEnergy: jest.fn(),
   upsertTransactionValues: jest.fn(),
@@ -727,7 +728,7 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
     );
   });
 
-  it('calls updateConnectorMeterValue when meterStart > 0', () => {
+  it('calls updateEvseMeterValue when meterStart > 0', () => {
     client._handlers['TransactionEvent']({
       eventType: 'Started',
       triggerReason: 'Authorized',
@@ -740,10 +741,10 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
       }],
       timestamp: TS,
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 5000, 1);
+    expect(mockDb.updateEvseMeterValue).toHaveBeenCalledWith(1, 1, 5000);
   });
 
-  it('passes evseId=2 to updateConnectorMeterValue when meterStart > 0 on EVSE2', () => {
+  it('passes evseId=2 to updateEvseMeterValue when meterStart > 0 on EVSE2', () => {
     client._handlers['TransactionEvent']({
       eventType: 'Started',
       triggerReason: 'Authorized',
@@ -755,10 +756,10 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
       ]}],
       timestamp: TS,
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 5000, 2);
+    expect(mockDb.updateEvseMeterValue).toHaveBeenCalledWith(1, 2, 5000);
   });
 
-  it('does not call updateConnectorMeterValue when meterStart === 0', () => {
+  it('does not call updateEvseMeterValue when meterStart === 0', () => {
     client._handlers['TransactionEvent']({
       eventType: 'Started',
       triggerReason: 'Authorized',
@@ -768,7 +769,7 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
       meterValue: [],
       timestamp: TS,
     });
-    expect(mockDb.updateConnectorMeterValue).not.toHaveBeenCalled();
+    expect(mockDb.updateEvseMeterValue).not.toHaveBeenCalled();
   });
 
   it('broadcasts status_update even when chargingState absent (fallback EVConnected→Preparing)', () => {
@@ -954,7 +955,7 @@ describe('ocpp-server-201 — TransactionEvent Updated', () => {
     expect(meterValuesBroadcasts).toHaveLength(0);
   });
 
-  it('passes evseId=2 to updateConnectorMeterValue when energyWh present on EVSE2', () => {
+  it('passes evseId=2 to updateEvseMeterValue when energyWh present on EVSE2', () => {
     client._handlers['TransactionEvent']({
       eventType: 'Updated',
       transactionInfo: { transactionId: 'TX-001' },
@@ -964,7 +965,7 @@ describe('ocpp-server-201 — TransactionEvent Updated', () => {
       ]}],
       timestamp: TS,
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 8000, 2);
+    expect(mockDb.updateEvseMeterValue).toHaveBeenCalledWith(1, 2, 8000);
   });
 });
 
@@ -1181,7 +1182,7 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
     expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-ENERGY', 12500, TS, 'Local');
   });
 
-  it('passes stoppedTx.evse_id to updateConnectorMeterValue when meterStop present', () => {
+  it('passes stoppedTx.evse_id to updateEvseMeterValue when meterStop present', () => {
     mockDb.getTransactionByTransactionId.mockReturnValue({
       transaction_id: 'TX-EVSE2STOP',
       chargepoint_id: 1,
@@ -1205,7 +1206,7 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
       ]}],
       timestamp: TS,
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 9000, 2);
+    expect(mockDb.updateEvseMeterValue).toHaveBeenCalledWith(1, 2, 9000);
   });
 });
 
@@ -1225,7 +1226,7 @@ describe('ocpp-server-201 — MeterValues', () => {
     expect(result).toEqual({});
   });
 
-  it('updates connector meter value when evseId > 0 and energyWh present', () => {
+  it('calls updateEvseMeterValue when evseId > 0 and energyWh present', () => {
     client._handlers['MeterValues']({
       evseId: 1,
       meterValue: [{
@@ -1237,7 +1238,7 @@ describe('ocpp-server-201 — MeterValues', () => {
         }],
       }],
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 3000, 1);
+    expect(mockDb.updateEvseMeterValue).toHaveBeenCalledWith(1, 1, 3000);
   });
 
   it('converts kWh to Wh', () => {
@@ -1252,7 +1253,7 @@ describe('ocpp-server-201 — MeterValues', () => {
         }],
       }],
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 3500, 1);
+    expect(mockDb.updateEvseMeterValue).toHaveBeenCalledWith(1, 1, 3500);
   });
 
   it('updates chargepoint meter when evseId=0', () => {
@@ -1270,14 +1271,14 @@ describe('ocpp-server-201 — MeterValues', () => {
     expect(mockDb.updateChargepointMeterValue).toHaveBeenCalledWith(1, 7500);
   });
 
-  it('passes evseId=2 to updateConnectorMeterValue for EVSE2', () => {
+  it('passes evseId=2 to updateEvseMeterValue for EVSE2', () => {
     client._handlers['MeterValues']({
       evseId: 2,
       meterValue: [{ timestamp: TS, sampledValue: [
         { measurand: 'Energy.Active.Import.Register', value: '4000', unitOfMeasure: { unit: 'Wh' } },
       ]}],
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 2, 4000, 2);
+    expect(mockDb.updateEvseMeterValue).toHaveBeenCalledWith(1, 2, 4000);
   });
 
   it('broadcasts meter_values for each meterValue entry', () => {
