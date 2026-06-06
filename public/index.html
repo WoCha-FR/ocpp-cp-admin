@@ -1781,14 +1781,11 @@ async function renderDetailTabConnectors(cp) {
     t('connectors.type.CHAdeMO'),
     t('connectors.type.homeSocket')
   ];
-  document.getElementById('detailTabContent').innerHTML = `
-      ${(!cp.connectors || cp.connectors.length === 0) ? `<p class="text-muted">${t('connectors.cNoConnectors')}</p>` : `
-      <div class="cn-list">
-        ${cp.connectors.map(c => {
-          const meterKwh = c.meter_value != null ? (c.meter_value / 1000).toFixed(2) : null;
-          const hasError = c.error_code && c.error_code !== 'NoError';
-          const manage = canManage();
-          return `
+  const renderConnectorRow = c => {
+    const meterKwh = c.meter_value != null ? (c.meter_value / 1000).toFixed(2) : null;
+    const hasError = c.error_code && c.error_code !== 'NoError';
+    const manage = canManage();
+    return `
           <div class="cn-row-wrapper" id="connector-row-${c.id}">
             <div class="detail-sections"${!manage ? ' style="grid-template-columns:1fr"' : ''}>
 
@@ -1831,7 +1828,26 @@ async function renderDetailTabConnectors(cp) {
               </div>` : ''}
             </div>
           </div>`;
-        }).join('')}
+  };
+  const hasEvse = cp.connectors && cp.connectors.some(c => c.evse_id != null);
+  let listHtml;
+  if (hasEvse) {
+    const groups = new Map();
+    for (const c of cp.connectors) {
+      if (!groups.has(c.evse_id)) groups.set(c.evse_id, []);
+      groups.get(c.evse_id).push(c);
+    }
+    listHtml = [...groups.entries()].map(([evseId, connectors]) => {
+      const evseLabel = connectors[0].evse_name ? `EVSE ${evseId} · ${escapeHtml(connectors[0].evse_name)}` : `EVSE ${evseId}`;
+      return `<div class="cn-evse-header">⚡ ${evseLabel}</div>${connectors.map(renderConnectorRow).join('')}`;
+    }).join('');
+  } else {
+    listHtml = cp.connectors.map(renderConnectorRow).join('');
+  }
+  document.getElementById('detailTabContent').innerHTML = `
+      ${(!cp.connectors || cp.connectors.length === 0) ? `<p class="text-muted">${t('connectors.cNoConnectors')}</p>` : `
+      <div class="cn-list">
+        ${listHtml}
       </div>`}
   `;
 }
@@ -3114,7 +3130,7 @@ async function renderConnectors() {
               `<div class="text-muted" style="margin-bottom:3px;"><span class="badge badge-red" title="${escapeAttr(c.info || '')}">⚠️ ${escapeHtml(c.error_code)}</span></div>` : ''}
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">📍 ${escapeHtml(c.site_name || t('sites.siteNoSite'))}</div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
-            <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${c.connector_name ? `#${c.connector_id} ${escapeHtml(c.connector_name)}` : `${t('common.connector_one')} ${c.connector_id}`}</div>
+            <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${c.evse_id != null ? `EVSE ${c.evse_id} · ` : ''}${c.connector_name ? `#${c.connector_id} ${escapeHtml(c.connector_name)}` : `${t('common.connector_one')} ${c.connector_id}`}</div>
             ${canStart
             ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                   ⚡ ${t('connectors.cStartCharge')}
@@ -3246,7 +3262,7 @@ async function renderUserDashboard() {
         }
             </div>
             <div class="text-muted" style="margin-bottom:4px;">📍 ${escapeHtml(c.site_name)}</div>
-            <div class="text-muted" style="margin-bottom:12px;">🔌 ${c.connector_name ? `#${c.connector_id} ${escapeHtml(c.connector_name)}` : `${t('common.connector_one')} ${c.connector_id}`}</div>
+            <div class="text-muted" style="margin-bottom:12px;">🔌 ${c.evse_id != null ? `EVSE ${c.evse_id} · ` : ''}${c.connector_name ? `#${c.connector_id} ${escapeHtml(c.connector_name)}` : `${t('common.connector_one')} ${c.connector_id}`}</div>
             <div style="margin-top:auto;">
             ${isSuspended
           ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">🚫 ${t('dashboard.siteAccessSuspended')}</div>`

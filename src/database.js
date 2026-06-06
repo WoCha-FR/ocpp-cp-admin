@@ -602,7 +602,11 @@ function getConnectorByChargepointAndId(chargepointId, connectorId) {
 function getConnectorsByChargepoint(chargepointId) {
   return db
     .prepare(
-      'SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id > 0 ORDER BY connector_id'
+      `SELECT c.*, e.evse_name
+       FROM connectors c
+       LEFT JOIN evses e ON e.chargepoint_id = c.chargepoint_id AND e.evse_id = c.evse_id
+       WHERE c.chargepoint_id = ? AND c.connector_id > 0
+       ORDER BY c.evse_id, c.connector_id`
     )
     .all(chargepointId);
 }
