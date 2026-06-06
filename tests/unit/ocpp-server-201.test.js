@@ -881,7 +881,17 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
     expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-RESET', null, TS, 'HardReset');
   });
 
-  it('broadcasts transaction_stop', () => {
+  it('broadcasts transaction_stop when transaction exists', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      transaction_id: 'TX-004',
+      chargepoint_id: 1,
+      connector_id: 1,
+      id_tag: null,
+      meter_start: 0,
+      meter_stop: null,
+      start_time: TS,
+      stop_time: TS,
+    });
     client._handlers['TransactionEvent']({
       eventType: 'Ended',
       triggerReason: 'Local',
@@ -894,6 +904,19 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
       expect.any(Object),
       expect.anything()
     );
+  });
+
+  it('does not broadcast transaction_stop when transaction not found (idToken invalide)', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue(null);
+    mockDb.getTransactions.mockReturnValue([]);
+    client._handlers['TransactionEvent']({
+      eventType: 'Ended',
+      triggerReason: 'Deauthorized',
+      transactionInfo: { transactionId: 'TX-INVALID' },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockBroadcast).not.toHaveBeenCalledWith('transaction_stop', expect.any(Object), expect.anything());
   });
 
   it('emits site and user notifications when transaction found with valid tag', () => {

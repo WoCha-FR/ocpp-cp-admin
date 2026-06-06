@@ -949,7 +949,13 @@ function register201Handlers(client, loggedHandle) {
         }
       }
 
-      const resolvedTransactionId = stoppedTx?.transaction_id ?? txId;
+      if (!stoppedTx) {
+        logger.warn(
+          `[2.0.1] TransactionEvent Ended txId=${txId} sur ${identity} ignoré : aucune transaction trouvée (idToken probablement invalide)`
+        );
+        return {};
+      }
+      const resolvedTransactionId = stoppedTx.transaction_id;
       broadcast(
         'transaction_stop',
         { identity, transactionId: resolvedTransactionId, meterStop, reason: stopReason },
