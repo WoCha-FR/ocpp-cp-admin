@@ -736,6 +736,9 @@ function register201Handlers(client, loggedHandle) {
           const newCnStatus = CHARGING_STATE_TO_CNSTATUS[txChargingState] || 'Preparing';
           db.updateConnectorCnstatus(cp.id, connectorDbId, evseId, newCnStatus);
           db.upsertEvse(cp.id, evseId, newCnStatus);
+          const updatedCp2 = db.getChargepointByIdentity(identity);
+          const connectors2 = db.getConnectorsByChargepoint(cp.id);
+          broadcast('status_update', { chargepoint: updatedCp2, connectors: connectors2 }, cp.site_id ?? null);
         }
 
         // Réservation par reservationId (cas nominal)
@@ -783,11 +786,12 @@ function register201Handlers(client, loggedHandle) {
       const chargingState = transactionInfo.chargingState || null;
       if (chargingState) {
         db.updateTransactionChargingState(txId, chargingState);
-        if (evseId !== null) {
+        const effectiveEvseId = evseId ?? tx.evse_id ?? null;
+        if (effectiveEvseId !== null) {
           const newCnStatus = CHARGING_STATE_TO_CNSTATUS[chargingState];
           if (newCnStatus) {
-            db.updateConnectorCnstatus(cp.id, connectorDbId, evseId, newCnStatus);
-            db.upsertEvse(cp.id, evseId, newCnStatus);
+            db.updateConnectorCnstatus(cp.id, connectorDbId, effectiveEvseId, newCnStatus);
+            db.upsertEvse(cp.id, effectiveEvseId, newCnStatus);
             const updatedCp2 = db.getChargepointByIdentity(identity);
             const connectors2 = db.getConnectorsByChargepoint(cp.id);
             broadcast(
