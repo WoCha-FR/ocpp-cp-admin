@@ -668,6 +668,13 @@ function updateConnectorFields(connectorId, data) {
   return db.prepare('SELECT * FROM connectors WHERE id = ?').get(connectorId);
 }
 
+function updateConnectorCnstatus(chargepointId, connectorId, evse_id, cnstatus) {
+  db.prepare(
+    `UPDATE connectors SET cnstatus = ?, updated_at = datetime('now')
+     WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?`
+  ).run(cnstatus, chargepointId, evse_id, connectorId);
+}
+
 function getAllConnectorsGrouped(siteIds) {
   let query = `
     SELECT c.*, cp.identity as chargepoint_identity, cp.id as chargepoint_id,
@@ -2429,6 +2436,7 @@ module.exports = {
   getConnectorByChargepointAndId,
   getAllConnectorsGrouped,
   updateConnectorFields,
+  updateConnectorCnstatus,
   createTransaction,
   stopTransaction,
   updateTransactionChargingState,

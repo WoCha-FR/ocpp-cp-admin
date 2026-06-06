@@ -15,10 +15,18 @@ const {
 // Mapping statut OCPP 2.0.1 → cnstatus normalisé (vocabulaire 1.6 pour l'UI)
 const STATUS_201_MAP = {
   Available: 'Available',
-  Occupied: 'Charging', // état précis dans chargingState du TransactionEvent
+  Occupied: 'Preparing',
   Reserved: 'Reserved',
   Unavailable: 'Unavailable',
   Faulted: 'Faulted',
+};
+
+// chargingState OCPP 2.0.1 → cnstatus normalisé
+const CHARGING_STATE_TO_CNSTATUS = {
+  EVConnected: 'Preparing',
+  Charging: 'Charging',
+  SuspendedEV: 'SuspendedEV',
+  SuspendedEVSE: 'SuspendedEVSE',
 };
 
 // triggerReason → start_source
@@ -670,7 +678,7 @@ function register201Handlers(client, loggedHandle) {
           {
             transactionId: txId,
             evse_id: evseId,
-            charging_state: 'Charging',
+            charging_state: transactionInfo.chargingState || 'EVConnected',
             id_token_type: idToken?.type || 'ISO14443',
           }
         );
@@ -721,13 +729,26 @@ function register201Handlers(client, loggedHandle) {
           }
         }
 
-        // Réservation
+        // Mise à jour cnstatus connecteur selon chargingState réel
+        const txChargingState = transactionInfo.chargingState;
+        if (txChargingState && evseId !== null) {
+          const newCnStatus = CHARGING_STATE_TO_CNSTATUS[txChargingState] || 'Preparing';
+          db.updateConnectorCnstatus(cp.id, connectorDbId, evseId, newCnStatus);
+          db.upsertEvse(cp.id, evseId, newCnStatus);
+        }
+
+        // Réservation par reservationId (cas nominal)
         if (transactionInfo.reservationId != null) {
           const reservation = db.getReservationByOcppId(cp.id, transactionInfo.reservationId);
           if (reservation && reservation.status === 'Active' && reservation.id_tag === idTag) {
             db.updateReservationStatus(reservation.id, 'InUse');
             broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
           }
+        } else if (idTag) {
+          // Fallback : borne n'envoie pas reservationId — on cherche par id_tag
+          const changed = db.startUsingReservationByConnectorAndIdTag(cp.id, connectorDbId, idTag);
+          if (changed > 0)
+            broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
         }
       }
 
@@ -759,7 +780,23 @@ function register201Handlers(client, loggedHandle) {
       }
 
       const chargingState = transactionInfo.chargingState || null;
-      if (chargingState) db.updateTransactionChargingState(txId, chargingState);
+      if (chargingState) {
+        db.updateTransactionChargingState(txId, chargingState);
+        if (evseId !== null) {
+          const newCnStatus = CHARGING_STATE_TO_CNSTATUS[chargingState];
+          if (newCnStatus) {
+            db.updateConnectorCnstatus(cp.id, connectorDbId, evseId, newCnStatus);
+            db.upsertEvse(cp.id, evseId, newCnStatus);
+            const updatedCp2 = db.getChargepointByIdentity(identity);
+            const connectors2 = db.getConnectorsByChargepoint(cp.id);
+            broadcast(
+              'status_update',
+              { chargepoint: updatedCp2, connectors: connectors2 },
+              cp.site_id ?? null
+            );
+          }
+        }
+      }
 
       let lastPowerW = null;
       let lastEnergyWh = null;

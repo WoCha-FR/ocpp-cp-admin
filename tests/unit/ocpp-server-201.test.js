@@ -38,6 +38,7 @@ const mockDb = {
   fulfillReservationByConnectorAndIdTag: jest.fn(() => 0),
   updateReservationStatus: jest.fn(),
   insertErrorEvent: jest.fn(),
+  updateConnectorCnstatus: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -341,7 +342,7 @@ describe('ocpp-server-201 — StatusNotification', () => {
     expect(mockDb.upsertConnector).not.toHaveBeenCalled();
   });
 
-  it('maps Occupied → cnstatus=Charging + cnstatus_raw=Occupied', () => {
+  it('maps Occupied → cnstatus=Preparing + cnstatus_raw=Occupied', () => {
     client._handlers['StatusNotification']({
       evseId: 1,
       connectorId: 1,
@@ -349,7 +350,7 @@ describe('ocpp-server-201 — StatusNotification', () => {
       timestamp: TS,
     });
     expect(mockDb.upsertConnector).toHaveBeenCalledWith(
-      1, 1, 'Charging', 'NoError', null, null, null, 1, 'Occupied'
+      1, 1, 'Preparing', 'NoError', null, null, null, 1, 'Occupied'
     );
   });
 
@@ -566,11 +567,28 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
     );
   });
 
-  it('creates transaction with evse_id and charging_state=Charging', () => {
+  it('creates transaction with evse_id and charging_state=EVConnected when absent', () => {
     client._handlers['TransactionEvent']({
       eventType: 'Started',
       triggerReason: 'Authorized',
       transactionInfo: { transactionId: 'TX-005' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evse: { id: 2 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockDb.createTransaction).toHaveBeenCalledWith(
+      expect.anything(), expect.anything(), expect.anything(), expect.anything(), expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ evse_id: 2, charging_state: 'EVConnected' })
+    );
+  });
+
+  it('creates transaction with charging_state from message when provided', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-006', chargingState: 'Charging' },
       idToken: { idToken: 'TAG001', type: 'ISO14443' },
       evse: { id: 2 },
       meterValue: [],
