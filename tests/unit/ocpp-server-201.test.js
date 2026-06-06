@@ -725,6 +725,48 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
     });
     expect(mockDb.updateConnectorMeterValue).not.toHaveBeenCalled();
   });
+
+  it('broadcasts status_update even when chargingState absent (fallback EVConnected→Preparing)', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-SU1' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith('status_update', expect.any(Object), expect.anything());
+    expect(mockDb.updateConnectorCnstatus).toHaveBeenCalledWith(1, 1, 1, 'Preparing');
+  });
+
+  it('broadcasts status_update with Charging when chargingState is Charging', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-SU2', chargingState: 'Charging' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith('status_update', expect.any(Object), expect.anything());
+    expect(mockDb.updateConnectorCnstatus).toHaveBeenCalledWith(1, 1, 1, 'Charging');
+  });
+
+  it('broadcasts status_update even when evseId is null (skips DB update, still broadcasts)', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-SU3' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      // pas d'evse
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith('status_update', expect.any(Object), expect.anything());
+    expect(mockDb.updateConnectorCnstatus).not.toHaveBeenCalled();
+  });
 });
 
 // ── TransactionEvent Updated ──
@@ -822,6 +864,49 @@ describe('ocpp-server-201 — TransactionEvent Updated', () => {
         timestamp: TS,
       });
     }).not.toThrow();
+  });
+
+  it('broadcasts status_update with Preparing fallback for unknown chargingState', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      transactionInfo: { transactionId: 'TX-001', chargingState: 'UnknownFutureState' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockDb.updateConnectorCnstatus).toHaveBeenCalledWith(1, 1, 1, 'Preparing');
+    expect(mockBroadcast).toHaveBeenCalledWith('status_update', expect.any(Object), expect.anything());
+  });
+
+  it('broadcasts meter_values when meterValue array is not empty', () => {
+    const mv = [{
+      timestamp: TS,
+      sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '1000', unitOfMeasure: { unit: 'Wh' } }],
+    }];
+    client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      transactionInfo: { transactionId: 'TX-001' },
+      evse: { id: 1 },
+      meterValue: mv,
+      timestamp: TS,
+    });
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'meter_values',
+      expect.objectContaining({ identity: 'CP001', connectorId: 1 }),
+      expect.anything()
+    );
+  });
+
+  it('does not broadcast meter_values when meterValue array is empty', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      transactionInfo: { transactionId: 'TX-001' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    const meterValuesBroadcasts = mockBroadcast.mock.calls.filter(c => c[0] === 'meter_values');
+    expect(meterValuesBroadcasts).toHaveLength(0);
   });
 });
 

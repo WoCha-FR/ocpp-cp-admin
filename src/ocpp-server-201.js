@@ -730,20 +730,21 @@ function register201Handlers(client, loggedHandle) {
           }
         }
 
-        // Mise à jour cnstatus connecteur selon chargingState réel
-        const txChargingState = transactionInfo.chargingState;
-        if (txChargingState && evseId !== null) {
-          const newCnStatus = CHARGING_STATE_TO_CNSTATUS[txChargingState] || 'Preparing';
+        // Mise à jour cnstatus connecteur — fallback EVConnected si chargingState absent (cohérent avec l. 682)
+        const txChargingState = transactionInfo.chargingState || 'EVConnected';
+        const newCnStatus = CHARGING_STATE_TO_CNSTATUS[txChargingState] || 'Preparing';
+        if (evseId !== null) {
           db.updateConnectorCnstatus(cp.id, connectorDbId, evseId, newCnStatus);
           db.upsertEvse(cp.id, evseId, newCnStatus);
-          const updatedCp2 = db.getChargepointByIdentity(identity);
-          const connectors2 = db.getConnectorsByChargepoint(cp.id);
-          broadcast(
-            'status_update',
-            { chargepoint: updatedCp2, connectors: connectors2 },
-            cp.site_id ?? null
-          );
         }
+        // Toujours diffuser status_update — équivalent du StatusNotification(Charging) en 1.6
+        const updatedCp2 = db.getChargepointByIdentity(identity);
+        const connectors2 = db.getConnectorsByChargepoint(cp.id);
+        broadcast(
+          'status_update',
+          { chargepoint: updatedCp2, connectors: connectors2 },
+          cp.site_id ?? null
+        );
 
         // Réservation par reservationId (cas nominal)
         if (transactionInfo.reservationId != null) {
@@ -792,18 +793,16 @@ function register201Handlers(client, loggedHandle) {
         db.updateTransactionChargingState(txId, chargingState);
         const effectiveEvseId = evseId ?? tx.evse_id ?? null;
         if (effectiveEvseId !== null) {
-          const newCnStatus = CHARGING_STATE_TO_CNSTATUS[chargingState];
-          if (newCnStatus) {
-            db.updateConnectorCnstatus(cp.id, connectorDbId, effectiveEvseId, newCnStatus);
-            db.upsertEvse(cp.id, effectiveEvseId, newCnStatus);
-            const updatedCp2 = db.getChargepointByIdentity(identity);
-            const connectors2 = db.getConnectorsByChargepoint(cp.id);
-            broadcast(
-              'status_update',
-              { chargepoint: updatedCp2, connectors: connectors2 },
-              cp.site_id ?? null
-            );
-          }
+          const newCnStatus = CHARGING_STATE_TO_CNSTATUS[chargingState] || 'Preparing';
+          db.updateConnectorCnstatus(cp.id, connectorDbId, effectiveEvseId, newCnStatus);
+          db.upsertEvse(cp.id, effectiveEvseId, newCnStatus);
+          const updatedCp2 = db.getChargepointByIdentity(identity);
+          const connectors2 = db.getConnectorsByChargepoint(cp.id);
+          broadcast(
+            'status_update',
+            { chargepoint: updatedCp2, connectors: connectors2 },
+            cp.site_id ?? null
+          );
         }
       }
 
@@ -899,6 +898,10 @@ function register201Handlers(client, loggedHandle) {
         },
         cp.site_id ?? null
       );
+      // Diffuser meter_values si présents — aligne avec 1.6 MeterValues handler (connecteurs tab)
+      if (meterValue.length > 0) {
+        broadcast('meter_values', { identity, connectorId: connectorDbId, meterValue }, cp.site_id ?? null);
+      }
       return {};
     }
 
