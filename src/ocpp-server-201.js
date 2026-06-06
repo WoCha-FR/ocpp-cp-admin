@@ -422,7 +422,7 @@ function register201Handlers(client, loggedHandle) {
 
     const evseId = params.evseId ?? 0;
     const rawStatus = params.connectorStatus || 'Unavailable';
-    const cnstatus = STATUS_201_MAP[rawStatus] || 'Unavailable';
+    let cnstatus = STATUS_201_MAP[rawStatus] || 'Unavailable';
 
     if (evseId === 0) {
       db.updateChargepointStatus(identity, cnstatus, true);
@@ -430,6 +430,14 @@ function register201Handlers(client, loggedHandle) {
       const connectorDbId = params.connectorId ?? 1;
       const existingConnector = db.getConnectorByChargepointAndId(cp.id, connectorDbId, evseId);
       const previousStatus = existingConnector?.cnstatus || null;
+
+      // 'Occupied' est un statut grossier — ne pas écraser le statut fin établi par TransactionEvent
+      if (rawStatus === 'Occupied') {
+        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId);
+        if (activeTx?.charging_state) {
+          cnstatus = CHARGING_STATE_TO_CNSTATUS[activeTx.charging_state] || cnstatus;
+        }
+      }
 
       db.upsertConnector(
         cp.id,
@@ -900,7 +908,11 @@ function register201Handlers(client, loggedHandle) {
       );
       // Diffuser meter_values si présents — aligne avec 1.6 MeterValues handler (connecteurs tab)
       if (meterValue.length > 0) {
-        broadcast('meter_values', { identity, connectorId: connectorDbId, meterValue }, cp.site_id ?? null);
+        broadcast(
+          'meter_values',
+          { identity, connectorId: connectorDbId, meterValue },
+          cp.site_id ?? null
+        );
       }
       return {};
     }

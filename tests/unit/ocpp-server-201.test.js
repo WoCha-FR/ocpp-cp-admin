@@ -483,6 +483,36 @@ describe('ocpp-server-201 — StatusNotification', () => {
     });
     expect(result).toEqual({});
   });
+
+  it('preserves Charging when StatusNotification(Occupied) fires during active Charging transaction', () => {
+    mockDb.getActiveTransactionByConnector.mockReturnValueOnce({
+      transaction_id: 'TX-001',
+      charging_state: 'Charging',
+    });
+    client._handlers['StatusNotification']({
+      evseId: 1,
+      connectorId: 1,
+      connectorStatus: 'Occupied',
+      timestamp: TS,
+    });
+    expect(mockDb.upsertConnector).toHaveBeenCalledWith(
+      1, 1, 'Charging', 'NoError', null, null, null, 1, 'Occupied'
+    );
+    expect(mockBroadcast).toHaveBeenCalledWith('status_update', expect.any(Object), expect.anything());
+  });
+
+  it('uses Preparing when StatusNotification(Occupied) fires with no active transaction', () => {
+    mockDb.getActiveTransactionByConnector.mockReturnValueOnce(null);
+    client._handlers['StatusNotification']({
+      evseId: 1,
+      connectorId: 1,
+      connectorStatus: 'Occupied',
+      timestamp: TS,
+    });
+    expect(mockDb.upsertConnector).toHaveBeenCalledWith(
+      1, 1, 'Preparing', 'NoError', null, null, null, 1, 'Occupied'
+    );
+  });
 });
 
 // ── TransactionEvent Started ──
