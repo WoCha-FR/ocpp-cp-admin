@@ -1063,7 +1063,41 @@ describe('ocpp-server-201 — NotifyReport', () => {
       ],
     });
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
-      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '300'
+      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '300', 0
+    );
+  });
+
+  it('passes readonly=1 when mutability is ReadOnly', () => {
+    client._handlers['NotifyReport']({
+      seqNo: 0,
+      tbc: false,
+      reportData: [
+        {
+          component: { name: 'SecurityCtrlr' },
+          variable: { name: 'CertificateEntries' },
+          variableAttribute: [{ type: 'Actual', value: '5', mutability: 'ReadOnly' }],
+        },
+      ],
+    });
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1
+    );
+  });
+
+  it('passes readonly=0 when mutability is ReadWrite', () => {
+    client._handlers['NotifyReport']({
+      seqNo: 0,
+      tbc: false,
+      reportData: [
+        {
+          component: { name: 'OCPPCommCtrlr' },
+          variable: { name: 'HeartbeatInterval' },
+          variableAttribute: [{ type: 'Actual', value: '60', mutability: 'ReadWrite' }],
+        },
+      ],
+    });
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60', 0
     );
   });
 

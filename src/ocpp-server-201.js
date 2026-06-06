@@ -1039,7 +1039,8 @@ function register201Handlers(client, loggedHandle) {
       for (const attrProp of reportData.variableAttribute || []) {
         const attribute = attrProp.type || 'Actual';
         const value = attrProp.value ?? null;
-        db.upsertChargepointVariable(cp.id, component, variable, attribute, value);
+        const readonly = attrProp.mutability === 'ReadOnly' ? 1 : 0;
+        db.upsertChargepointVariable(cp.id, component, variable, attribute, value, readonly);
       }
     }
 

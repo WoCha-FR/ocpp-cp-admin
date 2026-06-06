@@ -1880,7 +1880,14 @@ function updateEvseName(chargepointId, evseId, name) {
     .get(chargepointId, evseId);
 }
 
-function upsertChargepointVariable(chargepointId, component, variable, attribute, value) {
+function upsertChargepointVariable(
+  chargepointId,
+  component,
+  variable,
+  attribute,
+  value,
+  readonly = 0
+) {
   const attr = attribute || 'Actual';
   const existing = db
     .prepare(
@@ -1889,12 +1896,12 @@ function upsertChargepointVariable(chargepointId, component, variable, attribute
     .get(chargepointId, component, variable, attr);
   if (existing) {
     db.prepare(
-      "UPDATE chargepoint_variables SET value = ?, updated_at = datetime('now') WHERE id = ?"
-    ).run(value ?? null, existing.id);
+      "UPDATE chargepoint_variables SET value = ?, readonly = ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(value ?? null, readonly, existing.id);
   } else {
     db.prepare(
-      'INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value) VALUES (?, ?, ?, ?, ?)'
-    ).run(chargepointId, component, variable, attr, value ?? null);
+      'INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value, readonly) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(chargepointId, component, variable, attr, value ?? null, readonly);
   }
 }
 

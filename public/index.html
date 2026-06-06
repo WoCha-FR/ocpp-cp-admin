@@ -2889,7 +2889,7 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
         ${config.map(c => `
           <tr data-key="${escapeAttr(c.component + '.' + c.variable)}">
             <td style="font-family:monospace;font-size:13px;">${escapeHtml(c.component)}</td>
-            <td style="font-weight:500;font-family:monospace;font-size:13px;">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
+            <td style="font-weight:500;font-family:monospace;font-size:13px;">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}${c.readonly ? ` <span class="badge badge-yellow">${t('chargepoint.cpConfReadOnly')}</span>` : ''}</td>
             <td class="text-muted" style="font-size:12px">${escapeHtml(c.attribute || 'Actual')}</td>
             <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
             <td class="text-muted">${formatDate(c.updated_at)}</td>

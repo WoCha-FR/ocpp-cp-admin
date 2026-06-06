@@ -1370,6 +1370,43 @@ describe('database — getChargepointVariables', () => {
   });
 });
 
+// ── upsertChargepointVariable ──
+describe('database — upsertChargepointVariable', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('UPSERT-VAR-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+  });
+
+  it('stores readonly=1 when passed', () => {
+    db.upsertChargepointVariable(cpId, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1);
+    const vars = db.getChargepointVariables(cpId);
+    const v = vars.find((r) => r.component === 'SecurityCtrlr' && r.variable === 'CertificateEntries');
+    expect(v).toBeDefined();
+    expect(v.readonly).toBe(1);
+  });
+
+  it('stores readonly=0 by default', () => {
+    db.upsertChargepointVariable(cpId, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60');
+    const vars = db.getChargepointVariables(cpId);
+    const v = vars.find((r) => r.component === 'OCPPCommCtrlr' && r.variable === 'HeartbeatInterval');
+    expect(v).toBeDefined();
+    expect(v.readonly).toBe(0);
+  });
+
+  it('updates readonly on subsequent upsert', () => {
+    db.upsertChargepointVariable(cpId, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1);
+    db.upsertChargepointVariable(cpId, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 0);
+    const vars = db.getChargepointVariables(cpId);
+    const v = vars.find((r) => r.component === 'SecurityCtrlr' && r.variable === 'CertificateEntries');
+    expect(v.readonly).toBe(0);
+  });
+});
+
 // ── getEvsesByChargepoint ──
 describe('database — getEvsesByChargepoint', () => {
   let cpId;
