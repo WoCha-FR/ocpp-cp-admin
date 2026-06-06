@@ -978,7 +978,7 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
     )
     LEFT JOIN users u ON it.user_id = u.id
     LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id
-    LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id`;
+    LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id AND cn.evse_id IS t.evse_id`;
 
 function buildTransactionQuery(baseCondition, baseParams, filters) {
   let whereClause = ' WHERE ' + baseCondition;

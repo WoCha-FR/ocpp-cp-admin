@@ -738,7 +738,11 @@ function register201Handlers(client, loggedHandle) {
           db.upsertEvse(cp.id, evseId, newCnStatus);
           const updatedCp2 = db.getChargepointByIdentity(identity);
           const connectors2 = db.getConnectorsByChargepoint(cp.id);
-          broadcast('status_update', { chargepoint: updatedCp2, connectors: connectors2 }, cp.site_id ?? null);
+          broadcast(
+            'status_update',
+            { chargepoint: updatedCp2, connectors: connectors2 },
+            cp.site_id ?? null
+          );
         }
 
         // Réservation par reservationId (cas nominal)

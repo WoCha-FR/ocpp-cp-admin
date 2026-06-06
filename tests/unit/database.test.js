@@ -762,6 +762,23 @@ describe('database — getTransactions connector_name', () => {
     expect(tx).toBeDefined();
     expect(tx.connector_name).toBeNull();
   });
+
+  it('ne retourne pas de doublons si evse_id=NULL et evse_id=1 coexistent pour connector_id=1', () => {
+    db.upsertChargepoint('CP-EVSE-DEDUP', { cpstatus: 'Available', connected: 0 });
+    const cpDedup = db.getChargepointByIdentity('CP-EVSE-DEDUP').id;
+    db.getDb()
+      .prepare('INSERT INTO connectors (chargepoint_id, connector_id, evse_id, connector_name) VALUES (?,?,NULL,?)')
+      .run(cpDedup, 1, 'Legacy');
+    db.getDb()
+      .prepare('INSERT INTO connectors (chargepoint_id, connector_id, evse_id, connector_name) VALUES (?,?,?,?)')
+      .run(cpDedup, 1, 1, 'EVSE1');
+    db.createTransaction(cpDedup, 1, 'EVSE-TAG', 0, START, 'rfid', { evse_id: 1 });
+
+    const txs = db.getTransactions({ chargepoint_id: cpDedup });
+    const matching = txs.filter((t) => t.id_tag === 'EVSE-TAG');
+    expect(matching).toHaveLength(1);
+    expect(matching[0].connector_name).toBe('EVSE1');
+  });
 });
 
 // ── resetStateOnStartup ──
