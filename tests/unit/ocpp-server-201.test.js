@@ -740,7 +740,22 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
       }],
       timestamp: TS,
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 5000);
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 5000, 1);
+  });
+
+  it('passes evseId=2 to updateConnectorMeterValue when meterStart > 0 on EVSE2', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-EVSE2' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evse: { id: 2 },
+      meterValue: [{ timestamp: TS, sampledValue: [
+        { measurand: 'Energy.Active.Import.Register', value: '5000', unitOfMeasure: { unit: 'Wh' } },
+      ]}],
+      timestamp: TS,
+    });
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 5000, 2);
   });
 
   it('does not call updateConnectorMeterValue when meterStart === 0', () => {
@@ -937,6 +952,19 @@ describe('ocpp-server-201 — TransactionEvent Updated', () => {
     });
     const meterValuesBroadcasts = mockBroadcast.mock.calls.filter(c => c[0] === 'meter_values');
     expect(meterValuesBroadcasts).toHaveLength(0);
+  });
+
+  it('passes evseId=2 to updateConnectorMeterValue when energyWh present on EVSE2', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      transactionInfo: { transactionId: 'TX-001' },
+      evse: { id: 2 },
+      meterValue: [{ timestamp: TS, sampledValue: [
+        { measurand: 'Energy.Active.Import.Register', value: '8000', unitOfMeasure: { unit: 'Wh' } },
+      ]}],
+      timestamp: TS,
+    });
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 8000, 2);
   });
 });
 
@@ -1152,6 +1180,33 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
     });
     expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-ENERGY', 12500, TS, 'Local');
   });
+
+  it('passes stoppedTx.evse_id to updateConnectorMeterValue when meterStop present', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      transaction_id: 'TX-EVSE2STOP',
+      chargepoint_id: 1,
+      connector_id: 1,
+      evse_id: 2,
+      id_tag: 'TAG001',
+      meter_start: 0,
+      meter_stop: null,
+      start_time: TS,
+      stop_time: TS,
+    });
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+
+    client._handlers['TransactionEvent']({
+      eventType: 'Ended',
+      triggerReason: 'Local',
+      transactionInfo: { transactionId: 'TX-EVSE2STOP' },
+      meterValue: [{ timestamp: TS, sampledValue: [
+        { measurand: 'Energy.Active.Import.Register', value: '9000', unitOfMeasure: { unit: 'Wh' } },
+      ]}],
+      timestamp: TS,
+    });
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 9000, 2);
+  });
 });
 
 // ── MeterValues (hors-transaction) ──
@@ -1182,7 +1237,7 @@ describe('ocpp-server-201 — MeterValues', () => {
         }],
       }],
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 3000);
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 3000, 1);
   });
 
   it('converts kWh to Wh', () => {
@@ -1197,7 +1252,7 @@ describe('ocpp-server-201 — MeterValues', () => {
         }],
       }],
     });
-    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 3500);
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 3500, 1);
   });
 
   it('updates chargepoint meter when evseId=0', () => {
@@ -1213,6 +1268,16 @@ describe('ocpp-server-201 — MeterValues', () => {
       }],
     });
     expect(mockDb.updateChargepointMeterValue).toHaveBeenCalledWith(1, 7500);
+  });
+
+  it('passes evseId=2 to updateConnectorMeterValue for EVSE2', () => {
+    client._handlers['MeterValues']({
+      evseId: 2,
+      meterValue: [{ timestamp: TS, sampledValue: [
+        { measurand: 'Energy.Active.Import.Register', value: '4000', unitOfMeasure: { unit: 'Wh' } },
+      ]}],
+    });
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 2, 4000, 2);
   });
 
   it('broadcasts meter_values for each meterValue entry', () => {

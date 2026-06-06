@@ -1064,11 +1064,11 @@ function updateChargepointMeterValue(chargepointId, meterValue) {
   db.prepare(`UPDATE chargepoints SET meter_value = ? WHERE id = ?`).run(meterValue, chargepointId);
 }
 
-function updateConnectorMeterValue(chargepointId, connectorId, meterValue) {
+function updateConnectorMeterValue(chargepointId, connectorId, meterValue, evseId = null) {
   db.prepare(
     `UPDATE connectors SET meter_value = ?, updated_at = datetime('now')
-    WHERE chargepoint_id = ? AND connector_id = ?`
-  ).run(meterValue, chargepointId, connectorId);
+    WHERE chargepoint_id = ? AND connector_id = ? AND COALESCE(evse_id, 0) = COALESCE(?, 0)`
+  ).run(meterValue, chargepointId, connectorId, evseId);
   recalcChargepointMeterValue(chargepointId);
 }
 

@@ -692,7 +692,7 @@ function register201Handlers(client, loggedHandle) {
           }
         );
 
-        if (meterStart > 0) db.updateConnectorMeterValue(cp.id, connectorDbId, meterStart);
+        if (meterStart > 0) db.updateConnectorMeterValue(cp.id, connectorDbId, meterStart, evseId);
 
         broadcast(
           'transaction_start',
@@ -838,7 +838,7 @@ function register201Handlers(client, loggedHandle) {
         if (powerW !== null) lastPowerW = powerW;
         if (energyWh !== null) {
           lastEnergyWh = energyWh;
-          db.updateConnectorMeterValue(cp.id, connectorDbId, energyWh);
+          db.updateConnectorMeterValue(cp.id, connectorDbId, energyWh, evseId);
         }
 
         db.updateTransactionPowerEnergy(
@@ -979,7 +979,7 @@ function register201Handlers(client, loggedHandle) {
       if (stoppedTx) {
         const cpForTx = db.getChargepointById(stoppedTx.chargepoint_id);
         if (cpForTx && meterStop != null) {
-          db.updateConnectorMeterValue(cpForTx.id, stoppedTx.connector_id, meterStop);
+          db.updateConnectorMeterValue(cpForTx.id, stoppedTx.connector_id, meterStop, stoppedTx.evse_id);
         }
 
         let energyKwh = null;
@@ -1072,7 +1072,7 @@ function register201Handlers(client, loggedHandle) {
 
       if (energyWh !== null) {
         if (evseId === 0) db.updateChargepointMeterValue(cp.id, energyWh);
-        else db.updateConnectorMeterValue(cp.id, connectorDbId, energyWh);
+        else db.updateConnectorMeterValue(cp.id, connectorDbId, energyWh, evseId);
 
         const updatedCp = db.getChargepointByIdentity(identity);
         broadcast(
