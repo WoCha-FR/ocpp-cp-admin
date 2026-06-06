@@ -8,6 +8,7 @@ const {
   registerCallClientImpl,
   registerHandlersFn,
   debounceAvailabilityNotif,
+  pendingRemoteStarts,
 } = require('./ocpp-common');
 
 // ── Constantes ──
@@ -436,6 +437,34 @@ function register201Handlers(client, loggedHandle) {
         const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId);
         if (activeTx?.charging_state) {
           cnstatus = CHARGING_STATE_TO_CNSTATUS[activeTx.charging_state] || cnstatus;
+        }
+
+        // Plug&Charge mode 2 : déclencher RequestStartTransaction automatiquement
+        if (cp.mode === 2 && evseId > 0 && !activeTx) {
+          const idTag = `MGR-${cp.site_id}`;
+          if (!db.getIdTagByTag(idTag)) {
+            db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null, 0);
+          }
+          const pendingKey = `${identity}_${connectorDbId}`;
+          pendingRemoteStarts.set(pendingKey, { source: 'remote', userId: null });
+          setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
+
+          callClient201(identity, 'RequestStartTransaction', {
+            evseId,
+            idToken: { idToken: idTag, type: 'ISO14443' },
+          })
+            .then((result) => {
+              logger.info(
+                `[2.0.1] RequestStartTransaction Plug&Charge for ${identity} EVSE#${evseId}: ${result.status}`
+              );
+              if (result.status !== 'Accepted') pendingRemoteStarts.delete(pendingKey);
+            })
+            .catch((err) => {
+              logger.error(
+                `[2.0.1] RequestStartTransaction Plug&Charge error for ${identity} EVSE#${evseId}: ${err.message}`
+              );
+              pendingRemoteStarts.delete(pendingKey);
+            });
         }
       }
 

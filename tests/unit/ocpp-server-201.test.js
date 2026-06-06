@@ -40,6 +40,7 @@ const mockDb = {
   updateReservationStatus: jest.fn(),
   insertErrorEvent: jest.fn(),
   updateConnectorCnstatus: jest.fn(),
+  createIdTag: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -68,6 +69,7 @@ jest.mock('../../src/ocpp-common', () => ({
   registerCallClientImpl: jest.fn(),
   registerHandlersFn: jest.fn(),
   debounceAvailabilityNotif: mockDebounceAvailabilityNotif,
+  pendingRemoteStarts: new Map(),
 }));
 
 const { callClient201, register201Handlers } = require('../../src/ocpp-server-201');
@@ -513,6 +515,62 @@ describe('ocpp-server-201 — StatusNotification', () => {
     expect(mockDb.upsertConnector).toHaveBeenCalledWith(
       1, 1, 'Preparing', 'NoError', null, null, null, 1, 'Occupied'
     );
+  });
+
+  it('Plug&Charge mode 2 : envoie RequestStartTransaction quand Occupied sans transaction active', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 2, site_id: 42 });
+    mockDb.getActiveTransactionByConnector.mockReturnValue(null);
+    mockDb.getIdTagByTag.mockReturnValue(null);
+    mockConnectedClients.set('CP001', client);
+
+    client._handlers['StatusNotification']({
+      evseId: 1,
+      connectorId: 1,
+      connectorStatus: 'Occupied',
+      timestamp: TS,
+    });
+
+    await new Promise((r) => setImmediate(r));
+
+    expect(client.call).toHaveBeenCalledWith('RequestStartTransaction', {
+      evseId: 1,
+      idToken: { idToken: 'MGR-42', type: 'ISO14443' },
+    });
+    expect(mockDb.createIdTag).toHaveBeenCalledWith('MGR-42', null, 42, expect.any(String), null, 0);
+  });
+
+  it('Plug&Charge mode 2 : ne déclenche pas RequestStartTransaction si transaction déjà active', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 2, site_id: 42 });
+    mockDb.getActiveTransactionByConnector.mockReturnValue({ transaction_id: 'TX-001', charging_state: 'Charging' });
+    mockConnectedClients.set('CP001', client);
+
+    client._handlers['StatusNotification']({
+      evseId: 1,
+      connectorId: 1,
+      connectorStatus: 'Occupied',
+      timestamp: TS,
+    });
+
+    await new Promise((r) => setImmediate(r));
+
+    expect(client.call).not.toHaveBeenCalledWith('RequestStartTransaction', expect.anything());
+  });
+
+  it('mode 1 : ne déclenche pas RequestStartTransaction sur Occupied', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: 42 });
+    mockDb.getActiveTransactionByConnector.mockReturnValue(null);
+    mockConnectedClients.set('CP001', client);
+
+    client._handlers['StatusNotification']({
+      evseId: 1,
+      connectorId: 1,
+      connectorStatus: 'Occupied',
+      timestamp: TS,
+    });
+
+    await new Promise((r) => setImmediate(r));
+
+    expect(client.call).not.toHaveBeenCalledWith('RequestStartTransaction', expect.anything());
   });
 });
 
