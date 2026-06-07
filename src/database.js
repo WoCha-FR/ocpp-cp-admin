@@ -2,7 +2,7 @@ const Database = require('better-sqlite3');
 const bcrypt = require('bcryptjs');
 const path = require('path');
 const { getConfig, getConfigDir } = require('./config');
-const { runMigrations } = require('./migrator');
+const { runMigrations, initNewDatabase } = require('./migrator');
 
 const config = getConfig();
 const DB_PATH = path.resolve(getConfigDir(), config.dbname);
@@ -15,10 +15,16 @@ function getDb() {
     const dir = path.dirname(DB_PATH);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 
+    const isNewDb = !fs.existsSync(DB_PATH);
     db = new Database(DB_PATH);
     db.pragma('journal_mode = WAL');
     db.pragma('foreign_keys = ON');
-    runMigrations(db);
+
+    if (isNewDb) {
+      initNewDatabase(db);
+    } else {
+      runMigrations(db);
+    }
   }
   return db;
 }
@@ -1160,9 +1166,10 @@ function getOcppMessages(filters = {}) {
     query += ' AND om.message_type = ?';
     params.push(filters.message_type);
   }
-  if (filters.action) {
-    query += ' AND UPPER(om.action) LIKE UPPER(?)';
-    params.push(`%${filters.action}%`);
+  if (filters.actions && filters.actions.length > 0) {
+    const conditions = filters.actions.map(() => 'UPPER(om.action) LIKE UPPER(?)').join(' OR ');
+    query += ` AND (${conditions})`;
+    filters.actions.forEach((a) => params.push(`%${a}%`));
   }
   if (filters.date_from) {
     query += ' AND om.timestamp >= ?';

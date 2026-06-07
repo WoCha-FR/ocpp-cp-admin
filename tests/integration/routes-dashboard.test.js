@@ -8,7 +8,7 @@ const bcrypt = require('bcryptjs');
 const passport = require('passport');
 const LocalStrategy = require('passport-local').Strategy;
 const Database = require('better-sqlite3');
-const { runMigrations } = require('../../src/migrator');
+const { initNewDatabase } = require('../../src/migrator');
 
 const CSRF_COOKIE = 'XSRF-TOKEN';
 const CSRF_HEADER = 'x-xsrf-token';
@@ -24,7 +24,7 @@ function createApp(connectedIdentities = new Set()) {
   const sqliteDb = new Database(':memory:');
   sqliteDb.pragma('journal_mode = WAL');
   sqliteDb.pragma('foreign_keys = ON');
-  runMigrations(sqliteDb);
+  initNewDatabase(sqliteDb);
 
   sqliteDb
     .prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)')

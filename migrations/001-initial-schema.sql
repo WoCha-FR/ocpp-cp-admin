@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS chargepoints (
   password TEXT,
   mode INTEGER(1) DEFAULT 1 CHECK(mode IN (1,2,3)),
   authorized INTEGER(1) DEFAULT 1 CHECK(authorized IN (0,1)),
-  ocpp_version TEXT NOT NULL DEFAULT '1.6', -- '1.6' ou '2.0.1'
+  ocpp_version TEXT DEFAULT NULL,   -- NULL = version inconnue
   vendor TEXT(25),
   model TEXT(20),
   serial_number TEXT(25),
@@ -220,6 +220,9 @@ CREATE TABLE IF NOT EXISTS transactions_values (
   energie TEXT,
   courant TEXT,
   soc TEXT,
+  temperature TEXT,
+  tension TEXT,
+  frequence TEXT,
   FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id) ON DELETE CASCADE
 );
 
@@ -296,6 +299,26 @@ CREATE TABLE IF NOT EXISTS notification_log (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS error_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chargepoint_id INTEGER NOT NULL REFERENCES chargepoints(id),
+  ocpp_version TEXT NOT NULL DEFAULT '1.6',
+  event_type TEXT NOT NULL,
+  connector_id INTEGER,
+  status TEXT,
+  error_code TEXT,
+  vendor_id TEXT,
+  vendor_error_code TEXT,
+  evse_id INTEGER,
+  component TEXT,
+  variable TEXT,
+  severity INTEGER,
+  tech_code TEXT,
+  tech_info TEXT,
+  info TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE UNIQUE INDEX IF NOT EXISTS idx_connectors_unique ON connectors(chargepoint_id, COALESCE(evse_id, 0), connector_id);
 CREATE INDEX IF NOT EXISTS idx_user_token ON users_password_resets(token);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_id_tag_site ON id_tags(id_tag, COALESCE(site_id, 0));
@@ -305,6 +328,9 @@ CREATE INDEX IF NOT EXISTS idx_notif_prefs_user ON notification_preferences(user
 CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_notif_log_user ON notification_log(user_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_charging_profiles_cp ON charging_profiles(chargepoint_id, connector_id, stack_level);
+CREATE INDEX IF NOT EXISTS idx_ocpp_messages_cp_ts ON ocpp_messages(chargepoint_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_error_events_cp_ts ON error_events(chargepoint_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_error_events_ts ON error_events(created_at DESC);
 
 INSERT OR IGNORE INTO users (useremail, password, role, shortname) VALUES ('admin@admin.com', '$2b$10$OHSdpl41Wv4kFwtYqfmyRu2rjEzi1QI3n6W33S1gn1PVn5Ue4mTTG', 'admin', 'Admin');
 INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
@@ -324,45 +350,46 @@ INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
   ('MinimumStatusDuration', '0', 0),
   ('ResetRetries', '3', 0),
   ('LocalAuthListEnabled', 'false', 0);
-INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, value) VALUES
+INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, value, enabled) VALUES
   -- OCPPCommCtrlr — Communication OCPP
-  ('OCPPCommCtrlr', 'HeartbeatInterval',       '600'),   -- secondes (0 = utiliser intervalle réseau)
-  ('OCPPCommCtrlr', 'WebSocketPingInterval',   '60'),    -- secondes
-  ('OCPPCommCtrlr', 'ResetRetries',            '3'),
-  ('OCPPCommCtrlr', 'MessageTimeout',          '30'),    -- secondes
-  ('OCPPCommCtrlr', 'MessageAttempts',         '3'),     -- was TransactionMessageAttempts
-  ('OCPPCommCtrlr', 'MessageAttemptInterval',  '60'),    -- was TransactionMessageRetryInterval
+  ('OCPPCommCtrlr', 'HeartbeatInterval',       '600', 1),   -- secondes (0 = utiliser intervalle réseau)
+  ('OCPPCommCtrlr', 'WebSocketPingInterval',   '60', 0),    -- secondes
+  ('OCPPCommCtrlr', 'ResetRetries',            '3', 0),
+  ('OCPPCommCtrlr', 'MessageTimeout',          '30', 0),    -- secondes
+  ('OCPPCommCtrlr', 'MessageAttempts',         '3', 0),     -- was TransactionMessageAttempts
+  ('OCPPCommCtrlr', 'MessageAttemptInterval',  '60', 0),    -- was TransactionMessageRetryInterval
   -- TxCtrlr — Gestion des transactions
-  ('TxCtrlr', 'EVConnectionTimeOut',           '60'),    -- secondes, was ConnectionTimeOut
-  ('TxCtrlr', 'StopTxOnEVSideDisconnect',      'true'),  -- was StopTransactionOnEVSideDisconnect
-  ('TxCtrlr', 'StopTxOnInvalidId',             'true'),  -- was StopTransactionOnInvalidId
-  ('TxCtrlr', 'TxStartPoint',                  'PowerPathClosed'),
-  ('TxCtrlr', 'TxStopPoint',                   'EVConnected'),
-  ('TxCtrlr', 'MaxEnergyOnInvalidId',          '0'),     -- Wh, 0 = désactivé
+  ('TxCtrlr', 'EVConnectionTimeOut',           '60', 0),    -- secondes, was ConnectionTimeOut
+  ('TxCtrlr', 'StopTxOnEVSideDisconnect',      'true', 0),  -- was StopTransactionOnEVSideDisconnect
+  ('TxCtrlr', 'StopTxOnInvalidId',             'true', 0),  -- was StopTransactionOnInvalidId
+  ('TxCtrlr', 'TxStartPoint',                  'PowerPathClosed', 0),
+  ('TxCtrlr', 'TxStopPoint',                   'EVConnected', 0),
+  ('TxCtrlr', 'MaxEnergyOnInvalidId',          '0', 0),     -- Wh, 0 = désactivé
   -- SampledDataCtrlr — Mesures périodiques
-  ('SampledDataCtrlr', 'SampledDataEnabled',              'true'),
-  ('SampledDataCtrlr', 'SampledDataTxUpdatedInterval',    '60'),   -- secondes, was MeterValueSampleInterval
-  ('SampledDataCtrlr', 'SampledDataTxUpdatedMeasurands',  'Energy.Active.Import.Register,Power.Active.Import'),
-  ('SampledDataCtrlr', 'SampledDataTxStartedMeasurands',  ''),
-  ('SampledDataCtrlr', 'SampledDataTxEndedMeasurands',    'Energy.Active.Import.Register'),
-  ('SampledDataCtrlr', 'SampledDataAlignedDataInterval',  '0'),    -- was ClockAlignedDataInterval
+  ('SampledDataCtrlr', 'SampledDataEnabled',              'true', 0),
+  ('SampledDataCtrlr', 'SampledDataTxUpdatedInterval',    '60', 0),   -- secondes, was MeterValueSampleInterval
+  ('SampledDataCtrlr', 'SampledDataTxUpdatedMeasurands',  'Energy.Active.Import.Register,Power.Active.Import', 0),
+  ('SampledDataCtrlr', 'SampledDataTxStartedMeasurands',  '', 0),
+  ('SampledDataCtrlr', 'SampledDataTxEndedMeasurands',    'Energy.Active.Import.Register', 0),
+  ('SampledDataCtrlr', 'SampledDataAlignedDataInterval',  '0', 0),    -- was ClockAlignedDataInterval
   -- AuthCtrlr — Autorisation
-  ('AuthCtrlr', 'AuthorizeRemoteStart',        'false'),
-  ('AuthCtrlr', 'LocalAuthorizeOffline',       'true'),
-  ('AuthCtrlr', 'LocalPreAuthorize',           'true'),  -- was LocalPreAuthorize
-  ('AuthCtrlr', 'OfflineTxForUnknownIdEnabled','false'), -- was AllowOfflineTxForUnknownId
-  ('AuthCtrlr', 'DisableRemoteAuthorization',  'false'),
+  ('AuthCtrlr', 'AuthorizeRemoteStart',        'false', 0),
+  ('AuthCtrlr', 'LocalAuthorizeOffline',       'true', 0),
+  ('AuthCtrlr', 'LocalPreAuthorize',           'true', 0),  -- was LocalPreAuthorize
+  ('AuthCtrlr', 'OfflineTxForUnknownIdEnabled','false', 0), -- was AllowOfflineTxForUnknownId
+  ('AuthCtrlr', 'DisableRemoteAuthorization',  'false', 0),
   -- LocalAuthListCtrlr — Liste locale d'autorisation
-  ('LocalAuthListCtrlr', 'Enabled',            'false'), -- was LocalAuthListEnabled
+  ('LocalAuthListCtrlr', 'Enabled',            'false', 0), -- was LocalAuthListEnabled
   -- ClockCtrlr — Horloge
-  ('ClockCtrlr', 'TimeSource',                 'Heartbeat'),
-  ('ClockCtrlr', 'TimeOffset',                 'UTC+0'),
+  ('ClockCtrlr', 'TimeSource',                 'Heartbeat', 0),
+  ('ClockCtrlr', 'TimeOffset',                 'UTC+0', 0),
   -- ReservationCtrlr — Réservations
-  ('ReservationCtrlr', 'Enabled',              'false'),
-  ('ReservationCtrlr', 'NonEvseSpecific',       'false'),
+  ('ReservationCtrlr', 'Enabled',              'false', 0),
+  ('ReservationCtrlr', 'NonEvseSpecific',       'false', 0),
+  ('ReservationCtrlr', 'ReservationTimeOut',    '60', 0),    -- secondes
   -- SmartChargingCtrlr — Smart charging
-  ('SmartChargingCtrlr', 'Enabled',            'false'),
-  ('SmartChargingCtrlr', 'PeriodsPerSchedule', '3'),
-  ('SmartChargingCtrlr', 'Phases3to1',         'false'),
+  ('SmartChargingCtrlr', 'Enabled',            'false', 0),
+  ('SmartChargingCtrlr', 'PeriodsPerSchedule', '3', 0),
+  ('SmartChargingCtrlr', 'Phases3to1',         'false', 0),
   -- DisplayMessageCtrlr — Messages affichés
-  ('DisplayMessageCtrlr', 'Enabled',           'false');
+  ('DisplayMessageCtrlr', 'Enabled',           'false', 0);

@@ -1939,7 +1939,7 @@ function localDateToUtcStr(dateStr, endOfDay) {
   const d = new Date(dateStr + (endOfDay ? 'T23:59:59' : 'T00:00:00'));
   return d.toISOString().replace('T', ' ').slice(0, 19);
 }
-let cpLogsFilters = { date_from: _today(), date_to: _today() };
+let cpLogsFilters = { date_from: _today(), date_to: _today(), actions: [] };
 let cpTxFilters = { from: '', to: '', limit: '50' };
 let _cpTxCurrent = null;
 
@@ -1973,13 +1973,17 @@ async function renderDetailTabLogs(cp) {
   queryParams.set('chargepoint_id', cp.id);
   if (cpLogsFilters.origin) queryParams.set('origin', cpLogsFilters.origin);
   if (cpLogsFilters.message_type) queryParams.set('message_type', cpLogsFilters.message_type);
-  if (cpLogsFilters.action) queryParams.set('action', cpLogsFilters.action);
+  (cpLogsFilters.actions || []).forEach(a => queryParams.append('action', a));
   if (cpLogsFilters.date_from) queryParams.set('date_from', localDateToUtcStr(cpLogsFilters.date_from, false));
   if (cpLogsFilters.date_to)   queryParams.set('date_to',   localDateToUtcStr(cpLogsFilters.date_to, true));
 
   const messages = await api('GET', '/ocpp-messages?' + queryParams.toString());
 
-  const activeFilterCount = ['origin', 'message_type', 'action'].filter(k => cpLogsFilters[k]).length;
+  const activeFilterCount = [
+    !!cpLogsFilters.origin,
+    !!cpLogsFilters.message_type,
+    (cpLogsFilters.actions || []).length > 0,
+  ].filter(Boolean).length;
 
   document.getElementById('detailTabContent').innerHTML = `
     <div class="card card-filters">
@@ -2004,7 +2008,12 @@ async function renderDetailTabLogs(cp) {
         </div>
         <div class="form-group">
           <label>${t('chargepoint.cpLogsOperation')}</label>
-          <input type="text" id="cpLogFilterAction" value="${escapeAttr(cpLogsFilters.action || '')}" placeholder="Ex: BootNotification" data-onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')" />
+          <div id="cpLogFilterActionTags" class="filter-tags-input">
+            ${(cpLogsFilters.actions || []).map(a => `
+              <span class="filter-tag">${escapeHtml(a)}<span class="filter-tag-remove" data-onclick="removeCpLogActionTag(${cp.id}, '${escapeAttr(a)}')">×</span></span>
+            `).join('')}
+            <input type="text" id="cpLogFilterActionInput" placeholder="${(cpLogsFilters.actions || []).length ? '' : 'Ex: BootNotification'}" />
+          </div>
         </div>
         <div class="form-group">
           <label>${t('chargepoint.cpLogsFilterDateFrom')}</label>
@@ -2015,6 +2024,7 @@ async function renderDetailTabLogs(cp) {
           <input type="text" id="cpLogFilterDateTo" readonly />
         </div>
         <button class="btn btn-outline btn-sm" data-onclick="resetCpLogFilters(${cp.id})">${t('common.reset')}</button>
+        <button class="btn btn-primary btn-sm" data-onclick="exportCpLogsCsv(${cp.id})">📥 ${t('common.csvExport')}</button>
         ${adminManage() ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => clearCpLogMessages(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('chargepoint.cpLogsDelete')}</button>` : ''}
       </div>
     </div>
@@ -2049,6 +2059,19 @@ async function renderDetailTabLogs(cp) {
   };
   flatpickr('#cpLogFilterDateFrom', { ...fpLogOpts, defaultDate: cpLogsFilters.date_from || 'today' });
   flatpickr('#cpLogFilterDateTo',   { ...fpLogOpts, defaultDate: cpLogsFilters.date_to   || 'today' });
+  const actionInput = document.getElementById('cpLogFilterActionInput');
+  if (actionInput) {
+    actionInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const val = actionInput.value.trim().replace(/,$/, '');
+        if (val && !(cpLogsFilters.actions || []).includes(val)) {
+          cpLogsFilters.actions = [...(cpLogsFilters.actions || []), val];
+          renderDetailTabLogs(cp);
+        }
+      }
+    });
+  }
 }
 
 function showPayloadDetail(el) {
@@ -2077,7 +2100,7 @@ async function applyCpLogFilters(cpId, identity) {
   cpLogsFilters = {
     origin:       document.getElementById('cpLogFilterOrigin').value    || undefined,
     message_type: document.getElementById('cpLogFilterMsgType').value   || undefined,
-    action:       document.getElementById('cpLogFilterAction').value    || undefined,
+    actions:      cpLogsFilters.actions || [],
     date_from:    document.getElementById('cpLogFilterDateFrom').value  || undefined,
     date_to:      document.getElementById('cpLogFilterDateTo').value    || undefined,
   };
@@ -2086,9 +2109,26 @@ async function applyCpLogFilters(cpId, identity) {
 }
 
 async function resetCpLogFilters(cpId) {
-  cpLogsFilters = { date_from: _today(), date_to: _today() };
+  cpLogsFilters = { date_from: _today(), date_to: _today(), actions: [] };
   const cp = await api('GET', `/chargepoints/${cpId}`);
   renderDetailTabLogs(cp);
+}
+
+async function removeCpLogActionTag(cpId, action) {
+  cpLogsFilters.actions = (cpLogsFilters.actions || []).filter(a => a !== action);
+  const cp = await api('GET', `/chargepoints/${cpId}`);
+  renderDetailTabLogs(cp);
+}
+
+function exportCpLogsCsv(cpId) {
+  const queryParams = new URLSearchParams();
+  queryParams.set('chargepoint_id', cpId);
+  if (cpLogsFilters.origin) queryParams.set('origin', cpLogsFilters.origin);
+  if (cpLogsFilters.message_type) queryParams.set('message_type', cpLogsFilters.message_type);
+  (cpLogsFilters.actions || []).forEach(a => queryParams.append('action', a));
+  if (cpLogsFilters.date_from) queryParams.set('date_from', localDateToUtcStr(cpLogsFilters.date_from, false));
+  if (cpLogsFilters.date_to) queryParams.set('date_to', localDateToUtcStr(cpLogsFilters.date_to, true));
+  window.location.href = '/api/ocpp-messages/csv?' + queryParams.toString();
 }
 
 async function clearCpLogMessages(cpId, identity) {

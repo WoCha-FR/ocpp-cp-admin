@@ -983,7 +983,12 @@
     "energy": "Energy (kWh)",
     "duration": "Duration (min)",
     "status": "Status",
-    "stop_reason": "Stop Reason"
+    "stop_reason": "Stop Reason",
+    "log_timestamp": "Timestamp",
+    "log_origin": "Origin",
+    "log_message_type": "Type",
+    "log_action": "Action",
+    "log_payload": "JSON Payload"
   },
   "configEditor": {
     "title": "Configuration Editor",
