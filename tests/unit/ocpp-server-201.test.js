@@ -37,6 +37,11 @@ const mockDb = {
   startUsingReservationByConnectorAndIdTag: jest.fn(() => 0),
   getReservationByOcppId: jest.fn(),
   fulfillReservationByConnectorAndIdTag: jest.fn(() => 0),
+  activateReservationByEvse: jest.fn(),
+  expireActiveReservationByEvse: jest.fn(),
+  startUsingReservationByEvseAndIdTag: jest.fn(() => 0),
+  fulfillInUseReservationByEvse: jest.fn(),
+  fulfillReservationByEvseAndIdTag: jest.fn(() => 0),
   updateReservationStatus: jest.fn(),
   insertErrorEvent: jest.fn(),
   updateConnectorCnstatus: jest.fn(),
@@ -346,7 +351,7 @@ describe('ocpp-server-201 — StatusNotification', () => {
     mockDb.getConnectorsByChargepoint.mockReturnValue([]);
     mockDb.getTransactions.mockReturnValue([]);
     mockDb.getActiveTransactionByConnector.mockReturnValue(null);
-    mockDb.startUsingReservationByConnectorAndIdTag.mockReturnValue(0);
+    mockDb.startUsingReservationByEvseAndIdTag.mockReturnValue(0);
     register201Handlers(client, makeLoggedHandle(client));
   });
 
@@ -423,14 +428,15 @@ describe('ocpp-server-201 — StatusNotification', () => {
     );
   });
 
-  it('activates reservation and broadcasts when status is Reserved', () => {
+  it('activates reservation by evseId and broadcasts when status is Reserved', () => {
     client._handlers['StatusNotification']({
-      evseId: 1,
+      evseId: 2,
       connectorId: 1,
       connectorStatus: 'Reserved',
       timestamp: TS,
     });
-    expect(mockDb.activateReservationByConnector).toHaveBeenCalledWith(1, 1);
+    expect(mockDb.activateReservationByEvse).toHaveBeenCalledWith(1, 2);
+    expect(mockDb.activateReservationByConnector).not.toHaveBeenCalled();
     expect(mockBroadcast).toHaveBeenCalledWith(
       'reservation_updated',
       { chargepoint_id: 1 },
@@ -1162,11 +1168,45 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
     );
   });
 
-  it('calls fulfillReservationByConnectorAndIdTag when transaction found', () => {
+  it('calls fulfillReservationByEvseAndIdTag when transaction has evse_id', () => {
     mockDb.getTransactionByTransactionId.mockReturnValue({
       transaction_id: 'TX-006',
       chargepoint_id: 1,
       connector_id: 1,
+      evse_id: 2,
+      id_tag: 'TAG001',
+      meter_start: 0,
+      meter_stop: null,
+      start_time: new Date(Date.now() - 60000).toISOString(),
+      stop_time: TS,
+    });
+    mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.fulfillReservationByEvseAndIdTag.mockReturnValue(1);
+
+    client._handlers['TransactionEvent']({
+      eventType: 'Ended',
+      triggerReason: 'Local',
+      transactionInfo: { transactionId: 'TX-006' },
+      meterValue: [],
+      timestamp: TS,
+    });
+
+    expect(mockDb.fulfillReservationByEvseAndIdTag).toHaveBeenCalledWith(1, 2, 'TAG001');
+    expect(mockDb.fulfillReservationByConnectorAndIdTag).not.toHaveBeenCalled();
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'reservation_updated',
+      { chargepoint_id: 1 },
+      expect.anything()
+    );
+  });
+
+  it('falls back to fulfillReservationByConnectorAndIdTag when transaction has no evse_id', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      transaction_id: 'TX-006b',
+      chargepoint_id: 1,
+      connector_id: 1,
+      evse_id: null,
       id_tag: 'TAG001',
       meter_start: 0,
       meter_stop: null,
@@ -1180,12 +1220,13 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
     client._handlers['TransactionEvent']({
       eventType: 'Ended',
       triggerReason: 'Local',
-      transactionInfo: { transactionId: 'TX-006' },
+      transactionInfo: { transactionId: 'TX-006b' },
       meterValue: [],
       timestamp: TS,
     });
 
     expect(mockDb.fulfillReservationByConnectorAndIdTag).toHaveBeenCalledWith(1, 1, 'TAG001');
+    expect(mockDb.fulfillReservationByEvseAndIdTag).not.toHaveBeenCalled();
     expect(mockBroadcast).toHaveBeenCalledWith(
       'reservation_updated',
       { chargepoint_id: 1 },

@@ -531,6 +531,87 @@ describe('database — Reservations CRUD', () => {
     expect(db.getReservationById(id).status).toBe('Fulfilled');
   });
 
+  it('activateReservationByEvse sets Pending → Active (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 101,
+      reservation_id: 101,
+      id_tag: 'EVSE_TAG1',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 101);
+    expect(db.getReservationById(id).status).toBe('Active');
+    db.updateReservationStatus(id, 'Cancelled');
+  });
+
+  it('expireActiveReservationByEvse sets Pending/Active → Expired (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 102,
+      reservation_id: 102,
+      id_tag: 'EVSE_TAG2',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 102);
+    expect(db.getReservationById(id).status).toBe('Active');
+    db.expireActiveReservationByEvse(cpId, 102);
+    expect(db.getReservationById(id).status).toBe('Expired');
+  });
+
+  it('startUsingReservationByEvseAndIdTag sets Active → InUse only when idTag matches (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 103,
+      reservation_id: 103,
+      id_tag: 'EVSE_TAG3',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 103);
+    const changed = db.startUsingReservationByEvseAndIdTag(cpId, 103, 'WRONG_TAG');
+    expect(changed).toBe(0);
+    expect(db.getReservationById(id).status).toBe('Active');
+    const changed2 = db.startUsingReservationByEvseAndIdTag(cpId, 103, 'EVSE_TAG3');
+    expect(changed2).toBe(1);
+    expect(db.getReservationById(id).status).toBe('InUse');
+  });
+
+  it('fulfillReservationByEvseAndIdTag sets InUse → Fulfilled only when idTag matches (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 104,
+      reservation_id: 104,
+      id_tag: 'EVSE_TAG4',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 104);
+    db.startUsingReservationByEvseAndIdTag(cpId, 104, 'EVSE_TAG4');
+    const changed = db.fulfillReservationByEvseAndIdTag(cpId, 104, 'WRONG_TAG');
+    expect(changed).toBe(0);
+    expect(db.getReservationById(id).status).toBe('InUse');
+    const changed2 = db.fulfillReservationByEvseAndIdTag(cpId, 104, 'EVSE_TAG4');
+    expect(changed2).toBe(1);
+    expect(db.getReservationById(id).status).toBe('Fulfilled');
+  });
+
+  it('fulfillInUseReservationByEvse sets InUse → Fulfilled regardless of idTag (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 105,
+      reservation_id: 105,
+      id_tag: 'EVSE_TAG5',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 105);
+    db.startUsingReservationByEvseAndIdTag(cpId, 105, 'EVSE_TAG5');
+    db.fulfillInUseReservationByEvse(cpId, 105);
+    expect(db.getReservationById(id).status).toBe('Fulfilled');
+  });
+
   it('getReservationByOcppId returns reservation by OCPP-level reservation_id', () => {
     const id = db.createReservation({
       chargepoint_id: cpId,

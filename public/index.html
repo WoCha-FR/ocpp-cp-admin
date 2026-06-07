@@ -2424,13 +2424,14 @@ async function renderDetailTabEvses(cp) {
 }
 
 async function showCreateReservationModal(cpId) {
-  let cp, connectors = [], tags = [];
+  let cp, connectors = [], evses = [], tags = [];
   try {
-    [cp, tags] = await Promise.all([
-      api('GET', `/chargepoints/${cpId}`),
-      api('GET', '/id-tags'),
-    ]);
+    const requests = [api('GET', `/chargepoints/${cpId}`), api('GET', '/id-tags')];
+    [cp, tags] = await Promise.all(requests);
     connectors = cp.connectors || [];
+    if (cp.ocpp_version === '2.0.1') {
+      evses = await api('GET', `/chargepoints/${cpId}/evses`);
+    }
   } catch (err) {
     toast(err.message, 'error');
     return;
@@ -2445,12 +2446,17 @@ async function showCreateReservationModal(cpId) {
   const isExpired = (tag) => tag.expiry_date && new Date(tag.expiry_date) < now;
   const visibleTags = tags.filter(tag => !isAutoTag(tag) && tag.active && tagMatchesSite(tag));
   const minExpiry = new Date(Date.now() + 60000);
+  const is201 = cp.ocpp_version === '2.0.1';
+  const connectorLabel = is201 ? 'EVSE' : t('chargepoint.cpReservationConnector');
+  const connectorOptions = is201
+    ? evses.map(e => `<option value="${e.evse_id}">${e.evse_id}${e.evse_name ? ' — ' + escapeHtml(e.evse_name) : ''}</option>`).join('')
+    : connectors.filter(c => c.connector_id > 0).map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('');
   openModal(`
     <h2>🗓 ${t('chargepoint.cpReservationsNew')}</h2>
     <div class="form-group">
-      <label>${t('chargepoint.cpReservationConnector')}</label>
+      <label>${connectorLabel}</label>
       <select id="resConnectorId">
-        ${connectors.filter(c => c.connector_id > 0).map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('')}
+        ${connectorOptions}
       </select>
     </div>
     <div class="form-group">

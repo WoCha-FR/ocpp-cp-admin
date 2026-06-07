@@ -483,22 +483,18 @@ function register201Handlers(client, loggedHandle) {
 
       // Gestion des réservations
       if (cnstatus === 'Reserved') {
-        db.activateReservationByConnector(cp.id, connectorDbId);
+        db.activateReservationByEvse(cp.id, evseId);
         broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       } else if (cnstatus === 'Charging') {
         const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId);
         if (activeTx) {
-          const changed = db.startUsingReservationByConnectorAndIdTag(
-            cp.id,
-            connectorDbId,
-            activeTx.id_tag
-          );
+          const changed = db.startUsingReservationByEvseAndIdTag(cp.id, evseId, activeTx.id_tag);
           if (changed > 0)
             broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
         }
       } else if (['Available', 'Faulted', 'Unavailable'].includes(cnstatus)) {
-        db.expireActiveReservationByConnector(cp.id, connectorDbId);
-        db.fulfillInUseReservationByConnector(cp.id, connectorDbId);
+        db.expireActiveReservationByEvse(cp.id, evseId);
+        db.fulfillInUseReservationByEvse(cp.id, evseId);
         broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
 
@@ -792,7 +788,7 @@ function register201Handlers(client, loggedHandle) {
           }
         } else if (idTag) {
           // Fallback : borne n'envoie pas reservationId — on cherche par id_tag
-          const changed = db.startUsingReservationByConnectorAndIdTag(cp.id, connectorDbId, idTag);
+          const changed = db.startUsingReservationByEvseAndIdTag(cp.id, evseId, idTag);
           if (changed > 0)
             broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
         }
@@ -1085,11 +1081,10 @@ function register201Handlers(client, loggedHandle) {
               )
               .catch(() => {});
           }
-          const changed = db.fulfillReservationByConnectorAndIdTag(
-            cpForTx.id,
-            stoppedTx.connector_id,
-            idTag
-          );
+          const changed =
+            stoppedTx.evse_id != null
+              ? db.fulfillReservationByEvseAndIdTag(cpForTx.id, stoppedTx.evse_id, idTag)
+              : db.fulfillReservationByConnectorAndIdTag(cpForTx.id, stoppedTx.connector_id, idTag);
           if (changed > 0)
             broadcast(
               'reservation_updated',

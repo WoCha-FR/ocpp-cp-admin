@@ -2351,6 +2351,40 @@ function fulfillInUseReservationByConnector(chargepointId, connectorId) {
   ).run(chargepointId, connectorId);
 }
 
+function activateReservationByEvse(chargepointId, evseId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Active' WHERE chargepoint_id = ? AND evse_id = ? AND status = 'Pending'"
+  ).run(chargepointId, evseId);
+}
+
+function expireActiveReservationByEvse(chargepointId, evseId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Expired' WHERE chargepoint_id = ? AND evse_id = ? AND status IN ('Pending','Active')"
+  ).run(chargepointId, evseId);
+}
+
+function startUsingReservationByEvseAndIdTag(chargepointId, evseId, idTag) {
+  return db
+    .prepare(
+      "UPDATE reservations SET status = 'InUse' WHERE chargepoint_id = ? AND evse_id = ? AND id_tag = ? AND status = 'Active'"
+    )
+    .run(chargepointId, evseId, idTag).changes;
+}
+
+function fulfillInUseReservationByEvse(chargepointId, evseId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Fulfilled' WHERE chargepoint_id = ? AND evse_id = ? AND status = 'InUse'"
+  ).run(chargepointId, evseId);
+}
+
+function fulfillReservationByEvseAndIdTag(chargepointId, evseId, idTag) {
+  return db
+    .prepare(
+      "UPDATE reservations SET status = 'Fulfilled' WHERE chargepoint_id = ? AND evse_id = ? AND id_tag = ? AND status = 'InUse'"
+    )
+    .run(chargepointId, evseId, idTag).changes;
+}
+
 function getExpiredActiveReservations(graceSeconds) {
   return db
     .prepare(
@@ -2542,6 +2576,11 @@ module.exports = {
   startUsingReservationByConnectorAndIdTag,
   fulfillReservationByConnectorAndIdTag,
   fulfillInUseReservationByConnector,
+  activateReservationByEvse,
+  expireActiveReservationByEvse,
+  startUsingReservationByEvseAndIdTag,
+  fulfillInUseReservationByEvse,
+  fulfillReservationByEvseAndIdTag,
   getExpiredActiveReservations,
   resetStateOnStartup,
   resetConnectorsByChargepoint,
