@@ -1021,12 +1021,17 @@ function navigate(page, silent = false) {
 // ══════════════════════════════════════
 //  DASHBOARD ADMIN/MANAGER
 // ══════════════════════════════════════
+let __dashboardRenderSeq = 0;
+
 async function renderDashboard() {
+  const myRenderSeq = ++__dashboardRenderSeq;
   document.getElementById('topbarActions').innerHTML = '';
   try {
     const stats = await api('GET', '/dashboard');
     const txResponse = await api('GET', '/transactions?status=Active');
     const transactions = txResponse.data ?? [];
+
+    if (currentPage !== 'dashboard' || myRenderSeq !== __dashboardRenderSeq) return;
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
@@ -1102,15 +1107,18 @@ async function renderDashboard() {
       </div>
     `;
     // Charger les KPI et graphiques pour la période sélectionnée
-    await loadDashboardPeriodData(__dashboardDays);
+    if (currentPage !== 'dashboard' || myRenderSeq !== __dashboardRenderSeq) return;
+    await loadDashboardPeriodData(__dashboardDays, myRenderSeq);
   } catch (err) {
+    if (currentPage !== 'dashboard' || myRenderSeq !== __dashboardRenderSeq) return;
     document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
 let __dashboardDays = 30;
 
-async function loadDashboardPeriodData(days) {
+async function loadDashboardPeriodData(days, renderSeq = __dashboardRenderSeq) {
+  if (currentPage !== 'dashboard' || renderSeq !== __dashboardRenderSeq) return;
   // Mettre à jour l'état actif des boutons
   document.querySelectorAll('.kpi-period-btn').forEach(btn => {
     btn.classList.toggle('active', Number(btn.dataset.days) === days);
@@ -1120,6 +1128,7 @@ async function loadDashboardPeriodData(days) {
       api('GET', `/dashboard/kpi?days=${days}`),
       api('GET', `/dashboard/chart-data?days=${days}`)
     ]);
+    if (currentPage !== 'dashboard' || renderSeq !== __dashboardRenderSeq) return;
     renderChargingKpi(kpi);
     renderDashboardCharts(chartData);
   } catch (e) { console.warn('Dashboard period data:', e); }
@@ -3652,8 +3661,8 @@ async function createIdTag() {
       site_id: siteId ? Number(siteId) : null,
       description: document.getElementById('tagDescription').value || null,
       expiry_date: expiry || null,
-      token_type: document.getElementById('tagTokenType')?.value || null,
-      group_id_token: document.getElementById('tagGroupIdToken')?.value || null,
+      token_type: document.getElementById('tagTokenType')?.value || undefined,
+      group_id_token: document.getElementById('tagGroupIdToken')?.value || undefined,
     });
     closeModal();
     toast(t('idtags.rfAdded'), 'success');
@@ -3674,8 +3683,8 @@ async function updateIdTag(id) {
       site_id: siteId ? Number(siteId) : null,
       description: document.getElementById('editTagDescription').value || null,
       expiry_date: expiry || null,
-      token_type: document.getElementById('editTagTokenType')?.value || null,
-      group_id_token: document.getElementById('editTagGroupIdToken')?.value || null,
+      token_type: document.getElementById('editTagTokenType')?.value || undefined,
+      group_id_token: document.getElementById('editTagGroupIdToken')?.value || undefined,
     });
     closeModal();
     toast(t('idtags.rfUpdated'), 'success');
@@ -5370,8 +5379,10 @@ function urlBase64ToUint8Array(base64String) {
 //  CONFIG EDITOR
 // ══════════════════════════════════════
 let currentConfigTab = 'app';
+let _cfgRenderVer = 0;
 
 async function renderConfigEditor() {
+  ++_cfgRenderVer;
   if (currentUser.role !== 'admin') return navigate('dashboard');
   document.getElementById('topbarActions').innerHTML = '';
 
@@ -5403,19 +5414,32 @@ async function renderConfigEditor() {
 
 function switchConfigTab(tab) {
   currentConfigTab = tab;
-  renderConfigEditor();
+  document.querySelectorAll('#pageContent .tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.onclick === `switchConfigTab('${tab}')`);
+  });
+  const contentEl = document.getElementById('configTabContent');
+  if (tab === 'app') {
+    renderConfigTabApp();
+  } else if (tab === 'chargepoints16') {
+    contentEl.innerHTML = '<div id="initConfigInner"></div>';
+    _renderInitConfig16();
+  } else if (tab === 'chargepoints201') {
+    contentEl.innerHTML = '<div id="initConfigInner"></div>';
+    _renderInitConfig201();
+  }
 }
 
 async function renderConfigTabApp() {
+  const myVer = _cfgRenderVer;
   let data;
   try {
     data = await api('GET', '/configeditor');
   } catch (err) {
-    if (currentConfigTab !== 'app') return;
+    if (_cfgRenderVer !== myVer || currentConfigTab !== 'app') return;
     document.getElementById('configTabContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
-  if (currentConfigTab !== 'app') return;
+  if (_cfgRenderVer !== myVer || currentConfigTab !== 'app') return;
 
   const sectionOrder = ['general', 'webui', 'ocpp', 'notifs', 'auth', 'metrics'];
   const bySection = {};
@@ -5458,6 +5482,7 @@ async function renderConfigTabApp() {
     <button type="submit" class="btn btn-primary">${t('configEditor.saveRestart')}</button>
   </div></form>`;
 
+  if (_cfgRenderVer !== myVer || currentConfigTab !== 'app') return;
   document.getElementById('configTabContent').innerHTML = html;
 }
 
@@ -5484,16 +5509,17 @@ const OCPP16_STANDARD_KEYS = [
 
 
 async function _renderInitConfig16() {
+  const myVer = _cfgRenderVer;
   const container = document.getElementById('initConfigInner');
   let rows;
   try {
     rows = await api('GET', '/init-config');
   } catch (err) {
-    if (currentConfigTab !== 'chargepoints16') return;
+    if (_cfgRenderVer !== myVer || currentConfigTab !== 'chargepoints16') return;
     container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
-  if (currentConfigTab !== 'chargepoints16') return;
+  if (_cfgRenderVer !== myVer || currentConfigTab !== 'chargepoints16') return;
   let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description')}</p>`;
   html += `<div class="card"><table class="data-table">
     <thead><tr>
@@ -5525,16 +5551,17 @@ async function _renderInitConfig16() {
 }
 
 async function _renderInitConfig201() {
+  const myVer = _cfgRenderVer;
   const container = document.getElementById('initConfigInner');
   let rows;
   try {
     rows = await api('GET', '/init-config/variables');
   } catch (err) {
-    if (currentConfigTab !== 'chargepoints201') return;
+    if (_cfgRenderVer !== myVer || currentConfigTab !== 'chargepoints201') return;
     container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
-  if (currentConfigTab !== 'chargepoints201') return;
+  if (_cfgRenderVer !== myVer || currentConfigTab !== 'chargepoints201') return;
   let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description201')}</p>`;
   html += `<div class="card"><table class="data-table">
     <thead><tr>
