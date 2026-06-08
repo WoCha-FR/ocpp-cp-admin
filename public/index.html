@@ -1826,12 +1826,12 @@ async function renderDetailTabConnectors(cp) {
                 <div class="cmd-subgroups">
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? `{type:'Operative', evseId:${c.connector_id}}` : `{type:'Operative', connectorId:${c.connector_id}}`})">${t('connectors.cSetAvailable')}</button>
-                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? `{type:'Inoperative', evseId:${c.connector_id}}` : `{type:'Inoperative', connectorId:${c.connector_id}}`})">${t('connectors.cSetUnavailable')}</button>
+                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? `{type:'Operative', evseId:${c.evse_id ?? c.connector_id}}` : `{type:'Operative', connectorId:${c.connector_id}}`})">${t('connectors.cSetAvailable')}</button>
+                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? `{type:'Inoperative', evseId:${c.evse_id ?? c.connector_id}}` : `{type:'Inoperative', connectorId:${c.connector_id}}`})">${t('connectors.cSetUnavailable')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔓 ${t('connectors.cUnlock')}</span>
-                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', ${cp.ocpp_version === '2.0.1' ? `{evseId:${c.connector_id}}` : `{connectorId:${c.connector_id}}`})">${t('connectors.cUnlockConnector')}</button>
+                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', ${cp.ocpp_version === '2.0.1' ? `{evseId:${c.evse_id ?? c.connector_id}, connectorId:${c.connector_id}}` : `{connectorId:${c.connector_id}}`})">${t('connectors.cUnlockConnector')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
@@ -2408,7 +2408,7 @@ async function renderDetailTabEvses(cp) {
     }
     container.innerHTML = `
       <table>
-        <thead><tr><th>EVSE ID</th><th>${t('common.name')}</th><th>${t('common.status')}</th><th>${t('common.date')}</th><th>Reset</th><th></th></tr></thead>
+        <thead><tr><th>EVSE ID</th><th>${t('common.name')}</th><th>${t('common.status')}</th><th>${t('common.date')}</th><th>${t('connectors.cAvailability')}</th><th>Reset</th><th></th></tr></thead>
         <tbody>
           ${evses.map(e => `
             <tr>
@@ -2416,6 +2416,10 @@ async function renderDetailTabEvses(cp) {
               <td>${e.evse_name ? escapeHtml(e.evse_name) : '<span class="text-muted">-</span>'}</td>
               <td><span class="badge ${statusBadgeClass(e.status)}">${escapeHtml(e.status)}</span></td>
               <td class="text-muted" style="font-size:12px">${e.created_at ? formatDate(e.created_at) : '-'}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'ChangeAvailability',{type:'Operative',evseId:${e.evse_id}})">${t('connectors.cSetAvailable')}</button>
+                <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'ChangeAvailability',{type:'Inoperative',evseId:${e.evse_id}})">${t('connectors.cSetUnavailable')}</button>
+              </td>
               <td style="white-space:nowrap">
                 <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'OnIdle',${e.evse_id})">${t('chargepoint.cpReset201OnIdle')}</button>
                 <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'Immediate',${e.evse_id})">${t('chargepoint.cpReset201Immediate')}</button>

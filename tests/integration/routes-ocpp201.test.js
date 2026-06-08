@@ -199,6 +199,29 @@ function createApp(connectedClients = new Map(), mockCallClient = jest.fn()) {
     res.json({ ok: true });
   });
 
+  // ── POST /api/chargepoints/:id/command ──
+  app.post('/api/chargepoints/:id/command', requireAuth, async (req, res) => {
+    const cp = rawDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    const client = connectedClients.get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+    const method = req.body.method;
+    const params = req.body.params || {};
+    try {
+      let callParams = params;
+      if (cp.ocpp_version === '2.0.1' && method === 'ChangeAvailability') {
+        const { type, evseId, connectorId } = params;
+        const id = evseId ?? connectorId ?? null;
+        callParams = { operationalStatus: type };
+        if (id != null && id !== 0) callParams.evse = { id };
+      }
+      const result = await mockCallClient(cp.identity, method, callParams);
+      res.json({ result });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   return { app, rawDb };
 }
 
@@ -492,5 +515,81 @@ describe('PUT /api/chargepoints/:id/evses/:evseId', () => {
       .send({ evse_name: 'X' });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('ERR_EVSE_NOT_FOUND');
+  });
+});
+
+describe("POST /api/chargepoints/:id/command — adaptation ChangeAvailability OCPP 2.0.1", () => {
+  let app, rawDb, agent, csrf, cp201Id, cp16Id;
+  const mockCallClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+  const connectedClients = new Map();
+
+  beforeAll(async () => {
+    ({ app, rawDb } = createApp(connectedClients, mockCallClient));
+    agent = request.agent(app);
+    csrf = await loginAndGetCsrf(agent);
+
+    const cp201 = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('CMD-201', '2.0.1')")
+      .run();
+    cp201Id = cp201.lastInsertRowid;
+    connectedClients.set('CMD-201', { protocol: 'ocpp2.0.1' });
+
+    const cp16 = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('CMD-16', '1.6')")
+      .run();
+    cp16Id = cp16.lastInsertRowid;
+    connectedClients.set('CMD-16', { protocol: 'ocpp1.6' });
+  });
+
+  beforeEach(() => {
+    mockCallClient.mockClear();
+  });
+
+  it('ChangeAvailability borne entière (evseId=0) → operationalStatus sans champ evse', async () => {
+    const res = await agent
+      .post(`/api/chargepoints/${cp201Id}/command`)
+      .set(CSRF_HEADER, csrf)
+      .send({ method: 'ChangeAvailability', params: { type: 'Inoperative', evseId: 0 } });
+    expect(res.status).toBe(200);
+    expect(mockCallClient).toHaveBeenCalledWith('CMD-201', 'ChangeAvailability', {
+      operationalStatus: 'Inoperative',
+    });
+    expect(mockCallClient.mock.calls[0][2]).not.toHaveProperty('evse');
+  });
+
+  it('ChangeAvailability EVSE spécifique (evseId=2) → evse:{id:2}', async () => {
+    const res = await agent
+      .post(`/api/chargepoints/${cp201Id}/command`)
+      .set(CSRF_HEADER, csrf)
+      .send({ method: 'ChangeAvailability', params: { type: 'Operative', evseId: 2 } });
+    expect(res.status).toBe(200);
+    expect(mockCallClient).toHaveBeenCalledWith('CMD-201', 'ChangeAvailability', {
+      operationalStatus: 'Operative',
+      evse: { id: 2 },
+    });
+  });
+
+  it('UnlockConnector 2.0.1 → params passés directement sans transformation', async () => {
+    const res = await agent
+      .post(`/api/chargepoints/${cp201Id}/command`)
+      .set(CSRF_HEADER, csrf)
+      .send({ method: 'UnlockConnector', params: { evseId: 1, connectorId: 1 } });
+    expect(res.status).toBe(200);
+    expect(mockCallClient).toHaveBeenCalledWith('CMD-201', 'UnlockConnector', {
+      evseId: 1,
+      connectorId: 1,
+    });
+  });
+
+  it('ChangeAvailability 1.6 → params non transformés (connectorId conservé)', async () => {
+    const res = await agent
+      .post(`/api/chargepoints/${cp16Id}/command`)
+      .set(CSRF_HEADER, csrf)
+      .send({ method: 'ChangeAvailability', params: { type: 'Inoperative', connectorId: 1 } });
+    expect(res.status).toBe(200);
+    expect(mockCallClient).toHaveBeenCalledWith('CMD-16', 'ChangeAvailability', {
+      type: 'Inoperative',
+      connectorId: 1,
+    });
   });
 });

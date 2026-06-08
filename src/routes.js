@@ -842,7 +842,14 @@ router.post(
     const params = req.body.params || {};
 
     try {
-      const result = await callClient(cp.identity, method, params);
+      let callParams = params;
+      if (cp.ocpp_version === '2.0.1' && method === 'ChangeAvailability') {
+        const { type, evseId, connectorId } = params;
+        const id = evseId ?? connectorId ?? null;
+        callParams = { operationalStatus: type };
+        if (id != null && id !== 0) callParams.evse = { id };
+      }
+      const result = await callClient(cp.identity, method, callParams);
       res.json({ result });
     } catch (e) {
       db.addOcppMessage(cp.id, 'chargepoint', 'CALLERROR', method, { error: e.message });

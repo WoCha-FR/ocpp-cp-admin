@@ -447,7 +447,10 @@ function register201Handlers(client, loggedHandle) {
           }
           const pendingKey = `${identity}_${connectorDbId}`;
           pendingRemoteStarts.set(pendingKey, { source: 'remote', userId: null });
-          const pendingRemoteStartTimer = setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
+          const pendingRemoteStartTimer = setTimeout(
+            () => pendingRemoteStarts.delete(pendingKey),
+            60000
+          );
           pendingRemoteStartTimer.unref();
 
           callClient201(identity, 'RequestStartTransaction', {
