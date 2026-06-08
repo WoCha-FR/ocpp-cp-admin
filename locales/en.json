@@ -246,6 +246,7 @@
     "cpReservationsLoading": "Loading reservations...",
     "cpReservationsNoSupport": "This chargepoint does not declare reservation support.",
     "cpReservationConnector": "Connector",
+    "cpReservationEvse": "EVSE",
     "cpReservationIdTag": "RFID badge (idTag)",
     "cpReservationExpiry": "Expiry",
     "cpReservationCreatedBy": "Created by",

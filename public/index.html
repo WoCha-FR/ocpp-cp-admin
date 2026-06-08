@@ -2356,11 +2356,12 @@ async function loadReservations(cpId) {
       return;
     }
     const reservationBadgeClass = (s) => s === 'Active' || s === 'Fulfilled' ? 'badge-green' : s === 'InUse' ? 'badge-blue' : s === 'Pending' ? 'badge-yellow' : 'badge-gray';
+    const is201 = reservations.some(r => r.evse_id !== null);
     container.innerHTML = `
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>${t('chargepoint.cpReservationConnector')}</th>
+            <th>${is201 ? t('chargepoint.cpReservationEvse') : t('chargepoint.cpReservationConnector')}</th>
             <th>idTag</th>
             <th>${t('chargepoint.cpReservationExpiry')}</th>
             <th>${t('common.status')}</th>
@@ -2371,7 +2372,9 @@ async function loadReservations(cpId) {
           <tbody>
             ${reservations.map(r => `
               <tr>
-                <td>${r.connector_id}</td>
+                <td>${r.evse_id != null
+                  ? `EVSE ${r.evse_id}${r.evse_name ? ' · ' + escapeHtml(r.evse_name) : ''}`
+                  : `${r.connector_id}${r.connector_name ? ' · ' + escapeHtml(r.connector_name) : ''}`}</td>
                 <td><span class="rfid-chip">${escapeHtml(r.id_tag)}</span></td>
                 <td class="td-date">${formatDateShort(r.expiry_date)}</td>
                 <td><span class="badge ${reservationBadgeClass(r.status)}">${t('chargepoint.cpReservationStatus' + r.status, { defaultValue: r.status })}</span></td>

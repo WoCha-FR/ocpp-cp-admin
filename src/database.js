@@ -2326,7 +2326,13 @@ function createReservation({
 function getReservationsByChargepoint(chargepointId) {
   return db
     .prepare(
-      'SELECT r.*, u.shortname AS created_by_name FROM reservations r LEFT JOIN users u ON r.created_by = u.id WHERE r.chargepoint_id = ? ORDER BY r.created_at DESC'
+      `SELECT r.*, u.shortname AS created_by_name, e.evse_name, cn.connector_name
+       FROM reservations r
+       LEFT JOIN users u ON r.created_by = u.id
+       LEFT JOIN evses e ON e.chargepoint_id = r.chargepoint_id AND e.evse_id = r.evse_id
+       LEFT JOIN connectors cn ON cn.chargepoint_id = r.chargepoint_id AND cn.connector_id = r.connector_id AND cn.evse_id IS r.evse_id
+       WHERE r.chargepoint_id = ?
+       ORDER BY r.created_at DESC`
     )
     .all(chargepointId);
 }

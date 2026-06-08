@@ -246,6 +246,7 @@
     "cpReservationsLoading": "Chargement des réservations...",
     "cpReservationsNoSupport": "Cette borne ne déclare pas le support des réservations.",
     "cpReservationConnector": "Connecteur",
+    "cpReservationEvse": "EVSE",
     "cpReservationIdTag": "Badge RFID (idTag)",
     "cpReservationExpiry": "Expiration",
     "cpReservationCreatedBy": "Créé par",
