@@ -346,6 +346,8 @@ router.get('/appsettings', (req, res) => {
     google: googleAuthEnabled,
     supportedLanguages: SUPPORTED_LANGUAGES,
     languageLabels,
+    v16Enabled: config.ocpp?.v16?.enabled ?? true,
+    v201Enabled: config.ocpp?.v201?.enabled ?? false,
   });
 });
 
@@ -840,7 +842,14 @@ router.post(
     const params = req.body.params || {};
 
     try {
-      const result = await callClient(cp.identity, method, params);
+      let callParams = params;
+      if (cp.ocpp_version === '2.0.1' && method === 'ChangeAvailability') {
+        const { type, evseId, connectorId } = params;
+        const id = evseId ?? connectorId ?? null;
+        callParams = { operationalStatus: type };
+        if (id != null && id !== 0) callParams.evse = { id };
+      }
+      const result = await callClient(cp.identity, method, callParams);
       res.json({ result });
     } catch (e) {
       db.addOcppMessage(cp.id, 'chargepoint', 'CALLERROR', method, { error: e.message });
@@ -850,6 +859,8 @@ router.post(
 );
 
 // ── Charging Profiles ──
+const mapPurposeTo201 = (p) => (p === 'ChargePointMaxProfile' ? 'ChargingStationMaxProfile' : p);
+
 router.get(
   '/chargepoints/:id/charging-profiles',
   requireManager,
@@ -931,10 +942,28 @@ router.post(
     if (valid_to) csChargingProfiles.validTo = valid_to;
 
     try {
-      const result = await callClient(cp.identity, 'SetChargingProfile', {
-        connectorId: connector_id,
-        csChargingProfiles,
-      });
+      let result;
+      if (cp.ocpp_version === '2.0.1') {
+        const chargingProfile201 = {
+          id: profile_id,
+          stackLevel: stack_level,
+          chargingProfilePurpose: mapPurposeTo201(profile_purpose),
+          chargingProfileKind: profile_kind,
+          chargingSchedule: [{ id: 1, ...chargingSchedule }],
+        };
+        if (recurrency_kind) chargingProfile201.recurrencyKind = recurrency_kind;
+        if (valid_from) chargingProfile201.validFrom = valid_from;
+        if (valid_to) chargingProfile201.validTo = valid_to;
+        result = await callClient(cp.identity, 'SetChargingProfile', {
+          evseId: connector_id,
+          chargingProfile: chargingProfile201,
+        });
+      } else {
+        result = await callClient(cp.identity, 'SetChargingProfile', {
+          connectorId: connector_id,
+          csChargingProfiles,
+        });
+      }
       const status = result?.status ?? 'Rejected';
       db.updateChargingProfileStatus(dbId, status);
       broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
@@ -965,10 +994,19 @@ router.post(
     const { profile_id, connector_id, profile_purpose, stack_level } = req.body;
 
     const ocppParams = {};
-    if (profile_id != null) ocppParams.id = profile_id;
-    if (connector_id != null) ocppParams.connectorId = connector_id;
-    if (profile_purpose) ocppParams.chargingProfilePurpose = profile_purpose;
-    if (stack_level != null) ocppParams.stackLevel = stack_level;
+    if (cp.ocpp_version === '2.0.1') {
+      if (profile_id != null) ocppParams.chargingProfileId = profile_id;
+      const criteria = {};
+      if (connector_id != null) criteria.evseId = connector_id;
+      if (profile_purpose) criteria.chargingProfilePurpose = mapPurposeTo201(profile_purpose);
+      if (stack_level != null) criteria.stackLevel = stack_level;
+      if (Object.keys(criteria).length > 0) ocppParams.chargingProfileCriteria = criteria;
+    } else {
+      if (profile_id != null) ocppParams.id = profile_id;
+      if (connector_id != null) ocppParams.connectorId = connector_id;
+      if (profile_purpose) ocppParams.chargingProfilePurpose = profile_purpose;
+      if (stack_level != null) ocppParams.stackLevel = stack_level;
+    }
 
     try {
       const result = await callClient(cp.identity, 'ClearChargingProfile', ocppParams);
@@ -1035,10 +1073,28 @@ router.post(
       if (p.valid_to) csChargingProfiles.validTo = p.valid_to;
 
       try {
-        const result = await callClient(cp.identity, 'SetChargingProfile', {
-          connectorId: p.connector_id,
-          csChargingProfiles,
-        });
+        let result;
+        if (cp.ocpp_version === '2.0.1') {
+          const chargingProfile201 = {
+            id: p.profile_id,
+            stackLevel: p.stack_level,
+            chargingProfilePurpose: mapPurposeTo201(p.profile_purpose),
+            chargingProfileKind: p.profile_kind,
+            chargingSchedule: [{ id: 1, ...chargingSchedule }],
+          };
+          if (p.recurrency_kind) chargingProfile201.recurrencyKind = p.recurrency_kind;
+          if (p.valid_from) chargingProfile201.validFrom = p.valid_from;
+          if (p.valid_to) chargingProfile201.validTo = p.valid_to;
+          result = await callClient(cp.identity, 'SetChargingProfile', {
+            evseId: p.evse_id ?? p.connector_id ?? 0,
+            chargingProfile: chargingProfile201,
+          });
+        } else {
+          result = await callClient(cp.identity, 'SetChargingProfile', {
+            connectorId: p.connector_id,
+            csChargingProfiles,
+          });
+        }
         const status = result?.status ?? 'Rejected';
         db.updateChargingProfileStatus(p.id, status);
         status === 'Accepted' ? accepted++ : rejected++;
@@ -1069,7 +1125,10 @@ router.post(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     const { connector_id, duration, charging_rate_unit } = req.body;
-    const ocppParams = { connectorId: connector_id, duration };
+    const ocppParams =
+      cp.ocpp_version === '2.0.1'
+        ? { evseId: connector_id, duration }
+        : { connectorId: connector_id, duration };
     if (charging_rate_unit) ocppParams.chargingRateUnit = charging_rate_unit;
 
     try {
@@ -1111,9 +1170,11 @@ router.delete(
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
     try {
-      const result = await callClient(cp.identity, 'ClearChargingProfile', {
-        id: profile.profile_id,
-      });
+      const clearParams =
+        cp.ocpp_version === '2.0.1'
+          ? { chargingProfileId: profile.profile_id }
+          : { id: profile.profile_id };
+      const result = await callClient(cp.identity, 'ClearChargingProfile', clearParams);
       if (result?.status === 'Accepted') {
         db.deleteChargingProfileById(profileDbId);
         broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
@@ -1164,17 +1225,28 @@ router.post(
     const reservation_id = db.getNextReservationId(cp.id);
 
     try {
-      const result = await callClient(cp.identity, 'ReserveNow', {
-        connectorId: connector_id,
-        expiryDate: expiry_date,
-        idTag: id_tag,
-        reservationId: reservation_id,
-      });
+      let result;
+      if (cp.ocpp_version === '2.0.1') {
+        result = await callClient(cp.identity, 'ReserveNow', {
+          id: reservation_id,
+          expiryDateTime: expiry_date,
+          idToken: { idToken: id_tag, type: 'ISO14443' },
+          evseId: connector_id,
+        });
+      } else {
+        result = await callClient(cp.identity, 'ReserveNow', {
+          connectorId: connector_id,
+          expiryDate: expiry_date,
+          idTag: id_tag,
+          reservationId: reservation_id,
+        });
+      }
       const status = result?.status ?? 'Rejected';
       if (status !== 'Accepted') return res.status(422).json({ status });
       const id = db.createReservation({
         chargepoint_id: cp.id,
-        connector_id,
+        connector_id: cp.ocpp_version === '2.0.1' ? null : connector_id,
+        evse_id: cp.ocpp_version === '2.0.1' ? connector_id : null,
         reservation_id,
         id_tag,
         expiry_date,
@@ -1369,6 +1441,34 @@ router.post(
   }
 );
 
+// ── EVSEs de la borne (OCPP 2.0.1) ──
+router.get(
+  '/chargepoints/:id/evses',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    res.json(db.getEvsesByChargepoint(cp.id));
+  }
+);
+
+router.put(
+  '/chargepoints/:id/evses/:evseId',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam, schema.EvseDetails),
+  (req, res) => {
+    const result = validationResult(req);
+    if (!result.isEmpty()) return res.status(400).json({ error: result.array().map((e) => e.msg) });
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    const { evse_name } = matchedData(req);
+    const evse = db.updateEvseName(cp.id, Number(req.params.evseId), evse_name ?? null);
+    if (!evse) return res.status(404).json({ error: 'ERR_EVSE_NOT_FOUND' });
+    res.json(evse);
+  }
+);
+
 // ── Configuration de la borne ──
 router.get(
   '/chargepoints/:id/config',
@@ -1377,6 +1477,7 @@ router.get(
   (req, res) => {
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (cp.ocpp_version === '2.0.1') return res.json(db.getChargepointVariables(cp.id));
     res.json(db.getChargepointConfig(cp.id));
   }
 );
@@ -1394,8 +1495,11 @@ router.post(
 
     if (client.protocol === 'ocpp2.0.1') {
       try {
-        const result = await callClient(cp.identity, 'GetVariables', {});
-        return res.json({ result, config: db.getChargepointConfig(cp.id) });
+        const result = await callClient(cp.identity, 'GetBaseReport', {
+          requestId: Date.now(),
+          reportBase: 'FullInventory',
+        });
+        return res.json({ result, config: db.getChargepointVariables(cp.id) });
       } catch (e) {
         return errorResponse(res, 500, e.message);
       }
@@ -1486,6 +1590,29 @@ router.put(
 
     if (value === undefined || value === null) {
       return res.status(400).json({ error: 'ERR_VALUE_REQUIRED' });
+    }
+
+    if (client.protocol === 'ocpp2.0.1') {
+      try {
+        const dotIdx = key.indexOf('.');
+        if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+        const component = key.slice(0, dotIdx);
+        const variable = key.slice(dotIdx + 1);
+        const result = await callClient(cp.identity, 'SetVariables', {
+          setVariableData: [
+            {
+              component: { name: component },
+              variable: { name: variable },
+              attributeType: 'Actual',
+              attributeValue: String(value),
+            },
+          ],
+        });
+        db.upsertChargepointVariable(cp.id, component, variable, 'Actual', String(value));
+        return res.json({ result });
+      } catch (e) {
+        return errorResponse(res, 500, e.message);
+      }
     }
 
     const GLOBAL_ONLY_KEYS = ['HeartbeatInterval'];
@@ -1580,6 +1707,131 @@ router.delete(
   }
 );
 
+// ── Init-config variables OCPP 2.0.1 (CRUD) ──
+router.get('/init-config/variables', requireRole('admin'), (req, res) => {
+  res.json(db.getInitialChargepointVariables());
+});
+
+router.post(
+  '/init-config/variables',
+  requireRole('admin'),
+  ...validateSchema(schema.InitVariable),
+  (req, res) => {
+    const { component, variable, attribute, value, enabled } = matchedData(req);
+    try {
+      const result = db.createInitialChargepointVariable(
+        component,
+        variable,
+        attribute || 'Actual',
+        value,
+        enabled ?? false
+      );
+      res.json({ id: result.lastInsertRowid });
+    } catch (e) {
+      if (e.message?.includes('UNIQUE')) {
+        return errorResponse(res, 409, 'INIT_VARIABLE_EXISTS');
+      }
+      errorResponse(res, 500, e.message);
+    }
+  }
+);
+
+router.put(
+  '/init-config/variables/:id',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam, schema.InitVariableUpdate),
+  (req, res) => {
+    const { id } = req.params;
+    const data = matchedData(req, { locations: ['body'] });
+    db.updateInitialChargepointVariable(Number(id), data);
+    res.json({ ok: true });
+  }
+);
+
+const GLOBAL_ONLY_VARS_201 = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
+
+router.delete(
+  '/init-config/variables/:id',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const row = db.getInitialChargepointVariables().find((v) => v.id === Number(req.params.id));
+    if (
+      row &&
+      GLOBAL_ONLY_VARS_201.some((g) => g.component === row.component && g.variable === row.variable)
+    ) {
+      return errorResponse(res, 400, 'ERR_VAR_NOT_DELETABLE');
+    }
+    db.deleteInitialChargepointVariable(Number(req.params.id));
+    res.json({ ok: true });
+  }
+);
+
+router.post('/init-config/variables/cascade-all', requireRole('admin'), async (req, res) => {
+  const vars = db.getEnabledInitialChargepointVariables();
+  const chargepoints = db.getAllChargepoints().filter((cp) => cp.ocpp_version === '2.0.1');
+  const clients = getConnectedClients();
+
+  const applied = [];
+  const queued = [];
+  const skipped = [];
+  const errors = [];
+
+  for (const cp of chargepoints) {
+    const isOnline = clients.has(cp.identity);
+    let cpQueued = false;
+
+    for (const v of vars) {
+      if (isOnline) {
+        try {
+          const result = await callClient(cp.identity, 'SetVariables', {
+            setVariableData: [
+              {
+                component: { name: v.component },
+                variable: { name: v.variable },
+                attributeType: v.attribute || 'Actual',
+                attributeValue: v.value,
+              },
+            ],
+          });
+          const setResult = result?.setVariableResult?.[0];
+          if (
+            setResult?.attributeStatus === 'Accepted' ||
+            setResult?.attributeStatus === 'RebootRequired'
+          ) {
+            db.upsertChargepointVariable(
+              cp.id,
+              v.component,
+              v.variable,
+              v.attribute || 'Actual',
+              v.value
+            );
+            applied.push({ identity: cp.identity, key: `${v.component}.${v.variable}` });
+          } else {
+            errors.push({
+              identity: cp.identity,
+              key: `${v.component}.${v.variable}`,
+              reason: setResult?.attributeStatus,
+            });
+          }
+        } catch (e) {
+          errors.push({
+            identity: cp.identity,
+            key: `${v.component}.${v.variable}`,
+            reason: e.message,
+          });
+        }
+      } else if (!cpQueued) {
+        db.resetChargepointInitialized(cp.id);
+        queued.push({ identity: cp.identity });
+        cpQueued = true;
+      }
+    }
+  }
+
+  res.json({ applied, queued, skipped, errors });
+});
+
 router.post(
   '/init-config/chargepoint/:id/apply',
   requireRole('admin'),
@@ -1590,6 +1842,42 @@ router.post(
 
     const client = getConnectedClients().get(cp.identity);
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    if (cp.ocpp_version === '2.0.1') {
+      const vars = db.getEnabledInitialChargepointVariables();
+      for (const v of vars) {
+        try {
+          const result = await callClient(cp.identity, 'SetVariables', {
+            setVariableData: [
+              {
+                component: { name: v.component },
+                variable: { name: v.variable },
+                attributeType: v.attribute || 'Actual',
+                attributeValue: v.value,
+              },
+            ],
+          });
+          const setResult = result?.setVariableResult?.[0];
+          if (
+            setResult?.attributeStatus === 'Accepted' ||
+            setResult?.attributeStatus === 'RebootRequired'
+          ) {
+            db.upsertChargepointVariable(
+              cp.id,
+              v.component,
+              v.variable,
+              v.attribute || 'Actual',
+              v.value
+            );
+          }
+        } catch (e) {
+          logger.warn(
+            `[InitSeq] ${cp.identity} SetVariables ${v.component}.${v.variable}: ${e.message}`
+          );
+        }
+      }
+      return res.json({ ok: true });
+    }
 
     const globals = db.getEnabledInitialChargepointConfig();
     for (const cfg of globals) {
@@ -1978,7 +2266,9 @@ router.post('/id-tags', requireManager, checkSchema(schema.IdTag), (req, res) =>
       data.user_id,
       data.site_id,
       data.description,
-      data.expiry_date
+      data.expiry_date,
+      data.active,
+      data.token_type
     );
     res.status(201).json(tag);
   } catch (e) {

@@ -547,24 +547,53 @@ function upsertConnector(
   // Le connecteur 0 représente la borne elle-même, ses données sont stockées dans la table chargepoints
   if (connectorId === 0) return null;
   const rawStatus = cnstatus_raw !== null ? cnstatus_raw : status;
-  const existing = db
-    .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
-    .get(chargepointId, connectorId);
+  // Pour OCPP 2.0.1 (evse_id fourni), la clé unique est (chargepoint_id, evse_id, connector_id).
+  // Pour OCPP 1.6 (evse_id null), on utilise (chargepoint_id, connector_id).
+  const existing =
+    evse_id !== null
+      ? db
+          .prepare(
+            'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?'
+          )
+          .get(chargepointId, evse_id, connectorId)
+      : db
+          .prepare(
+            'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id IS NULL AND connector_id = ?'
+          )
+          .get(chargepointId, connectorId);
   if (existing) {
-    db.prepare(
-      `UPDATE connectors SET cnstatus = ?, cnstatus_raw = ?, evse_id = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
-      WHERE chargepoint_id = ? AND connector_id = ?`
-    ).run(
-      status,
-      rawStatus,
-      evse_id,
-      errorCode || 'NoError',
-      info || null,
-      vendorId || null,
-      vendorEC || null,
-      chargepointId,
-      connectorId
-    );
+    if (evse_id !== null) {
+      db.prepare(
+        `UPDATE connectors SET cnstatus = ?, cnstatus_raw = ?, evse_id = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
+        WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?`
+      ).run(
+        status,
+        rawStatus,
+        evse_id,
+        errorCode || 'NoError',
+        info || null,
+        vendorId || null,
+        vendorEC || null,
+        chargepointId,
+        evse_id,
+        connectorId
+      );
+    } else {
+      db.prepare(
+        `UPDATE connectors SET cnstatus = ?, cnstatus_raw = ?, evse_id = ?, error_code = ?, info = ?, vendor_id = ?, vendor_error_code = ?, updated_at = datetime('now')
+        WHERE chargepoint_id = ? AND evse_id IS NULL AND connector_id = ?`
+      ).run(
+        status,
+        rawStatus,
+        null,
+        errorCode || 'NoError',
+        info || null,
+        vendorId || null,
+        vendorEC || null,
+        chargepointId,
+        connectorId
+      );
+    }
   } else {
     db.prepare(
       'INSERT INTO connectors (chargepoint_id, connector_id, cnstatus, cnstatus_raw, evse_id, error_code, info, vendor_id, vendor_error_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
@@ -580,9 +609,17 @@ function upsertConnector(
       vendorEC || null
     );
   }
-  return db
-    .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
-    .get(chargepointId, connectorId);
+  return evse_id !== null
+    ? db
+        .prepare(
+          'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?'
+        )
+        .get(chargepointId, evse_id, connectorId)
+    : db
+        .prepare(
+          'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id IS NULL AND connector_id = ?'
+        )
+        .get(chargepointId, connectorId);
 }
 
 function getConnectorById(connectorId) {
@@ -593,7 +630,13 @@ function getConnectorById(connectorId) {
     .get(connectorId);
 }
 
-function getConnectorByChargepointAndId(chargepointId, connectorId) {
+function getConnectorByChargepointAndId(chargepointId, connectorId, evse_id = null) {
+  if (evse_id !== null)
+    return db
+      .prepare(
+        'SELECT * FROM connectors WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?'
+      )
+      .get(chargepointId, evse_id, connectorId);
   return db
     .prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id = ?')
     .get(chargepointId, connectorId);
@@ -602,7 +645,11 @@ function getConnectorByChargepointAndId(chargepointId, connectorId) {
 function getConnectorsByChargepoint(chargepointId) {
   return db
     .prepare(
-      'SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id > 0 ORDER BY connector_id'
+      `SELECT c.*, e.evse_name
+       FROM connectors c
+       LEFT JOIN evses e ON e.chargepoint_id = c.chargepoint_id AND e.evse_id = c.evse_id
+       WHERE c.chargepoint_id = ? AND c.connector_id > 0
+       ORDER BY c.evse_id, c.connector_id`
     )
     .all(chargepointId);
 }
@@ -619,6 +666,13 @@ function updateConnectorFields(connectorId, data) {
     connectorId
   );
   return db.prepare('SELECT * FROM connectors WHERE id = ?').get(connectorId);
+}
+
+function updateConnectorCnstatus(chargepointId, connectorId, evse_id, cnstatus) {
+  db.prepare(
+    `UPDATE connectors SET cnstatus = ?, updated_at = datetime('now')
+     WHERE chargepoint_id = ? AND evse_id = ? AND connector_id = ?`
+  ).run(cnstatus, chargepointId, evse_id, connectorId);
 }
 
 function getAllConnectorsGrouped(siteIds) {
@@ -924,7 +978,7 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
     )
     LEFT JOIN users u ON it.user_id = u.id
     LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id
-    LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id`;
+    LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id AND cn.evse_id IS t.evse_id`;
 
 function buildTransactionQuery(baseCondition, baseParams, filters) {
   let whereClause = ' WHERE ' + baseCondition;
@@ -1010,11 +1064,11 @@ function updateChargepointMeterValue(chargepointId, meterValue) {
   db.prepare(`UPDATE chargepoints SET meter_value = ? WHERE id = ?`).run(meterValue, chargepointId);
 }
 
-function updateConnectorMeterValue(chargepointId, connectorId, meterValue) {
+function updateConnectorMeterValue(chargepointId, connectorId, meterValue, evseId = null) {
   db.prepare(
     `UPDATE connectors SET meter_value = ?, updated_at = datetime('now')
-    WHERE chargepoint_id = ? AND connector_id = ?`
-  ).run(meterValue, chargepointId, connectorId);
+    WHERE chargepoint_id = ? AND connector_id = ? AND COALESCE(evse_id, 0) = COALESCE(?, 0)`
+  ).run(meterValue, chargepointId, connectorId, evseId);
   recalcChargepointMeterValue(chargepointId);
 }
 
@@ -1025,6 +1079,22 @@ function recalcChargepointMeterValue(chargepointId) {
     )
     .get(chargepointId);
   db.prepare(`UPDATE chargepoints SET meter_value = ? WHERE id = ?`).run(row.total, chargepointId);
+}
+
+function updateEvseMeterValue(chargepointId, evseId, meterValue) {
+  const first = db
+    .prepare(
+      `SELECT connector_id FROM connectors WHERE chargepoint_id = ? AND evse_id = ? AND connector_id > 0 ORDER BY connector_id LIMIT 1`
+    )
+    .get(chargepointId, evseId);
+  if (!first) return;
+  db.prepare(
+    `UPDATE connectors SET meter_value = NULL WHERE chargepoint_id = ? AND evse_id = ? AND connector_id != ?`
+  ).run(chargepointId, evseId, first.connector_id);
+  db.prepare(
+    `UPDATE connectors SET meter_value = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND connector_id = ? AND evse_id = ?`
+  ).run(meterValue, chargepointId, first.connector_id, evseId);
+  recalcChargepointMeterValue(chargepointId);
 }
 
 function updateTransactionPowerEnergy(transactionId, power, energyWh) {
@@ -1256,6 +1326,29 @@ function updateChargepointFeatures(chargepointId, profilesString) {
   );
 }
 
+/**
+ * Met à jour les champs feat_* de la table chargepoints pour une borne OCPP 2.0.1
+ * en lisant la variable Available de chaque composant de capacité dans chargepoint_variables.
+ */
+function updateChargepointFeatures201(chargepointId) {
+  const rows = db
+    .prepare(
+      "SELECT component, value FROM chargepoint_variables WHERE chargepoint_id = ? AND variable = 'Available' AND attribute = 'Actual'"
+    )
+    .all(chargepointId);
+  const avail = {};
+  for (const r of rows) avail[r.component] = r.value === 'true';
+  db.prepare(
+    `UPDATE chargepoints SET feat_trigger = 1, feat_firmware = ?, feat_local_list = ?, feat_reservation = ?, feat_smartcharging = ? WHERE id = ?`
+  ).run(
+    avail['FirmwareCtrlr'] ? 1 : 0,
+    avail['LocalAuthListCtrlr'] ? 1 : 0,
+    avail['ReservationCtrlr'] ? 1 : 0,
+    avail['SmartChargingCtrlr'] ? 1 : 0,
+    chargepointId
+  );
+}
+
 function getChargepointConfig(chargepointId) {
   return db
     .prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? ORDER BY key')
@@ -1286,6 +1379,14 @@ function deleteChargepointConfig(chargepointId, key) {
     chargepointId,
     key
   );
+}
+
+function getChargepointVariables(chargepointId) {
+  return db
+    .prepare(
+      'SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? ORDER BY component, variable, attribute'
+    )
+    .all(chargepointId);
 }
 
 function getInitialChargepointConfig() {
@@ -1325,6 +1426,59 @@ function updateInitialChargepointConfig(id, data) {
 
 function deleteInitialChargepointConfig(id) {
   db.prepare('DELETE FROM chargepoint_init_config WHERE id = ?').run(id);
+}
+
+function getInitialChargepointVariables() {
+  return db
+    .prepare('SELECT * FROM chargepoint_init_variables ORDER BY component, variable, attribute')
+    .all();
+}
+
+function getEnabledInitialChargepointVariables() {
+  return db
+    .prepare(
+      'SELECT * FROM chargepoint_init_variables WHERE enabled = 1 ORDER BY component, variable, attribute'
+    )
+    .all();
+}
+
+function getInitialChargepointVariableByKey(component, variable) {
+  return db
+    .prepare(
+      "SELECT * FROM chargepoint_init_variables WHERE component = ? AND variable = ? AND attribute = 'Actual' LIMIT 1"
+    )
+    .get(component, variable);
+}
+
+function createInitialChargepointVariable(component, variable, attribute, value, enabled) {
+  return db
+    .prepare(
+      'INSERT INTO chargepoint_init_variables (component, variable, attribute, value, enabled) VALUES (?, ?, ?, ?, ?)'
+    )
+    .run(component, variable, attribute || 'Actual', value, enabled ? 1 : 0);
+}
+
+function updateInitialChargepointVariable(id, data) {
+  const fields = [];
+  const values = [];
+  if (data.value !== undefined) {
+    fields.push('value = ?');
+    values.push(data.value);
+  }
+  if (data.enabled !== undefined) {
+    fields.push('enabled = ?');
+    values.push(data.enabled ? 1 : 0);
+  }
+  if (fields.length === 0) return;
+  fields.push("updated_at = datetime('now')");
+  values.push(id);
+  db.prepare(`UPDATE chargepoint_init_variables SET ${fields.join(', ')} WHERE id = ?`).run(
+    ...values
+  );
+}
+
+function deleteInitialChargepointVariable(id) {
+  db.prepare('DELETE FROM chargepoint_init_variables WHERE id = ?').run(id);
 }
 
 function markChargepointInitialized(chargepointId) {
@@ -1598,10 +1752,13 @@ function getAvailableConnectorsForUser(userId) {
     .all(userId);
 }
 
-function authorizeIdTag(idTag, siteId) {
+function authorizeIdTag(idTag, siteId, tokenType) {
   const tag = getIdTagByTag(idTag, siteId);
   if (!tag) {
     return { status: 'Invalid', reason: 'unknown_tag', tag: null };
+  }
+  if (tokenType && tag.token_type && tag.token_type !== tokenType) {
+    return { status: 'Invalid', reason: 'type_mismatch', tag };
   }
   if (!tag.active) {
     return { status: 'Blocked', reason: 'inactive_tag', tag };
@@ -1757,6 +1914,68 @@ function deletePushSubscriptionByUser(userId, endpoint) {
 
 function deletePushSubscriptionsByUser(userId) {
   db.prepare('DELETE FROM push_subscriptions WHERE user_id = ?').run(userId);
+}
+
+// ── OCPP 2.0.1 — EVSEs & Variables ──
+function upsertEvse(chargepointId, evseId, status) {
+  const existing = db
+    .prepare('SELECT id FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
+    .get(chargepointId, evseId);
+  if (existing) {
+    db.prepare('UPDATE evses SET status = ? WHERE chargepoint_id = ? AND evse_id = ?').run(
+      status || 'Available',
+      chargepointId,
+      evseId
+    );
+  } else {
+    db.prepare('INSERT INTO evses (chargepoint_id, evse_id, status) VALUES (?, ?, ?)').run(
+      chargepointId,
+      evseId,
+      status || 'Available'
+    );
+  }
+}
+
+function getEvsesByChargepoint(chargepointId) {
+  return db
+    .prepare('SELECT * FROM evses WHERE chargepoint_id = ? ORDER BY evse_id')
+    .all(chargepointId);
+}
+
+function updateEvseName(chargepointId, evseId, name) {
+  db.prepare('UPDATE evses SET evse_name = ? WHERE chargepoint_id = ? AND evse_id = ?').run(
+    name || null,
+    chargepointId,
+    evseId
+  );
+  return db
+    .prepare('SELECT * FROM evses WHERE chargepoint_id = ? AND evse_id = ?')
+    .get(chargepointId, evseId);
+}
+
+function upsertChargepointVariable(
+  chargepointId,
+  component,
+  variable,
+  attribute,
+  value,
+  readonly = 0
+) {
+  const attr = attribute || 'Actual';
+  const existing = db
+    .prepare(
+      'SELECT id FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?'
+    )
+    .get(chargepointId, component, variable, attr);
+  if (existing) {
+    db.prepare(
+      "UPDATE chargepoint_variables SET value = ?, readonly = ?, updated_at = datetime('now') WHERE id = ?"
+    ).run(value ?? null, readonly, existing.id);
+  } else {
+    db.prepare(
+      'INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value, readonly) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(chargepointId, component, variable, attr, value ?? null, readonly);
+  }
 }
 
 // ── Error Events ──
@@ -2132,6 +2351,40 @@ function fulfillInUseReservationByConnector(chargepointId, connectorId) {
   ).run(chargepointId, connectorId);
 }
 
+function activateReservationByEvse(chargepointId, evseId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Active' WHERE chargepoint_id = ? AND evse_id = ? AND status = 'Pending'"
+  ).run(chargepointId, evseId);
+}
+
+function expireActiveReservationByEvse(chargepointId, evseId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Expired' WHERE chargepoint_id = ? AND evse_id = ? AND status IN ('Pending','Active')"
+  ).run(chargepointId, evseId);
+}
+
+function startUsingReservationByEvseAndIdTag(chargepointId, evseId, idTag) {
+  return db
+    .prepare(
+      "UPDATE reservations SET status = 'InUse' WHERE chargepoint_id = ? AND evse_id = ? AND id_tag = ? AND status = 'Active'"
+    )
+    .run(chargepointId, evseId, idTag).changes;
+}
+
+function fulfillInUseReservationByEvse(chargepointId, evseId) {
+  db.prepare(
+    "UPDATE reservations SET status = 'Fulfilled' WHERE chargepoint_id = ? AND evse_id = ? AND status = 'InUse'"
+  ).run(chargepointId, evseId);
+}
+
+function fulfillReservationByEvseAndIdTag(chargepointId, evseId, idTag) {
+  return db
+    .prepare(
+      "UPDATE reservations SET status = 'Fulfilled' WHERE chargepoint_id = ? AND evse_id = ? AND id_tag = ? AND status = 'InUse'"
+    )
+    .run(chargepointId, evseId, idTag).changes;
+}
+
 function getExpiredActiveReservations(graceSeconds) {
   return db
     .prepare(
@@ -2236,6 +2489,7 @@ module.exports = {
   getConnectorByChargepointAndId,
   getAllConnectorsGrouped,
   updateConnectorFields,
+  updateConnectorCnstatus,
   createTransaction,
   stopTransaction,
   updateTransactionChargingState,
@@ -2247,6 +2501,7 @@ module.exports = {
   getTransactionValues,
   updateChargepointMeterValue,
   updateConnectorMeterValue,
+  updateEvseMeterValue,
   recalcChargepointMeterValue,
   updateTransactionPowerEnergy,
   upsertTransactionValues,
@@ -2260,12 +2515,19 @@ module.exports = {
   setChargepointConfigOverride,
   getChargepointOverrideConfigs,
   deleteChargepointConfig,
+  getChargepointVariables,
   getInitialChargepointConfig,
   getEnabledInitialChargepointConfig,
   getInitialChargepointConfigByKey,
   createInitialChargepointConfig,
   updateInitialChargepointConfig,
   deleteInitialChargepointConfig,
+  getInitialChargepointVariables,
+  getEnabledInitialChargepointVariables,
+  getInitialChargepointVariableByKey,
+  createInitialChargepointVariable,
+  updateInitialChargepointVariable,
+  deleteInitialChargepointVariable,
   markChargepointInitialized,
   resetChargepointInitialized,
   getAllIdTags,
@@ -2314,9 +2576,19 @@ module.exports = {
   startUsingReservationByConnectorAndIdTag,
   fulfillReservationByConnectorAndIdTag,
   fulfillInUseReservationByConnector,
+  activateReservationByEvse,
+  expireActiveReservationByEvse,
+  startUsingReservationByEvseAndIdTag,
+  fulfillInUseReservationByEvse,
+  fulfillReservationByEvseAndIdTag,
   getExpiredActiveReservations,
   resetStateOnStartup,
   resetConnectorsByChargepoint,
   insertErrorEvent,
   getErrorEvents,
+  upsertEvse,
+  getEvsesByChargepoint,
+  updateEvseName,
+  upsertChargepointVariable,
+  updateChargepointFeatures201,
 };

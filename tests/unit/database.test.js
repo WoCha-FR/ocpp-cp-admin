@@ -531,6 +531,87 @@ describe('database — Reservations CRUD', () => {
     expect(db.getReservationById(id).status).toBe('Fulfilled');
   });
 
+  it('activateReservationByEvse sets Pending → Active (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 101,
+      reservation_id: 101,
+      id_tag: 'EVSE_TAG1',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 101);
+    expect(db.getReservationById(id).status).toBe('Active');
+    db.updateReservationStatus(id, 'Cancelled');
+  });
+
+  it('expireActiveReservationByEvse sets Pending/Active → Expired (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 102,
+      reservation_id: 102,
+      id_tag: 'EVSE_TAG2',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 102);
+    expect(db.getReservationById(id).status).toBe('Active');
+    db.expireActiveReservationByEvse(cpId, 102);
+    expect(db.getReservationById(id).status).toBe('Expired');
+  });
+
+  it('startUsingReservationByEvseAndIdTag sets Active → InUse only when idTag matches (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 103,
+      reservation_id: 103,
+      id_tag: 'EVSE_TAG3',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 103);
+    const changed = db.startUsingReservationByEvseAndIdTag(cpId, 103, 'WRONG_TAG');
+    expect(changed).toBe(0);
+    expect(db.getReservationById(id).status).toBe('Active');
+    const changed2 = db.startUsingReservationByEvseAndIdTag(cpId, 103, 'EVSE_TAG3');
+    expect(changed2).toBe(1);
+    expect(db.getReservationById(id).status).toBe('InUse');
+  });
+
+  it('fulfillReservationByEvseAndIdTag sets InUse → Fulfilled only when idTag matches (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 104,
+      reservation_id: 104,
+      id_tag: 'EVSE_TAG4',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 104);
+    db.startUsingReservationByEvseAndIdTag(cpId, 104, 'EVSE_TAG4');
+    const changed = db.fulfillReservationByEvseAndIdTag(cpId, 104, 'WRONG_TAG');
+    expect(changed).toBe(0);
+    expect(db.getReservationById(id).status).toBe('InUse');
+    const changed2 = db.fulfillReservationByEvseAndIdTag(cpId, 104, 'EVSE_TAG4');
+    expect(changed2).toBe(1);
+    expect(db.getReservationById(id).status).toBe('Fulfilled');
+  });
+
+  it('fulfillInUseReservationByEvse sets InUse → Fulfilled regardless of idTag (OCPP 2.0.1)', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      evse_id: 105,
+      reservation_id: 105,
+      id_tag: 'EVSE_TAG5',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.activateReservationByEvse(cpId, 105);
+    db.startUsingReservationByEvseAndIdTag(cpId, 105, 'EVSE_TAG5');
+    db.fulfillInUseReservationByEvse(cpId, 105);
+    expect(db.getReservationById(id).status).toBe('Fulfilled');
+  });
+
   it('getReservationByOcppId returns reservation by OCPP-level reservation_id', () => {
     const id = db.createReservation({
       chargepoint_id: cpId,
@@ -762,6 +843,23 @@ describe('database — getTransactions connector_name', () => {
     expect(tx).toBeDefined();
     expect(tx.connector_name).toBeNull();
   });
+
+  it('ne retourne pas de doublons si evse_id=NULL et evse_id=1 coexistent pour connector_id=1', () => {
+    db.upsertChargepoint('CP-EVSE-DEDUP', { cpstatus: 'Available', connected: 0 });
+    const cpDedup = db.getChargepointByIdentity('CP-EVSE-DEDUP').id;
+    db.getDb()
+      .prepare('INSERT INTO connectors (chargepoint_id, connector_id, evse_id, connector_name) VALUES (?,?,NULL,?)')
+      .run(cpDedup, 1, 'Legacy');
+    db.getDb()
+      .prepare('INSERT INTO connectors (chargepoint_id, connector_id, evse_id, connector_name) VALUES (?,?,?,?)')
+      .run(cpDedup, 1, 1, 'EVSE1');
+    db.createTransaction(cpDedup, 1, 'EVSE-TAG', 0, START, 'rfid', { evse_id: 1 });
+
+    const txs = db.getTransactions({ chargepoint_id: cpDedup });
+    const matching = txs.filter((t) => t.id_tag === 'EVSE-TAG');
+    expect(matching).toHaveLength(1);
+    expect(matching[0].connector_name).toBe('EVSE1');
+  });
 });
 
 // ── resetStateOnStartup ──
@@ -847,6 +945,39 @@ describe('database — resetStateOnStartup', () => {
   it('est idempotent : un 2e appel ne ferme plus de transactions', () => {
     const result = db.resetStateOnStartup();
     expect(result.transactions).toBe(0);
+  });
+});
+
+// ── upsertConnector — clé composite evse_id + connector_id (OCPP 2.0.1) ──
+describe('database — upsertConnector composite evse_id + connector_id', () => {
+  let cpId;
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-EVSE-TEST', {});
+    cpId = db.getChargepointByIdentity('CP-EVSE-TEST').id;
+  });
+
+  it('crée deux lignes distinctes pour EVSE1-C1 et EVSE2-C1', () => {
+    db.upsertConnector(cpId, 1, 'Available', 'NoError', null, null, null, 1); // EVSE1-C1
+    db.upsertConnector(cpId, 1, 'Available', 'NoError', null, null, null, 2); // EVSE2-C1
+    const rows = db.getConnectorsByChargepoint(cpId);
+    expect(rows.length).toBe(2);
+    expect(rows.find((r) => r.evse_id === 1 && r.connector_id === 1)).toBeTruthy();
+    expect(rows.find((r) => r.evse_id === 2 && r.connector_id === 1)).toBeTruthy();
+  });
+
+  it('met à jour la bonne ligne sans toucher l\'autre', () => {
+    db.upsertConnector(cpId, 1, 'Charging', 'NoError', null, null, null, 1); // update EVSE1-C1
+    const rows = db.getConnectorsByChargepoint(cpId);
+    expect(rows.find((r) => r.evse_id === 1)?.cnstatus).toBe('Charging');
+    expect(rows.find((r) => r.evse_id === 2)?.cnstatus).toBe('Available');
+  });
+
+  it('getConnectorByChargepointAndId avec evse_id retourne le bon connecteur', () => {
+    const c1 = db.getConnectorByChargepointAndId(cpId, 1, 1); // EVSE1-C1
+    const c2 = db.getConnectorByChargepointAndId(cpId, 1, 2); // EVSE2-C1
+    expect(c1?.evse_id).toBe(1);
+    expect(c2?.evse_id).toBe(2);
   });
 });
 
@@ -1333,5 +1464,276 @@ describe('database — Transaction Values (nouvelles métriques)', () => {
     expect(row.temperature).toBeNull();
     expect(row.tension).toBeNull();
     expect(row.frequence).toBeNull();
+  });
+});
+
+// ── getChargepointVariables ──
+describe('database — getChargepointVariables', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('VAR-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertChargepointVariable(cpId, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '600');
+    db.upsertChargepointVariable(cpId, 'TxCtrlr', 'EVConnectionTimeOut', 'Actual', '60');
+  });
+
+  it('returns all variables for the chargepoint', () => {
+    const vars = db.getChargepointVariables(cpId);
+    expect(vars.length).toBeGreaterThanOrEqual(2);
+    expect(vars.some((v) => v.component === 'OCPPCommCtrlr' && v.variable === 'HeartbeatInterval')).toBe(true);
+  });
+
+  it('returns empty array for unknown chargepoint', () => {
+    const vars = db.getChargepointVariables(999999);
+    expect(vars).toEqual([]);
+  });
+
+  it('returns rows ordered by component, variable, attribute', () => {
+    const vars = db.getChargepointVariables(cpId);
+    const sorted = [...vars].sort((a, b) =>
+      a.component.localeCompare(b.component) || a.variable.localeCompare(b.variable)
+    );
+    expect(vars.map((v) => v.id)).toEqual(sorted.map((v) => v.id));
+  });
+});
+
+// ── upsertChargepointVariable ──
+describe('database — upsertChargepointVariable', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('UPSERT-VAR-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+  });
+
+  it('stores readonly=1 when passed', () => {
+    db.upsertChargepointVariable(cpId, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1);
+    const vars = db.getChargepointVariables(cpId);
+    const v = vars.find((r) => r.component === 'SecurityCtrlr' && r.variable === 'CertificateEntries');
+    expect(v).toBeDefined();
+    expect(v.readonly).toBe(1);
+  });
+
+  it('stores readonly=0 by default', () => {
+    db.upsertChargepointVariable(cpId, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60');
+    const vars = db.getChargepointVariables(cpId);
+    const v = vars.find((r) => r.component === 'OCPPCommCtrlr' && r.variable === 'HeartbeatInterval');
+    expect(v).toBeDefined();
+    expect(v.readonly).toBe(0);
+  });
+
+  it('updates readonly on subsequent upsert', () => {
+    db.upsertChargepointVariable(cpId, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1);
+    db.upsertChargepointVariable(cpId, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 0);
+    const vars = db.getChargepointVariables(cpId);
+    const v = vars.find((r) => r.component === 'SecurityCtrlr' && r.variable === 'CertificateEntries');
+    expect(v.readonly).toBe(0);
+  });
+});
+
+// ── getEvsesByChargepoint ──
+describe('database — getEvsesByChargepoint', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('EVSE-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertEvse(cpId, 1, 'Available');
+    db.upsertEvse(cpId, 2, 'Charging');
+  });
+
+  it('returns EVSEs for chargepoint', () => {
+    const evses = db.getEvsesByChargepoint(cpId);
+    expect(evses.length).toBe(2);
+    expect(evses[0].evse_id).toBe(1);
+    expect(evses[1].evse_id).toBe(2);
+  });
+
+  it('returns empty array for unknown chargepoint', () => {
+    expect(db.getEvsesByChargepoint(999999)).toEqual([]);
+  });
+
+  it('updates EVSE status on upsert', () => {
+    db.upsertEvse(cpId, 1, 'Faulted');
+    const evses = db.getEvsesByChargepoint(cpId);
+    const evse1 = evses.find((e) => e.evse_id === 1);
+    expect(evse1.status).toBe('Faulted');
+  });
+});
+
+// ── updateEvseName ──
+describe('database — updateEvseName', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('EVSE-NAME-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertEvse(cpId, 1, 'Available');
+  });
+
+  it('met à jour evse_name et retourne l\'EVSE mis à jour', () => {
+    const updated = db.updateEvseName(cpId, 1, 'Mon EVSE');
+    expect(updated.evse_name).toBe('Mon EVSE');
+  });
+
+  it('efface evse_name avec null', () => {
+    db.updateEvseName(cpId, 1, 'Nom');
+    const updated = db.updateEvseName(cpId, 1, null);
+    expect(updated.evse_name).toBeNull();
+  });
+});
+
+// ── updateChargepointFeatures201 ──
+describe('database — updateChargepointFeatures201', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('FEAT201-CP-001', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+  });
+
+  it('sets feat_trigger=1 and all others to 0 when no capability variables exist', () => {
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_trigger, feat_firmware, feat_local_list, feat_reservation, feat_smartcharging FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_trigger).toBe(1);
+    expect(cp.feat_firmware).toBe(0);
+    expect(cp.feat_local_list).toBe(0);
+    expect(cp.feat_reservation).toBe(0);
+    expect(cp.feat_smartcharging).toBe(0);
+  });
+
+  it('sets feat_local_list=1 when LocalAuthListCtrlr.Available=true', () => {
+    db.upsertChargepointVariable(cpId, 'LocalAuthListCtrlr', 'Available', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_local_list FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_local_list).toBe(1);
+  });
+
+  it('sets feat_reservation=1 when ReservationCtrlr.Available=true', () => {
+    db.upsertChargepointVariable(cpId, 'ReservationCtrlr', 'Available', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_reservation FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_reservation).toBe(1);
+  });
+
+  it('sets feat_smartcharging=1 when SmartChargingCtrlr.Available=true', () => {
+    db.upsertChargepointVariable(cpId, 'SmartChargingCtrlr', 'Available', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_smartcharging FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_smartcharging).toBe(1);
+  });
+
+  it('sets feat_firmware=1 when FirmwareCtrlr.Available=true', () => {
+    db.upsertChargepointVariable(cpId, 'FirmwareCtrlr', 'Available', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_firmware FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_firmware).toBe(1);
+  });
+
+  it('sets feat to 0 when Available=false', () => {
+    db.upsertChargepointVariable(cpId, 'LocalAuthListCtrlr', 'Available', 'Actual', 'false');
+    db.updateChargepointFeatures201(cpId);
+    const rawDb = db.getDb();
+    const cp = rawDb.prepare('SELECT feat_local_list FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_local_list).toBe(0);
+  });
+
+  it('ignores Enabled variables — only reads Available', () => {
+    const rawDb = db.getDb();
+    // Reset : pas de LocalAuthListCtrlr.Available=true
+    rawDb.prepare("DELETE FROM chargepoint_variables WHERE chargepoint_id = ? AND component = 'LocalAuthListCtrlr'").run(cpId);
+    // Seul Enabled=true est présent, pas Available
+    db.upsertChargepointVariable(cpId, 'LocalAuthListCtrlr', 'Enabled', 'Actual', 'true');
+    db.updateChargepointFeatures201(cpId);
+    const cp = rawDb.prepare('SELECT feat_local_list FROM chargepoints WHERE id = ?').get(cpId);
+    expect(cp.feat_local_list).toBe(0);
+  });
+});
+
+// ── chargepoint_init_variables CRUD ──
+describe('database — Init Variables CRUD (OCPP 2.0.1)', () => {
+  let entryId;
+  // Utiliser un composant/variable unique pour éviter le conflit avec les données initiales
+  const TEST_COMPONENT = 'TestCtrlr';
+  const TEST_VARIABLE = 'TestInterval';
+
+  it('creates an init variable entry', () => {
+    const result = db.createInitialChargepointVariable(
+      TEST_COMPONENT,
+      TEST_VARIABLE,
+      'Actual',
+      '999',
+      true
+    );
+    expect(result.changes).toBe(1);
+    entryId = result.lastInsertRowid;
+  });
+
+  it('gets all init variable entries', () => {
+    const rows = db.getInitialChargepointVariables();
+    expect(rows.some((r) => r.component === TEST_COMPONENT && r.variable === TEST_VARIABLE)).toBe(true);
+  });
+
+  it('gets only enabled entries', () => {
+    db.createInitialChargepointVariable(TEST_COMPONENT, 'TestDisabled', 'Actual', '0', false);
+    const enabled = db.getEnabledInitialChargepointVariables();
+    expect(enabled.some((r) => r.variable === TEST_VARIABLE)).toBe(true);
+    expect(enabled.some((r) => r.variable === 'TestDisabled')).toBe(false);
+  });
+
+  it('updates an init variable entry', () => {
+    db.updateInitialChargepointVariable(entryId, { value: '300' });
+    const rows = db.getInitialChargepointVariables();
+    const entry = rows.find((r) => r.id === entryId);
+    expect(entry.value).toBe('300');
+  });
+
+  it('toggles enabled flag', () => {
+    db.updateInitialChargepointVariable(entryId, { enabled: false });
+    const rows = db.getInitialChargepointVariables();
+    const entry = rows.find((r) => r.id === entryId);
+    expect(entry.enabled).toBe(0);
+  });
+
+  it('deletes an init variable entry', () => {
+    db.deleteInitialChargepointVariable(entryId);
+    const rows = db.getInitialChargepointVariables();
+    expect(rows.some((r) => r.id === entryId)).toBe(false);
+  });
+});
+
+describe('database — getInitialChargepointVariableByKey', () => {
+  it('returns the variable when it exists (seeded by migration)', () => {
+    const row = db.getInitialChargepointVariableByKey('OCPPCommCtrlr', 'HeartbeatInterval');
+    expect(row).not.toBeNull();
+    expect(row.component).toBe('OCPPCommCtrlr');
+    expect(row.variable).toBe('HeartbeatInterval');
+    expect(row.attribute).toBe('Actual');
+  });
+
+  it('returns undefined for an unknown key', () => {
+    const row = db.getInitialChargepointVariableByKey('Unknown', 'NonExistent');
+    expect(row).toBeUndefined();
   });
 });

@@ -646,3 +646,432 @@ describe('POST /api/chargepoints/:id/charging-profiles/composite-schedule', () =
     expect(res.body.error).toBe('ERR_CHARGEPOINT_OFFLINE');
   });
 });
+
+// ══════════════════════════════════════════════════════
+//  POST /charging-profiles — OCPP 2.0.1
+// ══════════════════════════════════════════════════════
+describe('POST /api/chargepoints/:id/charging-profiles — OCPP 2.0.1', () => {
+  function createApp201(options = {}) {
+    const { callClient = jest.fn().mockResolvedValue({ status: 'Accepted' }) } = options;
+
+    const testDb = new Database(':memory:');
+    testDb.pragma('journal_mode = WAL');
+    testDb.pragma('foreign_keys = ON');
+    initNewDatabase(testDb);
+
+    const hash = bcrypt.hashSync('Admin!123', 4);
+    testDb
+      .prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)')
+      .run('admin@test.com', hash, 'admin', 'Admin');
+
+    testDb
+      .prepare(
+        "INSERT INTO chargepoints (identity, cpname, mode, authorized, feat_smartcharging, ocpp_version) VALUES (?,?,?,?,?,?)"
+      )
+      .run('CP201', 'Test CP 201', 1, 1, 1, '2.0.1');
+    const cp = testDb.prepare("SELECT * FROM chargepoints WHERE identity = 'CP201'").get();
+
+    const connectedClients = new Map([['CP201', {}]]);
+
+    const testPassport = new passport.Passport();
+    testPassport.use(
+      new LocalStrategy({ usernameField: 'useremail', passwordField: 'password' }, (email, pwd, done) => {
+        const user = testDb.prepare('SELECT * FROM users WHERE useremail = ?').get(email);
+        if (!user || !bcrypt.compareSync(pwd, user.password)) return done(null, false);
+        return done(null, { id: user.id, useremail: user.useremail, role: user.role });
+      })
+    );
+    testPassport.serializeUser((u, done) => done(null, u.id));
+    testPassport.deserializeUser((id, done) => {
+      const u = testDb.prepare('SELECT * FROM users WHERE id = ?').get(id);
+      done(null, u ? { id: u.id, useremail: u.useremail, role: u.role } : false);
+    });
+
+    const app = express();
+    app.use(express.json());
+    app.use(session({ secret: 'test-secret!!', resave: false, saveUninitialized: false }));
+    app.use(testPassport.initialize());
+    app.use(testPassport.session());
+
+    app.use((req, res, next) => {
+      let token = readCookie(req, CSRF_COOKIE);
+      if (!token) {
+        token = crypto.randomBytes(32).toString('hex');
+        res.cookie(CSRF_COOKIE, token, { httpOnly: false, sameSite: 'lax', path: '/' });
+      }
+      if (!CSRF_SAFE_METHODS.has(req.method) && req.headers[CSRF_HEADER] !== token) {
+        return res.status(403).json({ error: 'csrf_invalid' });
+      }
+      next();
+    });
+
+    function requireAuth(req, res, next) {
+      if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+      next();
+    }
+
+    app.get('/api/auth/me', (req, res) => {
+      if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+      res.json(req.user);
+    });
+    app.post('/api/auth/login', (req, res, next) => {
+      testPassport.authenticate('local', (err, user) => {
+        if (err) return next(err);
+        if (!user) return res.status(401).json({ error: 'ERR_INVALID_AUTH' });
+        req.logIn(user, (loginErr) => {
+          if (loginErr) return next(loginErr);
+          res.json(user);
+        });
+      })(req, res, next);
+    });
+
+    app.post('/api/chargepoints/:id/charging-profiles', requireAuth, async (req, res) => {
+      const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+      if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+      if (!connectedClients.has(found.identity)) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+      const { connector_id = 0, stack_level = 0, profile_purpose, profile_kind,
+        recurrency_kind, valid_from, valid_to, charging_rate_unit = 'W', schedule_periods } = req.body;
+
+      if (!profile_purpose || !profile_kind || !Array.isArray(schedule_periods) || schedule_periods.length === 0) {
+        return res.status(400).json({ error: 'VALIDATION_ERROR' });
+      }
+
+      const row = testDb.prepare('SELECT MAX(profile_id) AS m FROM charging_profiles WHERE chargepoint_id = ?').get(found.id);
+      const profile_id = (row?.m ?? 0) + 1;
+
+      const chargingSchedule = {
+        chargingRateUnit: charging_rate_unit,
+        chargingSchedulePeriod: schedule_periods.map((p) => {
+          const period = { startPeriod: p.startPeriod, limit: p.limit };
+          if (p.numberPhases != null) period.numberPhases = p.numberPhases;
+          return period;
+        }),
+      };
+
+      const info = testDb.prepare(`
+        INSERT INTO charging_profiles
+          (chargepoint_id, profile_id, connector_id, stack_level, profile_purpose, profile_kind,
+           recurrency_kind, valid_from, valid_to, charging_rate_unit, schedule_json, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')
+      `).run(found.id, profile_id, connector_id, stack_level, profile_purpose, profile_kind,
+        recurrency_kind || null, valid_from || null, valid_to || null,
+        charging_rate_unit, JSON.stringify(chargingSchedule));
+      const dbId = info.lastInsertRowid;
+
+      try {
+        let result;
+        if (found.ocpp_version === '2.0.1') {
+          const chargingProfile201 = {
+            id: profile_id,
+            stackLevel: stack_level,
+            chargingProfilePurpose: profile_purpose === 'ChargePointMaxProfile' ? 'ChargingStationMaxProfile' : profile_purpose,
+            chargingProfileKind: profile_kind,
+            chargingSchedule: [{ id: 1, ...chargingSchedule }],
+          };
+          if (recurrency_kind) chargingProfile201.recurrencyKind = recurrency_kind;
+          if (valid_from) chargingProfile201.validFrom = valid_from;
+          if (valid_to) chargingProfile201.validTo = valid_to;
+          result = await callClient(found.identity, 'SetChargingProfile', {
+            evseId: connector_id,
+            chargingProfile: chargingProfile201,
+          });
+        } else {
+          const csChargingProfiles = {
+            chargingProfileId: profile_id,
+            stackLevel: stack_level,
+            chargingProfilePurpose: profile_purpose,
+            chargingProfileKind: profile_kind,
+            chargingSchedule,
+          };
+          result = await callClient(found.identity, 'SetChargingProfile', {
+            connectorId: connector_id,
+            csChargingProfiles,
+          });
+        }
+        const status = result?.status ?? 'Rejected';
+        testDb.prepare("UPDATE charging_profiles SET status = ? WHERE id = ?").run(status, dbId);
+        res.json({ status, id: dbId });
+      } catch (e) {
+        testDb.prepare('DELETE FROM charging_profiles WHERE id = ?').run(dbId);
+        res.status(500).json({ error: 'ERR_INTERNAL', details: e.message });
+      }
+    });
+
+    return { app, db: testDb, cp };
+  }
+
+  it('appelle SetChargingProfile avec evseId et chargingProfile (tableau) pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    await agent.post(`/api/chargepoints/${cp.id}/charging-profiles`).set(CSRF_HEADER, csrf).send(BASE_PROFILE);
+
+    expect(callClient).toHaveBeenCalledWith('CP201', 'SetChargingProfile', expect.objectContaining({
+      evseId: 0,
+      chargingProfile: expect.objectContaining({
+        chargingProfilePurpose: 'ChargingStationMaxProfile',
+        chargingProfileKind: 'Absolute',
+        chargingSchedule: expect.arrayContaining([
+          expect.objectContaining({
+            id: 1,
+            chargingRateUnit: 'W',
+            chargingSchedulePeriod: [{ startPeriod: 0, limit: 11000 }],
+          }),
+        ]),
+      }),
+    }));
+  });
+
+  it('ne passe pas connectorId/csChargingProfiles dans le payload 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    await agent.post(`/api/chargepoints/${cp.id}/charging-profiles`).set(CSRF_HEADER, csrf).send(BASE_PROFILE);
+
+    const [, , payload] = callClient.mock.calls[0];
+    expect(payload.connectorId).toBeUndefined();
+    expect(payload.csChargingProfiles).toBeUndefined();
+  });
+
+  it('chargingSchedule est un tableau avec id=1 pour 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    await agent.post(`/api/chargepoints/${cp.id}/charging-profiles`).set(CSRF_HEADER, csrf).send(BASE_PROFILE);
+
+    const [, , payload] = callClient.mock.calls[0];
+    expect(Array.isArray(payload.chargingProfile.chargingSchedule)).toBe(true);
+    expect(payload.chargingProfile.chargingSchedule[0].id).toBe(1);
+  });
+
+  it('inclut recurrencyKind/validFrom/validTo dans chargingProfile quand fournis', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    await agent.post(`/api/chargepoints/${cp.id}/charging-profiles`).set(CSRF_HEADER, csrf).send({
+      ...BASE_PROFILE,
+      profile_kind: 'Recurring',
+      recurrency_kind: 'Daily',
+      valid_from: '2025-01-01T00:00:00Z',
+      valid_to: '2025-12-31T23:59:59Z',
+    });
+
+    const [, , payload] = callClient.mock.calls[0];
+    expect(payload.chargingProfile.recurrencyKind).toBe('Daily');
+    expect(payload.chargingProfile.validFrom).toBe('2025-01-01T00:00:00Z');
+    expect(payload.chargingProfile.validTo).toBe('2025-12-31T23:59:59Z');
+  });
+
+  it('status Accepted sauvegardé en DB pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, db, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/charging-profiles`)
+      .set(CSRF_HEADER, csrf)
+      .send(BASE_PROFILE);
+
+    expect(res.status).toBe(200);
+    const profile = db.prepare('SELECT * FROM charging_profiles WHERE id = ?').get(res.body.id);
+    expect(profile.status).toBe('Accepted');
+  });
+});
+
+// ══════════════════════════════════════════════════════
+//  ClearChargingProfile + DELETE + GetCompositeSchedule — OCPP 2.0.1
+// ══════════════════════════════════════════════════════
+describe('ClearChargingProfile / DELETE / GetCompositeSchedule — OCPP 2.0.1', () => {
+  function mapPurposeTo201(p) { return p === 'ChargePointMaxProfile' ? 'ChargingStationMaxProfile' : p; }
+
+  function createApp201Full(options = {}) {
+    const { callClient = jest.fn().mockResolvedValue({ status: 'Accepted' }), isConnected = true } = options;
+
+    const testDb = new Database(':memory:');
+    testDb.pragma('journal_mode = WAL');
+    testDb.pragma('foreign_keys = ON');
+    initNewDatabase(testDb);
+
+    const hash = bcrypt.hashSync('Admin!123', 4);
+    testDb.prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)').run('admin@test.com', hash, 'admin', 'Admin');
+    testDb.prepare("INSERT INTO chargepoints (identity, cpname, mode, authorized, feat_smartcharging, ocpp_version) VALUES (?,?,?,?,?,?)").run('CP201', 'Test CP 201', 1, 1, 1, '2.0.1');
+    const cp = testDb.prepare("SELECT * FROM chargepoints WHERE identity = 'CP201'").get();
+
+    const connectedClients = isConnected ? new Map([['CP201', {}]]) : new Map();
+
+    const testPassport = new passport.Passport();
+    testPassport.use(new LocalStrategy({ usernameField: 'useremail', passwordField: 'password' }, (email, pwd, done) => {
+      const user = testDb.prepare('SELECT * FROM users WHERE useremail = ?').get(email);
+      if (!user || !bcrypt.compareSync(pwd, user.password)) return done(null, false);
+      return done(null, { id: user.id, useremail: user.useremail, role: user.role });
+    }));
+    testPassport.serializeUser((u, done) => done(null, u.id));
+    testPassport.deserializeUser((id, done) => {
+      const u = testDb.prepare('SELECT * FROM users WHERE id = ?').get(id);
+      done(null, u ? { id: u.id, useremail: u.useremail, role: u.role } : false);
+    });
+
+    const app = express();
+    app.use(express.json());
+    app.use(session({ secret: 'test-secret!!', resave: false, saveUninitialized: false }));
+    app.use(testPassport.initialize());
+    app.use(testPassport.session());
+    app.use((req, res, next) => {
+      let token = readCookie(req, CSRF_COOKIE);
+      if (!token) {
+        token = crypto.randomBytes(32).toString('hex');
+        res.cookie(CSRF_COOKIE, token, { httpOnly: false, sameSite: 'lax', path: '/' });
+      }
+      if (!CSRF_SAFE_METHODS.has(req.method) && req.headers[CSRF_HEADER] !== token) return res.status(403).json({ error: 'csrf_invalid' });
+      next();
+    });
+
+    function requireAuth(req, res, next) {
+      if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+      next();
+    }
+
+    app.get('/api/auth/me', (req, res) => {
+      if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+      res.json(req.user);
+    });
+    app.post('/api/auth/login', (req, res, next) => {
+      testPassport.authenticate('local', (err, user) => {
+        if (err) return next(err);
+        if (!user) return res.status(401).json({ error: 'ERR_INVALID_AUTH' });
+        req.logIn(user, (loginErr) => { if (loginErr) return next(loginErr); res.json(user); });
+      })(req, res, next);
+    });
+
+    app.post('/api/chargepoints/:id/charging-profiles/clear', requireAuth, async (req, res) => {
+      const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+      if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+      if (!connectedClients.has(found.identity)) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+      const { profile_id, connector_id, profile_purpose, stack_level } = req.body;
+      const ocppParams = {};
+      if (found.ocpp_version === '2.0.1') {
+        if (profile_id != null) ocppParams.chargingProfileId = profile_id;
+        const criteria = {};
+        if (connector_id != null) criteria.evseId = connector_id;
+        if (profile_purpose) criteria.chargingProfilePurpose = mapPurposeTo201(profile_purpose);
+        if (stack_level != null) criteria.stackLevel = stack_level;
+        if (Object.keys(criteria).length > 0) ocppParams.chargingProfileCriteria = criteria;
+      } else {
+        if (profile_id != null) ocppParams.id = profile_id;
+        if (connector_id != null) ocppParams.connectorId = connector_id;
+        if (profile_purpose) ocppParams.chargingProfilePurpose = profile_purpose;
+        if (stack_level != null) ocppParams.stackLevel = stack_level;
+      }
+      try {
+        const result = await callClient(found.identity, 'ClearChargingProfile', ocppParams);
+        res.json({ status: result?.status ?? 'Unknown' });
+      } catch (e) { res.status(500).json({ error: 'ERR_INTERNAL' }); }
+    });
+
+    app.post('/api/chargepoints/:id/charging-profiles/composite-schedule', requireAuth, async (req, res) => {
+      const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+      if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+      if (!connectedClients.has(found.identity)) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+      const { connector_id, duration, charging_rate_unit } = req.body;
+      const ocppParams = found.ocpp_version === '2.0.1'
+        ? { evseId: connector_id, duration }
+        : { connectorId: connector_id, duration };
+      if (charging_rate_unit) ocppParams.chargingRateUnit = charging_rate_unit;
+      try {
+        const result = await callClient(found.identity, 'GetCompositeSchedule', ocppParams);
+        res.json(result);
+      } catch (e) { res.status(500).json({ error: 'ERR_INTERNAL' }); }
+    });
+
+    app.delete('/api/chargepoints/:id/charging-profiles/:profileDbId', requireAuth, async (req, res) => {
+      const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+      if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+      const profileDbId = Number(req.params.profileDbId);
+      const profile = testDb.prepare('SELECT * FROM charging_profiles WHERE id = ?').get(profileDbId);
+      if (!profile || profile.chargepoint_id !== found.id) return res.status(404).json({ error: 'ERR_PROFILE_NOT_FOUND' });
+      if (profile.status === 'Rejected') {
+        testDb.prepare('DELETE FROM charging_profiles WHERE id = ?').run(profileDbId);
+        return res.json({ status: 'Accepted' });
+      }
+      if (!connectedClients.has(found.identity)) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+      try {
+        const clearParams = found.ocpp_version === '2.0.1'
+          ? { chargingProfileId: profile.profile_id }
+          : { id: profile.profile_id };
+        const result = await callClient(found.identity, 'ClearChargingProfile', clearParams);
+        if (result?.status === 'Accepted') testDb.prepare('DELETE FROM charging_profiles WHERE id = ?').run(profileDbId);
+        res.json({ status: result?.status ?? 'Unknown' });
+      } catch (e) { res.status(500).json({ error: 'ERR_INTERNAL' }); }
+    });
+
+    return { app, db: testDb, cp };
+  }
+
+  it('ClearChargingProfile /clear : utilise chargingProfileCriteria avec evseId et purpose mappé pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201Full({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    await agent.post(`/api/chargepoints/${cp.id}/charging-profiles/clear`).set(CSRF_HEADER, csrf)
+      .send({ profile_purpose: 'ChargePointMaxProfile', connector_id: 1 });
+    expect(callClient).toHaveBeenCalledWith('CP201', 'ClearChargingProfile', {
+      chargingProfileCriteria: { evseId: 1, chargingProfilePurpose: 'ChargingStationMaxProfile' },
+    });
+  });
+
+  it('ClearChargingProfile /clear : utilise chargingProfileId pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201Full({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    await agent.post(`/api/chargepoints/${cp.id}/charging-profiles/clear`).set(CSRF_HEADER, csrf)
+      .send({ profile_id: 3 });
+    expect(callClient).toHaveBeenCalledWith('CP201', 'ClearChargingProfile', { chargingProfileId: 3 });
+  });
+
+  it('ClearChargingProfile /clear : envoie un objet vide si aucun filtre pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201Full({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    await agent.post(`/api/chargepoints/${cp.id}/charging-profiles/clear`).set(CSRF_HEADER, csrf).send({});
+    expect(callClient).toHaveBeenCalledWith('CP201', 'ClearChargingProfile', {});
+  });
+
+  it('DELETE : utilise chargingProfileId (et non id) pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, db, cp } = createApp201Full({ callClient });
+    db.prepare(`
+      INSERT INTO charging_profiles (chargepoint_id, profile_id, connector_id, stack_level,
+        profile_purpose, profile_kind, charging_rate_unit, schedule_json, status)
+      VALUES (?, 5, 0, 0, 'ChargingStationMaxProfile', 'Absolute', 'W', '{}', 'Accepted')
+    `).run(cp.id);
+    const dbId = db.prepare('SELECT last_insert_rowid() AS id').get().id;
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    await agent.delete(`/api/chargepoints/${cp.id}/charging-profiles/${dbId}`).set(CSRF_HEADER, csrf);
+    expect(callClient).toHaveBeenCalledWith('CP201', 'ClearChargingProfile', { chargingProfileId: 5 });
+  });
+
+  it('GetCompositeSchedule : utilise evseId (et non connectorId) pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted', evseId: 0 });
+    const { app, cp } = createApp201Full({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    await agent.post(`/api/chargepoints/${cp.id}/charging-profiles/composite-schedule`).set(CSRF_HEADER, csrf)
+      .send({ connector_id: 0, duration: 3600, charging_rate_unit: 'W' });
+    expect(callClient).toHaveBeenCalledWith('CP201', 'GetCompositeSchedule', {
+      evseId: 0, duration: 3600, chargingRateUnit: 'W',
+    });
+  });
+});
