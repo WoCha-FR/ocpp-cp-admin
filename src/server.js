@@ -588,8 +588,8 @@ setBroadcast(broadcastToUI);
 
 // ── Serveur OCPP sur port unique ──
 const ocppProtocols = [];
-if (config.ocpp.v16?.enabled !== false) ocppProtocols.push('ocpp1.6');
 if (config.ocpp.v201?.enabled) ocppProtocols.push('ocpp2.0.1');
+if (config.ocpp.v16?.enabled !== false) ocppProtocols.push('ocpp1.6');
 if (ocppProtocols.length === 0) {
   logOCPP.warn(
     'No OCPP version enabled (v16 and v201 both disabled) — OCPP server will reject all connections'
