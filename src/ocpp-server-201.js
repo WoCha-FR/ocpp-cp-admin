@@ -296,7 +296,7 @@ function register201Handlers(client, loggedHandle) {
         // Step 3/4 — GetBaseReport (synchronise l'état courant en DB via NotifyReport)
         if (isSuperseded()) return;
         try {
-          logger.debug(`[InitSeq201] ${identity} step 3/4 — GetBaseReport`);
+          logger.debug(`[InitSeq201] ${identity} step 3/5 — GetBaseReport`);
           await callClient201(identity, 'GetBaseReport', {
             requestId: Date.now(),
             reportBase: 'FullInventory',
@@ -317,7 +317,7 @@ function register201Handlers(client, loggedHandle) {
           if (isSuperseded()) break;
           try {
             logger.debug(
-              `[InitSeq201] ${identity} step 4/4 — SetVariables ${v.component}.${v.variable}`
+              `[InitSeq201] ${identity} step 4/5 — SetVariables ${v.component}.${v.variable}`
             );
             const result = await callClient201(identity, 'SetVariables', {
               setVariableData: [
@@ -358,6 +358,41 @@ function register201Handlers(client, loggedHandle) {
               disconnectedDuringInit = true;
               lastFailedStep = `SetVariables(${v.component}.${v.variable})`;
               break;
+            }
+          }
+        }
+
+        // Step 5/5 — SetVariables (ré-application des overrides locaux)
+        if (!isSuperseded()) {
+          const overrideVars = db.getChargepointOverrideVariables(cp.id);
+          for (const v of overrideVars) {
+            if (isSuperseded()) break;
+            try {
+              logger.debug(
+                `[InitSeq201] ${identity} step 5/5 — SetVariables override ${v.component}.${v.variable}`
+              );
+              const result = await callClient201(identity, 'SetVariables', {
+                setVariableData: [
+                  {
+                    component: { name: v.component },
+                    variable: { name: v.variable },
+                    attributeType: v.attribute || 'Actual',
+                    attributeValue: v.value,
+                  },
+                ],
+              });
+              const setResult = result?.setVariableResult?.[0];
+              if (setResult?.attributeStatus === 'RebootRequired')
+                rebootVars.push(`${v.component}.${v.variable}`);
+            } catch (e) {
+              logger.warn(
+                `[InitSeq201] ${identity} SetVariables override ${v.component}.${v.variable}: ${e.message}`
+              );
+              if (isDisconnectionError(e)) {
+                disconnectedDuringInit = true;
+                lastFailedStep = `SetVariables override(${v.component}.${v.variable})`;
+                break;
+              }
             }
           }
         }

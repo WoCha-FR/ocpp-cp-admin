@@ -27,6 +27,7 @@ const mockDb = {
   getInitialChargepointConfigByKey: jest.fn(() => ({ value: '300' })),
   getInitialChargepointVariableByKey: jest.fn(() => ({ value: '300' })),
   getEnabledInitialChargepointVariables: jest.fn(() => []),
+  getChargepointOverrideVariables: jest.fn(() => []),
   getChargingProfiles: jest.fn(() => []),
   markChargepointInitialized: jest.fn(),
   upsertChargepointVariable: jest.fn(),
@@ -1688,6 +1689,49 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
     await new Promise((resolve) => setImmediate(resolve));
     expect(mockDb.upsertChargepointVariable).not.toHaveBeenCalled();
+  });
+
+  it('envoie SetVariables pour chaque variable en override (step 5/5)', async () => {
+    mockDb.getChargepointOverrideVariables.mockReturnValue([
+      { component: 'TxCtrlr', variable: 'MeterValueSampleInterval', attribute: 'Actual', value: '30' },
+    ]);
+    client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.call).toHaveBeenCalledWith('SetVariables', {
+      setVariableData: [{
+        component: { name: 'TxCtrlr' },
+        variable: { name: 'MeterValueSampleInterval' },
+        attributeType: 'Actual',
+        attributeValue: '30',
+      }],
+    });
+    expect(mockDb.markChargepointInitialized).toHaveBeenCalledWith(1);
+  });
+
+  it('ne upsert pas la variable DB après SetVariables override (valeur déjà en DB)', async () => {
+    mockDb.getChargepointOverrideVariables.mockReturnValue([
+      { component: 'TxCtrlr', variable: 'MeterValueSampleInterval', attribute: 'Actual', value: '30' },
+    ]);
+    client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockDb.upsertChargepointVariable).not.toHaveBeenCalledWith(
+      expect.anything(), 'TxCtrlr', 'MeterValueSampleInterval', expect.anything(), expect.anything()
+    );
+  });
+
+  it('stoppe la boucle override si déconnecté pendant le step 5/5', async () => {
+    mockDb.getChargepointOverrideVariables.mockReturnValue([
+      { component: 'TxCtrlr', variable: 'MeterValueSampleInterval', attribute: 'Actual', value: '30' },
+    ]);
+    client.call
+      .mockResolvedValueOnce({})  // ClearCache
+      .mockResolvedValueOnce({})  // GetBaseReport
+      .mockRejectedValue(new Error('not connected'));
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(mockDb.markChargepointInitialized).not.toHaveBeenCalled();
   });
 });
 

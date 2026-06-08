@@ -1382,6 +1382,26 @@ function getChargepointOverrideConfigs(chargepointId) {
     .all(chargepointId);
 }
 
+function getChargepointVariableByKey(chargepointId, component, variable, attribute = 'Actual') {
+  return db
+    .prepare(
+      'SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?'
+    )
+    .get(chargepointId, component, variable, attribute);
+}
+
+function setChargepointVariableOverride(chargepointId, component, variable, attribute, isOverride) {
+  db.prepare(
+    "UPDATE chargepoint_variables SET is_override = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?"
+  ).run(isOverride ? 1 : 0, chargepointId, component, variable, attribute);
+}
+
+function getChargepointOverrideVariables(chargepointId) {
+  return db
+    .prepare('SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? AND is_override = 1')
+    .all(chargepointId);
+}
+
 function deleteChargepointConfig(chargepointId, key) {
   db.prepare('DELETE FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').run(
     chargepointId,
@@ -2599,5 +2619,8 @@ module.exports = {
   getEvsesByChargepoint,
   updateEvseName,
   upsertChargepointVariable,
+  getChargepointVariableByKey,
+  setChargepointVariableOverride,
+  getChargepointOverrideVariables,
   updateChargepointFeatures201,
 };

@@ -93,14 +93,33 @@ function createApp() {
   });
 
   // PATCH /api/chargepoints/:id/config/:key/override — set/clear is_override flag
+  const GLOBAL_ONLY_VARS_201 = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
   app.patch('/api/chargepoints/:id/config/:key/override', (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
     const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
     const key = req.params.key;
+    const isOverride = req.body.is_override === true;
+
+    if (cp.ocpp_version === '2.0.1') {
+      const dotIdx = key.indexOf('.');
+      if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+      const component = key.slice(0, dotIdx);
+      const variable = key.slice(dotIdx + 1);
+      if (GLOBAL_ONLY_VARS_201.some((v) => v.component === component && v.variable === variable))
+        return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
+      const existing = db.prepare(
+        'SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?'
+      ).get(cp.id, component, variable, 'Actual');
+      if (!existing) return res.status(404).json({ error: 'ERR_CONFIG_KEY_NOT_FOUND' });
+      db.prepare(
+        "UPDATE chargepoint_variables SET is_override = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?"
+      ).run(isOverride ? 1 : 0, cp.id, component, variable, 'Actual');
+      return res.json({ ok: true });
+    }
+
     const existing = db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').get(cp.id, key);
     if (!existing) return res.status(404).json({ error: 'ERR_CONFIG_KEY_NOT_FOUND' });
-    const isOverride = req.body.is_override === true;
     db.prepare(`UPDATE chargepoint_config SET is_override = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND key = ?`)
       .run(isOverride ? 1 : 0, cp.id, key);
     res.json({ ok: true });
@@ -431,6 +450,104 @@ describe('PATCH /api/chargepoints/:id/config/:key/override — toggle is_overrid
     const row = db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').get(cpId, 'ConnectionTimeOut');
     expect(row.value).toBe('120');
     expect(row.is_override).toBe(1);
+  });
+
+  describe('OCPP 2.0.1', () => {
+    function insertCp201(identity) {
+      db.prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES (?, '2.0.1')").run(identity);
+      return db.prepare('SELECT id FROM chargepoints WHERE identity = ?').get(identity);
+    }
+
+    function insertVariable(cpId, component, variable, value = '30', isOverride = 0) {
+      db.prepare(
+        "INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value, is_override) VALUES (?, ?, ?, 'Actual', ?, ?)"
+      ).run(cpId, component, variable, value, isOverride);
+    }
+
+    it('returns 400 ERR_INVALID_KEY_FORMAT when key has no dot', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-A');
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/NoDotKey/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('ERR_INVALID_KEY_FORMAT');
+    });
+
+    it('returns 400 ERR_KEY_NOT_OVERRIDABLE for OCPPCommCtrlr.HeartbeatInterval', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-B');
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/OCPPCommCtrlr.HeartbeatInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('ERR_KEY_NOT_OVERRIDABLE');
+    });
+
+    it('returns 404 ERR_CONFIG_KEY_NOT_FOUND when variable absent', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-C');
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/TxCtrlr.MeterValueSampleInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('ERR_CONFIG_KEY_NOT_FOUND');
+    });
+
+    it('sets is_override=1 in chargepoint_variables', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-D');
+      insertVariable(cpId, 'TxCtrlr', 'MeterValueSampleInterval', '30', 0);
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/TxCtrlr.MeterValueSampleInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const row = db.prepare(
+        "SELECT is_override FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = 'Actual'"
+      ).get(cpId, 'TxCtrlr', 'MeterValueSampleInterval');
+      expect(row.is_override).toBe(1);
+    });
+
+    it('clears is_override=0 in chargepoint_variables', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-E');
+      insertVariable(cpId, 'TxCtrlr', 'MeterValueSampleInterval', '30', 1);
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/TxCtrlr.MeterValueSampleInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: false });
+      expect(res.status).toBe(200);
+      const row = db.prepare(
+        "SELECT is_override FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = 'Actual'"
+      ).get(cpId, 'TxCtrlr', 'MeterValueSampleInterval');
+      expect(row.is_override).toBe(0);
+    });
+
+    it('does not change value', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-F');
+      insertVariable(cpId, 'TxCtrlr', 'MeterValueSampleInterval', '45', 0);
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      await agent
+        .patch(`/api/chargepoints/${cpId}/config/TxCtrlr.MeterValueSampleInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      const row = db.prepare(
+        "SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = 'Actual'"
+      ).get(cpId, 'TxCtrlr', 'MeterValueSampleInterval');
+      expect(row.value).toBe('45');
+      expect(row.is_override).toBe(1);
+    });
   });
 });
 

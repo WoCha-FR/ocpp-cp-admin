@@ -2930,7 +2930,8 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
             <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
             <td class="td-date">${formatDate(c.updated_at)}</td>
             ${adminManage() ? `<td style="white-space:nowrap;">
-              ${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button>` : isOnline ? '<span class="text-muted">- </span>' : ''}
+              ${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}
+              ${!c.readonly && !GLOBAL_ONLY_VARS_201.some(v => v.component === c.component && v.variable === c.variable) ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}
             </td>` : ''}
           </tr>
         `).join('')}

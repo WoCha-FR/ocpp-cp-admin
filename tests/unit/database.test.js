@@ -1538,6 +1538,107 @@ describe('database — upsertChargepointVariable', () => {
   });
 });
 
+// ── getChargepointVariableByKey ──
+describe('database — getChargepointVariableByKey', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('cp-varbykey', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertChargepointVariable(cpId, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60');
+    db.upsertChargepointVariable(cpId, 'TxCtrlr', 'EVConnectionTimeOut', 'Target', '120');
+  });
+
+  it('returns the matching variable', () => {
+    const v = db.getChargepointVariableByKey(cpId, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual');
+    expect(v).toBeDefined();
+    expect(v.component).toBe('OCPPCommCtrlr');
+    expect(v.variable).toBe('HeartbeatInterval');
+    expect(v.value).toBe('60');
+  });
+
+  it('uses Actual as default attribute', () => {
+    const v = db.getChargepointVariableByKey(cpId, 'OCPPCommCtrlr', 'HeartbeatInterval');
+    expect(v).toBeDefined();
+    expect(v.attribute).toBe('Actual');
+  });
+
+  it('returns undefined when not found', () => {
+    const v = db.getChargepointVariableByKey(cpId, 'Unknown', 'Unknown', 'Actual');
+    expect(v).toBeUndefined();
+  });
+});
+
+// ── setChargepointVariableOverride ──
+describe('database — setChargepointVariableOverride', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('cp-varoverride', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertChargepointVariable(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual', '30');
+  });
+
+  it('sets is_override=1', () => {
+    db.setChargepointVariableOverride(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual', true);
+    const v = db.getChargepointVariableByKey(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual');
+    expect(v.is_override).toBe(1);
+  });
+
+  it('clears is_override=0', () => {
+    db.setChargepointVariableOverride(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual', false);
+    const v = db.getChargepointVariableByKey(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual');
+    expect(v.is_override).toBe(0);
+  });
+
+  it('does not change value or readonly', () => {
+    db.setChargepointVariableOverride(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual', true);
+    const v = db.getChargepointVariableByKey(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual');
+    expect(v.value).toBe('30');
+    expect(v.readonly).toBe(0);
+  });
+});
+
+// ── getChargepointOverrideVariables ──
+describe('database — getChargepointOverrideVariables', () => {
+  let cpId;
+
+  beforeAll(() => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('cp-overridevars', '2.0.1')")
+      .run();
+    cpId = info.lastInsertRowid;
+    db.upsertChargepointVariable(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual', '30');
+    db.upsertChargepointVariable(cpId, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60');
+    db.setChargepointVariableOverride(cpId, 'TxCtrlr', 'MeterValueSampleInterval', 'Actual', true);
+  });
+
+  it('returns only variables with is_override=1', () => {
+    const vars = db.getChargepointOverrideVariables(cpId);
+    expect(vars.length).toBe(1);
+    expect(vars[0].component).toBe('TxCtrlr');
+    expect(vars[0].variable).toBe('MeterValueSampleInterval');
+  });
+
+  it('returns empty array when none have is_override=1', () => {
+    const rawDb = db.getDb();
+    const info = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('cp-nooverride', '2.0.1')")
+      .run();
+    const emptyId = info.lastInsertRowid;
+    db.upsertChargepointVariable(emptyId, 'TxCtrlr', 'SomeVar', 'Actual', '1');
+    const vars = db.getChargepointOverrideVariables(emptyId);
+    expect(vars).toEqual([]);
+  });
+});
+
 // ── getEvsesByChargepoint ──
 describe('database — getEvsesByChargepoint', () => {
   let cpId;

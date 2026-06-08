@@ -1653,6 +1653,21 @@ router.patch(
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
     const key = req.params.key;
     const isOverride = req.body.is_override === true;
+
+    if (cp.ocpp_version === '2.0.1') {
+      const dotIdx = key.indexOf('.');
+      if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+      const component = key.slice(0, dotIdx);
+      const variable = key.slice(dotIdx + 1);
+      const GLOBAL_ONLY = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
+      if (GLOBAL_ONLY.some((v) => v.component === component && v.variable === variable))
+        return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
+      const existing = db.getChargepointVariableByKey(cp.id, component, variable, 'Actual');
+      if (!existing) return res.status(404).json({ error: 'ERR_CONFIG_KEY_NOT_FOUND' });
+      db.setChargepointVariableOverride(cp.id, component, variable, 'Actual', isOverride);
+      return res.json({ ok: true });
+    }
+
     const existing = db.getChargepointConfigByKey(cp.id, key);
     if (!existing) return res.status(404).json({ error: 'ERR_CONFIG_KEY_NOT_FOUND' });
     db.setChargepointConfigOverride(cp.id, key, isOverride);
