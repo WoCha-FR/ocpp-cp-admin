@@ -1737,3 +1737,50 @@ describe('database — getInitialChargepointVariableByKey', () => {
     expect(row).toBeUndefined();
   });
 });
+
+// ── getTransactionFull ──
+describe('database — getTransactionFull', () => {
+  let cpId, siteId, txId;
+  const START = '2026-06-01T10:00:00Z';
+
+  beforeAll(() => {
+    const site = db.createSite('Full TX Site', null);
+    siteId = site.id;
+    db.upsertChargepoint('CP-FULL-TX', { cpstatus: 'Available', connected: 0, site_id: siteId, cpname: 'Borne Complète' });
+    cpId = db.getChargepointByIdentity('CP-FULL-TX').id;
+    db.getDb()
+      .prepare('INSERT OR REPLACE INTO connectors (chargepoint_id, connector_id, connector_name) VALUES (?,?,?)')
+      .run(cpId, 1, 'Prise Complète');
+    const tx = db.createTransaction(cpId, 1, 'TAGFULL', 5000, START, 'rfid');
+    txId = tx.transaction_id;
+  });
+
+  it('retourne undefined pour un transaction_id inexistant', () => {
+    const result = db.getTransactionFull('TX-DOES-NOT-EXIST');
+    expect(result).toBeUndefined();
+  });
+
+  it('retourne la transaction avec les champs enrichis', () => {
+    const result = db.getTransactionFull(txId);
+    expect(result).toBeDefined();
+    expect(result.transaction_id).toBe(txId);
+    expect(result.chargepoint_name).toBe('Borne Complète');
+    expect(result.site_name).toBe('Full TX Site');
+    expect(result.connector_name).toBe('Prise Complète');
+    expect(result.id_tag).toBe('TAGFULL');
+    expect(result.meter_start).toBe(5000);
+  });
+
+  it('retourne has_values=0 si aucune donnée de mesure', () => {
+    const result = db.getTransactionFull(txId);
+    expect(result.has_values).toBe(0);
+  });
+
+  it('retourne has_values=1 si des données de mesure existent', () => {
+    db.upsertTransactionValues(txId, {
+      energieEntry: { x: Date.now(), power: 3000, offer: 3200, energy: 1000 },
+    });
+    const result = db.getTransactionFull(txId);
+    expect(result.has_values).toBe(1);
+  });
+});

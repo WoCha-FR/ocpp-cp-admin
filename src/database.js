@@ -965,7 +965,8 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
     s.sname as site_name,
     it.user_id as tag_user_id, COALESCE(u.shortname, u.useremail) as tag_username,
     CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values,
-    cn.connector_name as connector_name
+    cn.connector_name as connector_name,
+    ev.evse_name as evse_name
     FROM transactions t
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
     LEFT JOIN sites s ON cp.site_id = s.id
@@ -978,7 +979,8 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
     )
     LEFT JOIN users u ON it.user_id = u.id
     LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id
-    LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id AND cn.evse_id IS t.evse_id`;
+    LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id AND cn.evse_id IS t.evse_id
+    LEFT JOIN evses ev ON ev.chargepoint_id = t.chargepoint_id AND ev.evse_id = t.evse_id`;
 
 function buildTransactionQuery(baseCondition, baseParams, filters) {
   let whereClause = ' WHERE ' + baseCondition;
@@ -1118,6 +1120,12 @@ function updateTransactionPowerEnergy(transactionId, power, energyWh) {
 function getTransactionByTransactionId(transactionId) {
   return db
     .prepare('SELECT * FROM transactions WHERE transaction_id = ?')
+    .get(String(transactionId));
+}
+
+function getTransactionFull(transactionId) {
+  return db
+    .prepare(`${TRANSACTIONS_BASE_QUERY} WHERE t.transaction_id = ?`)
     .get(String(transactionId));
 }
 
@@ -2497,6 +2505,7 @@ module.exports = {
   getUserTransactions,
   getDashboardChartData,
   getTransactionByTransactionId,
+  getTransactionFull,
   getActiveTransactionByConnector,
   getTransactionValues,
   updateChargepointMeterValue,

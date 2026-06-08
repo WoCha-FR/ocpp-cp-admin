@@ -1087,7 +1087,7 @@ async function renderDashboard() {
         <div class="card-header"><h3>${t('dashboard.totalActiveCharge')}</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('dashboard.noActiveCharge')}</p>` : `
         <table>
-          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.charts')}</th></tr></thead>
+          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
@@ -1099,7 +1099,7 @@ async function renderDashboard() {
                 <td>${formatDate(tx.start_time)}</td>
                 <td>${tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
-                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'dashboard');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -4187,32 +4187,26 @@ async function renderTransactions(keepState = false) {
 
       <div class="card">
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: txTotal })})</h3></div>
-        ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : (() => {
-          const hasEvse = transactions.some(tx => tx.evse_id != null);
-          return `
-        <table style="font-size: 0.85em;">
-          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th>${hasEvse ? '<th>EVSE</th>' : ''}<th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+        ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
+        <table>
+          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
                 <td>${tx.transaction_id}</td>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
-                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>${hasEvse ? `<td>${tx.evse_id != null ? tx.evse_id : ''}</td>` : ''}
-                <td>${cleanIdTag(tx.id_tag) || '-'}</td>
+                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
-                <td>${formatDate(tx.start_time)}</td>
-                <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
+                <td>${formatDateShort(tx.start_time)}</td>
+                <td>${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
                 <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
-                <td>${formatTxStatus(tx.status)}</td>
-                <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
-                <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
-                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+                <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
+                <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
               </tr>
             `).join('')}
           </tbody>
-        </table>`;
-        })()}
+        </table>`}
       </div>
     `;
     const lc = getLocaleConfig();
@@ -4396,34 +4390,21 @@ async function renderMyTransactions(keepState = false) {
       <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: myTxTotal })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
-        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.duration')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
         <tbody>
         ${transactions.map(tx => {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
-          let duration = '-';
-          if (tx.start_time && tx.stop_time) {
-            const diffMin = (new Date(tx.stop_time) - new Date(tx.start_time)) / 60000;
-            if (diffMin >= 60) {
-              duration = formatDuree(Math.floor(diffMin));
-            } else {
-              duration = Math.floor(diffMin) + ` ${t('common.unitMinutes')}`;
-            }
-          } else if (tx.start_time && tx.status === 'Active') {
-            duration = `<span class="badge badge-green">${t('transac.inProgress')}</span>`;
-          }
           return `
             <tr>
               <td>${tx.transaction_id}</td>
               <td>${tx.site_name || '-'}</td>
               <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
               <td>${formatStartSource(tx.start_source)}</td>
-              <td>${formatDate(tx.start_time)}</td>
-              <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
+              <td>${formatDateShort(tx.start_time)}</td>
+              <td>${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
               <td>${energy}</td>
-              <td>${duration}</td>
-              <td>${formatTxStatus(tx.status)}</td>
-              <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
-              <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'mytransactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+              <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
+              <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'mytransactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -4509,17 +4490,75 @@ function formatReason(reason) {
 //  DÉTAIL TRANSACTION (graphiques)
 // ══════════════════════════════════════
 let txDetailCharts = { energie: null, courant: null, soc: null, tempfreq: null };
-let txDetailContext = { transactionId: null, lastPage: null, data: null };
+let txDetailContext = { transactionId: null, lastPage: null, data: null, tx: null };
 
 async function showTransactionDetail(transactionId, lastPage) {
   currentPage = 'transactiondetail';
   document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: transactionId });
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === lastPage));
-
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-secondary" data-onclick="navigate('${lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
+  document.getElementById('pageContent').innerHTML =
+    `<p id="txDetailLoading" class="text-muted">${t('charts.cLoading')}</p>`;
+
+  txDetailContext.transactionId = transactionId;
+  txDetailContext.lastPage = lastPage;
+
+  try {
+    const [tx, data] = await Promise.all([
+      api('GET', '/transactions/' + transactionId),
+      api('GET', '/transactions/' + transactionId + '/values')
+    ]);
+    txDetailContext.tx = tx;
+    txDetailContext.data = data;
+    renderTransactionDetail(tx, data);
+  } catch (err) {
+    const el = document.getElementById('txDetailLoading');
+    if (el) el.textContent = `${t('common.error')}: ${err.message}`;
+  }
+}
+
+function renderTransactionDetail(tx, data) {
+  const hasChartData = data.energie.length > 0 || data.courant.length > 0 || data.soc.length > 0
+    || data.temperature.length > 0 || data.tension.length > 0 || data.frequence.length > 0;
+  const energy = tx.meter_stop != null && tx.meter_start != null
+    ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh'
+    : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
+  let duration = '';
+  if (tx.start_time && tx.stop_time) {
+    const diffMin = Math.floor((new Date(tx.stop_time) - new Date(tx.start_time)) / 60000);
+    duration = diffMin >= 60 ? formatDuree(diffMin) : diffMin + ' min';
+  }
 
   document.getElementById('pageContent').innerHTML = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="detail-sections" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <div class="detail-section">
+          <div class="detail-section-title">🔌 ${t('common.chargepoint_one')}</div>
+          ${tx.site_name ? `<div class="detail-row"><span class="detail-label">${t('common.site_one')}</span><span class="detail-value">${escapeHtml(tx.site_name)}</span></div>` : ''}
+          <div class="detail-row"><span class="detail-label">${t('common.name')}</span><span class="detail-value">${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</span></div>
+          ${tx.evse_id != null ? `<div class="detail-row"><span class="detail-label">EVSE</span><span class="detail-value">${tx.evse_name ? escapeHtml(tx.evse_name) : tx.evse_id}</span></div>` : ''}
+          <div class="detail-row"><span class="detail-label">${t('common.connector_one')}</span><span class="detail-value">${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</span></div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-section-title">🪪 ${t('common.user')}</div>
+          ${tx.id_tag ? `<div class="detail-row"><span class="detail-label">${t('common.rfidTag')}</span><span class="detail-value">${escapeHtml(cleanIdTag(tx.id_tag) || tx.id_tag)}</span></div>` : ''}
+          ${tx.tag_username ? `<div class="detail-row"><span class="detail-label">${t('common.user')}</span><span class="detail-value">${escapeHtml(tx.tag_username)}</span></div>` : ''}
+          <div class="detail-row"><span class="detail-label">${t('common.source')}</span><span class="detail-value">${formatStartSource(tx.start_source)}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('common.status')}</span><span class="detail-value">${formatTxStatus(tx.status)}</span></div>
+          ${tx.charging_state ? `<div class="detail-row"><span class="detail-label">${t('transac.chargingState')}</span><span class="detail-value"><span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span></span></div>` : ''}
+          ${tx.stop_reason ? `<div class="detail-row"><span class="detail-label">${t('transac.stopReason')}</span><span class="detail-value">${formatReason(tx.stop_reason)}</span></div>` : ''}
+        </div>
+        <div class="detail-section">
+          <div class="detail-section-title">⏱️ ${t('transac.metrics')}</div>
+          <div class="detail-row"><span class="detail-label">${t('common.start')}</span><span class="detail-value">${formatDate(tx.start_time)}</span></div>
+          ${tx.stop_time ? `<div class="detail-row"><span class="detail-label">${t('common.end')}</span><span class="detail-value">${formatDate(tx.stop_time)}</span></div>` : ''}
+          ${duration ? `<div class="detail-row"><span class="detail-label">${t('transac.duration')}</span><span class="detail-value">${duration}</span></div>` : ''}
+          <div class="detail-row"><span class="detail-label">${t('common.energy')}</span><span class="detail-value">${energy}</span></div>
+        </div>
+      </div>
+    </div>
+    ${hasChartData ? `
     <div class="chart-grid" style="grid-template-columns: 1fr;">
       <div class="chart-card">
         <h3>⚡ ${t('charts.cPowerTitle')}</h3>
@@ -4537,20 +4576,11 @@ async function showTransactionDetail(transactionId, lastPage) {
         <h3>🌡️ ${t('charts.cTempFreqTitle')}</h3>
         <div style="height:300px;"><canvas id="chartTxTempFreq"></canvas></div>
       </div>
-    </div>
-    <p id="txDetailLoading" class="text-muted">${t('charts.cLoading')}</p>
+    </div>` : ''}
   `;
 
-  txDetailContext.transactionId = transactionId;
-  txDetailContext.lastPage = lastPage;
-
-  try {
-    const data = await api('GET', '/transactions/' + transactionId + '/values');
-    document.getElementById('txDetailLoading').remove();
-    txDetailContext.data = data;
+  if (hasChartData) {
     renderTransactionCharts(data);
-  } catch (err) {
-    document.getElementById('txDetailLoading').textContent = `${t('common.error')}: ${err.message}`;
   }
 }
 
@@ -4562,28 +4592,8 @@ function refreshTransactionDetail() {
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-secondary" data-onclick="navigate('${txDetailContext.lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
 
-  document.getElementById('pageContent').innerHTML = `
-    <div class="chart-grid" style="grid-template-columns: 1fr;">
-      <div class="chart-card">
-        <h3>⚡ ${t('charts.cPowerTitle')}</h3>
-        <div style="height:300px;"><canvas id="chartTxEnergie"></canvas></div>
-      </div>
-      <div class="chart-card" id="chartCardCourant">
-        <h3>🔌 ${t('charts.cCurrentTitle')}</h3>
-        <div style="height:300px;"><canvas id="chartTxCourant"></canvas></div>
-      </div>
-      <div class="chart-card" id="chartCardSoc">
-        <h3>🔋 ${t('charts.cSoCTitle')}</h3>
-        <div style="height:300px;"><canvas id="chartTxSoc"></canvas></div>
-      </div>
-      <div class="chart-card" id="chartCardTempFreq" style="display:none;">
-        <h3>🌡️ ${t('charts.cTempFreqTitle')}</h3>
-        <div style="height:300px;"><canvas id="chartTxTempFreq"></canvas></div>
-      </div>
-    </div>
-  `;
-  if (txDetailContext.data) {
-    renderTransactionCharts(txDetailContext.data);
+  if (txDetailContext.tx && txDetailContext.data) {
+    renderTransactionDetail(txDetailContext.tx, txDetailContext.data);
   }
 }
 

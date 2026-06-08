@@ -2080,6 +2080,20 @@ router.get(
 );
 
 // ══════════════════════════════════════
+//  TRANSACTION DETAIL (métadonnées)
+// ══════════════════════════════════════
+router.get(
+  '/transactions/:transactionId',
+  requireAuth,
+  ...validateSchema(schema.TransactionIdParam),
+  (req, res) => {
+    const tx = db.getTransactionFull(req.params.transactionId);
+    if (!tx) return res.status(404).json({ error: 'Not found' });
+    res.json(tx);
+  }
+);
+
+// ══════════════════════════════════════
 //  TRANSACTION VALUES (graphiques)
 // ══════════════════════════════════════
 router.get(

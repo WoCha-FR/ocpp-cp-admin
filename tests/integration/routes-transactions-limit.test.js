@@ -138,6 +138,23 @@ function createApp() {
     res.json({ data: rows, total: countResult.total, stats: { totalEnergy: 0, activeCount: 0, totalMinutes: 0 } });
   });
 
+  app.get('/api/transactions/:transactionId', requireAuth, (req, res) => {
+    const tx = testDb.prepare(`
+      SELECT t.*, cp.identity as chargepoint_identity, cp.cpname as chargepoint_name,
+        s.sname as site_name,
+        CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values,
+        cn.connector_name as connector_name
+      FROM transactions t
+      JOIN chargepoints cp ON t.chargepoint_id = cp.id
+      LEFT JOIN sites s ON cp.site_id = s.id
+      LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id
+      LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id
+      WHERE t.transaction_id = ?
+    `).get(req.params.transactionId);
+    if (!tx) return res.status(404).json({ error: 'Not found' });
+    res.json(tx);
+  });
+
   return { app, db: testDb, adminId, userId };
 }
 
@@ -205,6 +222,44 @@ describe('GET /api/transactions — paramètre limit', () => {
     expect(res.body).toHaveProperty('data');
     expect(res.body).toHaveProperty('total');
     expect(res.body).toHaveProperty('stats');
+  });
+});
+
+describe('GET /api/transactions/:transactionId', () => {
+  function insertCpAndTx(txId) {
+    const cpId = db
+      .prepare("INSERT INTO chargepoints (identity, cpstatus, cpname) VALUES ('DETAIL-CP', 'Available', 'Borne Détail')")
+      .run().lastInsertRowid;
+    db.prepare(
+      "INSERT INTO transactions (transaction_id, chargepoint_id, connector_id, id_tag, meter_start, status) VALUES (?,?,1,'DETAIL-TAG',1000,'Completed')"
+    ).run(txId, cpId);
+    return cpId;
+  }
+
+  it('retourne 401 si non authentifié', async () => {
+    const res = await request(app).get('/api/transactions/TX-DETAIL-1');
+    expect(res.status).toBe(401);
+  });
+
+  it("retourne 404 pour un transaction_id inexistant", async () => {
+    const agent = request.agent(app);
+    await loginAs(agent, 'user@test.com', 'User!1234');
+    const res = await agent.get('/api/transactions/TX-DOES-NOT-EXIST');
+    expect(res.status).toBe(404);
+  });
+
+  it('retourne les métadonnées complètes de la transaction', async () => {
+    insertCpAndTx('TX-DETAIL-1');
+    const agent = request.agent(app);
+    await loginAs(agent, 'user@test.com', 'User!1234');
+    const res = await agent.get('/api/transactions/TX-DETAIL-1');
+    expect(res.status).toBe(200);
+    expect(res.body.transaction_id).toBe('TX-DETAIL-1');
+    expect(res.body.chargepoint_name).toBe('Borne Détail');
+    expect(res.body.id_tag).toBe('DETAIL-TAG');
+    expect(res.body.meter_start).toBe(1000);
+    expect(res.body).toHaveProperty('has_values');
+    expect(res.body).toHaveProperty('site_name');
   });
 });
 
