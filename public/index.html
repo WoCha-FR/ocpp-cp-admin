@@ -1093,10 +1093,10 @@ async function renderDashboard() {
               <tr>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
                 <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
-                <td>${cleanIdTag(tx.id_tag) || '-'}</td>
+                <td>${renderIdTag(tx.id_tag)}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
-                <td>${formatDate(tx.start_time)}</td>
+                <td class="td-date">${formatDateShort(tx.start_time)}</td>
                 <td>${tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
                 <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'dashboard');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
@@ -1297,10 +1297,10 @@ async function renderChargepoints(keepState = false) {
                 <tbody>
                   ${pending.map(p => `
                     <tr>
-                      <td style="font-weight:500">${p.identity}</td>
-                      <td class="text-muted">${p.remoteAddress || '-'}</td>
-                      <td class="text-muted">${p.password ? '•••••' : t('common.none') }</td>
-                      <td class="text-muted">${formatDate(p.timestamp)}</td>
+                      <td class="td-primary">${p.identity}</td>
+                      <td class="td-meta">${p.remoteAddress || '-'}</td>
+                      <td class="td-meta">${p.password ? '•••••' : t('common.none') }</td>
+                      <td class="td-date">${formatDate(p.timestamp)}</td>
                       <td>
                         <button class="btn btn-success btn-sm" data-onclick="withBtn(this, () => acceptPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpAccept')}</button>
                         <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => rejectPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpRefuse')}</button>
@@ -1379,14 +1379,14 @@ async function renderChargepoints(keepState = false) {
                 <td>${cp.site_name ? escapeHtml(cp.site_name) : `<span class="text-muted">${t('chargepoint.cpNotAssigned')}</span>`}</td>
                 <td>
                   <span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span>
-                  <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>${appSettings.v16Enabled && appSettings.v201Enabled && cp.ocpp_version ? (cp.ocpp_version === '2.0.1' ? ' <span class="badge badge-purple" style="font-size:0.7em">2.0.1</span>' : ' <span class="badge badge-blue" style="font-size:0.7em">1.6</span>') : ''}
+                  <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>${appSettings.v16Enabled && appSettings.v201Enabled && cp.ocpp_version ? (cp.ocpp_version === '2.0.1' ? ' <span class="badge badge-purple badge-xs">2.0.1</span>' : ' <span class="badge badge-blue badge-xs">1.6</span>') : ''}
                 </td>
                 <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? `${t('common.unknown')}` : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>`}</td>
                 <td>${cp.cpname ? escapeHtml(cp.cpname) : '-'}</td>
                 <td>${dashboardCpMode(cp.mode)}</td>
                 <td>${cp.vendor ? escapeHtml(cp.vendor) : '-'}</td>
                 <td>${cp.model ? escapeHtml(cp.model) : '-'}</td>
-                <td class="text-muted">${cp.last_heartbeat ? formatDate(cp.last_heartbeat) : '-'}</td>
+                <td class="td-date">${cp.last_heartbeat ? formatDate(cp.last_heartbeat) : '-'}</td>
                 <td>
                   ${adminManage() ? `
                   <button class="btn btn-indigo btn-sm" data-onclick="assignCpToSite(${Number(cp.id) || 0}, '${escapeAttr(cp.identity)}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
@@ -1969,13 +1969,13 @@ async function renderDetailTabTransactions(cp) {
         <tbody>
           ${transactions.map(tx => `
             <tr>
-              <td>${tx.transaction_id}</td>
+              <td><span class="mono-id">${tx.transaction_id}</span></td>
               <td>${tx.connector_id}</td>
-              <td>${cleanIdTag(tx.id_tag) || '-'}</td>
+              <td>${renderIdTag(tx.id_tag)}</td>
               <td>${tx.tag_username ? `<span class="badge badge-blue">${escapeHtml(tx.tag_username)}</span>` : '<span class="text-muted">-</span>'}</td>
               <td>${formatStartSource(tx.start_source)}</td>
-              <td>${formatDate(tx.start_time)}</td>
-              <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
+              <td class="td-date">${formatDateShort(tx.start_time)}</td>
+              <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
               <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : '-'}</td>
               <td><span class="badge ${tx.status === 'Active' ? 'badge-green' : 'badge-gray'}">${tx.status}</span></td>
             </tr>
@@ -2116,7 +2116,7 @@ async function renderDetailTabLogs(cp) {
         <tbody>
           ${messages.map(m => `
             <tr>
-              <td class="text-muted" style="white-space:nowrap">${formatDate(m.timestamp)}</td>
+              <td class="td-date">${formatDate(m.timestamp)}</td>
               <td><span class="badge ${m.origin === 'chargepoint' ? 'badge-chargepoint' : 'badge-csms'}">${m.origin === 'chargepoint' ? `← ${t('common.chargepoint_one')}` : `→ ${t('common.csms')}`}</span></td>
               <td><span class="badge badge-${m.message_type.toLowerCase()}">${m.message_type}</span></td>
               <td class="msg-payload">${m.action || '-'}</td>
@@ -2372,11 +2372,11 @@ async function loadReservations(cpId) {
             ${reservations.map(r => `
               <tr>
                 <td>${r.connector_id}</td>
-                <td>${escapeHtml(r.id_tag)}</td>
-                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDateShort(r.expiry_date)}</td>
+                <td><span class="rfid-chip">${escapeHtml(r.id_tag)}</span></td>
+                <td class="td-date">${formatDateShort(r.expiry_date)}</td>
                 <td><span class="badge ${reservationBadgeClass(r.status)}">${t('chargepoint.cpReservationStatus' + r.status, { defaultValue: r.status })}</span></td>
-                <td class="text-muted" style="font-size:12px">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
-                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.created_at)}</td>
+                <td class="td-meta">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
+                <td class="td-date">${formatDateShort(r.created_at)}</td>
                 ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}
               </tr>
             `).join('')}
@@ -2412,10 +2412,10 @@ async function renderDetailTabEvses(cp) {
         <tbody>
           ${evses.map(e => `
             <tr>
-              <td><strong>#${e.evse_id}</strong></td>
+              <td class="td-primary">#${e.evse_id}</td>
               <td>${e.evse_name ? escapeHtml(e.evse_name) : '<span class="text-muted">-</span>'}</td>
               <td><span class="badge ${statusBadgeClass(e.status)}">${escapeHtml(e.status)}</span></td>
-              <td class="text-muted" style="font-size:12px">${e.created_at ? formatDate(e.created_at) : '-'}</td>
+              <td class="td-date">${e.created_at ? formatDateShort(e.created_at) : '-'}</td>
               <td style="white-space:nowrap">
                 <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'ChangeAvailability',{type:'Operative',evseId:${e.evse_id}})">${t('connectors.cSetAvailable')}</button>
                 <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'ChangeAvailability',{type:'Inoperative',evseId:${e.evse_id}})">${t('connectors.cSetUnavailable')}</button>
@@ -2424,7 +2424,7 @@ async function renderDetailTabEvses(cp) {
                 <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'OnIdle',${e.evse_id})">${t('chargepoint.cpReset201OnIdle')}</button>
                 <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'Immediate',${e.evse_id})">${t('chargepoint.cpReset201Immediate')}</button>
               </td>
-              <td><button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditEvseModal(${cp.id}, ${e.evse_id}, '${escapeAttr(e.evse_name || '')}')">✏️</button></td>
+              <td><button class="btn-icon" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditEvseModal(${cp.id}, ${e.evse_id}, '${escapeAttr(e.evse_name || '')}')">✏️</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -2924,11 +2924,11 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
       <tbody>
         ${config.map(c => `
           <tr data-key="${escapeAttr(c.component + '.' + c.variable)}">
-            <td style="font-family:monospace;font-size:13px;">${escapeHtml(c.component)}</td>
-            <td style="font-weight:500;font-family:monospace;font-size:13px;">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}${c.readonly ? ` <span class="badge badge-yellow">${t('chargepoint.cpConfReadOnly')}</span>` : ''}</td>
-            <td class="text-muted" style="font-size:12px">${escapeHtml(c.attribute || 'Actual')}</td>
+            <td class="td-mono">${escapeHtml(c.component)}</td>
+            <td class="td-mono">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}${c.readonly ? ` <span class="badge badge-yellow">${t('chargepoint.cpConfReadOnly')}</span>` : ''}</td>
+            <td class="td-meta">${escapeHtml(c.attribute || 'Actual')}</td>
             <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
-            <td class="text-muted">${formatDate(c.updated_at)}</td>
+            <td class="td-date">${formatDate(c.updated_at)}</td>
             ${adminManage() ? `<td style="white-space:nowrap;">
               ${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button>` : isOnline ? '<span class="text-muted">- </span>' : ''}
             </td>` : ''}
@@ -2946,10 +2946,10 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
     <tbody>
       ${config.map(c => `
         <tr data-key="${escapeAttr(c.key)}">
-          <td style="font-weight:500;font-family:monospace;font-size:13px;">${escapeHtml(c.key)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
+          <td class="td-mono">${escapeHtml(c.key)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
           <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
           <td>${c.readonly ? '<span class="badge badge-yellow">' + t('common.yes') + '</span>' : '<span class="badge badge-green">' + t('common.no') + '</span>'}</td>
-          <td class="text-muted">${formatDate(c.updated_at)}</td>
+          <td class="td-date">${formatDate(c.updated_at)}</td>
           ${adminManage() ? `<td style="white-space:nowrap;">
             ${GLOBAL_ONLY_KEYS.includes(c.key)
               ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
@@ -3477,7 +3477,7 @@ async function renderIdTags(tab, keepState = false) {
           <tbody>
             ${filtered.map(tag => `
               <tr>
-                <td style="font-weight:500;font-family:monospace;">${escapeHtml(tag.id_tag)}</td>
+                <td><span class="rfid-chip">${escapeHtml(tag.id_tag)}</span></td>
                 <td><span class="badge ${tag.active ? 'badge-green' : 'badge-red'}">${tag.active ? t('filters.active') : t('filters.inactive')}</span></td>
                 <td>${tag.user_name ? `<span class="badge badge-blue">${escapeHtml(tag.user_name)}</span>` : '<span class="text-muted">-</span>'}</td>
                 <td>${tag.site_name
@@ -3486,10 +3486,10 @@ async function renderIdTags(tab, keepState = false) {
                     ? tag.user_sites.map(s => `<span class="badge badge-green">${escapeHtml(s.site_name)}</span>`).join(' ')
                     : (tag.user_id ? '<span class="text-muted">-</span>' : `<span class="badge badge-yellow">${t('filters.all')}</span>`))}</td>
                 ${hasNonDefault201 ? `<td>${tag.token_type && tag.token_type !== 'ISO14443' ? `<span class="badge ${tokenTypeBadgeClass(tag.token_type)}">${escapeHtml(tag.token_type)}</span>` : '<span class="text-muted">-</span>'}</td>` : ''}
-                ${hasGroupToken ? `<td style="font-family:monospace;font-size:12px;">${tag.group_id_token ? escapeHtml(tag.group_id_token) : '<span class="text-muted">-</span>'}</td>` : ''}
+                ${hasGroupToken ? `<td><span class="rfid-chip">${tag.group_id_token ? escapeHtml(tag.group_id_token) : '-'}</span></td>` : ''}
                 <td>${tag.description ? escapeHtml(tag.description) : '<span class="text-muted">-</span>'}</td>
-                <td>${tag.expiry_date ? formatDateShort(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
-                <td class="text-muted">${formatDate(tag.created_at)}</td>
+                <td class="td-date">${tag.expiry_date ? formatDateShort(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
+                <td class="td-date">${formatDateShort(tag.created_at)}</td>
                 <td><div class="flex-gap">
                   ${!canEditTag(tag) ? (isAutoTag(tag) ? `<span class="badge badge-yellow" title="${t('idtags.rfVirtualHint')}">${t('idtags.rfVirtual')}</span>` : '') : `
                   <button class="btn btn-teal btn-sm" data-onclick="showEditIdTagModal(${tag.id})">${t('common.edit')}</button>
@@ -3779,10 +3779,10 @@ async function renderIdTagsEvents() {
         <tbody>
           ${events.map(e => `
             <tr>
-              <td class="text-muted" style="white-space:nowrap;">${formatDate(e.timestamp)}</td>
+              <td class="td-date">${formatDate(e.timestamp)}</td>
               <td>${e.chargepoint_name ? escapeHtml(e.chargepoint_name) : (e.chargepoint_identity ? escapeHtml(e.chargepoint_identity) : '<span class="text-muted">-</span>')}</td>
               <td>${e.connector_id ? '#' + e.connector_id : '<span class="text-muted">-</span>'}</td>
-              <td style="font-weight:500;font-family:monospace;">${escapeHtml(e.id_tag)}</td>
+              <td><span class="rfid-chip">${escapeHtml(e.id_tag)}</span></td>
               <td>${eventStatusBadge(e.status)}</td>
               <td>${e.reason ? escapeHtml(eventReasonLabels[e.reason] || e.reason) : '<span class="text-muted">-</span>'}</td>
               <td><span class="badge badge-blue">${escapeHtml(e.source || 'authorize')}</span></td>
@@ -3859,12 +3859,12 @@ async function renderUsers() {
               const canDelete = !isSelf && !isLastAdmin;
               return `
               <tr>
-                <td style="font-weight:500">${escapeHtml(u.useremail)}</td>
+                <td class="td-primary">${escapeHtml(u.useremail)}</td>
                 <td>${u.shortname ? escapeHtml(u.shortname) : '<span class="text-muted">-</span>'}</td>
                 <td>${formatRoleColumn(u)}</td>
                 <td>${formatUserSites(u.sites)}</td>
-                <td class="text-muted">${formatDateShort(u.created_at)}</td>
-                <td class="text-muted">${u.last_login ? formatDate(u.last_login) : '<span class="text-muted">-</span>'}</td>
+                <td class="td-date">${formatDateShort(u.created_at)}</td>
+                <td class="td-date">${u.last_login ? formatDate(u.last_login) : '-'}</td>
                 <td>
                   <button class="btn btn-indigo btn-sm" data-onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
                   <button class="btn btn-teal btn-sm" data-onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
@@ -4193,13 +4193,13 @@ async function renderTransactions(keepState = false) {
           <tbody>
             ${transactions.map(tx => `
               <tr>
-                <td>${tx.transaction_id}</td>
+                <td><span class="mono-id">${tx.transaction_id}</span></td>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
                 <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
-                <td>${formatDateShort(tx.start_time)}</td>
-                <td>${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
+                <td class="td-date">${formatDateShort(tx.start_time)}</td>
+                <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
                 <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
                 <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
@@ -4262,6 +4262,11 @@ function cleanIdTag(tag) {
   if (!tag) return null;
   if (tag === 'ADMIN' || tag.startsWith('MGR-') || tag.startsWith('WEB-')) return null;
   return tag;
+}
+function renderIdTag(tag) {
+  const cleaned = cleanIdTag(tag);
+  if (!cleaned) return '-';
+  return `<span class="rfid-chip">${escapeHtml(cleaned)}</span>`;
 }
 
 function formatTxUser(tx) {
@@ -4396,12 +4401,12 @@ async function renderMyTransactions(keepState = false) {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
           return `
             <tr>
-              <td>${tx.transaction_id}</td>
+              <td><span class="mono-id">${tx.transaction_id}</span></td>
               <td>${tx.site_name || '-'}</td>
               <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
               <td>${formatStartSource(tx.start_source)}</td>
-              <td>${formatDateShort(tx.start_time)}</td>
-              <td>${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
+              <td class="td-date">${formatDateShort(tx.start_time)}</td>
+              <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
               <td>${energy}</td>
               <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
               <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'mytransactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
@@ -5048,7 +5053,7 @@ async function renderNotifications() {
           <thead>
             <tr>
               <th>${t('push.prefEvent')}</th>
-              ${channels.map(c => `<th style="text-align:center;min-width:80px;">${channelLabels[c] || c}</th>`).join('')}
+              ${channels.map(c => `<th class="th-center">${channelLabels[c] || c}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -5057,10 +5062,10 @@ async function renderNotifications() {
             ` : eventKeys.map(ev => `
               <tr>
                 <td>
-                  <strong>${escapeHtml(events[ev].label)}</strong> <small style="color:var(--gray-500);">${escapeHtml(events[ev].description)}</small>
+                  <strong>${escapeHtml(events[ev].label)}</strong> <small class="text-muted">${escapeHtml(events[ev].description)}</small>
                 </td>
                 ${channels.map(ch => `
-                  <td style="text-align:center;">
+                  <td class="td-center">
                     <input type="checkbox"
                       data-event="${ev}" data-channel="${ch}"
                       ${isChecked(ev, ch, events[ev]) ? 'checked' : ''}>
@@ -5592,9 +5597,9 @@ async function _renderInitConfig201() {
       (v) => v.component === r.component && v.variable === r.variable
     );
     html += `<tr>
-      <td style="font-family:monospace;font-size:12px;">${escapeHtml(r.component)}</td>
-      <td style="font-weight:500;font-family:monospace;font-size:12px;">${escapeHtml(r.variable)}${isGlobalOnly ? ` <span class="badge badge-blue" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>` : ''}</td>
-      <td class="text-muted" style="font-size:12px;">${escapeHtml(r.attribute || 'Actual')}</td>
+      <td class="td-mono">${escapeHtml(r.component)}</td>
+      <td class="td-mono">${escapeHtml(r.variable)}${isGlobalOnly ? ` <span class="badge badge-blue" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>` : ''}</td>
+      <td class="td-meta">${escapeHtml(r.attribute || 'Actual')}</td>
       <td>${escapeHtml(r.value)}</td>
       <td><input type="checkbox" ${r.enabled || isGlobalOnly ? 'checked' : ''} ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : `data-onchange="toggleInitVariable(${r.id}, this.checked)"`}></td>
       <td>
@@ -6171,10 +6176,10 @@ async function renderSites() {
       const isManagedSite = isAdmin || (currentUser.sites || []).some(us => us.site_id === s.id && us.role === 'manager');
       return `
             <tr>
-              <td style="font-weight:500">${escapeHtml(s.sname)}</td>
+              <td class="td-primary">${escapeHtml(s.sname)}</td>
               <td>${s.address ? escapeHtml(s.address) : '-'}</td>
               <td>${cpCount}</td>
-              <td class="text-muted">${formatDateShort(s.created_at)}</td>
+              <td class="td-date">${formatDateShort(s.created_at)}</td>
               <td>
                 ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, '${escapeAttr(s.sname)}')">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>

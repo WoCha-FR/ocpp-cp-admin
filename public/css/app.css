@@ -303,8 +303,8 @@
     .kpi-period-btn:hover { border-color: var(--primary); color: var(--primary); }
     .kpi-period-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
 
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th { text-align: left; padding: 10px 12px; background: var(--table-header-bg); border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--text-secondary); font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 10px 12px; background: var(--table-header-bg); border-bottom: 2px solid var(--border-color); font-weight: 600; color: var(--text-secondary); }
     td { padding: 10px 12px; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
     tr:hover td { background: var(--table-hover-bg); }
 
@@ -319,6 +319,28 @@
     .badge-blue { background: var(--badge-blue-bg); color: var(--badge-blue-text); }
     .badge-purple { background: var(--badge-purple-bg); color: var(--badge-purple-text); }
     .badge-gray { background: var(--gray-200); color: var(--gray-700); }
+    .badge-xs { font-size: 9px; padding: 1px 5px; }
+
+    /* ── Cellules de tableaux — types sémantiques ── */
+    .td-primary { font-weight: 500; }
+    .td-mono { font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; font-weight: 500; }
+    .td-meta { color: var(--text-secondary); font-size: 12px; }
+    .td-date { color: var(--text-secondary); white-space: nowrap; }
+    .rfid-chip {
+      display: inline-block; padding: 2px 8px; border-radius: 10px;
+      background: var(--gray-200); color: var(--gray-700);
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px; font-weight: 500; letter-spacing: 0.05em;
+    }
+    .mono-id { font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; font-weight: 500; }
+    .btn-icon {
+      background: none; border: none; cursor: pointer;
+      padding: 4px 8px; font-size: 16px;
+      color: var(--text-secondary); line-height: 1;
+    }
+    .btn-icon:hover { color: var(--primary); }
+    .td-center { text-align: center; }
+    .th-center { text-align: center; min-width: 80px; }
 
     /* ── Status dot ── */
     .status-dot {
