@@ -652,6 +652,7 @@ const OcppCommand = {
           'GetCompositeSchedule',
           'GetConfiguration',
           'GetDiagnostics',
+          'GetLog',
           'GetLocalListVersion',
           'RemoteStartTransaction',
           'RemoteStopTransaction',
