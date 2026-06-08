@@ -956,6 +956,7 @@ function register201Handlers(client, loggedHandle) {
 
       // Corriger meterStop si la borne envoie une valeur <= meter_start alors que de l'énergie a été consommée
       const preTx = db.getTransactionByTransactionId(txId);
+      const txWasActive = preTx?.status === 'Active';
       if (
         preTx &&
         preTx.status === 'Active' &&
@@ -1000,11 +1001,13 @@ function register201Handlers(client, loggedHandle) {
         return {};
       }
       const resolvedTransactionId = stoppedTx.transaction_id;
-      broadcast(
-        'transaction_stop',
-        { identity, transactionId: resolvedTransactionId, meterStop, reason: stopReason },
-        cp?.site_id ?? null
-      );
+      if (txWasActive || !preTx) {
+        broadcast(
+          'transaction_stop',
+          { identity, transactionId: resolvedTransactionId, meterStop, reason: stopReason },
+          cp?.site_id ?? null
+        );
+      }
       if (stoppedTx && stoppedTx.evse_id != null) {
         db.updateConnectorCnstatus(
           stoppedTx.chargepoint_id,

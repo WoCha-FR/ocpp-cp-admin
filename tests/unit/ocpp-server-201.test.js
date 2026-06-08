@@ -1097,6 +1097,7 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
       id_tag: null,
       meter_start: 0,
       meter_stop: null,
+      status: 'Active',
       start_time: TS,
       stop_time: TS,
     });
