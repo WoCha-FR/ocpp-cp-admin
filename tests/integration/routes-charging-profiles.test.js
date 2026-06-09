@@ -953,6 +953,14 @@ describe('ClearChargingProfile / DELETE / GetCompositeSchedule — OCPP 2.0.1', 
       })(req, res, next);
     });
 
+    app.get('/api/chargepoints/:id', requireAuth, (req, res) => {
+      const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+      if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+      found.connectors = testDb.prepare('SELECT * FROM connectors WHERE chargepoint_id = ? AND connector_id > 0').all(found.id);
+      found.evses = testDb.prepare('SELECT * FROM evses WHERE chargepoint_id = ? ORDER BY evse_id').all(found.id);
+      res.json(found);
+    });
+
     app.post('/api/chargepoints/:id/charging-profiles/clear', requireAuth, async (req, res) => {
       const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
       if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
@@ -1073,5 +1081,26 @@ describe('ClearChargingProfile / DELETE / GetCompositeSchedule — OCPP 2.0.1', 
     expect(callClient).toHaveBeenCalledWith('CP201', 'GetCompositeSchedule', {
       evseId: 0, duration: 3600, chargingRateUnit: 'W',
     });
+  });
+
+  it('GET /chargepoints/:id retourne evses pour borne 2.0.1', async () => {
+    const { app, db, cp } = createApp201Full();
+    db.prepare('INSERT INTO evses (chargepoint_id, evse_id, status) VALUES (?, ?, ?)').run(cp.id, 1, 'Available');
+    db.prepare('INSERT INTO evses (chargepoint_id, evse_id, status) VALUES (?, ?, ?)').run(cp.id, 2, 'Available');
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.get(`/api/chargepoints/${cp.id}`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.evses)).toBe(true);
+    expect(res.body.evses.map(e => e.evse_id)).toEqual([1, 2]);
+  });
+
+  it('GET /chargepoints/:id retourne evses vide si aucun EVSE pour borne 2.0.1', async () => {
+    const { app, cp } = createApp201Full();
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.get(`/api/chargepoints/${cp.id}`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(200);
+    expect(res.body.evses).toEqual([]);
   });
 });

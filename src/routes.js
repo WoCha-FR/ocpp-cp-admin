@@ -741,6 +741,7 @@ router.get('/chargepoints/:id', requireManager, ...validateSchema(schema.IdParam
     }
   }
   cp.connectors = db.getConnectorsByChargepoint(cp.id);
+  cp.evses = db.getEvsesByChargepoint(cp.id);
   cp.online = getConnectedClients().has(cp.identity);
   res.json(cp);
 });

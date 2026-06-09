@@ -2224,9 +2224,11 @@ async function clearCpLogMessages(cpId, identity) {
 // ── Onglet Charging Profiles ────────────────────────────────────────────
 let _cpProfilesById = {};
 let _cpConnectors = [];
+let _cpEvses = [];
 
 async function renderDetailTabChargingProfiles(cp) {
   _cpConnectors = cp.connectors || [];
+  _cpEvses = cp.evses || [];
   document.getElementById('detailTabContent').innerHTML = `
     <div class="card">
       <div class="card-header">
@@ -2253,7 +2255,9 @@ async function renderDetailTabChargingProfiles(cp) {
           <label>${t('chargepoint.cpProfileConnector')}</label>
           <select id="compConnectorId">
             <option value="0">0 — ${t('common.chargepoint_one')}</option>
-            ${_cpConnectors.map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('')}
+            ${cp.ocpp_version === '2.0.1'
+              ? _cpEvses.map(e => `<option value="${e.evse_id}">${e.evse_id}${e.evse_name ? ' — ' + escapeHtml(e.evse_name) : ''}</option>`).join('')
+              : _cpConnectors.map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="margin:0">
