@@ -29,6 +29,7 @@ function createApp(options = {}) {
   const {
     callClient = jest.fn().mockResolvedValue({ status: 'Accepted' }),
     isConnected = true,
+    ocppVersion = '1.6',
   } = options;
 
   const testDb = new Database(':memory:');
@@ -43,8 +44,8 @@ function createApp(options = {}) {
   const adminUser = testDb.prepare("SELECT * FROM users WHERE useremail = 'admin@test.com'").get();
 
   testDb
-    .prepare('INSERT INTO chargepoints (identity, cpname, mode, authorized, feat_reservation) VALUES (?,?,?,?,?)')
-    .run('CP001', 'Test CP', 1, 1, 1);
+    .prepare('INSERT INTO chargepoints (identity, cpname, mode, authorized, feat_reservation, ocpp_version) VALUES (?,?,?,?,?,?)')
+    .run('CP001', 'Test CP', 1, 1, 1, ocppVersion);
   const cp = testDb.prepare("SELECT * FROM chargepoints WHERE identity = 'CP001'").get();
 
   const connectedClients = isConnected ? new Map([['CP001', {}]]) : new Map();
@@ -120,7 +121,13 @@ function createApp(options = {}) {
     if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
     const rows = testDb
       .prepare(
-        'SELECT r.*, u.shortname AS created_by_name FROM reservations r LEFT JOIN users u ON r.created_by = u.id WHERE r.chargepoint_id = ? ORDER BY r.created_at DESC'
+        `SELECT r.*, u.shortname AS created_by_name, e.evse_name, cn.connector_name
+         FROM reservations r
+         LEFT JOIN users u ON r.created_by = u.id
+         LEFT JOIN evses e ON e.chargepoint_id = r.chargepoint_id AND e.evse_id = r.evse_id
+         LEFT JOIN connectors cn ON cn.chargepoint_id = r.chargepoint_id AND cn.connector_id = r.connector_id AND cn.evse_id IS r.evse_id
+         WHERE r.chargepoint_id = ?
+         ORDER BY r.created_at DESC`
       )
       .all(found.id);
     res.json(rows);
@@ -235,6 +242,43 @@ describe('GET /api/chargepoints/:id/reservations', () => {
     expect(res.body[0].id_tag).toBe('TAG001');
     expect(res.body[0].status).toBe('Pending');
     expect(res.body[0].created_by_name).toBe('Admin');
+  });
+
+  it('retourne connector_name via JOIN pour borne OCPP 1.6', async () => {
+    const { app, db, cp, adminUser } = createApp();
+    db.prepare(
+      'INSERT INTO connectors (chargepoint_id, connector_id, connector_name) VALUES (?,?,?)'
+    ).run(cp.id, 1, 'AC Type 2');
+    db.prepare(
+      'INSERT INTO reservations (chargepoint_id, connector_id, reservation_id, id_tag, expiry_date, created_by) VALUES (?,?,?,?,?,?)'
+    ).run(cp.id, 1, 1, 'TAG001', EXPIRY, adminUser.id);
+
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.get(`/api/chargepoints/${cp.id}/reservations`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(200);
+    expect(res.body[0].connector_id).toBe(1);
+    expect(res.body[0].connector_name).toBe('AC Type 2');
+    expect(res.body[0].evse_name).toBeNull();
+  });
+
+  it('retourne evse_name via JOIN pour borne OCPP 2.0.1', async () => {
+    const { app, db, cp, adminUser } = createApp({ ocppVersion: '2.0.1' });
+    db.prepare(
+      'INSERT INTO evses (chargepoint_id, evse_id, evse_name) VALUES (?,?,?)'
+    ).run(cp.id, 1, 'EVSE Principal');
+    db.prepare(
+      'INSERT INTO reservations (chargepoint_id, evse_id, reservation_id, id_tag, expiry_date, created_by) VALUES (?,?,?,?,?,?)'
+    ).run(cp.id, 1, 1, 'TAG001', EXPIRY, adminUser.id);
+
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.get(`/api/chargepoints/${cp.id}/reservations`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(200);
+    expect(res.body[0].evse_id).toBe(1);
+    expect(res.body[0].evse_name).toBe('EVSE Principal');
+    expect(res.body[0].connector_id).toBeNull();
+    expect(res.body[0].connector_name).toBeNull();
   });
 });
 
@@ -483,5 +527,206 @@ describe('DELETE /api/reservations/:reservationId', () => {
 
     const row = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
     expect(row.status).toBe('InUse');
+  });
+});
+
+// ══════════════════════════════════════════════════════
+//  POST /chargepoints/:id/reservations — OCPP 2.0.1
+// ══════════════════════════════════════════════════════
+describe('POST /api/chargepoints/:id/reservations — OCPP 2.0.1', () => {
+  function createApp201(options = {}) {
+    const { callClient = jest.fn().mockResolvedValue({ status: 'Accepted' }) } = options;
+
+    const testDb = new Database(':memory:');
+    testDb.pragma('journal_mode = WAL');
+    testDb.pragma('foreign_keys = ON');
+    initNewDatabase(testDb);
+
+    const hash = bcrypt.hashSync('Admin!123', 4);
+    testDb
+      .prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)')
+      .run('admin@test.com', hash, 'admin', 'Admin');
+
+    testDb
+      .prepare(
+        "INSERT INTO chargepoints (identity, cpname, mode, authorized, feat_reservation, ocpp_version) VALUES (?,?,?,?,?,?)"
+      )
+      .run('CP201', 'Test CP 201', 1, 1, 1, '2.0.1');
+    const cp = testDb.prepare("SELECT * FROM chargepoints WHERE identity = 'CP201'").get();
+
+    const connectedClients = new Map([['CP201', {}]]);
+
+    const testPassport = new passport.Passport();
+    testPassport.use(
+      new LocalStrategy({ usernameField: 'useremail', passwordField: 'password' }, (email, pwd, done) => {
+        const user = testDb.prepare('SELECT * FROM users WHERE useremail = ?').get(email);
+        if (!user || !bcrypt.compareSync(pwd, user.password)) return done(null, false);
+        return done(null, { id: user.id, useremail: user.useremail, role: user.role, sites: [] });
+      })
+    );
+    testPassport.serializeUser((u, done) => done(null, u.id));
+    testPassport.deserializeUser((id, done) => {
+      const u = testDb.prepare('SELECT * FROM users WHERE id = ?').get(id);
+      done(null, u ? { id: u.id, useremail: u.useremail, role: u.role, sites: [] } : false);
+    });
+
+    const app = express();
+    app.use(express.json());
+    app.use(session({ secret: 'test-secret!!', resave: false, saveUninitialized: false }));
+    app.use(testPassport.initialize());
+    app.use(testPassport.session());
+
+    app.use((req, res, next) => {
+      let token = readCookie(req, CSRF_COOKIE);
+      if (!token) {
+        token = crypto.randomBytes(32).toString('hex');
+        res.cookie(CSRF_COOKIE, token, { httpOnly: false, sameSite: 'lax', path: '/' });
+      }
+      if (!CSRF_SAFE_METHODS.has(req.method) && req.headers[CSRF_HEADER] !== token) {
+        return res.status(403).json({ error: 'csrf_invalid' });
+      }
+      next();
+    });
+
+    function requireManager(req, res, next) {
+      if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+      next();
+    }
+
+    app.get('/api/auth/me', (req, res) => {
+      if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+      res.json(req.user);
+    });
+    app.post('/api/auth/login', (req, res, next) => {
+      testPassport.authenticate('local', (err, user) => {
+        if (err) return next(err);
+        if (!user) return res.status(401).json({ error: 'ERR_INVALID_AUTH' });
+        req.logIn(user, (loginErr) => {
+          if (loginErr) return next(loginErr);
+          res.json(user);
+        });
+      })(req, res, next);
+    });
+
+    app.post('/api/chargepoints/:id/reservations', requireManager, async (req, res) => {
+      const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
+      if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+      if (!found.feat_reservation) return res.status(400).json({ error: 'ERR_RESERVATION_NOT_SUPPORTED' });
+      if (!connectedClients.has(found.identity)) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+      const { connector_id, id_tag, expiry_date } = req.body;
+      const row = testDb
+        .prepare(
+          "SELECT MAX(reservation_id) AS max_id FROM reservations WHERE chargepoint_id = ? AND status NOT IN ('Cancelled','Expired','Fulfilled')"
+        )
+        .get(found.id);
+      const reservation_id = (row?.max_id ?? 0) + 1;
+
+      try {
+        let result;
+        if (found.ocpp_version === '2.0.1') {
+          result = await callClient(found.identity, 'ReserveNow', {
+            id: reservation_id,
+            expiryDateTime: expiry_date,
+            idToken: { idToken: id_tag, type: 'ISO14443' },
+            evseId: connector_id,
+          });
+        } else {
+          result = await callClient(found.identity, 'ReserveNow', {
+            connectorId: connector_id,
+            expiryDate: expiry_date,
+            idTag: id_tag,
+            reservationId: reservation_id,
+          });
+        }
+        const status = result?.status ?? 'Rejected';
+        if (status !== 'Accepted') return res.status(422).json({ status });
+        const info = testDb.prepare(
+          'INSERT INTO reservations (chargepoint_id, connector_id, evse_id, reservation_id, id_tag, expiry_date, created_by) VALUES (?,?,?,?,?,?,?)'
+        ).run(
+          found.id,
+          found.ocpp_version === '2.0.1' ? null : connector_id,
+          found.ocpp_version === '2.0.1' ? connector_id : null,
+          reservation_id,
+          id_tag,
+          expiry_date,
+          req.user.id
+        );
+        res.status(201).json({ status, id: info.lastInsertRowid });
+      } catch (e) {
+        res.status(500).json({ error: 'ERR_INTERNAL', details: e.message });
+      }
+    });
+
+    return { app, db: testDb, cp };
+  }
+
+  const VALID_BODY = { connector_id: 1, id_tag: 'TAG001', expiry_date: EXPIRY };
+
+  it('appelle ReserveNow avec idToken object et expiryDateTime pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/reservations`)
+      .set(CSRF_HEADER, csrf)
+      .send(VALID_BODY);
+
+    expect(res.status).toBe(201);
+    expect(callClient).toHaveBeenCalledWith('CP201', 'ReserveNow', {
+      id: 1,
+      expiryDateTime: EXPIRY,
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evseId: 1,
+    });
+  });
+
+  it('ne passe pas connectorId/idTag/reservationId dans le payload 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    await agent.post(`/api/chargepoints/${cp.id}/reservations`).set(CSRF_HEADER, csrf).send(VALID_BODY);
+
+    const [, , payload] = callClient.mock.calls[0];
+    expect(payload.connectorId).toBeUndefined();
+    expect(payload.idTag).toBeUndefined();
+    expect(payload.reservationId).toBeUndefined();
+    expect(payload.expiryDate).toBeUndefined();
+  });
+
+  it('stocke evse_id et connector_id=null en DB pour borne 2.0.1', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    const { app, db, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/reservations`)
+      .set(CSRF_HEADER, csrf)
+      .send(VALID_BODY);
+
+    expect(res.status).toBe(201);
+    const row = db.prepare('SELECT * FROM reservations WHERE id = ?').get(res.body.id);
+    expect(row.evse_id).toBe(1);
+    expect(row.connector_id).toBeNull();
+  });
+
+  it('retourne 422 sans créer de réservation si la borne refuse', async () => {
+    const callClient = jest.fn().mockResolvedValue({ status: 'Rejected' });
+    const { app, db, cp } = createApp201({ callClient });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+
+    const res = await agent
+      .post(`/api/chargepoints/${cp.id}/reservations`)
+      .set(CSRF_HEADER, csrf)
+      .send(VALID_BODY);
+
+    expect(res.status).toBe(422);
+    expect(db.prepare('SELECT * FROM reservations WHERE chargepoint_id = ?').all(cp.id).length).toBe(0);
   });
 });

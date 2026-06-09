@@ -906,6 +906,7 @@ function register16Handlers(client, loggedHandle) {
     // a été consommée (firmware en Suspended EV), corriger avec meter_start + energy
     let meterStop = params.meterStop;
     const preTx = db.getTransactionByTransactionId(String(params.transactionId));
+    const txWasActive = preTx?.status === 'Active';
     if (
       preTx &&
       preTx.status === 'Active' &&
@@ -952,11 +953,13 @@ function register16Handlers(client, loggedHandle) {
     }
 
     const resolvedTransactionId = stoppedTx?.transaction_id ?? params.transactionId;
-    broadcast(
-      'transaction_stop',
-      { identity, transactionId: resolvedTransactionId, meterStop, reason: params.reason },
-      db.getChargepointByIdentity(identity)?.site_id ?? null
-    );
+    if (txWasActive || !preTx) {
+      broadcast(
+        'transaction_stop',
+        { identity, transactionId: resolvedTransactionId, meterStop, reason: params.reason },
+        db.getChargepointByIdentity(identity)?.site_id ?? null
+      );
+    }
 
     logger.info(`StopTransaction from ${identity} #${stoppedTx?.connector_id ?? '?'}`);
     if (stoppedTx) {

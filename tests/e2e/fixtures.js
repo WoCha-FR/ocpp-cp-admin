@@ -20,6 +20,18 @@ const test = base.extend({
     // Reload — JS detects the session and renders the app
     await page.goto('/');
     await page.locator('#appPage').waitFor({ state: 'visible', timeout: 10000 });
+    await page.waitForFunction(() => {
+      const appPage = document.getElementById('appPage');
+      const loginPage = document.getElementById('loginPage');
+      const pageTitle = document.getElementById('pageTitle');
+      const pageContent = document.getElementById('pageContent');
+      const appVisible = appPage && !appPage.classList.contains('hidden');
+      const loginHidden = !loginPage || loginPage.classList.contains('hidden');
+      const titleReady = Boolean(pageTitle && pageTitle.textContent && pageTitle.textContent.trim().length > 0);
+      const contentReady = Boolean(pageContent && pageContent.children.length > 0);
+      return appVisible && loginHidden && titleReady && contentReady;
+    }, { timeout: 10000 });
+    await page.locator('#navConfigEditor').waitFor({ state: 'visible', timeout: 10000 });
 
     await use(page);
   },

@@ -153,6 +153,27 @@ const IdTag = {
     trim: true,
     errorMessage: 'VALIDATION_IDTAG_FORMAT',
   },
+  token_type: {
+    in: ['body'],
+    optional: true,
+    isIn: {
+      options: [
+        [
+          'ISO14443',
+          'ISO15693',
+          'KeyCode',
+          'Local',
+          'MacAddress',
+          'eMA',
+          'EVCCID',
+          'NoAuthorization',
+          'Central',
+          'DirectPayment',
+        ],
+      ],
+    },
+    errorMessage: 'VALIDATION_IDTAG_TOKEN_TYPE',
+  },
   user_id: { in: ['body'], optional: { options: { nullable: true } }, isInt: true },
   site_id: { in: ['body'], optional: { options: { nullable: true } }, isInt: true },
   description: {
@@ -631,6 +652,7 @@ const OcppCommand = {
           'GetCompositeSchedule',
           'GetConfiguration',
           'GetDiagnostics',
+          'GetLog',
           'GetLocalListVersion',
           'RemoteStartTransaction',
           'RemoteStopTransaction',
@@ -686,6 +708,62 @@ const InitConfigUpdate = {
     in: ['body'],
     isString: true,
     isLength: { options: { min: 1, max: 1024 } },
+    optional: { options: { nullable: true } },
+    errorMessage: 'VALIDATION_CONFIG_VALUE',
+  },
+  enabled: {
+    in: ['body'],
+    isBoolean: true,
+    toBoolean: true,
+    optional: { options: { nullable: true } },
+  },
+};
+
+const OCPP_VAR_COMPONENT_REGEX = /^[a-zA-Z0-9_.-]+$/;
+const OCPP_VAR_NAME_REGEX = /^[a-zA-Z0-9_.-]+$/;
+const OCPP_ATTRIBUTE_VALUES = ['Actual', 'Target', 'MinSet', 'MaxSet'];
+
+const InitVariable = {
+  component: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 1, max: 64 } },
+    matches: { options: OCPP_VAR_COMPONENT_REGEX },
+    errorMessage: 'VALIDATION_VARIABLE_COMPONENT',
+  },
+  variable: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 1, max: 64 } },
+    matches: { options: OCPP_VAR_NAME_REGEX },
+    errorMessage: 'VALIDATION_VARIABLE_NAME',
+  },
+  attribute: {
+    in: ['body'],
+    isString: true,
+    isIn: { options: [OCPP_ATTRIBUTE_VALUES] },
+    optional: { options: { nullable: true } },
+    errorMessage: 'VALIDATION_VARIABLE_ATTRIBUTE',
+  },
+  value: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 0, max: 1024 } },
+    errorMessage: 'VALIDATION_CONFIG_VALUE',
+  },
+  enabled: {
+    in: ['body'],
+    isBoolean: true,
+    toBoolean: true,
+    optional: { options: { nullable: true } },
+  },
+};
+
+const InitVariableUpdate = {
+  value: {
+    in: ['body'],
+    isString: true,
+    isLength: { options: { min: 0, max: 1024 } },
     optional: { options: { nullable: true } },
     errorMessage: 'VALIDATION_CONFIG_VALUE',
   },
@@ -927,6 +1005,17 @@ const ReservationIdParam = {
   },
 };
 
+const EvseDetails = {
+  evse_name: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_ ]*$/ },
+    isLength: { options: { min: 0, max: 50 } },
+    trim: true,
+    errorMessage: 'VALIDATION_EVSE_NAME',
+  },
+};
+
 module.exports = {
   User,
   UserUpdate,
@@ -935,6 +1024,7 @@ module.exports = {
   ChargePoint,
   ChargePointSite,
   ConnectorDetails,
+  EvseDetails,
   IdTag,
   UserProfile,
   ForgotPassword,
@@ -959,6 +1049,8 @@ module.exports = {
   ChargepointConfigUpdate,
   InitConfig,
   InitConfigUpdate,
+  InitVariable,
+  InitVariableUpdate,
   NotificationPreferences,
   PushSubscribe,
   PushUnsubscribe,

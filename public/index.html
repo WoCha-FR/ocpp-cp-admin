@@ -1021,12 +1021,17 @@ function navigate(page, silent = false) {
 // ══════════════════════════════════════
 //  DASHBOARD ADMIN/MANAGER
 // ══════════════════════════════════════
+let __dashboardRenderSeq = 0;
+
 async function renderDashboard() {
+  const myRenderSeq = ++__dashboardRenderSeq;
   document.getElementById('topbarActions').innerHTML = '';
   try {
     const stats = await api('GET', '/dashboard');
     const txResponse = await api('GET', '/transactions?status=Active');
     const transactions = txResponse.data ?? [];
+
+    if (currentPage !== 'dashboard' || myRenderSeq !== __dashboardRenderSeq) return;
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
@@ -1082,19 +1087,20 @@ async function renderDashboard() {
         <div class="card-header"><h3>${t('dashboard.totalActiveCharge')}</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('dashboard.noActiveCharge')}</p>` : `
         <table>
-          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.charts')}</th></tr></thead>
+          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
-                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
-                <td>${cleanIdTag(tx.id_tag) || '-'}</td>
+                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
+                <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
+                <td>${renderIdTag(tx.id_tag)}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
-                <td>${formatDate(tx.start_time)}</td>
+                <td class="td-date">${formatDateShort(tx.start_time)}</td>
                 <td>${tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
-                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'dashboard');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -1102,15 +1108,18 @@ async function renderDashboard() {
       </div>
     `;
     // Charger les KPI et graphiques pour la période sélectionnée
-    await loadDashboardPeriodData(__dashboardDays);
+    if (currentPage !== 'dashboard' || myRenderSeq !== __dashboardRenderSeq) return;
+    await loadDashboardPeriodData(__dashboardDays, myRenderSeq);
   } catch (err) {
+    if (currentPage !== 'dashboard' || myRenderSeq !== __dashboardRenderSeq) return;
     document.getElementById('pageContent').innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
 let __dashboardDays = 30;
 
-async function loadDashboardPeriodData(days) {
+async function loadDashboardPeriodData(days, renderSeq = __dashboardRenderSeq) {
+  if (currentPage !== 'dashboard' || renderSeq !== __dashboardRenderSeq) return;
   // Mettre à jour l'état actif des boutons
   document.querySelectorAll('.kpi-period-btn').forEach(btn => {
     btn.classList.toggle('active', Number(btn.dataset.days) === days);
@@ -1120,6 +1129,7 @@ async function loadDashboardPeriodData(days) {
       api('GET', `/dashboard/kpi?days=${days}`),
       api('GET', `/dashboard/chart-data?days=${days}`)
     ]);
+    if (currentPage !== 'dashboard' || renderSeq !== __dashboardRenderSeq) return;
     renderChargingKpi(kpi);
     renderDashboardCharts(chartData);
   } catch (e) { console.warn('Dashboard period data:', e); }
@@ -1288,10 +1298,10 @@ async function renderChargepoints(keepState = false) {
                 <tbody>
                   ${pending.map(p => `
                     <tr>
-                      <td style="font-weight:500">${p.identity}</td>
-                      <td class="text-muted">${p.remoteAddress || '-'}</td>
-                      <td class="text-muted">${p.password ? '•••••' : t('common.none') }</td>
-                      <td class="text-muted">${formatDate(p.timestamp)}</td>
+                      <td class="td-primary">${p.identity}</td>
+                      <td class="td-meta">${p.remoteAddress || '-'}</td>
+                      <td class="td-meta">${p.password ? '•••••' : t('common.none') }</td>
+                      <td class="td-date">${formatDate(p.timestamp)}</td>
                       <td>
                         <button class="btn btn-success btn-sm" data-onclick="withBtn(this, () => acceptPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpAccept')}</button>
                         <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => rejectPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpRefuse')}</button>
@@ -1370,14 +1380,14 @@ async function renderChargepoints(keepState = false) {
                 <td>${cp.site_name ? escapeHtml(cp.site_name) : `<span class="text-muted">${t('chargepoint.cpNotAssigned')}</span>`}</td>
                 <td>
                   <span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span>
-                  <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>
+                  <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>${appSettings.v16Enabled && appSettings.v201Enabled && cp.ocpp_version ? (cp.ocpp_version === '2.0.1' ? ' <span class="badge badge-purple badge-xs">2.0.1</span>' : ' <span class="badge badge-blue badge-xs">1.6</span>') : ''}
                 </td>
                 <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? `${t('common.unknown')}` : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>`}</td>
                 <td>${cp.cpname ? escapeHtml(cp.cpname) : '-'}</td>
                 <td>${dashboardCpMode(cp.mode)}</td>
                 <td>${cp.vendor ? escapeHtml(cp.vendor) : '-'}</td>
                 <td>${cp.model ? escapeHtml(cp.model) : '-'}</td>
-                <td class="text-muted">${cp.last_heartbeat ? formatDate(cp.last_heartbeat) : '-'}</td>
+                <td class="td-date">${cp.last_heartbeat ? formatDate(cp.last_heartbeat) : '-'}</td>
                 <td>
                   ${adminManage() ? `
                   <button class="btn btn-indigo btn-sm" data-onclick="assignCpToSite(${Number(cp.id) || 0}, '${escapeAttr(cp.identity)}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
@@ -1612,6 +1622,7 @@ async function showChargepointDetail(id, tab) {
     document.getElementById('pageContent').innerHTML = `
       <div class="tabs">
         <button class="tab ${currentDetailTab === 'infos' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'infos')">ℹ️ ${t('common.chargepoint_one')}</button>
+        ${cp.ocpp_version === '2.0.1' ? `<button class="tab ${currentDetailTab === 'evses' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'evses')">📡 EVSEs</button>` : ''}
         <button class="tab ${currentDetailTab === 'connecteurs' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'connecteurs')">🔌 ${t('common.connector_other')}</button>
         <button class="tab ${currentDetailTab === 'reservations' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'reservations')">🗓 ${t('chargepoint.cpReservationsTitle')}</button>
         <button class="tab ${currentDetailTab === 'transactions' ? 'active' : ''}" data-onclick="switchDetailTab(${id}, 'transactions')">⚡ ${t('navigation.transactions')}</button>
@@ -1621,7 +1632,7 @@ async function showChargepointDetail(id, tab) {
       </div>
       <div class="card">
         <div class="card-header">
-          <h3><span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span> ${cp.cpname && cp.cpname !== cp.identity ? `${escapeHtml(cp.identity)} - ${escapeHtml(cp.cpname)}` : escapeHtml(cp.identity)} (${cp.site_name ? escapeHtml(cp.site_name) : t('chargepoint.cpNotAssigned')})</h3>
+          <h3><span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span> ${cp.cpname && cp.cpname !== cp.identity ? `${escapeHtml(cp.identity)} - ${escapeHtml(cp.cpname)}` : escapeHtml(cp.identity)} (${cp.site_name ? escapeHtml(cp.site_name) : t('chargepoint.cpNotAssigned')})${appSettings.v16Enabled && appSettings.v201Enabled && cp.ocpp_version ? (cp.ocpp_version === '2.0.1' ? ' <span class="badge badge-purple">OCPP 2.0.1</span>' : ' <span class="badge badge-blue">OCPP 1.6</span>') : ''}</h3>
           <span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? t('common.unknown') : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>
         </div>
       </div>
@@ -1643,6 +1654,8 @@ async function showChargepointDetail(id, tab) {
       await renderDetailTabChargingProfiles(cp);
     } else if (currentDetailTab === 'reservations') {
       await renderDetailTabReservations(cp);
+    } else if (currentDetailTab === 'evses') {
+      await renderDetailTabEvses(cp);
     }
   } catch (err) {
     toast(err.message, 'error');
@@ -1672,15 +1685,23 @@ async function renderDetailTabBorne(cp) {
         <div class="detail-section">
           <div class="detail-section-title">🛠️ ${t('connectors.cCommands')} ${!cp.online ? `<span class="cmd-offline-notice">● ${t('chargepoint.cpOffline')}</span>` : ''}</div>
           <div class="cmd-subgroups">
+            ${cp.ocpp_version !== '2.0.1' ? `
             <div class="cmd-subgroup">
-              <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReboot')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Soft'})">${t('chargepoint.cpRebootSoft')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'Reset', {type:'Hard'})">${t('chargepoint.cpRebootHard')}</button>
+              <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReset16Label')}</span>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'Reset',{type:'Soft'})">${t('chargepoint.cpReset16Soft')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'Reset',{type:'Hard'})">${t('chargepoint.cpReset16Hard')}</button>
             </div>
+            ` : `
+            <div class="cmd-subgroup">
+              <span class="cmd-subgroup-label">🔄 ${t('chargepoint.cpReset201Label')}</span>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'OnIdle')">${t('chargepoint.cpReset201OnIdle')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'Immediate')">${t('chargepoint.cpReset201Immediate')}</button>
+            </div>
+            `}
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: 0})">${t('connectors.cSetAvailable')}</button>
-              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: 0})">${t('connectors.cSetUnavailable')}</button>
+              <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? "{type:'Operative', evseId:0}" : "{type:'Operative', connectorId:0}"})">${t('connectors.cSetAvailable')}</button>
+              <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? "{type:'Inoperative', evseId:0}" : "{type:'Inoperative', connectorId:0}"})">${t('connectors.cSetUnavailable')}</button>
             </div>
             <div class="cmd-subgroup">
               <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
@@ -1694,7 +1715,7 @@ async function renderDetailTabBorne(cp) {
               <span class="cmd-subgroup-label">🔧 ${t('chargepoint.cpManagement')}</span>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
-              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetDiagnostics', {location: '${ocppSettings.diagnosticsLocation || ''}'})">${t('chargepoint.cpGetDiagnostics')}</button>
+              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, ${cp.ocpp_version === '2.0.1' ? `'GetLog', {logType:'DiagnosticsLog', logParameters:{remoteLocation:'${ocppSettings.diagnosticsLocation || ''}'}}` : `'GetDiagnostics', {location:'${ocppSettings.diagnosticsLocation || ''}'}`})">${t('chargepoint.cpGetDiagnostics')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
@@ -1738,6 +1759,21 @@ async function sendCommand(event, cpId, method, params) {
   });
 }
 
+async function sendReset201(event, cpId, type, evseId = null) {
+  await withBtn(event?.currentTarget, async () => {
+    const params = { type, ...(evseId != null ? { evseId: Number(evseId) } : {}) };
+    try {
+      const result = await api('POST', `/chargepoints/${cpId}/command`, { method: 'Reset', params });
+      const res = result.result || {};
+      let msg = `Reset → ${res.status || JSON.stringify(res)}`;
+      if (res.statusInfo) {
+        msg += ` — ${res.statusInfo.reasonCode || ''}${res.statusInfo.additionalInfo ? ': ' + res.statusInfo.additionalInfo : ''}`;
+      }
+      toast(msg, res.status === 'Accepted' ? 'success' : 'warning');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+}
+
 async function reinitializeChargepoint(event, id) {
   await withBtn(event?.currentTarget, async () => {
     await api('POST', `/chargepoints/${id}/reinitialize`);
@@ -1755,28 +1791,30 @@ async function renderDetailTabConnectors(cp) {
     t('connectors.type.CHAdeMO'),
     t('connectors.type.homeSocket')
   ];
-  document.getElementById('detailTabContent').innerHTML = `
-      ${(!cp.connectors || cp.connectors.length === 0) ? `<p class="text-muted">${t('connectors.cNoConnectors')}</p>` : `
-      <div class="cn-list">
-        ${cp.connectors.map(c => {
-          const meterKwh = c.meter_value != null ? (c.meter_value / 1000).toFixed(2) : null;
-          const hasError = c.error_code && c.error_code !== 'NoError';
-          const manage = canManage();
-          return `
+  const renderConnectorRow = c => {
+    const isFirstOfEvse = c.evse_id == null || firstEvseConnectorDbIds.has(c.id);
+    const rawMeter = isFirstOfEvse
+      ? (c.evse_id != null ? (evseMeter[c.evse_id] ?? null) : c.meter_value)
+      : null;
+    const meterKwh = rawMeter != null ? (rawMeter / 1000).toFixed(2) : null;
+    const meterLabel = c.evse_id != null ? 'Compteur EVSE' : t('connectors.cCounter');
+    const hasError = c.error_code && c.error_code !== 'NoError';
+    const manage = canManage();
+    return `
           <div class="cn-row-wrapper" id="connector-row-${c.id}">
             <div class="detail-sections"${!manage ? ' style="grid-template-columns:1fr"' : ''}>
 
               <div class="detail-section${hasError ? ' detail-section-error' : ''}">
                 <div class="detail-section-title">
-                  🔌 ${t('common.connector_one')} ${c.connector_id}${c.connector_name ? ' · ' + escapeHtml(c.connector_name) : ''}
+                  ${c.evse_id != null ? `⚡ EVSE ${c.evse_id}${c.evse_name ? ' · ' + escapeHtml(c.evse_name) : ''} · ` : ''}🔌 ${t('common.connector_one')} ${c.connector_id}${c.connector_name ? ' · ' + escapeHtml(c.connector_name) : ''}
                   ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
                   <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : (c.cnstatus ? escapeHtml(c.cnstatus) : t('common.unknown'))}</span>
                   ${hasError ? `<span class="badge badge-red">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}
                 </div>
-                <div class="detail-row">
-                  <span class="detail-label">${t('connectors.cCounter')}</span>
+                ${isFirstOfEvse ? `<div class="detail-row">
+                  <span class="detail-label">${meterLabel}</span>
                   <span class="detail-value" style="font-size:16px;font-weight:700;color:var(--primary)">${meterKwh !== null ? meterKwh + ' kWh' : '—'}</span>
-                </div>
+                </div>` : ''}
                 <div class="detail-row"><span class="detail-label">${t('common.name')}</span><span class="detail-value">${c.connector_name ? escapeHtml(c.connector_name) : '<span class="text-muted">-</span>'}</span></div>
                 <div class="detail-row"><span class="detail-label">${t('common.power')}</span><span class="detail-value">${c.connector_power != null ? c.connector_power + ' kW' : '<span class="text-muted">-</span>'}</span></div>
                 <div class="detail-row"><span class="detail-label">${t('connectors.cType')}</span><span class="detail-value">${c.connector_type ? escapeHtml(c.connector_type) : '<span class="text-muted">-</span>'}</span></div>
@@ -1789,23 +1827,38 @@ async function renderDetailTabConnectors(cp) {
                 <div class="cmd-subgroups">
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔌 ${t('connectors.cAvailability')}</span>
-                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Operative', connectorId: ${c.connector_id}})">${t('connectors.cSetAvailable')}</button>
-                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', {type:'Inoperative', connectorId: ${c.connector_id}})">${t('connectors.cSetUnavailable')}</button>
+                    <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? `{type:'Operative', evseId:${c.evse_id ?? c.connector_id}}` : `{type:'Operative', connectorId:${c.connector_id}}`})">${t('connectors.cSetAvailable')}</button>
+                    <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ChangeAvailability', ${cp.ocpp_version === '2.0.1' ? `{type:'Inoperative', evseId:${c.evse_id ?? c.connector_id}}` : `{type:'Inoperative', connectorId:${c.connector_id}}`})">${t('connectors.cSetUnavailable')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">🔓 ${t('connectors.cUnlock')}</span>
-                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', {connectorId: ${c.connector_id}})">${t('connectors.cUnlockConnector')}</button>
+                    <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'UnlockConnector', ${cp.ocpp_version === '2.0.1' ? `{evseId:${c.evse_id ?? c.connector_id}, connectorId:${c.connector_id}}` : `{connectorId:${c.connector_id}}`})">${t('connectors.cUnlockConnector')}</button>
                   </div>
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'MeterValues', connectorId: ${c.connector_id}})">${t('connectors.cTriggerMeter')}</button>
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', {requestedMessage: 'StatusNotification', connectorId: ${c.connector_id}})">${t('connectors.cTriggerStatus')}</button>
+                    ${isFirstOfEvse ? `<button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'MeterValues', evse:{id:${c.evse_id}}}` : `{requestedMessage:'MeterValues', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerMeter')}</button>` : ''}
+                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'StatusNotification', evse:{id:${c.connector_id}}}` : `{requestedMessage:'StatusNotification', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerStatus')}</button>
                   </div>
                 </div>
               </div>` : ''}
             </div>
           </div>`;
-        }).join('')}
+  };
+  const evseMeter = {};
+  const firstEvseConnectorDbIds = new Set();
+  const evsesSeen = new Set();
+  for (const c of cp.connectors || []) {
+    if (c.evse_id != null && !evsesSeen.has(c.evse_id)) {
+      evsesSeen.add(c.evse_id);
+      firstEvseConnectorDbIds.add(c.id);
+      evseMeter[c.evse_id] = c.meter_value;
+    }
+  }
+  const listHtml = cp.connectors ? cp.connectors.map(renderConnectorRow).join('') : '';
+  document.getElementById('detailTabContent').innerHTML = `
+      ${(!cp.connectors || cp.connectors.length === 0) ? `<p class="text-muted">${t('connectors.cNoConnectors')}</p>` : `
+      <div class="cn-list">
+        ${listHtml}
       </div>`}
   `;
 }
@@ -1844,6 +1897,33 @@ async function saveConnector(connectorId) {
     toast(t('connectors.cUpdated'), 'success');
     closeModal();
     if (currentDetailCpId) showChargepointDetail(currentDetailCpId, 'connecteurs');
+  } catch (err) {
+    toast(`${t('common.error')}: ${err.message}`, 'error');
+  }
+}
+
+function openEditEvseModal(cpId, evseId, name) {
+  openModal(`
+    <h3>EVSE #${evseId}</h3>
+    <div class="form-group">
+      <label>${t('common.name')}</label>
+      <input type="text" id="evse-modal-name" value="${escapeAttr(name)}" placeholder="${t('connectors.cNameHint')}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => saveEvseName(${cpId}, ${evseId}))">💾 ${t('common.save')}</button>
+    </div>
+  `);
+}
+
+async function saveEvseName(cpId, evseId) {
+  try {
+    const evse_name = document.getElementById('evse-modal-name').value;
+    await api('PUT', `/chargepoints/${cpId}/evses/${evseId}`, { evse_name });
+    toast(t('common.saved', { defaultValue: 'Enregistré' }), 'success');
+    closeModal();
+    const cp = await api('GET', `/chargepoints/${cpId}`);
+    await renderDetailTabEvses(cp);
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
   }
@@ -1890,13 +1970,13 @@ async function renderDetailTabTransactions(cp) {
         <tbody>
           ${transactions.map(tx => `
             <tr>
-              <td>${tx.transaction_id}</td>
+              <td><span class="mono-id">${tx.transaction_id}</span></td>
               <td>${tx.connector_id}</td>
-              <td>${cleanIdTag(tx.id_tag) || '-'}</td>
+              <td>${renderIdTag(tx.id_tag)}</td>
               <td>${tx.tag_username ? `<span class="badge badge-blue">${escapeHtml(tx.tag_username)}</span>` : '<span class="text-muted">-</span>'}</td>
               <td>${formatStartSource(tx.start_source)}</td>
-              <td>${formatDate(tx.start_time)}</td>
-              <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
+              <td class="td-date">${formatDateShort(tx.start_time)}</td>
+              <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
               <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : '-'}</td>
               <td><span class="badge ${tx.status === 'Active' ? 'badge-green' : 'badge-gray'}">${tx.status}</span></td>
             </tr>
@@ -2037,7 +2117,7 @@ async function renderDetailTabLogs(cp) {
         <tbody>
           ${messages.map(m => `
             <tr>
-              <td class="text-muted" style="white-space:nowrap">${formatDate(m.timestamp)}</td>
+              <td class="td-date">${formatDate(m.timestamp)}</td>
               <td><span class="badge ${m.origin === 'chargepoint' ? 'badge-chargepoint' : 'badge-csms'}">${m.origin === 'chargepoint' ? `← ${t('common.chargepoint_one')}` : `→ ${t('common.csms')}`}</span></td>
               <td><span class="badge badge-${m.message_type.toLowerCase()}">${m.message_type}</span></td>
               <td class="msg-payload">${m.action || '-'}</td>
@@ -2144,9 +2224,11 @@ async function clearCpLogMessages(cpId, identity) {
 // ── Onglet Charging Profiles ────────────────────────────────────────────
 let _cpProfilesById = {};
 let _cpConnectors = [];
+let _cpEvses = [];
 
 async function renderDetailTabChargingProfiles(cp) {
   _cpConnectors = cp.connectors || [];
+  _cpEvses = cp.evses || [];
   document.getElementById('detailTabContent').innerHTML = `
     <div class="card">
       <div class="card-header">
@@ -2173,7 +2255,9 @@ async function renderDetailTabChargingProfiles(cp) {
           <label>${t('chargepoint.cpProfileConnector')}</label>
           <select id="compConnectorId">
             <option value="0">0 — ${t('common.chargepoint_one')}</option>
-            ${_cpConnectors.map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('')}
+            ${cp.ocpp_version === '2.0.1'
+              ? _cpEvses.map(e => `<option value="${e.evse_id}">${e.evse_id}${e.evse_name ? ' — ' + escapeHtml(e.evse_name) : ''}</option>`).join('')
+              : _cpConnectors.map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('')}
           </select>
         </div>
         <div class="form-group" style="margin:0">
@@ -2277,11 +2361,12 @@ async function loadReservations(cpId) {
       return;
     }
     const reservationBadgeClass = (s) => s === 'Active' || s === 'Fulfilled' ? 'badge-green' : s === 'InUse' ? 'badge-blue' : s === 'Pending' ? 'badge-yellow' : 'badge-gray';
+    const is201 = reservations.some(r => r.evse_id !== null);
     container.innerHTML = `
       <div style="overflow-x:auto">
         <table>
           <thead><tr>
-            <th>${t('chargepoint.cpReservationConnector')}</th>
+            <th>${is201 ? t('chargepoint.cpReservationEvse') : t('chargepoint.cpReservationConnector')}</th>
             <th>idTag</th>
             <th>${t('chargepoint.cpReservationExpiry')}</th>
             <th>${t('common.status')}</th>
@@ -2292,12 +2377,14 @@ async function loadReservations(cpId) {
           <tbody>
             ${reservations.map(r => `
               <tr>
-                <td>${r.connector_id}</td>
-                <td>${escapeHtml(r.id_tag)}</td>
-                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDateShort(r.expiry_date)}</td>
+                <td>${r.evse_id != null
+                  ? `EVSE ${r.evse_id}${r.evse_name ? ' · ' + escapeHtml(r.evse_name) : ''}`
+                  : `${r.connector_id}${r.connector_name ? ' · ' + escapeHtml(r.connector_name) : ''}`}</td>
+                <td><span class="rfid-chip">${escapeHtml(r.id_tag)}</span></td>
+                <td class="td-date">${formatDateShort(r.expiry_date)}</td>
                 <td><span class="badge ${reservationBadgeClass(r.status)}">${t('chargepoint.cpReservationStatus' + r.status, { defaultValue: r.status })}</span></td>
-                <td class="text-muted" style="font-size:12px">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
-                <td class="text-muted" style="font-size:12px;white-space:nowrap">${formatDate(r.created_at)}</td>
+                <td class="td-meta">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
+                <td class="td-date">${formatDateShort(r.created_at)}</td>
                 ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}
               </tr>
             `).join('')}
@@ -2310,14 +2397,62 @@ async function loadReservations(cpId) {
   }
 }
 
-async function showCreateReservationModal(cpId) {
-  let cp, connectors = [], tags = [];
+async function renderDetailTabEvses(cp) {
+  document.getElementById('detailTabContent').innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3>📡 EVSEs</h3></div>
+      <div id="evsesTableContainer">
+        <p class="text-muted" style="padding:12px 16px">${t('common.loading', { defaultValue: 'Chargement…' })}</p>
+      </div>
+    </div>
+  `;
   try {
-    [cp, tags] = await Promise.all([
-      api('GET', `/chargepoints/${cpId}`),
-      api('GET', '/id-tags'),
-    ]);
+    const evses = await api('GET', `/chargepoints/${cp.id}/evses`);
+    const container = document.getElementById('evsesTableContainer');
+    if (!container) return;
+    if (evses.length === 0) {
+      container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('common.noData', { defaultValue: 'Aucun EVSE enregistré.' })}</p>`;
+      return;
+    }
+    container.innerHTML = `
+      <table>
+        <thead><tr><th>EVSE ID</th><th>${t('common.name')}</th><th>${t('common.status')}</th><th>${t('common.date')}</th><th>${t('connectors.cAvailability')}</th><th>Reset</th><th></th></tr></thead>
+        <tbody>
+          ${evses.map(e => `
+            <tr>
+              <td class="td-primary">#${e.evse_id}</td>
+              <td>${e.evse_name ? escapeHtml(e.evse_name) : '<span class="text-muted">-</span>'}</td>
+              <td><span class="badge ${statusBadgeClass(e.status)}">${escapeHtml(e.status)}</span></td>
+              <td class="td-date">${e.created_at ? formatDateShort(e.created_at) : '-'}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'ChangeAvailability',{type:'Operative',evseId:${e.evse_id}})">${t('connectors.cSetAvailable')}</button>
+                <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id},'ChangeAvailability',{type:'Inoperative',evseId:${e.evse_id}})">${t('connectors.cSetUnavailable')}</button>
+              </td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'OnIdle',${e.evse_id})">${t('chargepoint.cpReset201OnIdle')}</button>
+                <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'Immediate',${e.evse_id})">${t('chargepoint.cpReset201Immediate')}</button>
+              </td>
+              <td><button class="btn-icon" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditEvseModal(${cp.id}, ${e.evse_id}, '${escapeAttr(e.evse_name || '')}')">✏️</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  } catch (err) {
+    const container = document.getElementById('evsesTableContainer');
+    if (container) container.innerHTML = `<p class="text-muted" style="padding:12px 16px">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+async function showCreateReservationModal(cpId) {
+  let cp, connectors = [], evses = [], tags = [];
+  try {
+    const requests = [api('GET', `/chargepoints/${cpId}`), api('GET', '/id-tags')];
+    [cp, tags] = await Promise.all(requests);
     connectors = cp.connectors || [];
+    if (cp.ocpp_version === '2.0.1') {
+      evses = await api('GET', `/chargepoints/${cpId}/evses`);
+    }
   } catch (err) {
     toast(err.message, 'error');
     return;
@@ -2332,12 +2467,17 @@ async function showCreateReservationModal(cpId) {
   const isExpired = (tag) => tag.expiry_date && new Date(tag.expiry_date) < now;
   const visibleTags = tags.filter(tag => !isAutoTag(tag) && tag.active && tagMatchesSite(tag));
   const minExpiry = new Date(Date.now() + 60000);
+  const is201 = cp.ocpp_version === '2.0.1';
+  const connectorLabel = is201 ? 'EVSE' : t('chargepoint.cpReservationConnector');
+  const connectorOptions = is201
+    ? evses.map(e => `<option value="${e.evse_id}">${e.evse_id}${e.evse_name ? ' — ' + escapeHtml(e.evse_name) : ''}</option>`).join('')
+    : connectors.filter(c => c.connector_id > 0).map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('');
   openModal(`
     <h2>🗓 ${t('chargepoint.cpReservationsNew')}</h2>
     <div class="form-group">
-      <label>${t('chargepoint.cpReservationConnector')}</label>
+      <label>${connectorLabel}</label>
       <select id="resConnectorId">
-        ${connectors.filter(c => c.connector_id > 0).map(c => `<option value="${c.connector_id}">${c.connector_id}${c.connector_name ? ' — ' + escapeHtml(c.connector_name) : ''}</option>`).join('')}
+        ${connectorOptions}
       </select>
     </div>
     <div class="form-group">
@@ -2758,10 +2898,11 @@ async function renderDetailTabConfig(cp) {
       </div>
     </div>
   `;
-  loadChargepointConfig(cp.id, cp.online);
+  window._currentCpOcppVersion = cp.ocpp_version || '1.6';
+  loadChargepointConfig(cp.id, cp.online, cp.ocpp_version);
 }
 
-async function loadChargepointConfig(cpId, isOnline) {
+async function loadChargepointConfig(cpId, isOnline, ocppVersion) {
   const container = document.getElementById('configTableContainer');
   if (!container) return;
   try {
@@ -2773,26 +2914,54 @@ async function loadChargepointConfig(cpId, isOnline) {
         </p>`;
       return;
     }
-    renderConfigTable(cpId, config, isOnline);
+    renderConfigTable(cpId, config, isOnline, ocppVersion);
   } catch (err) {
     container.innerHTML = `<p class="text-muted">${t('common.error')}: ${escapeHtml(err.message)}</p>`;
   }
 }
 
-function renderConfigTable(cpId, config, isOnline) {
+function renderConfigTable(cpId, config, isOnline, ocppVersion) {
   const container = document.getElementById('configTableContainer');
   if (!container) return;
   window._cpConfigData = config;
+  const is201 = ocppVersion === '2.0.1' || (config.length > 0 && config[0].component !== undefined);
+  if (is201) {
+    container.innerHTML = `
+    <table id="configTable">
+      <thead><tr><th>Component</th><th>Variable</th><th>Attribute</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfReadOnly')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
+      <tbody>
+        ${config.map(c => `
+          <tr data-key="${escapeAttr(c.component + '.' + c.variable)}">
+            <td class="td-mono">${escapeHtml(c.component)}</td>
+            <td class="td-mono">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
+            <td class="td-meta">${escapeHtml(c.attribute || 'Actual')}</td>
+            <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
+            <td>${c.readonly ? '<span class="badge badge-yellow">' + t('common.yes') + '</span>' : '<span class="badge badge-green">' + t('common.no') + '</span>'}</td>
+            <td class="td-date">${formatDate(c.updated_at)}</td>
+            ${adminManage() ? `<td style="white-space:nowrap;">
+              ${GLOBAL_ONLY_VARS_201.some(v => v.component === c.component && v.variable === c.variable)
+                ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
+                : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
+              }
+            </td>` : ''}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    <p class="text-muted mt-2">${t('chargepoint.cpConfNbKeys', { count: config.length })}</p>
+  `;
+    return;
+  }
   container.innerHTML = `
   <table id="configTable">
     <thead><tr><th>${t('chargepoint.cpConfKey')}</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfReadOnly')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
     <tbody>
       ${config.map(c => `
         <tr data-key="${escapeAttr(c.key)}">
-          <td style="font-weight:500;font-family:monospace;font-size:13px;">${escapeHtml(c.key)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
+          <td class="td-mono">${escapeHtml(c.key)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
           <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
           <td>${c.readonly ? '<span class="badge badge-yellow">' + t('common.yes') + '</span>' : '<span class="badge badge-green">' + t('common.no') + '</span>'}</td>
-          <td class="text-muted">${formatDate(c.updated_at)}</td>
+          <td class="td-date">${formatDate(c.updated_at)}</td>
           ${adminManage() ? `<td style="white-space:nowrap;">
             ${GLOBAL_ONLY_KEYS.includes(c.key)
               ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
@@ -2822,7 +2991,7 @@ async function refreshChargepointConfig(cpId) {
     const data = await api('POST', `/chargepoints/${cpId}/config/refresh`);
     toast(t('chargepoint.cpConfUpdated'), 'success');
     if (data.config) {
-      renderConfigTable(cpId, data.config, true);
+      renderConfigTable(cpId, data.config, true, window._currentCpOcppVersion);
     }
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
@@ -2852,7 +3021,7 @@ async function toggleConfigOverride(cpId, key, isOverride, isOnline) {
   try {
     await api('PATCH', `/chargepoints/${cpId}/config/${encodeURIComponent(key)}/override`, { is_override: isOverride });
     toast(t(isOverride ? 'chargepoint.cpConfOverrideSetOk' : 'chargepoint.cpConfOverrideRemovedOk', { key }), 'success');
-    loadChargepointConfig(cpId, isOnline);
+    loadChargepointConfig(cpId, isOnline, window._currentCpOcppVersion);
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
   }
@@ -2890,7 +3059,7 @@ async function getChargepointConfigKey(cpId) {
   } else {
     toast(t('chargepoint.cpConfGetKeyNotFound', { key }), 'info');
   }
-  loadChargepointConfig(cpId, true);
+  loadChargepointConfig(cpId, true, window._currentCpOcppVersion);
 }
 
 async function updateChargepointConfig(cpId, key) {
@@ -2902,11 +3071,13 @@ async function updateChargepointConfig(cpId, key) {
       toast(t('chargepoint.cpConfSetAccepted', { key }), 'success');
     } else if (data.status === 'RebootRequired') {
       toast(t('chargepoint.cpConfSetRebootRequired', { key }), 'info');
+    } else if (data.result) {
+      toast(t('chargepoint.cpConfUpdated', { defaultValue: 'Variable mise à jour.' }), 'success');
     } else {
       toast(t('chargepoint.cpConfSetError', { status: data.status }), 'error');
     }
     // Recharger la config
-    loadChargepointConfig(cpId, true);
+    loadChargepointConfig(cpId, true, window._currentCpOcppVersion);
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
   }
@@ -2991,7 +3162,7 @@ async function renderConnectors() {
               `<div class="text-muted" style="margin-bottom:3px;"><span class="badge badge-red" title="${escapeAttr(c.info || '')}">⚠️ ${escapeHtml(c.error_code)}</span></div>` : ''}
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">📍 ${escapeHtml(c.site_name || t('sites.siteNoSite'))}</div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
-            <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${c.connector_name ? `#${c.connector_id} ${escapeHtml(c.connector_name)}` : `${t('common.connector_one')} ${c.connector_id}`}</div>
+            <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${c.evse_id != null ? `${c.evse_name ? escapeHtml(c.evse_name) : 'EVSE ' + c.evse_id} · ${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}` : `${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}`}</div>
             ${canStart
             ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                   ⚡ ${t('connectors.cStartCharge')}
@@ -3123,7 +3294,7 @@ async function renderUserDashboard() {
         }
             </div>
             <div class="text-muted" style="margin-bottom:4px;">📍 ${escapeHtml(c.site_name)}</div>
-            <div class="text-muted" style="margin-bottom:12px;">🔌 ${c.connector_name ? `#${c.connector_id} ${escapeHtml(c.connector_name)}` : `${t('common.connector_one')} ${c.connector_id}`}</div>
+            <div class="text-muted" style="margin-bottom:12px;">🔌 ${c.evse_id != null ? `${c.evse_name ? escapeHtml(c.evse_name) : 'EVSE ' + c.evse_id} · ${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}` : `${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}`}</div>
             <div style="margin-top:auto;">
             ${isSuspended
           ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">🚫 ${t('dashboard.siteAccessSuspended')}</div>`
@@ -3309,12 +3480,16 @@ async function renderIdTags(tab, keepState = false) {
       <div class="card">
         <div class="card-header"><h3>${t('idtags.rfidsTag')} (${filtered.length}${filtered.length !== visibleTags.length ? ' / ' + visibleTags.length : ''})</h3></div>
         ${filtered.length === 0 ? `<p class="text-muted" style="padding: 16px;">${t('idtags.rfNoData')}</p>` : `
-        <table>
-          <thead><tr><th>${t('idtags.rfTag')}</th><th>${t('common.status')}</th><th>${t('common.user')}</th><th>${t('common.site_one')}</th><th>${t('idtags.rfDescription')}</th><th>${t('idtags.rfExpiryDate')}</th><th>${t('common.createdAt')}</th><th>${t('common.actions')}</th></tr></thead>
+        ${(() => {
+          const hasNonDefault201 = filtered.some(tag => tag.token_type && tag.token_type !== 'ISO14443');
+          const hasGroupToken = filtered.some(tag => tag.group_id_token);
+          const tokenTypeBadgeClass = (type) => type === 'NoAuthorization' ? 'badge-gray' : type === 'ISO14443' ? 'badge-blue' : 'badge-orange';
+          return `<table>
+          <thead><tr><th>${t('idtags.rfTag')}</th><th>${t('common.status')}</th><th>${t('common.user')}</th><th>${t('common.site_one')}</th>${hasNonDefault201 ? '<th>Token Type</th>' : ''}${hasGroupToken ? '<th>Group Token</th>' : ''}<th>${t('idtags.rfDescription')}</th><th>${t('idtags.rfExpiryDate')}</th><th>${t('common.createdAt')}</th><th>${t('common.actions')}</th></tr></thead>
           <tbody>
             ${filtered.map(tag => `
               <tr>
-                <td style="font-weight:500;font-family:monospace;">${escapeHtml(tag.id_tag)}</td>
+                <td><span class="rfid-chip">${escapeHtml(tag.id_tag)}</span></td>
                 <td><span class="badge ${tag.active ? 'badge-green' : 'badge-red'}">${tag.active ? t('filters.active') : t('filters.inactive')}</span></td>
                 <td>${tag.user_name ? `<span class="badge badge-blue">${escapeHtml(tag.user_name)}</span>` : '<span class="text-muted">-</span>'}</td>
                 <td>${tag.site_name
@@ -3322,9 +3497,11 @@ async function renderIdTags(tab, keepState = false) {
                   : (tag.user_sites && tag.user_sites.length > 0
                     ? tag.user_sites.map(s => `<span class="badge badge-green">${escapeHtml(s.site_name)}</span>`).join(' ')
                     : (tag.user_id ? '<span class="text-muted">-</span>' : `<span class="badge badge-yellow">${t('filters.all')}</span>`))}</td>
+                ${hasNonDefault201 ? `<td>${tag.token_type && tag.token_type !== 'ISO14443' ? `<span class="badge ${tokenTypeBadgeClass(tag.token_type)}">${escapeHtml(tag.token_type)}</span>` : '<span class="text-muted">-</span>'}</td>` : ''}
+                ${hasGroupToken ? `<td><span class="rfid-chip">${tag.group_id_token ? escapeHtml(tag.group_id_token) : '-'}</span></td>` : ''}
                 <td>${tag.description ? escapeHtml(tag.description) : '<span class="text-muted">-</span>'}</td>
-                <td>${tag.expiry_date ? formatDateShort(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
-                <td class="text-muted">${formatDate(tag.created_at)}</td>
+                <td class="td-date">${tag.expiry_date ? formatDateShort(tag.expiry_date) : `<span class="text-muted">${t('idtags.rfNoExpiry')}</span>`}</td>
+                <td class="td-date">${formatDateShort(tag.created_at)}</td>
                 <td><div class="flex-gap">
                   ${!canEditTag(tag) ? (isAutoTag(tag) ? `<span class="badge badge-yellow" title="${t('idtags.rfVirtualHint')}">${t('idtags.rfVirtual')}</span>` : '') : `
                   <button class="btn btn-teal btn-sm" data-onclick="showEditIdTagModal(${tag.id})">${t('common.edit')}</button>
@@ -3333,7 +3510,8 @@ async function renderIdTags(tab, keepState = false) {
               </tr>
             `).join('')}
           </tbody>
-        </table>`}
+        </table>`;
+        })()}`}
       </div>
     `;
   } catch (err) {
@@ -3386,6 +3564,20 @@ async function showCreateIdTagModal() {
     ${isAdmin ? `<div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfAllSitesHint')}</div>` : ''}
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="tagDescription" placeholder="${t('idtags.rfDescriptionHint')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')}))</label><input type="text" id="tagExpiry" placeholder="${t('common.select')}" /></div>
+    ${appSettings.v201Enabled ? `
+    <div class="form-group">
+      <label>Token Type (OCPP 2.0.1)</label>
+      <select id="tagTokenType">
+        <option value="ISO14443">ISO14443 (défaut)</option>
+        <option value="KeyCode">KeyCode</option>
+        <option value="Central">Central</option>
+        <option value="eMAID">eMAID</option>
+        <option value="NoAuthorization">NoAuthorization</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Group ID Token (OCPP 2.0.1, ${t('idtags.rfOptionnal')})</label><input type="text" id="tagGroupIdToken" placeholder="ex: GROUP-001" /></div>
+    ` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
       <button class="btn btn-primary" data-onclick="withBtn(this, createIdTag)">${t('common.create')}</button>
@@ -3442,6 +3634,20 @@ async function showEditIdTagModal(id) {
     </div>
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagDescription" value="${escapeAttr(tag.description || '')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagExpiry" placeholder="${t('common.select')}" /></div>
+    ${appSettings.v201Enabled ? `
+    <div class="form-group">
+      <label>Token Type (OCPP 2.0.1)</label>
+      <select id="editTagTokenType">
+        <option value="ISO14443" ${(!tag.token_type || tag.token_type === 'ISO14443') ? 'selected' : ''}>ISO14443 (défaut)</option>
+        <option value="KeyCode" ${tag.token_type === 'KeyCode' ? 'selected' : ''}>KeyCode</option>
+        <option value="Central" ${tag.token_type === 'Central' ? 'selected' : ''}>Central</option>
+        <option value="eMAID" ${tag.token_type === 'eMAID' ? 'selected' : ''}>eMAID</option>
+        <option value="NoAuthorization" ${tag.token_type === 'NoAuthorization' ? 'selected' : ''}>NoAuthorization</option>
+        <option value="Other" ${tag.token_type === 'Other' ? 'selected' : ''}>Other</option>
+      </select>
+    </div>
+    <div class="form-group"><label>Group ID Token (OCPP 2.0.1, ${t('idtags.rfOptionnal')})</label><input type="text" id="editTagGroupIdToken" value="${escapeAttr(tag.group_id_token || '')}" placeholder="ex: GROUP-001" /></div>
+    ` : ''}
     <div class="modal-actions">
       <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
       <button class="btn btn-primary" data-onclick="withBtn(this, () => updateIdTag(${id}))">${t('common.save')}</button>
@@ -3471,6 +3677,8 @@ async function createIdTag() {
       site_id: siteId ? Number(siteId) : null,
       description: document.getElementById('tagDescription').value || null,
       expiry_date: expiry || null,
+      token_type: document.getElementById('tagTokenType')?.value || undefined,
+      group_id_token: document.getElementById('tagGroupIdToken')?.value || undefined,
     });
     closeModal();
     toast(t('idtags.rfAdded'), 'success');
@@ -3491,6 +3699,8 @@ async function updateIdTag(id) {
       site_id: siteId ? Number(siteId) : null,
       description: document.getElementById('editTagDescription').value || null,
       expiry_date: expiry || null,
+      token_type: document.getElementById('editTagTokenType')?.value || undefined,
+      group_id_token: document.getElementById('editTagGroupIdToken')?.value || undefined,
     });
     closeModal();
     toast(t('idtags.rfUpdated'), 'success');
@@ -3581,10 +3791,10 @@ async function renderIdTagsEvents() {
         <tbody>
           ${events.map(e => `
             <tr>
-              <td class="text-muted" style="white-space:nowrap;">${formatDate(e.timestamp)}</td>
+              <td class="td-date">${formatDate(e.timestamp)}</td>
               <td>${e.chargepoint_name ? escapeHtml(e.chargepoint_name) : (e.chargepoint_identity ? escapeHtml(e.chargepoint_identity) : '<span class="text-muted">-</span>')}</td>
               <td>${e.connector_id ? '#' + e.connector_id : '<span class="text-muted">-</span>'}</td>
-              <td style="font-weight:500;font-family:monospace;">${escapeHtml(e.id_tag)}</td>
+              <td><span class="rfid-chip">${escapeHtml(e.id_tag)}</span></td>
               <td>${eventStatusBadge(e.status)}</td>
               <td>${e.reason ? escapeHtml(eventReasonLabels[e.reason] || e.reason) : '<span class="text-muted">-</span>'}</td>
               <td><span class="badge badge-blue">${escapeHtml(e.source || 'authorize')}</span></td>
@@ -3661,12 +3871,12 @@ async function renderUsers() {
               const canDelete = !isSelf && !isLastAdmin;
               return `
               <tr>
-                <td style="font-weight:500">${escapeHtml(u.useremail)}</td>
+                <td class="td-primary">${escapeHtml(u.useremail)}</td>
                 <td>${u.shortname ? escapeHtml(u.shortname) : '<span class="text-muted">-</span>'}</td>
                 <td>${formatRoleColumn(u)}</td>
                 <td>${formatUserSites(u.sites)}</td>
-                <td class="text-muted">${formatDateShort(u.created_at)}</td>
-                <td class="text-muted">${u.last_login ? formatDate(u.last_login) : '<span class="text-muted">-</span>'}</td>
+                <td class="td-date">${formatDateShort(u.created_at)}</td>
+                <td class="td-date">${u.last_login ? formatDate(u.last_login) : '-'}</td>
                 <td>
                   <button class="btn btn-indigo btn-sm" data-onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
                   <button class="btn btn-teal btn-sm" data-onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
@@ -3990,24 +4200,22 @@ async function renderTransactions(keepState = false) {
       <div class="card">
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: txTotal })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
-        <table style="font-size: 0.85em;">
-          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('idtags.rfTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.chargingState')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+        <table>
+          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
-                <td>${tx.transaction_id}</td>
+                <td><span class="mono-id">${tx.transaction_id}</span></td>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
-                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
-                <td>${cleanIdTag(tx.id_tag) || '-'}</td>
+                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
+                <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
-                <td>${formatDate(tx.start_time)}</td>
-                <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
+                <td class="td-date">${formatDateShort(tx.start_time)}</td>
+                <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
                 <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
-                <td>${formatTxStatus(tx.status)}</td>
-                <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
-                <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
-                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+                <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
+                <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
               </tr>
             `).join('')}
           </tbody>
@@ -4067,6 +4275,11 @@ function cleanIdTag(tag) {
   if (!tag) return null;
   if (tag === 'ADMIN' || tag.startsWith('MGR-') || tag.startsWith('WEB-')) return null;
   return tag;
+}
+function renderIdTag(tag) {
+  const cleaned = cleanIdTag(tag);
+  if (!cleaned) return '-';
+  return `<span class="rfid-chip">${escapeHtml(cleaned)}</span>`;
 }
 
 function formatTxUser(tx) {
@@ -4195,34 +4408,22 @@ async function renderMyTransactions(keepState = false) {
       <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: myTxTotal })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
-        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.duration')}</th><th>${t('common.status')}</th><th>${t('transac.stopReason')}</th><th>${t('transac.charts')}</th></tr></thead>
+        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
         <tbody>
         ${transactions.map(tx => {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
-          let duration = '-';
-          if (tx.start_time && tx.stop_time) {
-            const diffMin = (new Date(tx.stop_time) - new Date(tx.start_time)) / 60000;
-            if (diffMin >= 60) {
-              duration = formatDuree(Math.floor(diffMin));
-            } else {
-              duration = Math.floor(diffMin) + ` ${t('common.unitMinutes')}`;
-            }
-          } else if (tx.start_time && tx.status === 'Active') {
-            duration = `<span class="badge badge-green">${t('transac.inProgress')}</span>`;
-          }
           return `
             <tr>
-              <td>${tx.transaction_id}</td>
+              <td><span class="mono-id">${tx.transaction_id}</span></td>
               <td>${tx.site_name || '-'}</td>
-              <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
+              <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
+              <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
               <td>${formatStartSource(tx.start_source)}</td>
-              <td>${formatDate(tx.start_time)}</td>
-              <td>${tx.stop_time ? formatDate(tx.stop_time) : '-'}</td>
+              <td class="td-date">${formatDateShort(tx.start_time)}</td>
+              <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
               <td>${energy}</td>
-              <td>${duration}</td>
-              <td>${formatTxStatus(tx.status)}</td>
-              <td>${tx.stop_reason ? formatReason(tx.stop_reason) : '-'}</td>
-              <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'mytransactions');return false;" class="btn btn-outline btn-sm">📈 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+              <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
+              <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'mytransactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -4308,17 +4509,75 @@ function formatReason(reason) {
 //  DÉTAIL TRANSACTION (graphiques)
 // ══════════════════════════════════════
 let txDetailCharts = { energie: null, courant: null, soc: null, tempfreq: null };
-let txDetailContext = { transactionId: null, lastPage: null, data: null };
+let txDetailContext = { transactionId: null, lastPage: null, data: null, tx: null };
 
 async function showTransactionDetail(transactionId, lastPage) {
   currentPage = 'transactiondetail';
   document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: transactionId });
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === lastPage));
-
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-secondary" data-onclick="navigate('${lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
+  document.getElementById('pageContent').innerHTML =
+    `<p id="txDetailLoading" class="text-muted">${t('charts.cLoading')}</p>`;
+
+  txDetailContext.transactionId = transactionId;
+  txDetailContext.lastPage = lastPage;
+
+  try {
+    const [tx, data] = await Promise.all([
+      api('GET', '/transactions/' + transactionId),
+      api('GET', '/transactions/' + transactionId + '/values')
+    ]);
+    txDetailContext.tx = tx;
+    txDetailContext.data = data;
+    renderTransactionDetail(tx, data);
+  } catch (err) {
+    const el = document.getElementById('txDetailLoading');
+    if (el) el.textContent = `${t('common.error')}: ${err.message}`;
+  }
+}
+
+function renderTransactionDetail(tx, data) {
+  const hasChartData = data.energie.length > 0 || data.courant.length > 0 || data.soc.length > 0
+    || data.temperature.length > 0 || data.tension.length > 0 || data.frequence.length > 0;
+  const energy = tx.meter_stop != null && tx.meter_start != null
+    ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh'
+    : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
+  let duration = '';
+  if (tx.start_time && tx.stop_time) {
+    const diffMin = Math.floor((new Date(tx.stop_time) - new Date(tx.start_time)) / 60000);
+    duration = diffMin >= 60 ? formatDuree(diffMin) : diffMin + ' min';
+  }
 
   document.getElementById('pageContent').innerHTML = `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="detail-sections" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
+        <div class="detail-section">
+          <div class="detail-section-title">🔌 ${t('common.chargepoint_one')}</div>
+          ${tx.site_name ? `<div class="detail-row"><span class="detail-label">${t('common.site_one')}</span><span class="detail-value">${escapeHtml(tx.site_name)}</span></div>` : ''}
+          <div class="detail-row"><span class="detail-label">${t('common.name')}</span><span class="detail-value">${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</span></div>
+          ${tx.evse_id != null ? `<div class="detail-row"><span class="detail-label">EVSE</span><span class="detail-value">${tx.evse_name ? escapeHtml(tx.evse_name) : tx.evse_id}</span></div>` : ''}
+          <div class="detail-row"><span class="detail-label">${t('common.connector_one')}</span><span class="detail-value">${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</span></div>
+        </div>
+        <div class="detail-section">
+          <div class="detail-section-title">🪪 ${t('common.user')}</div>
+          ${tx.id_tag ? `<div class="detail-row"><span class="detail-label">${t('common.rfidTag')}</span><span class="detail-value">${escapeHtml(cleanIdTag(tx.id_tag) || tx.id_tag)}</span></div>` : ''}
+          ${tx.tag_username ? `<div class="detail-row"><span class="detail-label">${t('common.user')}</span><span class="detail-value">${escapeHtml(tx.tag_username)}</span></div>` : ''}
+          <div class="detail-row"><span class="detail-label">${t('common.source')}</span><span class="detail-value">${formatStartSource(tx.start_source)}</span></div>
+          <div class="detail-row"><span class="detail-label">${t('common.status')}</span><span class="detail-value">${formatTxStatus(tx.status)}</span></div>
+          ${tx.charging_state ? `<div class="detail-row"><span class="detail-label">${t('transac.chargingState')}</span><span class="detail-value"><span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span></span></div>` : ''}
+          ${tx.stop_reason ? `<div class="detail-row"><span class="detail-label">${t('transac.stopReason')}</span><span class="detail-value">${formatReason(tx.stop_reason)}</span></div>` : ''}
+        </div>
+        <div class="detail-section">
+          <div class="detail-section-title">⏱️ ${t('transac.metrics')}</div>
+          <div class="detail-row"><span class="detail-label">${t('common.start')}</span><span class="detail-value">${formatDate(tx.start_time)}</span></div>
+          ${tx.stop_time ? `<div class="detail-row"><span class="detail-label">${t('common.end')}</span><span class="detail-value">${formatDate(tx.stop_time)}</span></div>` : ''}
+          ${duration ? `<div class="detail-row"><span class="detail-label">${t('transac.duration')}</span><span class="detail-value">${duration}</span></div>` : ''}
+          <div class="detail-row"><span class="detail-label">${t('common.energy')}</span><span class="detail-value">${energy}</span></div>
+        </div>
+      </div>
+    </div>
+    ${hasChartData ? `
     <div class="chart-grid" style="grid-template-columns: 1fr;">
       <div class="chart-card">
         <h3>⚡ ${t('charts.cPowerTitle')}</h3>
@@ -4336,20 +4595,11 @@ async function showTransactionDetail(transactionId, lastPage) {
         <h3>🌡️ ${t('charts.cTempFreqTitle')}</h3>
         <div style="height:300px;"><canvas id="chartTxTempFreq"></canvas></div>
       </div>
-    </div>
-    <p id="txDetailLoading" class="text-muted">${t('charts.cLoading')}</p>
+    </div>` : ''}
   `;
 
-  txDetailContext.transactionId = transactionId;
-  txDetailContext.lastPage = lastPage;
-
-  try {
-    const data = await api('GET', '/transactions/' + transactionId + '/values');
-    document.getElementById('txDetailLoading').remove();
-    txDetailContext.data = data;
+  if (hasChartData) {
     renderTransactionCharts(data);
-  } catch (err) {
-    document.getElementById('txDetailLoading').textContent = `${t('common.error')}: ${err.message}`;
   }
 }
 
@@ -4361,28 +4611,8 @@ function refreshTransactionDetail() {
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-secondary" data-onclick="navigate('${txDetailContext.lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
 
-  document.getElementById('pageContent').innerHTML = `
-    <div class="chart-grid" style="grid-template-columns: 1fr;">
-      <div class="chart-card">
-        <h3>⚡ ${t('charts.cPowerTitle')}</h3>
-        <div style="height:300px;"><canvas id="chartTxEnergie"></canvas></div>
-      </div>
-      <div class="chart-card" id="chartCardCourant">
-        <h3>🔌 ${t('charts.cCurrentTitle')}</h3>
-        <div style="height:300px;"><canvas id="chartTxCourant"></canvas></div>
-      </div>
-      <div class="chart-card" id="chartCardSoc">
-        <h3>🔋 ${t('charts.cSoCTitle')}</h3>
-        <div style="height:300px;"><canvas id="chartTxSoc"></canvas></div>
-      </div>
-      <div class="chart-card" id="chartCardTempFreq" style="display:none;">
-        <h3>🌡️ ${t('charts.cTempFreqTitle')}</h3>
-        <div style="height:300px;"><canvas id="chartTxTempFreq"></canvas></div>
-      </div>
-    </div>
-  `;
-  if (txDetailContext.data) {
-    renderTransactionCharts(txDetailContext.data);
+  if (txDetailContext.tx && txDetailContext.data) {
+    renderTransactionDetail(txDetailContext.tx, txDetailContext.data);
   }
 }
 
@@ -4702,7 +4932,7 @@ async function renderErrorEvents(keepState = false) {
           <th>${t('errorEvents.colErrorCode')}</th>
           <th>${t('errorEvents.colVendorError')}</th>
           <th>${t('errorEvents.colInfo')}</th>
-          <th>${t('errorEvents.colProtocol')}</th>
+          ${appSettings.v16Enabled && appSettings.v201Enabled ? `<th>${t('errorEvents.colProtocol')}</th>` : ''}
         </tr></thead>
         <tbody>
           ${events.map(e => `
@@ -4715,7 +4945,7 @@ async function renderErrorEvents(keepState = false) {
               <td>${e.error_code ? `<code>${escapeHtml(e.error_code)}</code>` : (e.tech_code ? `<code>${escapeHtml(e.tech_code)}</code>` : '<span class="text-muted">-</span>')}</td>
               <td>${e.vendor_error_code ? escapeHtml(e.vendor_error_code) : '<span class="text-muted">-</span>'}</td>
               <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${e.info ? escapeAttr(e.info) : ''}">${e.info ? escapeHtml(e.info) : '<span class="text-muted">-</span>'}</td>
-              <td><span class="badge badge-blue">${escapeHtml(e.ocpp_version)}</span></td>
+              ${appSettings.v16Enabled && appSettings.v201Enabled ? `<td><span class="badge badge-blue">${escapeHtml(e.ocpp_version)}</span></td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -4837,7 +5067,7 @@ async function renderNotifications() {
           <thead>
             <tr>
               <th>${t('push.prefEvent')}</th>
-              ${channels.map(c => `<th style="text-align:center;min-width:80px;">${channelLabels[c] || c}</th>`).join('')}
+              ${channels.map(c => `<th class="th-center">${channelLabels[c] || c}</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -4846,10 +5076,10 @@ async function renderNotifications() {
             ` : eventKeys.map(ev => `
               <tr>
                 <td>
-                  <strong>${escapeHtml(events[ev].label)}</strong> <small style="color:var(--gray-500);">${escapeHtml(events[ev].description)}</small>
+                  <strong>${escapeHtml(events[ev].label)}</strong> <small class="text-muted">${escapeHtml(events[ev].description)}</small>
                 </td>
                 ${channels.map(ch => `
-                  <td style="text-align:center;">
+                  <td class="td-center">
                     <input type="checkbox"
                       data-event="${ev}" data-channel="${ch}"
                       ${isChecked(ev, ch, events[ev]) ? 'checked' : ''}>
@@ -5182,39 +5412,67 @@ function urlBase64ToUint8Array(base64String) {
 //  CONFIG EDITOR
 // ══════════════════════════════════════
 let currentConfigTab = 'app';
+let _cfgRenderVer = 0;
 
 async function renderConfigEditor() {
+  ++_cfgRenderVer;
   if (currentUser.role !== 'admin') return navigate('dashboard');
   document.getElementById('topbarActions').innerHTML = '';
+
+  const show16 = appSettings.v16Enabled !== false;
+  const show201 = appSettings.v201Enabled === true;
+
+  if (currentConfigTab === 'chargepoints16' && !show16) currentConfigTab = 'app';
+  if (currentConfigTab === 'chargepoints201' && !show201) currentConfigTab = 'app';
 
   const html = `
     <div class="tabs">
       <button class="tab ${currentConfigTab === 'app' ? 'active' : ''}" data-onclick="switchConfigTab('app')">${t('configEditor.tabApp')}</button>
-      <button class="tab ${currentConfigTab === 'chargepoints' ? 'active' : ''}" data-onclick="switchConfigTab('chargepoints')">${t('configEditor.tabChargepoints')}</button>
+      ${show16 ? `<button class="tab ${currentConfigTab === 'chargepoints16' ? 'active' : ''}" data-onclick="switchConfigTab('chargepoints16')">Bornes OCPP 1.6</button>` : ''}
+      ${show201 ? `<button class="tab ${currentConfigTab === 'chargepoints201' ? 'active' : ''}" data-onclick="switchConfigTab('chargepoints201')">Bornes OCPP 2.0.1</button>` : ''}
     </div>
     <div id="configTabContent"></div>`;
   document.getElementById('pageContent').innerHTML = html;
 
   if (currentConfigTab === 'app') {
     await renderConfigTabApp();
-  } else {
-    await renderConfigTabChargepoints();
+  } else if (currentConfigTab === 'chargepoints16') {
+    document.getElementById('configTabContent').innerHTML = '<div id="initConfigInner"></div>';
+    await _renderInitConfig16();
+  } else if (currentConfigTab === 'chargepoints201') {
+    document.getElementById('configTabContent').innerHTML = '<div id="initConfigInner"></div>';
+    await _renderInitConfig201();
   }
 }
 
 function switchConfigTab(tab) {
   currentConfigTab = tab;
-  renderConfigEditor();
+  document.querySelectorAll('#pageContent .tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.onclick === `switchConfigTab('${tab}')`);
+  });
+  const contentEl = document.getElementById('configTabContent');
+  if (tab === 'app') {
+    renderConfigTabApp();
+  } else if (tab === 'chargepoints16') {
+    contentEl.innerHTML = '<div id="initConfigInner"></div>';
+    _renderInitConfig16();
+  } else if (tab === 'chargepoints201') {
+    contentEl.innerHTML = '<div id="initConfigInner"></div>';
+    _renderInitConfig201();
+  }
 }
 
 async function renderConfigTabApp() {
+  const myVer = _cfgRenderVer;
   let data;
   try {
     data = await api('GET', '/configeditor');
   } catch (err) {
+    if (_cfgRenderVer !== myVer || currentConfigTab !== 'app') return;
     document.getElementById('configTabContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
+  if (_cfgRenderVer !== myVer || currentConfigTab !== 'app') return;
 
   const sectionOrder = ['general', 'webui', 'ocpp', 'notifs', 'auth', 'metrics'];
   const bySection = {};
@@ -5257,10 +5515,12 @@ async function renderConfigTabApp() {
     <button type="submit" class="btn btn-primary">${t('configEditor.saveRestart')}</button>
   </div></form>`;
 
+  if (_cfgRenderVer !== myVer || currentConfigTab !== 'app') return;
   document.getElementById('configTabContent').innerHTML = html;
 }
 
 const GLOBAL_ONLY_KEYS = ['HeartbeatInterval'];
+const GLOBAL_ONLY_VARS_201 = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
 
 const OCPP16_STANDARD_KEYS = [
   'AllowOfflineTxForUnknownId','AuthorizationCacheEnabled','AuthorizeRemoteTxRequests',
@@ -5280,17 +5540,20 @@ const OCPP16_STANDARD_KEYS = [
   'SendLocalListMaxLength','ReserveConnectorZeroSupported',
 ];
 
-async function renderConfigTabChargepoints() {
+
+async function _renderInitConfig16() {
+  const myVer = _cfgRenderVer;
+  const container = document.getElementById('initConfigInner');
   let rows;
   try {
     rows = await api('GET', '/init-config');
   } catch (err) {
-    document.getElementById('configTabContent').innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    if (_cfgRenderVer !== myVer || currentConfigTab !== 'chargepoints16') return;
+    container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
     return;
   }
-
+  if (_cfgRenderVer !== myVer || currentConfigTab !== 'chargepoints16') return;
   let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description')}</p>`;
-
   html += `<div class="card"><table class="data-table">
     <thead><tr>
       <th>${t('initConfig.key')}</th>
@@ -5298,11 +5561,9 @@ async function renderConfigTabChargepoints() {
       <th>${t('initConfig.enabled')}</th>
       <th>${t('common.actions')}</th>
     </tr></thead><tbody>`;
-
   if (rows.length === 0) {
     html += `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-muted);">—</td></tr>`;
   }
-
   for (const r of rows) {
     const isGlobalOnly = GLOBAL_ONLY_KEYS.includes(r.key);
     html += `<tr>
@@ -5315,13 +5576,147 @@ async function renderConfigTabChargepoints() {
       </td>
     </tr>`;
   }
-
   html += `</tbody></table></div>`;
-
-  document.getElementById('configTabContent').innerHTML = html;
+  container.innerHTML = html;
   document.getElementById('topbarActions').innerHTML = `
     <button class="btn btn-secondary btn-sm" data-onclick="cascadeAllInitConfig()">↓ ${t('initConfig.cascadeBtn')}</button>
     <button class="btn btn-primary btn-sm" data-onclick="showCreateInitConfigModal()">+ ${t('initConfig.addBtn')}</button>`;
+}
+
+async function _renderInitConfig201() {
+  const myVer = _cfgRenderVer;
+  const container = document.getElementById('initConfigInner');
+  let rows;
+  try {
+    rows = await api('GET', '/init-config/variables');
+  } catch (err) {
+    if (_cfgRenderVer !== myVer || currentConfigTab !== 'chargepoints201') return;
+    container.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  if (_cfgRenderVer !== myVer || currentConfigTab !== 'chargepoints201') return;
+  let html = `<p class="text-muted" style="margin-bottom:16px;">${t('initConfig.description201')}</p>`;
+  html += `<div class="card"><table class="data-table">
+    <thead><tr>
+      <th>Component</th><th>Variable</th><th>Attribute</th>
+      <th>${t('initConfig.value')}</th>
+      <th>${t('initConfig.enabled')}</th>
+      <th>${t('common.actions')}</th>
+    </tr></thead><tbody>`;
+  if (rows.length === 0) {
+    html += `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-muted);">—</td></tr>`;
+  }
+  for (const r of rows) {
+    const isGlobalOnly = GLOBAL_ONLY_VARS_201.some(
+      (v) => v.component === r.component && v.variable === r.variable
+    );
+    html += `<tr>
+      <td class="td-mono">${escapeHtml(r.component)}</td>
+      <td class="td-mono">${escapeHtml(r.variable)}${isGlobalOnly ? ` <span class="badge badge-blue" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>` : ''}</td>
+      <td class="td-meta">${escapeHtml(r.attribute || 'Actual')}</td>
+      <td>${escapeHtml(r.value)}</td>
+      <td><input type="checkbox" ${r.enabled || isGlobalOnly ? 'checked' : ''} ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : `data-onchange="toggleInitVariable(${r.id}, this.checked)"`}></td>
+      <td>
+        <button class="btn btn-sm btn-secondary" data-onclick="showEditInitVariableModal(${r.id}, '${escapeAttr(r.component)}', '${escapeAttr(r.variable)}', '${escapeAttr(r.attribute || 'Actual')}', '${escapeAttr(r.value)}', ${!!r.enabled})">${t('common.edit')}</button>
+        ${isGlobalOnly ? '' : `<button class="btn btn-sm btn-danger" data-onclick="withBtn(this, () => deleteInitVariable(${r.id}))">${t('common.delete')}</button>`}
+      </td>
+    </tr>`;
+  }
+  html += `</tbody></table></div>`;
+  container.innerHTML = html;
+  document.getElementById('topbarActions').innerHTML = `
+    <button class="btn btn-secondary btn-sm" data-onclick="cascadeAllInitVariables()">↓ ${t('initConfig.cascadeBtn')}</button>
+    <button class="btn btn-primary btn-sm" data-onclick="showCreateInitVariableModal()">+ ${t('initConfig.addBtn')}</button>`;
+}
+
+function showCreateInitVariableModal() {
+  openModal(`
+    <h3>Nouvelle variable OCPP 2.0.1</h3>
+    <div class="form-group"><label>Component</label><input type="text" id="initVarComponent" required /></div>
+    <div class="form-group"><label>Variable</label><input type="text" id="initVarVariable" required /></div>
+    <div class="form-group">
+      <label>Attribute</label>
+      <select id="initVarAttribute">
+        <option value="Actual">Actual</option>
+        <option value="Target">Target</option>
+        <option value="MinSet">MinSet</option>
+        <option value="MaxSet">MaxSet</option>
+      </select>
+    </div>
+    <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="initVarValue" required /></div>
+    <div class="form-group"><label><input type="checkbox" id="initVarEnabled" checked> ${t('initConfig.enabled')}</label></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, createInitVariable)">${t('common.create')}</button>
+    </div>
+  `);
+}
+
+async function createInitVariable() {
+  const component = document.getElementById('initVarComponent').value.trim();
+  const variable = document.getElementById('initVarVariable').value.trim();
+  const attribute = document.getElementById('initVarAttribute').value;
+  const value = document.getElementById('initVarValue').value.trim();
+  const enabled = document.getElementById('initVarEnabled').checked;
+  if (!component || !variable || !value) return;
+  try {
+    await api('POST', '/init-config/variables', { component, variable, attribute, value, enabled });
+    closeModal();
+    _renderInitConfig201();
+  } catch (err) {
+    if (err.message?.includes('409')) {
+      toast('Cette variable existe déjà.', 'error');
+    } else {
+      toast(err.message, 'error');
+    }
+  }
+}
+
+function showEditInitVariableModal(id, component, variable, attribute, value, enabled) {
+  openModal(`
+    <h3>Modifier la variable OCPP 2.0.1</h3>
+    <div class="form-group"><label>Component</label><input type="text" value="${escapeAttr(component)}" disabled class="form-control" /></div>
+    <div class="form-group"><label>Variable</label><input type="text" value="${escapeAttr(variable)}" disabled class="form-control" /></div>
+    <div class="form-group"><label>${t('initConfig.value')}</label><input type="text" id="editInitVarValue" value="${escapeAttr(value)}" required /></div>
+    <div class="form-group"><label><input type="checkbox" id="editInitVarEnabled" ${enabled ? 'checked' : ''}> ${t('initConfig.enabled')}</label></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => updateInitVariable(${id}))">${t('common.save')}</button>
+    </div>
+  `);
+}
+
+async function updateInitVariable(id) {
+  const value = document.getElementById('editInitVarValue').value.trim();
+  const enabled = document.getElementById('editInitVarEnabled').checked;
+  if (!value) return;
+  try {
+    await api('PUT', `/init-config/variables/${id}`, { value, enabled });
+    closeModal();
+    _renderInitConfig201();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function toggleInitVariable(id, enabled) {
+  try {
+    await api('PUT', `/init-config/variables/${id}`, { enabled });
+  } catch (err) {
+    toast(err.message, 'error');
+    _renderInitConfig201();
+  }
+}
+
+async function deleteInitVariable(id) {
+  const ok = await confirmDialog(t('initConfig.deleteConfirm', { defaultValue: 'Supprimer cette entrée ?' }), { danger: true });
+  if (!ok) return;
+  try {
+    await api('DELETE', `/init-config/variables/${id}`);
+    _renderInitConfig201();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 // ── Init Config CRUD ──
@@ -5345,7 +5740,7 @@ async function createInitConfig() {
   try {
     await api('POST', '/init-config', { key, value });
     closeModal();
-    renderConfigTabChargepoints();
+    _renderInitConfig16();
   } catch (err) {
     if (err.message?.includes('409')) {
       toast(t('initConfig.keyExists'), 'error');
@@ -5375,7 +5770,7 @@ async function updateInitConfig(id) {
   try {
     await api('PUT', `/init-config/${id}`, { value, enabled });
     closeModal();
-    renderConfigTabChargepoints();
+    _renderInitConfig16();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -5386,7 +5781,7 @@ async function toggleInitConfig(id, enabled) {
     await api('PUT', `/init-config/${id}`, { enabled });
   } catch (err) {
     toast(err.message, 'error');
-    renderConfigTabChargepoints();
+    _renderInitConfig16();
   }
 }
 
@@ -5395,7 +5790,7 @@ async function deleteInitConfig(id) {
   if (!ok) return;
   try {
     await api('DELETE', `/init-config/${id}`);
-    renderConfigTabChargepoints();
+    _renderInitConfig16();
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -5437,6 +5832,65 @@ async function cascadeAllInitConfig() {
         `<tr><td>${s.identity}</td><td><code>${s.key}</code></td><td><span class="badge">${s.reason}</span></td></tr>`
       ).join(''),
       cols: cpCol + keyReasonCols,
+    },
+    {
+      labelKey: 'cascadeQueued',
+      count: result.queued.length,
+      rows: result.queued.map(q => `<tr><td>${q.identity}</td></tr>`).join(''),
+      cols: cpCol,
+    },
+  ];
+  const renderSection = ({ labelKey, count, rows, cols, open }) => {
+    const label = `${count} ${t(`initConfig.${labelKey}`)}`;
+    if (!count || !rows) return `<div>${label}</div>`;
+    return `
+    <details ${open ? 'open' : ''} style="margin-top:4px;">
+      <summary style="cursor:pointer;">${label}</summary>
+      <table style="width:100%;margin-top:8px;">
+        <thead><tr>${cols}</tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </details>`;
+  };
+  openModal(`
+    <strong>${t('initConfig.cascadeResultTitle')}</strong>
+    <div style="display:flex;flex-direction:column;gap:4px;margin-top:8px;">
+      ${sections.map(renderSection).join('')}
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn btn-primary" data-onclick="closeModal()">${t('common.close')}</button>
+    </div>
+  `);
+}
+
+async function cascadeAllInitVariables() {
+  const ok = await confirmDialog(
+    `${t('initConfig.cascadeConfirmTitle')}\n\n${t('initConfig.cascadeConfirmBody201')}`
+  );
+  if (!ok) return;
+  let result;
+  try {
+    result = await api('POST', '/init-config/variables/cascade-all');
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  const cpCol = `<th>${t('chargepoint.cpIdentity')}</th>`;
+  const keyReasonCols = `<th>Variable</th><th>Raison</th>`;
+  const sections = [
+    {
+      labelKey: 'cascadeApplied',
+      count: result.applied.length,
+      rows: null,
+    },
+    {
+      labelKey: 'cascadeErrors',
+      count: result.errors.length,
+      rows: result.errors.map(e =>
+        `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
+      ).join(''),
+      cols: cpCol + keyReasonCols,
+      open: true,
     },
     {
       labelKey: 'cascadeQueued',
@@ -5736,10 +6190,10 @@ async function renderSites() {
       const isManagedSite = isAdmin || (currentUser.sites || []).some(us => us.site_id === s.id && us.role === 'manager');
       return `
             <tr>
-              <td style="font-weight:500">${escapeHtml(s.sname)}</td>
+              <td class="td-primary">${escapeHtml(s.sname)}</td>
               <td>${s.address ? escapeHtml(s.address) : '-'}</td>
               <td>${cpCount}</td>
-              <td class="text-muted">${formatDateShort(s.created_at)}</td>
+              <td class="td-date">${formatDateShort(s.created_at)}</td>
               <td>
                 ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, '${escapeAttr(s.sname)}')">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>

@@ -1,13 +1,13 @@
-name: Build and push Container image
+name: Build and push Container image (dev + feature-ocpp-201)
 
 on:
   workflow_dispatch:
-  #push:
-  #  branches:
-  #    - 'dev'
-  #    - 'feature/**'
-  #  tags:
-  #    - 'v*'
+  push:
+    branches:
+      - 'dev'
+      - 'feature/**'
+    tags:
+      - 'v*'
 
 jobs:
   check:
@@ -35,11 +35,21 @@ jobs:
     needs: [check]
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: dev
+          - variant: feature-ocpp-201
     steps:
       - name: Check out the repo
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+
+      - name: Disable OCPP 2.0.1 code (dev variant)
+        if: matrix.variant == 'dev'
+        run: sed -i 's/if (config\.ocpp\.v201/\/\/ if (config.ocpp.v201/g' src/server.js
 
       - name: Login to dockerhub
         uses: docker/login-action@v4
@@ -72,15 +82,15 @@ jobs:
 
       - name: Export digest
         run: |
-          mkdir -p /tmp/digests-amd64
+          mkdir -p /tmp/digests-amd64-${{ matrix.variant }}
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests-amd64/${digest#sha256:}"
+          touch "/tmp/digests-amd64-${{ matrix.variant }}/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v7
         with:
-          name: digests-amd64
-          path: /tmp/digests-amd64/*
+          name: digests-amd64-${{ matrix.variant }}
+          path: /tmp/digests-amd64-${{ matrix.variant }}/*
           if-no-files-found: error
           retention-days: 1
 
@@ -88,11 +98,21 @@ jobs:
     needs: [check]
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: dev
+          - variant: feature-ocpp-201
     steps:
       - name: Check out the repo
         uses: actions/checkout@v6
         with:
           fetch-depth: 1
+
+      - name: Disable OCPP 2.0.1 code (dev variant)
+        if: matrix.variant == 'dev'
+        run: sed -i 's/if (config\.ocpp\.v201/\/\/ if (config.ocpp.v201/g' src/server.js
 
       - name: Login to dockerhub
         uses: docker/login-action@v4
@@ -125,15 +145,15 @@ jobs:
 
       - name: Export digest
         run: |
-          mkdir -p /tmp/digests-arm64
+          mkdir -p /tmp/digests-arm64-${{ matrix.variant }}
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests-arm64/${digest#sha256:}"
+          touch "/tmp/digests-arm64-${{ matrix.variant }}/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v7
         with:
-          name: digests-arm64
-          path: /tmp/digests-arm64/*
+          name: digests-arm64-${{ matrix.variant }}
+          path: /tmp/digests-arm64-${{ matrix.variant }}/*
           if-no-files-found: error
           retention-days: 1
 
@@ -141,6 +161,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [check, build-amd64, build-arm64]
     if: needs.check.outputs.should_build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: dev
+          - variant: feature-ocpp-201
     steps:
       - name: Check out the repo
         uses: actions/checkout@v6
@@ -150,13 +176,13 @@ jobs:
       - name: Download amd64 digest
         uses: actions/download-artifact@v8
         with:
-          name: digests-amd64
+          name: digests-amd64-${{ matrix.variant }}
           path: /tmp/digests-amd64
 
       - name: Download arm64 digest
         uses: actions/download-artifact@v8
         with:
-          name: digests-arm64
+          name: digests-arm64-${{ matrix.variant }}
           path: /tmp/digests-arm64
 
       - name: Docker meta
@@ -167,10 +193,13 @@ jobs:
             wocha/ocpp-cp-admin
             ghcr.io/wocha-fr/ocpp-cp-admin
           tags: |
-            type=ref,event=branch
-            type=raw,value={{branch}}-{{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref_type == 'branch' }}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
+            # Variant dev → tags habituels
+            type=ref,event=branch,enable=${{ matrix.variant == 'dev' }}
+            type=raw,value={{branch}}-{{date 'YYYYMMDD'}}-{{sha}},enable=${{ github.ref_type == 'branch' && matrix.variant == 'dev' }}
+            type=semver,pattern={{version}},enable=${{ matrix.variant == 'dev' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ matrix.variant == 'dev' }}
+            # Variant feature-ocpp-201 → tag fixe (uniquement depuis dev)
+            type=raw,value=feature-ocpp-201,enable=${{ github.ref_name == 'dev' && matrix.variant == 'feature-ocpp-201' }}
 
       - name: Login to dockerhub
         uses: docker/login-action@v4
@@ -190,17 +219,22 @@ jobs:
 
       - name: Create and push multi-arch manifest
         run: |
+          TAGS_DH=$(jq -cr '.tags | map(select(startswith("wocha/")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          if [ -z "$TAGS_DH" ]; then
+            echo "No tags for this variant on this branch, skipping push"
+            exit 0
+          fi
+
           DIGEST_AMD64=$(ls /tmp/digests-amd64)
           DIGEST_ARM64=$(ls /tmp/digests-arm64)
+          TAGS_GH=$(jq -cr '.tags | map(select(startswith("ghcr.io/")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON")
 
           # DockerHub
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map(select(startswith("wocha/")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $TAGS_DH \
             wocha/ocpp-cp-admin@sha256:${DIGEST_AMD64} \
             wocha/ocpp-cp-admin@sha256:${DIGEST_ARM64}
 
           # GitHub Container Registry
-          docker buildx imagetools create \
-            $(jq -cr '.tags | map(select(startswith("ghcr.io/")) | "-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+          docker buildx imagetools create $TAGS_GH \
             ghcr.io/wocha-fr/ocpp-cp-admin@sha256:${DIGEST_AMD64} \
             ghcr.io/wocha-fr/ocpp-cp-admin@sha256:${DIGEST_ARM64}

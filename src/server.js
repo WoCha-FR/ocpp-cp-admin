@@ -47,7 +47,7 @@ const wsSslEnabled = config.ocpp.wss && config.ocpp.wss.enabled;
 const ocppStrictClientCert = config.ocpp.wss?.strictClientCert === true;
 // Charger les handlers — déclenche registerHandlersFn + registerCallClientImpl
 if (config.ocpp.v16?.enabled !== false) require('./ocpp-server-16');
-// Phase 3 : if (config.ocpp.v201?.enabled) require('./ocpp-server-201');
+if (config.ocpp.v201?.enabled) require('./ocpp-server-201');
 
 // ── Initialiser la DB ──
 const sqliteDb = db.getDb();
@@ -588,8 +588,8 @@ setBroadcast(broadcastToUI);
 
 // ── Serveur OCPP sur port unique ──
 const ocppProtocols = [];
+if (config.ocpp.v201?.enabled) ocppProtocols.push('ocpp2.0.1');
 if (config.ocpp.v16?.enabled !== false) ocppProtocols.push('ocpp1.6');
-// Phase 3 : if (config.ocpp.v201?.enabled) ocppProtocols.push('ocpp2.0.1');
 if (ocppProtocols.length === 0) {
   logOCPP.warn(
     'No OCPP version enabled (v16 and v201 both disabled) — OCPP server will reject all connections'

@@ -77,15 +77,25 @@ function createApp() {
     })(req, res, next);
   });
 
+  const GLOBAL_ONLY_VARS_201 = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
+
   // Route chargepoint config — mirrors the GLOBAL_ONLY_KEYS check from routes.js
   app.put('/api/chargepoints/:id/config/:key', (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     const { key } = req.params;
     const { value } = req.body;
     if (value === undefined || value === null) {
       return res.status(400).json({ error: 'ERR_VALUE_REQUIRED' });
     }
-    if (GLOBAL_ONLY_KEYS.includes(key)) {
+    if (cp?.ocpp_version === '2.0.1') {
+      const dotIdx = key.indexOf('.');
+      if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+      const component = key.slice(0, dotIdx);
+      const variable = key.slice(dotIdx + 1);
+      if (GLOBAL_ONLY_VARS_201.some((v) => v.component === component && v.variable === variable))
+        return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
+    } else if (GLOBAL_ONLY_KEYS.includes(key)) {
       return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
     }
     // Borne non connectée (simulé)
@@ -98,9 +108,27 @@ function createApp() {
     const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
     const key = req.params.key;
+    const isOverride = req.body.is_override === true;
+
+    if (cp.ocpp_version === '2.0.1') {
+      const dotIdx = key.indexOf('.');
+      if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+      const component = key.slice(0, dotIdx);
+      const variable = key.slice(dotIdx + 1);
+      if (GLOBAL_ONLY_VARS_201.some((v) => v.component === component && v.variable === variable))
+        return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
+      const existing = db.prepare(
+        'SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?'
+      ).get(cp.id, component, variable, 'Actual');
+      if (!existing) return res.status(404).json({ error: 'ERR_CONFIG_KEY_NOT_FOUND' });
+      db.prepare(
+        "UPDATE chargepoint_variables SET is_override = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?"
+      ).run(isOverride ? 1 : 0, cp.id, component, variable, 'Actual');
+      return res.json({ ok: true });
+    }
+
     const existing = db.prepare('SELECT * FROM chargepoint_config WHERE chargepoint_id = ? AND key = ?').get(cp.id, key);
     if (!existing) return res.status(404).json({ error: 'ERR_CONFIG_KEY_NOT_FOUND' });
-    const isOverride = req.body.is_override === true;
     db.prepare(`UPDATE chargepoint_config SET is_override = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND key = ?`)
       .run(isOverride ? 1 : 0, cp.id, key);
     res.json({ ok: true });
@@ -132,7 +160,7 @@ function createApp() {
 
     if (app._mockRefreshProtocol === 'ocpp2.0.1') {
       try {
-        const result = await app._mockRefreshCall('GetVariables', {});
+        const result = await app._mockRefreshCall('GetBaseReport', { requestId: Date.now(), reportBase: 'FullInventory' });
         return res.json({ result, config: config() });
       } catch (e) {
         return res.status(500).json({ error: e.message });
@@ -232,6 +260,19 @@ describe('PUT /api/chargepoints/:id/config/:key — GLOBAL_ONLY_KEYS protection'
       .send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('ERR_VALUE_REQUIRED');
+  });
+
+  it('returns 400 ERR_KEY_NOT_OVERRIDABLE for OCPPCommCtrlr.HeartbeatInterval (2.0.1)', async () => {
+    const cpRow = db.prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('CP201-GLOBAL', '2.0.1')").run();
+    const cpId = cpRow.lastInsertRowid;
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .put(`/api/chargepoints/${cpId}/config/OCPPCommCtrlr.HeartbeatInterval`)
+      .set('x-xsrf-token', csrf)
+      .send({ value: '300' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('ERR_KEY_NOT_OVERRIDABLE');
   });
 });
 
@@ -432,6 +473,104 @@ describe('PATCH /api/chargepoints/:id/config/:key/override — toggle is_overrid
     expect(row.value).toBe('120');
     expect(row.is_override).toBe(1);
   });
+
+  describe('OCPP 2.0.1', () => {
+    function insertCp201(identity) {
+      db.prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES (?, '2.0.1')").run(identity);
+      return db.prepare('SELECT id FROM chargepoints WHERE identity = ?').get(identity);
+    }
+
+    function insertVariable(cpId, component, variable, value = '30', isOverride = 0) {
+      db.prepare(
+        "INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value, is_override) VALUES (?, ?, ?, 'Actual', ?, ?)"
+      ).run(cpId, component, variable, value, isOverride);
+    }
+
+    it('returns 400 ERR_INVALID_KEY_FORMAT when key has no dot', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-A');
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/NoDotKey/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('ERR_INVALID_KEY_FORMAT');
+    });
+
+    it('returns 400 ERR_KEY_NOT_OVERRIDABLE for OCPPCommCtrlr.HeartbeatInterval', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-B');
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/OCPPCommCtrlr.HeartbeatInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('ERR_KEY_NOT_OVERRIDABLE');
+    });
+
+    it('returns 404 ERR_CONFIG_KEY_NOT_FOUND when variable absent', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-C');
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/TxCtrlr.MeterValueSampleInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('ERR_CONFIG_KEY_NOT_FOUND');
+    });
+
+    it('sets is_override=1 in chargepoint_variables', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-D');
+      insertVariable(cpId, 'TxCtrlr', 'MeterValueSampleInterval', '30', 0);
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/TxCtrlr.MeterValueSampleInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      expect(res.status).toBe(200);
+      expect(res.body.ok).toBe(true);
+      const row = db.prepare(
+        "SELECT is_override FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = 'Actual'"
+      ).get(cpId, 'TxCtrlr', 'MeterValueSampleInterval');
+      expect(row.is_override).toBe(1);
+    });
+
+    it('clears is_override=0 in chargepoint_variables', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-E');
+      insertVariable(cpId, 'TxCtrlr', 'MeterValueSampleInterval', '30', 1);
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .patch(`/api/chargepoints/${cpId}/config/TxCtrlr.MeterValueSampleInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: false });
+      expect(res.status).toBe(200);
+      const row = db.prepare(
+        "SELECT is_override FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = 'Actual'"
+      ).get(cpId, 'TxCtrlr', 'MeterValueSampleInterval');
+      expect(row.is_override).toBe(0);
+    });
+
+    it('does not change value', async () => {
+      const { id: cpId } = insertCp201('CP201-OV-F');
+      insertVariable(cpId, 'TxCtrlr', 'MeterValueSampleInterval', '45', 0);
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      await agent
+        .patch(`/api/chargepoints/${cpId}/config/TxCtrlr.MeterValueSampleInterval/override`)
+        .set('x-xsrf-token', csrf)
+        .send({ is_override: true });
+      const row = db.prepare(
+        "SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = 'Actual'"
+      ).get(cpId, 'TxCtrlr', 'MeterValueSampleInterval');
+      expect(row.value).toBe('45');
+      expect(row.is_override).toBe(1);
+    });
+  });
 });
 
 describe('POST /api/chargepoints/:id/config/refresh', () => {
@@ -467,19 +606,19 @@ describe('POST /api/chargepoints/:id/config/refresh', () => {
     expect(res.body.error).toBe('ERR_CHARGEPOINT_OFFLINE');
   });
 
-  it('OCPP 2.0.1: returns 200 with result when GetVariables succeeds', async () => {
+  it('OCPP 2.0.1: returns 200 with result when GetBaseReport succeeds', async () => {
     const { id: cpId } = insertCp(db, 'REF02');
     app._mockRefreshProtocol = 'ocpp2.0.1';
-    app._mockRefreshCall = jest.fn().mockResolvedValue({ getVariableResult: [] });
+    app._mockRefreshCall = jest.fn().mockResolvedValue({ status: 'Accepted' });
     const agent = request.agent(app);
     const csrf = await loginAs(agent);
     const res = await agent.post(`/api/chargepoints/${cpId}/config/refresh`).set('x-xsrf-token', csrf).send({});
     expect(res.status).toBe(200);
     expect(res.body).toHaveProperty('result');
-    expect(app._mockRefreshCall).toHaveBeenCalledWith('GetVariables', {});
+    expect(app._mockRefreshCall).toHaveBeenCalledWith('GetBaseReport', expect.objectContaining({ reportBase: 'FullInventory' }));
   });
 
-  it('OCPP 2.0.1: returns 500 when GetVariables fails', async () => {
+  it('OCPP 2.0.1: returns 500 when GetBaseReport fails', async () => {
     const { id: cpId } = insertCp(db, 'REF03');
     app._mockRefreshProtocol = 'ocpp2.0.1';
     app._mockRefreshCall = jest.fn().mockRejectedValue(new Error('timeout'));

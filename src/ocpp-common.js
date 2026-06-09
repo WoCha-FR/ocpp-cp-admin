@@ -393,12 +393,41 @@ function createOCPPServerBase(options = {}) {
       }
     }
 
-    logger.info(`Chargepoint connected: ${identity}`);
+    const cpExisting = db.getChargepointByIdentity(identity);
+    const previousVersion = cpExisting?.ocpp_version;
+    const ocppVersion = client.protocol === 'ocpp2.0.1' ? '2.0.1' : '1.6';
+
+    if (previousVersion && previousVersion !== ocppVersion) {
+      logger.warn(`[${identity}] OCPP protocol changed: ${previousVersion} → ${ocppVersion}`);
+      if (cpExisting) {
+        const activeTxs = db.getTransactions({ chargepoint_id: cpExisting.id, status: 'Active' });
+        for (const tx of activeTxs) {
+          db.stopTransaction(
+            tx.transaction_id,
+            tx.meter_start || 0,
+            new Date().toISOString(),
+            'PowerLoss'
+          );
+          logger.info(
+            `[${identity}] Transaction ${tx.transaction_id} closed (PowerLoss, protocol change)`
+          );
+        }
+        db.clearChargingProfilesByFilter(cpExisting.id, {});
+        db.resetChargepointInitialized(cpExisting.id);
+        logger.info(
+          `[${identity}] State reset for protocol change — InitSeq will re-run on BootNotification`
+        );
+      }
+      pendingRemoteStarts.delete(identity);
+    }
+
+    logger.info(`Chargepoint connected: ${identity} (protocol: ${ocppVersion})`);
     connectedClients.set(identity, client);
     db.upsertChargepoint(identity, {
       connected: 1,
       connected_wss: isWSS ? 1 : 0,
       endpoint_address: client.session.remoteAddress || null,
+      ocpp_version: ocppVersion,
     });
     broadcast('chargepoint_connected', { identity }, getSiteIdByIdentity(identity));
 
@@ -433,7 +462,7 @@ function createOCPPServerBase(options = {}) {
         .catch(() => {});
     }
 
-    const cpRecord = db.getChargepointByIdentity(identity);
+    const cpRecord = cpExisting ?? db.getChargepointByIdentity(identity);
     const chargepointId = cpRecord ? cpRecord.id : null;
     const loggedHandle = makeLoggedHandle(client, identity, chargepointId);
 
@@ -758,7 +787,7 @@ function stopReservationCleanupWatchdog() {
 async function remoteStopTransaction(identity, transactionId) {
   const cp = db.getChargepointByIdentity(identity);
   if (cp?.ocpp_version === '2.0.1') {
-    throw new Error('remoteStopTransaction: OCPP 2.0.1 not implemented');
+    return callClient(identity, 'RequestStopTransaction', { transactionId });
   }
   return callClient(identity, 'RemoteStopTransaction', { transactionId: Number(transactionId) });
 }
@@ -766,7 +795,12 @@ async function remoteStopTransaction(identity, transactionId) {
 async function remoteStartTransaction(identity, connectorId, idToken) {
   const cp = db.getChargepointByIdentity(identity);
   if (cp?.ocpp_version === '2.0.1') {
-    throw new Error('remoteStartTransaction: OCPP 2.0.1 not implemented');
+    const tag = db.getIdTagByTag(idToken, cp.site_id);
+    const tokenType = tag?.token_type || 'ISO14443';
+    return callClient(identity, 'RequestStartTransaction', {
+      evseId: connectorId,
+      idToken: { idToken, type: tokenType },
+    });
   }
   return callClient(identity, 'RemoteStartTransaction', { connectorId, idTag: idToken });
 }
