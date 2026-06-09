@@ -43,6 +43,8 @@ const mockDb = {
   resetConnectorsByChargepoint: jest.fn(),
   insertErrorEvent: jest.fn(),
   getIdTagByTag: jest.fn(() => null),
+  resetChargepointInitialized: jest.fn(),
+  clearChargingProfilesByFilter: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -448,6 +450,92 @@ describe('ocpp-common — connexion chargepoint — ocpp_version', () => {
       'CP-UNK-CONN',
       expect.objectContaining({ ocpp_version: '1.6' })
     );
+  });
+});
+
+// ── changement de protocole OCPP ──
+describe('ocpp-common — changement de protocole OCPP', () => {
+  const { EventEmitter } = require('events');
+
+  function makeVersionedClient(identity, protocol) {
+    const client = new EventEmitter();
+    client.identity = identity;
+    client.session = { remoteAddress: '1.2.3.4' };
+    client.protocol = protocol;
+    client.close = jest.fn();
+    client.handle = jest.fn();
+    return client;
+  }
+
+  beforeEach(() => {
+    ocppCommon.registerHandlersFn('1.6', jest.fn());
+    ocppCommon.registerHandlersFn('2.0.1', jest.fn());
+  });
+
+  it('ferme les transactions actives et reset initialized lors du changement 1.6 → 2.0.1', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 10, site_id: 1, ocpp_version: '1.6' });
+    mockDb.getTransactions.mockReturnValue([
+      { transaction_id: '101', meter_start: 5000 },
+      { transaction_id: '102', meter_start: 6000 },
+    ]);
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP-SWITCH', 'ocpp2.0.1');
+    server.emit('client', client);
+
+    expect(mockDb.stopTransaction).toHaveBeenCalledTimes(2);
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('101', 5000, expect.any(String), 'PowerLoss');
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('102', 6000, expect.any(String), 'PowerLoss');
+    expect(mockDb.clearChargingProfilesByFilter).toHaveBeenCalledWith(10, {});
+    expect(mockDb.resetChargepointInitialized).toHaveBeenCalledWith(10);
+    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+      'CP-SWITCH',
+      expect.objectContaining({ ocpp_version: '2.0.1' })
+    );
+  });
+
+  it('ferme les transactions actives et reset initialized lors du changement 2.0.1 → 1.6', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 11, site_id: 1, ocpp_version: '2.0.1' });
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: '201', meter_start: 1000 }]);
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP-SWITCH-BACK', 'ocpp1.6');
+    server.emit('client', client);
+
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('201', 1000, expect.any(String), 'PowerLoss');
+    expect(mockDb.clearChargingProfilesByFilter).toHaveBeenCalledWith(11, {});
+    expect(mockDb.resetChargepointInitialized).toHaveBeenCalledWith(11);
+  });
+
+  it('ne déclenche rien si le protocole ne change pas (1.6 → 1.6)', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 12, site_id: 1, ocpp_version: '1.6' });
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP-SAME-PROTO', 'ocpp1.6');
+    server.emit('client', client);
+
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+    expect(mockDb.clearChargingProfilesByFilter).not.toHaveBeenCalled();
+    expect(mockDb.resetChargepointInitialized).not.toHaveBeenCalled();
+  });
+
+  it('ne déclenche rien si la borne se connecte pour la première fois (ocpp_version null)', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 13, site_id: 1, ocpp_version: null });
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP-FIRST-TIME', 'ocpp2.0.1');
+    server.emit('client', client);
+
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+    expect(mockDb.clearChargingProfilesByFilter).not.toHaveBeenCalled();
+    expect(mockDb.resetChargepointInitialized).not.toHaveBeenCalled();
+  });
+
+  it('supprime pendingRemoteStarts lors du changement de protocole', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 14, site_id: 1, ocpp_version: '1.6' });
+    mockDb.getTransactions.mockReturnValue([]);
+    ocppCommon.pendingRemoteStarts.set('CP-PENDING', { source: 'remote' });
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP-PENDING', 'ocpp2.0.1');
+    server.emit('client', client);
+
+    expect(ocppCommon.pendingRemoteStarts.has('CP-PENDING')).toBe(false);
   });
 });
 

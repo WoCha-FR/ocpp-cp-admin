@@ -393,7 +393,34 @@ function createOCPPServerBase(options = {}) {
       }
     }
 
+    const cpExisting = db.getChargepointByIdentity(identity);
+    const previousVersion = cpExisting?.ocpp_version;
     const ocppVersion = client.protocol === 'ocpp2.0.1' ? '2.0.1' : '1.6';
+
+    if (previousVersion && previousVersion !== ocppVersion) {
+      logger.warn(`[${identity}] OCPP protocol changed: ${previousVersion} → ${ocppVersion}`);
+      if (cpExisting) {
+        const activeTxs = db.getTransactions({ chargepoint_id: cpExisting.id, status: 'Active' });
+        for (const tx of activeTxs) {
+          db.stopTransaction(
+            tx.transaction_id,
+            tx.meter_start || 0,
+            new Date().toISOString(),
+            'PowerLoss'
+          );
+          logger.info(
+            `[${identity}] Transaction ${tx.transaction_id} closed (PowerLoss, protocol change)`
+          );
+        }
+        db.clearChargingProfilesByFilter(cpExisting.id, {});
+        db.resetChargepointInitialized(cpExisting.id);
+        logger.info(
+          `[${identity}] State reset for protocol change — InitSeq will re-run on BootNotification`
+        );
+      }
+      pendingRemoteStarts.delete(identity);
+    }
+
     logger.info(`Chargepoint connected: ${identity} (protocol: ${ocppVersion})`);
     connectedClients.set(identity, client);
     db.upsertChargepoint(identity, {
@@ -435,7 +462,7 @@ function createOCPPServerBase(options = {}) {
         .catch(() => {});
     }
 
-    const cpRecord = db.getChargepointByIdentity(identity);
+    const cpRecord = cpExisting ?? db.getChargepointByIdentity(identity);
     const chargepointId = cpRecord ? cpRecord.id : null;
     const loggedHandle = makeLoggedHandle(client, identity, chargepointId);
 
