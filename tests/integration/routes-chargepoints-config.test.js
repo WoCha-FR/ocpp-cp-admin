@@ -77,15 +77,25 @@ function createApp() {
     })(req, res, next);
   });
 
+  const GLOBAL_ONLY_VARS_201 = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
+
   // Route chargepoint config — mirrors the GLOBAL_ONLY_KEYS check from routes.js
   app.put('/api/chargepoints/:id/config/:key', (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     const { key } = req.params;
     const { value } = req.body;
     if (value === undefined || value === null) {
       return res.status(400).json({ error: 'ERR_VALUE_REQUIRED' });
     }
-    if (GLOBAL_ONLY_KEYS.includes(key)) {
+    if (cp?.ocpp_version === '2.0.1') {
+      const dotIdx = key.indexOf('.');
+      if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+      const component = key.slice(0, dotIdx);
+      const variable = key.slice(dotIdx + 1);
+      if (GLOBAL_ONLY_VARS_201.some((v) => v.component === component && v.variable === variable))
+        return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
+    } else if (GLOBAL_ONLY_KEYS.includes(key)) {
       return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
     }
     // Borne non connectée (simulé)
@@ -93,7 +103,6 @@ function createApp() {
   });
 
   // PATCH /api/chargepoints/:id/config/:key/override — set/clear is_override flag
-  const GLOBAL_ONLY_VARS_201 = [{ component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' }];
   app.patch('/api/chargepoints/:id/config/:key/override', (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
     const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
@@ -251,6 +260,19 @@ describe('PUT /api/chargepoints/:id/config/:key — GLOBAL_ONLY_KEYS protection'
       .send({});
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('ERR_VALUE_REQUIRED');
+  });
+
+  it('returns 400 ERR_KEY_NOT_OVERRIDABLE for OCPPCommCtrlr.HeartbeatInterval (2.0.1)', async () => {
+    const cpRow = db.prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('CP201-GLOBAL', '2.0.1')").run();
+    const cpId = cpRow.lastInsertRowid;
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent
+      .put(`/api/chargepoints/${cpId}/config/OCPPCommCtrlr.HeartbeatInterval`)
+      .set('x-xsrf-token', csrf)
+      .send({ value: '300' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('ERR_KEY_NOT_OVERRIDABLE');
   });
 });
 

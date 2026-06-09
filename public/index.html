@@ -2928,18 +2928,21 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
   if (is201) {
     container.innerHTML = `
     <table id="configTable">
-      <thead><tr><th>Component</th><th>Variable</th><th>Attribute</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
+      <thead><tr><th>Component</th><th>Variable</th><th>Attribute</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfReadOnly')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
       <tbody>
         ${config.map(c => `
           <tr data-key="${escapeAttr(c.component + '.' + c.variable)}">
             <td class="td-mono">${escapeHtml(c.component)}</td>
-            <td class="td-mono">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}${c.readonly ? ` <span class="badge badge-yellow">${t('chargepoint.cpConfReadOnly')}</span>` : ''}</td>
+            <td class="td-mono">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
             <td class="td-meta">${escapeHtml(c.attribute || 'Actual')}</td>
             <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
+            <td>${c.readonly ? '<span class="badge badge-yellow">' + t('common.yes') + '</span>' : '<span class="badge badge-green">' + t('common.no') + '</span>'}</td>
             <td class="td-date">${formatDate(c.updated_at)}</td>
             ${adminManage() ? `<td style="white-space:nowrap;">
-              ${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}
-              ${!c.readonly && !GLOBAL_ONLY_VARS_201.some(v => v.component === c.component && v.variable === c.variable) ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}
+              ${GLOBAL_ONLY_VARS_201.some(v => v.component === c.component && v.variable === c.variable)
+                ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
+                : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
+              }
             </td>` : ''}
           </tr>
         `).join('')}

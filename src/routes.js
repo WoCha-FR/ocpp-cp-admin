@@ -1599,6 +1599,11 @@ router.put(
         if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
         const component = key.slice(0, dotIdx);
         const variable = key.slice(dotIdx + 1);
+        const GLOBAL_ONLY_VARS_201 = [
+          { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval' },
+        ];
+        if (GLOBAL_ONLY_VARS_201.some((v) => v.component === component && v.variable === variable))
+          return res.status(400).json({ error: 'ERR_KEY_NOT_OVERRIDABLE' });
         const result = await callClient(cp.identity, 'SetVariables', {
           setVariableData: [
             {
