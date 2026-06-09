@@ -1087,12 +1087,13 @@ async function renderDashboard() {
         <div class="card-header"><h3>${t('dashboard.totalActiveCharge')}</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('dashboard.noActiveCharge')}</p>` : `
         <table>
-          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
+          <thead><tr><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.rfidTag')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
-                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
+                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
+                <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
                 <td>${renderIdTag(tx.id_tag)}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
@@ -3154,7 +3155,7 @@ async function renderConnectors() {
               `<div class="text-muted" style="margin-bottom:3px;"><span class="badge badge-red" title="${escapeAttr(c.info || '')}">⚠️ ${escapeHtml(c.error_code)}</span></div>` : ''}
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">📍 ${escapeHtml(c.site_name || t('sites.siteNoSite'))}</div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
-            <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${c.evse_id != null ? `EVSE ${c.evse_id} · ` : ''}${c.connector_name ? `#${c.connector_id} ${escapeHtml(c.connector_name)}` : `${t('common.connector_one')} ${c.connector_id}`}</div>
+            <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${c.evse_id != null ? `${c.evse_name ? escapeHtml(c.evse_name) : 'EVSE ' + c.evse_id} · ${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}` : `${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}`}</div>
             ${canStart
             ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
                   ⚡ ${t('connectors.cStartCharge')}
@@ -3286,7 +3287,7 @@ async function renderUserDashboard() {
         }
             </div>
             <div class="text-muted" style="margin-bottom:4px;">📍 ${escapeHtml(c.site_name)}</div>
-            <div class="text-muted" style="margin-bottom:12px;">🔌 ${c.evse_id != null ? `EVSE ${c.evse_id} · ` : ''}${c.connector_name ? `#${c.connector_id} ${escapeHtml(c.connector_name)}` : `${t('common.connector_one')} ${c.connector_id}`}</div>
+            <div class="text-muted" style="margin-bottom:12px;">🔌 ${c.evse_id != null ? `${c.evse_name ? escapeHtml(c.evse_name) : 'EVSE ' + c.evse_id} · ${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}` : `${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}`}</div>
             <div style="margin-top:auto;">
             ${isSuspended
           ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">🚫 ${t('dashboard.siteAccessSuspended')}</div>`
@@ -4193,13 +4194,14 @@ async function renderTransactions(keepState = false) {
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: txTotal })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
         <table>
-          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
+          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
                 <td><span class="mono-id">${tx.transaction_id}</span></td>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
-                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
+                <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
+                <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
                 <td>${formatTxUser(tx)}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
                 <td class="td-date">${formatDateShort(tx.start_time)}</td>
@@ -4399,7 +4401,7 @@ async function renderMyTransactions(keepState = false) {
       <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: myTxTotal })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
-        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')} / ${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
+        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
         <tbody>
         ${transactions.map(tx => {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
@@ -4407,7 +4409,8 @@ async function renderMyTransactions(keepState = false) {
             <tr>
               <td><span class="mono-id">${tx.transaction_id}</span></td>
               <td>${tx.site_name || '-'}</td>
-              <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)} / ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}</td>
+              <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
+              <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
               <td>${formatStartSource(tx.start_source)}</td>
               <td class="td-date">${formatDateShort(tx.start_time)}</td>
               <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
