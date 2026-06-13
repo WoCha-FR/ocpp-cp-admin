@@ -2475,6 +2475,12 @@ function resetConnectorsByChargepoint(cpId) {
   ).run(cpId);
 }
 
+function touchLastHeartbeat(identity) {
+  db.prepare(
+    "UPDATE chargepoints SET last_heartbeat = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE identity = ?"
+  ).run(identity);
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -2517,6 +2523,7 @@ module.exports = {
   deleteChargepoint,
   assignChargepointToSite,
   updateChargepointStatus,
+  touchLastHeartbeat,
   upsertConnector,
   getConnectorById,
   getConnectorsByChargepoint,

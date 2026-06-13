@@ -11,6 +11,7 @@ const mockDb = {
   getTransactionByTransactionId: jest.fn(),
   getActiveTransactionByConnector: jest.fn(),
   updateChargepointStatus: jest.fn(),
+  touchLastHeartbeat: jest.fn(),
   upsertConnector: jest.fn(),
   upsertEvse: jest.fn(),
   getConnectorByChargepointAndId: jest.fn(),
@@ -255,9 +256,10 @@ describe('ocpp-server-201 — Heartbeat', () => {
     expect(result.currentTime).toBeDefined();
   });
 
-  it('calls updateChargepointStatus', () => {
+  it('does not call updateChargepointStatus (handled by makeLoggedHandle)', () => {
+    mockDb.updateChargepointStatus.mockClear();
     client._handlers['Heartbeat']({});
-    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', undefined, true);
+    expect(mockDb.updateChargepointStatus).not.toHaveBeenCalled();
   });
 
   it('broadcasts chargepoint_heartbeat', () => {

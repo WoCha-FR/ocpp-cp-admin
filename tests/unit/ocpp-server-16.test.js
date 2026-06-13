@@ -13,6 +13,7 @@ const mockDb = {
   getTransactionByTransactionId: jest.fn(),
   getActiveTransactionByConnector: jest.fn(),
   updateChargepointStatus: jest.fn(),
+  touchLastHeartbeat: jest.fn(),
   upsertConnector: jest.fn(),
   getConnectorByChargepointAndId: jest.fn(),
   getConnectorsByChargepoint: jest.fn(() => []),
@@ -378,9 +379,10 @@ describe('ocpp-server-16 — Heartbeat', () => {
     expect(result.currentTime).toBeDefined();
   });
 
-  it('calls updateChargepointStatus', () => {
+  it('does not call updateChargepointStatus (handled by makeLoggedHandle)', () => {
+    mockDb.updateChargepointStatus.mockClear();
     client._handlers['Heartbeat']({});
-    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', undefined, true);
+    expect(mockDb.updateChargepointStatus).not.toHaveBeenCalled();
   });
 
   it('broadcasts chargepoint_heartbeat', () => {
@@ -1090,10 +1092,11 @@ describe('ocpp-server-16 — StatusNotification', () => {
     expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', 'Unavailable', true);
   });
 
-  it('updates last_heartbeat without changing cpstatus when cpstatus is not Unavailable', () => {
+  it('does not call updateChargepointStatus when cpstatus is not Unavailable (handled by makeLoggedHandle)', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, cpname: 'CP', site_name: 'S1', cpstatus: 'Available', has_connector0: 1 });
+    mockDb.updateChargepointStatus.mockClear();
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Charging', errorCode: 'NoError' });
-    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', undefined, true);
+    expect(mockDb.updateChargepointStatus).not.toHaveBeenCalled();
   });
 
   it('closes orphan active transaction when connector becomes Available', () => {

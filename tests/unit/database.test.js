@@ -256,6 +256,33 @@ describe('database — Chargepoint initialization flags', () => {
   });
 });
 
+// ── touchLastHeartbeat ──
+describe('database — touchLastHeartbeat', () => {
+  let identity;
+
+  beforeAll(() => {
+    identity = 'TEST-TOUCH-HB';
+    db.upsertChargepoint(identity, { cpstatus: 'Available', connected: 1 });
+    db.getDb().prepare(
+      "UPDATE chargepoints SET last_heartbeat = '2000-01-01T00:00:00Z' WHERE identity = ?"
+    ).run(identity);
+  });
+
+  it('met à jour last_heartbeat vers maintenant', () => {
+    const before = new Date(db.getChargepointByIdentity(identity).last_heartbeat).getTime();
+    db.touchLastHeartbeat(identity);
+    const after = new Date(db.getChargepointByIdentity(identity).last_heartbeat).getTime();
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("ne modifie pas cpstatus ni connected", () => {
+    db.touchLastHeartbeat(identity);
+    const cp = db.getChargepointByIdentity(identity);
+    expect(cp.cpstatus).toBe('Available');
+    expect(cp.connected).toBe(1);
+  });
+});
+
 // ── Charging Profiles ──
 describe('database — Charging Profiles CRUD', () => {
   let cpId;

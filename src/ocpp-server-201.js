@@ -437,7 +437,6 @@ function register201Handlers(client, loggedHandle) {
 
   // ── Heartbeat ──
   loggedHandle('Heartbeat', (_params) => {
-    db.updateChargepointStatus(identity, undefined, true);
     const cp = db.getChargepointByIdentity(identity);
     broadcast(
       'chargepoint_heartbeat',
@@ -538,8 +537,6 @@ function register201Handlers(client, loggedHandle) {
         db.fulfillInUseReservationByEvse(cp.id, evseId);
         broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
-
-      db.updateChargepointStatus(identity, undefined, true);
 
       // Transaction orpheline : borne redevenue Available sans TransactionEvent Ended
       const activeTx = db

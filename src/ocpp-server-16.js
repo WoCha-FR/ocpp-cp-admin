@@ -440,7 +440,6 @@ function register16Handlers(client, loggedHandle) {
 
   // ── Heartbeat ──
   loggedHandle('Heartbeat', (_params) => {
-    db.updateChargepointStatus(identity, undefined, true);
     const cp = db.getChargepointByIdentity(identity);
     broadcast(
       'chargepoint_heartbeat',
@@ -512,8 +511,6 @@ function register16Handlers(client, loggedHandle) {
             ? 'Available'
             : 'Unavailable';
           db.updateChargepointStatus(identity, derivedStatus, true);
-        } else {
-          db.updateChargepointStatus(identity, undefined, true);
         }
         const activeTx = db
           .getTransactions({ chargepoint_id: cp.id, status: 'Active' })

@@ -126,6 +126,7 @@ function makeLoggedHandle(client, identity, chargepointId) {
       const params = msg.params;
       if (chargepointId) db.addOcppMessage(chargepointId, 'chargepoint', 'CALL', action, params);
       logger.debug(`Received ${action} from ${identity}: ${JSON.stringify(params)}`);
+      db.touchLastHeartbeat(identity);
       broadcast(
         'ocpp_message',
         {
@@ -475,6 +476,7 @@ function createOCPPServerBase(options = {}) {
     }
 
     client.handle(({ method, params }) => {
+      db.touchLastHeartbeat(identity);
       logger.warn(`OCPP method not managed ${method} from ${identity}`);
       if (chargepointId) db.addOcppMessage(chargepointId, 'chargepoint', 'CALL', method, params);
       broadcast(
