@@ -1297,8 +1297,11 @@ function register201Handlers(client, loggedHandle) {
       logger.info(
         `[StateRefresh201] ${identity}: reconnecté sans BootNotification, envoi TriggerMessage`
       );
+      let bootResult;
       try {
-        await callClient201(identity, 'TriggerMessage', { requestedMessage: 'BootNotification' });
+        bootResult = await callClient201(identity, 'TriggerMessage', {
+          requestedMessage: 'BootNotification',
+        });
       } catch (e) {
         logger.warn(
           `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) échoué: ${e.message}`
@@ -1306,26 +1309,38 @@ function register201Handlers(client, loggedHandle) {
         return;
       }
 
-      const statusReceived = await new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          pendingStatusAfterBootCallback = null;
-          resolve(false);
-        }, 10000);
-        timer.unref();
-        pendingStatusAfterBootCallback = () => {
-          clearTimeout(timer);
-          resolve(true);
-        };
-      });
+      let skipStatusWait = false;
+      if (bootResult?.status !== 'Accepted') {
+        logger.info(
+          `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) ${bootResult?.status} — skip attente StatusNotification`
+        );
+        skipStatusWait = true;
+      }
+
+      if (!skipStatusWait) {
+        const statusReceived = await new Promise((resolve) => {
+          const timer = setTimeout(() => {
+            pendingStatusAfterBootCallback = null;
+            resolve(false);
+          }, 10000);
+          timer.unref();
+          pendingStatusAfterBootCallback = () => {
+            clearTimeout(timer);
+            resolve(true);
+          };
+        });
+
+        if (!db.getChargepointByIdentity(identity)?.connected) return;
+
+        if (statusReceived) {
+          logger.info(
+            `[StateRefresh201] ${identity}: StatusNotification auto-reçu, skip TriggerMessage(StatusNotification)`
+          );
+          return;
+        }
+      }
 
       if (!db.getChargepointByIdentity(identity)?.connected) return;
-
-      if (statusReceived) {
-        logger.info(
-          `[StateRefresh201] ${identity}: StatusNotification auto-reçu, skip TriggerMessage(StatusNotification)`
-        );
-        return;
-      }
 
       try {
         await callClient201(identity, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
