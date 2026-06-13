@@ -298,7 +298,7 @@ function register201Handlers(client, loggedHandle) {
         try {
           logger.debug(`[InitSeq201] ${identity} step 3/5 — GetBaseReport`);
           await callClient201(identity, 'GetBaseReport', {
-            requestId: Date.now(),
+            requestId: Math.floor(Date.now() / 1000) % 2147483647,
             reportBase: 'FullInventory',
           });
         } catch (e) {
