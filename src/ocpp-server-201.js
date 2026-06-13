@@ -229,9 +229,11 @@ function register201Handlers(client, loggedHandle) {
   const cpRecord = db.getChargepointByIdentity(identity);
   const chargepointId = cpRecord ? cpRecord.id : null;
   let pendingStatusAfterBootCallback = null;
+  let refreshTimer = null;
 
   // ── BootNotification ──
   loggedHandle('BootNotification', (params) => {
+    clearTimeout(refreshTimer);
     const cs = params.chargingStation || {};
     const modem = cs.modem || {};
 
@@ -1290,7 +1292,7 @@ function register201Handlers(client, loggedHandle) {
 
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {
-    const refreshTimer = setTimeout(async () => {
+    refreshTimer = setTimeout(async () => {
       const current = db.getChargepointByIdentity(identity);
       if (!current || !current.connected || current.cpstatus) return;
 
@@ -1349,7 +1351,7 @@ function register201Handlers(client, loggedHandle) {
           `[StateRefresh201] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`
         );
       }
-    }, 8000);
+    }, 20000);
     refreshTimer.unref();
 
     client.once('close', () => clearTimeout(refreshTimer));

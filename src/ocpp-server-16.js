@@ -207,9 +207,11 @@ function register16Handlers(client, loggedHandle) {
   const cpRecord = db.getChargepointByIdentity(identity);
   const chargepointId = cpRecord ? cpRecord.id : null;
   let pendingStatusAfterBootCallback = null;
+  let refreshTimer = null;
 
   // ── BootNotification ──
   loggedHandle('BootNotification', (params) => {
+    clearTimeout(refreshTimer);
     const safeVendor = sanitizeText(params.chargePointVendor, 25);
     const safeModel = sanitizeText(params.chargePointModel, 20);
     const safeSerial = sanitizeText(params.chargePointSerialNumber, 25);
@@ -1264,7 +1266,7 @@ function register16Handlers(client, loggedHandle) {
 
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {
-    const refreshTimer = setTimeout(async () => {
+    refreshTimer = setTimeout(async () => {
       const current = db.getChargepointByIdentity(identity);
       if (!current || !current.connected || current.cpstatus) return;
 
@@ -1309,7 +1311,7 @@ function register16Handlers(client, loggedHandle) {
           `[StateRefresh] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`
         );
       }
-    }, 8000);
+    }, 20000);
 
     client.once('close', () => clearTimeout(refreshTimer));
   }

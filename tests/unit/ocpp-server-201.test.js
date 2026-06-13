@@ -1923,7 +1923,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     jest.useRealTimers();
   });
 
-  it('envoie TriggerMessage(BootNotification) + TriggerMessage(StatusNotification) après 8s si initialized=1', async () => {
+  it('envoie TriggerMessage(BootNotification) + TriggerMessage(StatusNotification) après 20s si initialized=1', async () => {
     const client = makeClient('CP001');
     mockDb.getChargepointByIdentity
       .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 })  // cpRecord à l'enregistrement
@@ -1931,7 +1931,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockConnectedClients.set('CP001', client);
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(18001); // 8s outer + 10s inner
+    await jest.advanceTimersByTimeAsync(30001); // 20s outer + 10s inner
 
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
@@ -1942,7 +1942,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 0, site_id: 1 });
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(20001);
 
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
   });
@@ -1952,7 +1952,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockDb.getChargepointByIdentity.mockReturnValue(null);
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(20001);
 
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
   });
@@ -1966,7 +1966,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     expect(client.once).toHaveBeenCalledWith('close', expect.any(Function));
   });
 
-  it('annule le TriggerMessage si la borne se déconnecte avant 8s', async () => {
+  it('annule le TriggerMessage si la borne se déconnecte avant 20s', async () => {
     const client = makeClient('CP001');
     let closeCallback;
     client.once = jest.fn((event, cb) => { if (event === 'close') closeCallback = cb; });
@@ -1974,7 +1974,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
 
     register201Handlers(client, makeLoggedHandle(client));
     closeCallback();
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(20001);
 
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
   });
@@ -1988,7 +1988,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockConnectedClients.set('CP001', client);
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(20001);
 
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
@@ -2004,7 +2004,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockConnectedClients.set('CP001', client);
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(18001);
+    await jest.advanceTimersByTimeAsync(30001); // 20s outer + 10s inner
 
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
