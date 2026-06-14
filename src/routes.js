@@ -1558,8 +1558,35 @@ router.post(
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
 
-    if (!getConnectedClients().has(cp.identity))
-      return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    if (client.protocol === 'ocpp2.0.1') {
+      const dotIdx = key.indexOf('.');
+      if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+      const component = key.slice(0, dotIdx);
+      const variable = key.slice(dotIdx + 1);
+      try {
+        const result = await callClient(cp.identity, 'GetVariables', {
+          getVariableData: [
+            {
+              component: { name: component },
+              variable: { name: variable },
+              attributeType: 'Actual',
+            },
+          ],
+        });
+        const r = result?.getVariableResult?.[0];
+        const found = r?.attributeStatus === 'Accepted';
+        return res.json({
+          found,
+          entry: found ? { key, value: r.attributeValue ?? '' } : null,
+          unknown: found ? [] : [key],
+        });
+      } catch (e) {
+        return errorResponse(res, 500, e.message);
+      }
+    }
 
     try {
       const result = await callClient(cp.identity, 'GetConfiguration', { key: [key] });

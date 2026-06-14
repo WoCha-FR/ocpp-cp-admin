@@ -141,7 +141,19 @@ function createApp() {
     if (!key) return res.status(400).json({ error: 'ERR_KEY_REQUIRED' });
     const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
-    // Simuler la réponse OCPP via une option injectée
+
+    if (cp.ocpp_version === '2.0.1') {
+      const dotIdx = key.indexOf('.');
+      if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+      if (!app._mockOcppGetVars) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+      const component = key.slice(0, dotIdx);
+      const variable = key.slice(dotIdx + 1);
+      const result = app._mockOcppGetVars(component, variable);
+      const r = result?.getVariableResult?.[0];
+      const found = r?.attributeStatus === 'Accepted';
+      return res.json({ found, entry: found ? { key, value: r.attributeValue ?? '' } : null, unknown: found ? [] : [key] });
+    }
+
     if (!app._mockOcppGetConfig) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
     const result = app._mockOcppGetConfig(key);
     const found = Array.isArray(result?.configurationKey) && result.configurationKey.length > 0;
@@ -380,6 +392,74 @@ describe('POST /api/chargepoints/:id/config/get-key', () => {
     expect(res.body.entry).toBeNull();
     expect(res.body.unknown).toContain('ProprietaryKey');
     app._mockOcppGetConfig = null;
+  });
+
+  describe('OCPP 2.0.1', () => {
+    function insertCp201(identity) {
+      db.prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES (?, '2.0.1')").run(identity);
+      return db.prepare('SELECT id FROM chargepoints WHERE identity = ?').get(identity);
+    }
+
+    afterEach(() => { app._mockOcppGetVars = null; });
+
+    it('returns 400 ERR_CHARGEPOINT_OFFLINE when borne not connected', async () => {
+      const { id: cpId } = insertCp201('GK201-OFFLINE');
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .post(`/api/chargepoints/${cpId}/config/get-key`)
+        .set('x-xsrf-token', csrf)
+        .send({ key: 'ClockCtrlr.DateTime' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('ERR_CHARGEPOINT_OFFLINE');
+    });
+
+    it('returns 400 ERR_INVALID_KEY_FORMAT when key has no dot', async () => {
+      const { id: cpId } = insertCp201('GK201-NODOT');
+      app._mockOcppGetVars = jest.fn();
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .post(`/api/chargepoints/${cpId}/config/get-key`)
+        .set('x-xsrf-token', csrf)
+        .send({ key: 'NoDotKey' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('ERR_INVALID_KEY_FORMAT');
+    });
+
+    it('returns found=true with key and value when variable is Accepted', async () => {
+      const { id: cpId } = insertCp201('GK201-FOUND');
+      app._mockOcppGetVars = jest.fn().mockReturnValue({
+        getVariableResult: [{ attributeStatus: 'Accepted', attributeValue: '2026-06-13T10:24:04Z' }],
+      });
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .post(`/api/chargepoints/${cpId}/config/get-key`)
+        .set('x-xsrf-token', csrf)
+        .send({ key: 'ClockCtrlr.DateTime' });
+      expect(res.status).toBe(200);
+      expect(res.body.found).toBe(true);
+      expect(res.body.entry).toMatchObject({ key: 'ClockCtrlr.DateTime', value: '2026-06-13T10:24:04Z' });
+      expect(app._mockOcppGetVars).toHaveBeenCalledWith('ClockCtrlr', 'DateTime');
+    });
+
+    it('returns found=false with unknown when variable status is not Accepted', async () => {
+      const { id: cpId } = insertCp201('GK201-UNKNOWN');
+      app._mockOcppGetVars = jest.fn().mockReturnValue({
+        getVariableResult: [{ attributeStatus: 'UnknownVariable' }],
+      });
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent
+        .post(`/api/chargepoints/${cpId}/config/get-key`)
+        .set('x-xsrf-token', csrf)
+        .send({ key: 'ClockCtrlr.DateTime' });
+      expect(res.status).toBe(200);
+      expect(res.body.found).toBe(false);
+      expect(res.body.entry).toBeNull();
+      expect(res.body.unknown).toContain('ClockCtrlr.DateTime');
+    });
   });
 });
 
