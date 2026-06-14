@@ -1296,6 +1296,13 @@ function register201Handlers(client, loggedHandle) {
       logger.info(
         `[StateRefresh201] ${identity}: reconnecté sans BootNotification, envoi TriggerMessage`
       );
+      const waitUnref = (ms) =>
+        new Promise((r) => {
+          const t = setTimeout(r, ms);
+          t.unref();
+        });
+
+      // BootNotification : exception = WS cassé → bail out ; Rejected = état transitoire → retry
       let bootResult;
       try {
         bootResult = await callClient201(identity, 'TriggerMessage', {
@@ -1308,12 +1315,29 @@ function register201Handlers(client, loggedHandle) {
         return;
       }
 
-      let skipStatusWait = false;
       if (bootResult?.status !== 'Accepted') {
+        logger.info(
+          `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) ${bootResult?.status} — retry dans 15s`
+        );
+        await waitUnref(15000);
+        if (!db.getChargepointByIdentity(identity)?.connected) return;
+        try {
+          bootResult = await callClient201(identity, 'TriggerMessage', {
+            requestedMessage: 'BootNotification',
+          });
+        } catch (e) {
+          logger.warn(
+            `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) retry échoué: ${e.message}`
+          );
+          return;
+        }
+      }
+
+      const skipStatusWait = bootResult?.status !== 'Accepted';
+      if (skipStatusWait) {
         logger.info(
           `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) ${bootResult?.status} — skip attente StatusNotification`
         );
-        skipStatusWait = true;
       }
 
       if (!skipStatusWait) {
@@ -1341,12 +1365,28 @@ function register201Handlers(client, loggedHandle) {
 
       if (!db.getChargepointByIdentity(identity)?.connected) return;
 
-      try {
-        await callClient201(identity, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
-      } catch (e) {
-        logger.warn(
-          `[StateRefresh201] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`
+      // StatusNotification : exceptions catchées, retry sur Rejected
+      const tryStatus = async () => {
+        try {
+          return await callClient201(identity, 'TriggerMessage', {
+            requestedMessage: 'StatusNotification',
+          });
+        } catch (e) {
+          logger.warn(
+            `[StateRefresh201] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`
+          );
+          return null;
+        }
+      };
+
+      const statusResult = await tryStatus();
+      if (statusResult?.status !== 'Accepted') {
+        logger.info(
+          `[StateRefresh201] ${identity}: TriggerMessage(StatusNotification) ${statusResult?.status} — retry dans 15s`
         );
+        await waitUnref(15000);
+        if (!db.getChargepointByIdentity(identity)?.connected) return;
+        await tryStatus();
       }
     }, 20000);
     refreshTimer.unref();
