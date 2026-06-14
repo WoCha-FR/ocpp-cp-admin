@@ -1263,6 +1263,7 @@ function register16Handlers(client, loggedHandle) {
 
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {
+    let cancelled = false;
     refreshTimer = setTimeout(async () => {
       const current = db.getChargepointByIdentity(identity);
       if (!current || !current.connected || current.cpstatus) return;
@@ -1292,6 +1293,7 @@ function register16Handlers(client, loggedHandle) {
         };
       });
 
+      if (cancelled) return;
       if (!db.getChargepointByIdentity(identity)?.connected) return;
 
       if (statusReceived) {
@@ -1310,7 +1312,10 @@ function register16Handlers(client, loggedHandle) {
       }
     }, 20000);
 
-    client.once('close', () => clearTimeout(refreshTimer));
+    client.once('close', () => {
+      clearTimeout(refreshTimer);
+      cancelled = true;
+    });
   }
 }
 
