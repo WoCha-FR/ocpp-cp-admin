@@ -154,7 +154,7 @@ function createApp(options = {}) {
         reservationId: reservation_id,
       });
       const status = result?.status ?? 'Rejected';
-      if (status !== 'Accepted') return res.status(422).json({ status });
+      if (status !== 'Accepted') return res.json({ status });
       const info = testDb
         .prepare(
           'INSERT INTO reservations (chargepoint_id, connector_id, reservation_id, id_tag, expiry_date, created_by) VALUES (?,?,?,?,?,?)'
@@ -356,7 +356,7 @@ describe('POST /api/chargepoints/:id/reservations', () => {
     expect(row.reservation_id).toBe(1);
   });
 
-  it('retourne 422 sans créer de réservation si la borne refuse', async () => {
+  it('retourne 200 avec status Rejected sans créer de réservation si la borne refuse', async () => {
     const callClient = jest.fn().mockResolvedValue({ status: 'Rejected' });
     const { app, db, cp } = createApp({ callClient });
     const agent = request.agent(app);
@@ -367,7 +367,7 @@ describe('POST /api/chargepoints/:id/reservations', () => {
       .set(CSRF_HEADER, csrf)
       .send(VALID_BODY);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
     expect(res.body.status).toBe('Rejected');
     expect(db.prepare('SELECT * FROM reservations WHERE chargepoint_id = ?').all(cp.id).length).toBe(0);
   });
@@ -640,7 +640,7 @@ describe('POST /api/chargepoints/:id/reservations — OCPP 2.0.1', () => {
           });
         }
         const status = result?.status ?? 'Rejected';
-        if (status !== 'Accepted') return res.status(422).json({ status });
+        if (status !== 'Accepted') return res.json({ status });
         const info = testDb.prepare(
           'INSERT INTO reservations (chargepoint_id, connector_id, evse_id, reservation_id, id_tag, expiry_date, created_by) VALUES (?,?,?,?,?,?,?)'
         ).run(
@@ -715,7 +715,7 @@ describe('POST /api/chargepoints/:id/reservations — OCPP 2.0.1', () => {
     expect(row.connector_id).toBeNull();
   });
 
-  it('retourne 422 sans créer de réservation si la borne refuse', async () => {
+  it('retourne 200 avec status Rejected sans créer de réservation si la borne refuse', async () => {
     const callClient = jest.fn().mockResolvedValue({ status: 'Rejected' });
     const { app, db, cp } = createApp201({ callClient });
     const agent = request.agent(app);
@@ -726,7 +726,8 @@ describe('POST /api/chargepoints/:id/reservations — OCPP 2.0.1', () => {
       .set(CSRF_HEADER, csrf)
       .send(VALID_BODY);
 
-    expect(res.status).toBe(422);
+    expect(res.status).toBe(200);
+    expect(res.body.status).toBe('Rejected');
     expect(db.prepare('SELECT * FROM reservations WHERE chargepoint_id = ?').all(cp.id).length).toBe(0);
   });
 });

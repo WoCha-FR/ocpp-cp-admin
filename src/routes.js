@@ -1243,7 +1243,7 @@ router.post(
         });
       }
       const status = result?.status ?? 'Rejected';
-      if (status !== 'Accepted') return res.status(422).json({ status });
+      if (status !== 'Accepted') return res.json({ status });
       const id = db.createReservation({
         chargepoint_id: cp.id,
         connector_id: cp.ocpp_version === '2.0.1' ? null : connector_id,
