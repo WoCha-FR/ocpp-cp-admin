@@ -59,7 +59,7 @@
     "helmet": "^8.2.0",
     "i18next": "^26.3.1",
     "marked": "^18.0.5",
-    "nodemailer": "^8.0.11",
+    "nodemailer": "^9.0.1",
     "ocpp-rpc": "2.1.2",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",

@@ -59,6 +59,9 @@
         "host": "smtp.cpadmin.local",
         "port": 587,
         "secure": false,
+        "tls": {
+          "rejectUnauthorized": false
+        },
         "auth": {
           "user": "user@cpadmin.local",
           "pass": "password"
