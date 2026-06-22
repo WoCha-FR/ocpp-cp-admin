@@ -592,4 +592,33 @@ describe("POST /api/chargepoints/:id/command — adaptation ChangeAvailability O
       connectorId: 1,
     });
   });
+
+  it('GetLog 2.0.1 → params passés directement avec clé log', async () => {
+    const res = await agent
+      .post(`/api/chargepoints/${cp201Id}/command`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        method: 'GetLog',
+        params: { logType: 'DiagnosticsLog', requestId: 12345, log: { remoteLocation: 'ftp://server/path' } },
+      });
+    expect(res.status).toBe(200);
+    expect(mockCallClient).toHaveBeenCalledWith('CMD-201', 'GetLog', {
+      logType: 'DiagnosticsLog',
+      requestId: 12345,
+      log: { remoteLocation: 'ftp://server/path' },
+    });
+  });
+
+  it('GetLog 2.0.1 → la clé log est transmise telle quelle (pas renommée en logParameters)', async () => {
+    await agent
+      .post(`/api/chargepoints/${cp201Id}/command`)
+      .set(CSRF_HEADER, csrf)
+      .send({
+        method: 'GetLog',
+        params: { logType: 'DiagnosticsLog', requestId: 1, log: { remoteLocation: 'ftp://x' } },
+      });
+    const sentParams = mockCallClient.mock.calls[0][2];
+    expect(sentParams).toHaveProperty('log');
+    expect(sentParams).not.toHaveProperty('logParameters');
+  });
 });

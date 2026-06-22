@@ -1716,7 +1716,7 @@ async function renderDetailTabBorne(cp) {
               <span class="cmd-subgroup-label">🔧 ${t('chargepoint.cpManagement')}</span>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
-              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, ${cp.ocpp_version === '2.0.1' ? `'GetLog', {logType:'DiagnosticsLog', logParameters:{remoteLocation:'${ocppSettings.diagnosticsLocation || ''}'}}` : `'GetDiagnostics', {location:'${ocppSettings.diagnosticsLocation || ''}'}`})">${t('chargepoint.cpGetDiagnostics')}</button>
+              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, ${cp.ocpp_version === '2.0.1' ? `'GetLog', {logType:'DiagnosticsLog', requestId:Math.floor(Math.random()*2147483647), log:{remoteLocation:'${ocppSettings.diagnosticsLocation || ''}'}}` : `'GetDiagnostics', {location:'${ocppSettings.diagnosticsLocation || ''}'}`})">${t('chargepoint.cpGetDiagnostics')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
