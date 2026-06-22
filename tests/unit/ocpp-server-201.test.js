@@ -1604,6 +1604,20 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     register201Handlers(client, makeLoggedHandle(client));
   });
 
+  async function flushThroughInit() {
+    await new Promise((resolve) => setImmediate(resolve));
+    const gbCall = client.call.mock.calls.find(([m]) => m === 'GetBaseReport');
+    if (gbCall) {
+      client._handlers['NotifyReport']({
+        requestId: gbCall[1].requestId,
+        seqNo: 0,
+        tbc: false,
+        reportData: [],
+      });
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
   it('envoie ClearCache', async () => {
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
     await new Promise((resolve) => setImmediate(resolve));
@@ -1636,7 +1650,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(client.call).toHaveBeenCalledWith('SetVariables', {
       setVariableData: [{
         component: { name: 'OCPPCommCtrlr' },
@@ -1653,7 +1667,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
       1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60'
     );
@@ -1661,7 +1675,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
 
   it('appelle markChargepointInitialized après la séquence réussie', async () => {
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(mockDb.markChargepointInitialized).toHaveBeenCalledWith(1);
   });
 
@@ -1689,7 +1703,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Rejected' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(mockDb.upsertChargepointVariable).not.toHaveBeenCalled();
   });
 
@@ -1699,7 +1713,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(client.call).toHaveBeenCalledWith('SetVariables', {
       setVariableData: [{
         component: { name: 'TxCtrlr' },
@@ -1717,10 +1731,19 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(mockDb.upsertChargepointVariable).not.toHaveBeenCalledWith(
       expect.anything(), 'TxCtrlr', 'MeterValueSampleInterval', expect.anything(), expect.anything()
     );
+  });
+
+  it("n'envoie pas SetVariables avant la fin des NotifyReport", async () => {
+    mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
+      { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' },
+    ]);
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.call).not.toHaveBeenCalledWith('SetVariables', expect.anything());
   });
 
   it('stoppe la boucle override si déconnecté pendant le step 5/5', async () => {

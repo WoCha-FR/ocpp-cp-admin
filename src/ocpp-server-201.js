@@ -160,6 +160,7 @@ function extractMeterEnergy(meterValue = []) {
 }
 
 const initSeqVersions201 = new Map();
+const pendingNotifyReportWaiters = new Map(); // clé: `${identity}_${requestId}` → resolve fn
 
 function isDisconnectionError(e) {
   const msg = e.message || '';
@@ -295,12 +296,16 @@ function register201Handlers(client, loggedHandle) {
           }
         }
 
-        // Step 3/4 — GetBaseReport (synchronise l'état courant en DB via NotifyReport)
+        // Step 3/5 — GetBaseReport (synchronise l'état courant en DB via NotifyReport)
         if (isSuperseded()) return;
+        const baseReportRequestId = Math.floor(Date.now() / 1000) % 2147483647;
+        const notifyReportDone = new Promise((resolve) => {
+          pendingNotifyReportWaiters.set(`${identity}_${baseReportRequestId}`, resolve);
+        });
         try {
           logger.debug(`[InitSeq201] ${identity} step 3/5 — GetBaseReport`);
           await callClient201(identity, 'GetBaseReport', {
-            requestId: Math.floor(Date.now() / 1000) % 2147483647,
+            requestId: baseReportRequestId,
             reportBase: 'FullInventory',
           });
         } catch (e) {
@@ -310,6 +315,26 @@ function register201Handlers(client, loggedHandle) {
             lastFailedStep = 'GetBaseReport';
           }
         }
+        if (!disconnectedDuringInit && !isSuperseded()) {
+          let timeoutId;
+          try {
+            logger.debug(`[InitSeq201] ${identity} en attente des NotifyReport…`);
+            await Promise.race([
+              notifyReportDone,
+              new Promise((_, reject) => {
+                timeoutId = setTimeout(
+                  () => reject(new Error('NotifyReport timeout (30s)')),
+                  30000
+                );
+              }),
+            ]);
+          } catch (e) {
+            logger.warn(`[InitSeq201] ${identity} ${e.message} — on continue`);
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
+        pendingNotifyReportWaiters.delete(`${identity}_${baseReportRequestId}`);
 
         // Step 4/4 — SetVariables (application des variables initiales)
         if (isSuperseded()) return;
@@ -1194,6 +1219,12 @@ function register201Handlers(client, loggedHandle) {
       db.updateChargepointFeatures201(cp.id);
       broadcast('config_refreshed', { chargepointId: cp.id, identity }, cp.site_id ?? null);
       logger.info(`[2.0.1] NotifyReport complete for ${identity}`);
+      const waiterKey = `${identity}_${params.requestId}`;
+      const resolve = pendingNotifyReportWaiters.get(waiterKey);
+      if (resolve) {
+        pendingNotifyReportWaiters.delete(waiterKey);
+        resolve();
+      }
     }
     return {};
   });
