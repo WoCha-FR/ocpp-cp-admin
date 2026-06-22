@@ -173,6 +173,7 @@
     "cpWssUrl": "Secure OCPP Connection URL (WSS)",
     "cpNameHint": "The name is optional and can be used to provide a more readable description of the chargepoint.",
     "cpPasswordHint": "The password is optional and can be used to secure the chargepoint's connection to the CSMS. If set, the chargepoint must send this password when connecting.",
+    "cpDeletePassword": "Delete password",
     "cpModeCharge": "Operating mode",
     "cpModePlugCharge": "Plug & Charge",
     "cpModeAutonomous": "Charge managed by the chargepoint",

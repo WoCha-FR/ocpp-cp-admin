@@ -1912,3 +1912,35 @@ describe('database — getTransactionFull', () => {
     expect(result.has_values).toBe(1);
   });
 });
+
+describe('database — updateChargepoint password handling', () => {
+  const bcrypt = require('bcryptjs');
+  let cpId;
+
+  beforeAll(() => {
+    const cp = db.createChargepoint('TESTPWDCP', 'Test PWD CP', 'initialpass', 1, null);
+    cpId = cp.id;
+  });
+
+  afterAll(() => {
+    db.deleteChargepoint(cpId);
+  });
+
+  it('hashes the new password when updating with a string', () => {
+    const updated = db.updateChargepoint(cpId, { password: 'newpassword' });
+    expect(updated.password).not.toBe('newpassword');
+    expect(bcrypt.compareSync('newpassword', updated.password)).toBe(true);
+  });
+
+  it('sets password to null when data.password === null', () => {
+    const updated = db.updateChargepoint(cpId, { password: null });
+    expect(updated.password).toBeNull();
+  });
+
+  it('preserves existing password when password key is absent from data', () => {
+    db.updateChargepoint(cpId, { password: 'preserved' });
+    const before = db.getChargepointById(cpId);
+    const updated = db.updateChargepoint(cpId, { identity: 'TESTPWDCP' });
+    expect(updated.password).toBe(before.password);
+  });
+});

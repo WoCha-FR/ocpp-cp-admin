@@ -1463,6 +1463,7 @@ async function showEditChargepointModal(id) {
   <div class="form-group"><label>${t('chargepoint.cpIdentity')}</label><input type="text" id="editIdentity" value="${escapeAttr(cp.identity)}" /></div>
   <div class="form-group"><label>${t('common.name')}</label><input type="text" id="editName" value="${escapeAttr(cp.cpname || '')}" /></div>
   <div class="form-group"><label>${t('common.password')}</label><input type="password" id="editPassword" ${cp.password ? 'placeholder="••••••••"' : ''} /></div>
+  ${cp.password ? `<div class="form-group"><label><input type="checkbox" id="editDeletePassword" /> ${t('chargepoint.cpDeletePassword')}</label></div>` : ''}
   <div class="form-group">
     <label>${t('chargepoint.cpModeCharge')}</label>
     <select id="editMode">
@@ -1509,7 +1510,7 @@ async function updateChargepoint(id) {
     const data = {
       identity: document.getElementById('editIdentity').value.toUpperCase(),
       name: document.getElementById('editName').value || null,
-      password: document.getElementById('editPassword').value || null,
+      password: (() => { const del = document.getElementById('editDeletePassword'); if (del && del.checked) return null; return document.getElementById('editPassword').value || undefined; })(),
       mode: Number(document.getElementById('editMode').value),
       site_id: document.getElementById('editSiteId').value ? Number(document.getElementById('editSiteId').value) : null,
       authorized: document.getElementById('editAuthorized').checked ? 1 : 0

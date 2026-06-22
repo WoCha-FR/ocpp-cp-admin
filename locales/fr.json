@@ -173,6 +173,7 @@
     "cpWssUrl": "URL de connexion sécurisée (WSS)",
     "cpNameHint": "Le nom est optionnel et peut être utilisé pour donner une description plus lisible à la borne.",
     "cpPasswordHint": "Le mot de passe est optionnel et peut être utilisé pour sécuriser la connexion de la borne au CSMS. Si défini, la borne doit envoyer ce mot de passe lors de sa connexion.",
+    "cpDeletePassword": "Supprimer le mot de passe",
     "cpModeCharge": "Mode de fonctionnement",
     "cpModePlugCharge": "Branchez & Chargez",
     "cpModeAutonomous": "Charge gérée par la borne",
