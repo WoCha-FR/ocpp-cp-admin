@@ -23,9 +23,9 @@ services:
       ftp:
         condition: service_started
       cert-dumper-rsa:
-        condition: service_started
+        condition: service_healthy
       cert-dumper-ecdsa:
-        condition: service_started
+        condition: service_healthy
       cert-init:
         condition: service_completed_successfully
     volumes:
@@ -173,6 +173,13 @@ services:
         traefik-certs-dumper file --version v3 --source /traefik/acme-rsa.json --dest /dump
         /tmp/hook.sh
         exec traefik-certs-dumper file --watch --version v3 --source /traefik/acme-rsa.json --dest /dump --post-hook /tmp/hook.sh
+        touch /tmp/cert-ready
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/cert-ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
 
   cert-dumper-ecdsa:
     image: ldez/traefik-certs-dumper:v2.11.0
@@ -199,6 +206,13 @@ services:
         traefik-certs-dumper file --version v3 --source /traefik/acme-ecdsa.json --dest /dump
         /tmp/hook.sh
         exec traefik-certs-dumper file --watch --version v3 --source /traefik/acme-ecdsa.json --dest /dump --post-hook /tmp/hook.sh
+        touch /tmp/cert-ready
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/cert-ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
 
   # ── Initialisation CA + certificat client OCPP (Security Profile 3) ──────
   # One-shot : génère ca.crt + client.pem dans data/config/certs/ si absents.
