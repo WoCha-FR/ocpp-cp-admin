@@ -542,6 +542,7 @@ describe('ocpp-server-201 — StatusNotification', () => {
     await new Promise((r) => setImmediate(r));
 
     expect(client.call).toHaveBeenCalledWith('RequestStartTransaction', {
+      remoteStartId: expect.any(Number),
       evseId: 1,
       idToken: { idToken: 'MGR-42', type: 'ISO14443' },
     });

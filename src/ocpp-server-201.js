@@ -515,6 +515,7 @@ function register201Handlers(client, loggedHandle) {
           pendingRemoteStartTimer.unref();
 
           callClient201(identity, 'RequestStartTransaction', {
+            remoteStartId: Math.floor(Math.random() * 2147483647),
             evseId,
             idToken: { idToken: idTag, type: 'ISO14443' },
           })

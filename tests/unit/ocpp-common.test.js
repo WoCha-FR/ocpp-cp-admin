@@ -733,6 +733,7 @@ describe('ocpp-common — remoteStartTransaction', () => {
     await ocppCommon.remoteStartTransaction('CP001', 2, 'TAG001');
 
     expect(impl).toHaveBeenCalledWith('CP001', 'RequestStartTransaction', {
+      remoteStartId: expect.any(Number),
       evseId: 2,
       idToken: { idToken: 'TAG001', type: 'ISO14443' },
     });

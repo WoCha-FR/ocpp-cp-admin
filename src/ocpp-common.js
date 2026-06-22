@@ -800,6 +800,7 @@ async function remoteStartTransaction(identity, connectorId, idToken) {
     const tag = db.getIdTagByTag(idToken, cp.site_id);
     const tokenType = tag?.token_type || 'ISO14443';
     return callClient(identity, 'RequestStartTransaction', {
+      remoteStartId: Math.floor(Math.random() * 2147483647),
       evseId: connectorId,
       idToken: { idToken, type: tokenType },
     });
