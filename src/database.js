@@ -2430,6 +2430,10 @@ function getExpiredActiveReservations(graceSeconds) {
     .all(`-${graceSeconds} seconds`);
 }
 
+function deleteReservation(id) {
+  return db.prepare('DELETE FROM reservations WHERE id = ?').run(id).changes;
+}
+
 function resetStateOnStartup() {
   const cpResult = db
     .prepare(
@@ -2624,6 +2628,7 @@ module.exports = {
   fulfillInUseReservationByEvse,
   fulfillReservationByEvseAndIdTag,
   getExpiredActiveReservations,
+  deleteReservation,
   resetStateOnStartup,
   resetConnectorsByChargepoint,
   insertErrorEvent,

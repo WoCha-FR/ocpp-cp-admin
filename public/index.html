@@ -2386,7 +2386,10 @@ async function loadReservations(cpId) {
                 <td><span class="badge ${reservationBadgeClass(r.status)}">${t('chargepoint.cpReservationStatus' + r.status, { defaultValue: r.status })}</span></td>
                 <td class="td-meta">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
                 <td class="td-date">${formatDateShort(r.created_at)}</td>
-                ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}
+                ${canManage() ? `<td>
+                  ${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}
+                  ${(r.status === 'Expired' || r.status === 'Cancelled' || r.status === 'Fulfilled') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationDelete')}</button>` : ''}
+                </td>` : ''}
               </tr>
             `).join('')}
           </tbody>
@@ -2552,6 +2555,15 @@ async function cancelReservation(cpId, reservationId) {
   } else {
     toast(t('chargepoint.cpReservationRejected', { status: result.status }), 'error');
   }
+}
+
+async function deleteReservation(cpId, reservationId) {
+  if (!await confirmDialog(t('chargepoint.cpReservationDeleteConfirm'), { danger: true })) return;
+  try {
+    await api('DELETE', `/reservations/${reservationId}/delete`);
+    toast(t('chargepoint.cpReservationDeleted'), 'success');
+    await loadReservations(cpId);
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // ── Onglet Profils de Charge ─────────────────────────────────────────────

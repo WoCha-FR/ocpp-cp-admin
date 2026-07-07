@@ -189,6 +189,20 @@ function createApp(options = {}) {
     }
   });
 
+  // DELETE — supprimer définitivement une réservation terminée
+  app.delete('/api/reservations/:reservationId/delete', requireManager, (req, res) => {
+    const reservationId = Number(req.params.reservationId);
+    const reservation = testDb.prepare('SELECT * FROM reservations WHERE id = ?').get(reservationId);
+    if (!reservation) return res.status(404).json({ error: 'ERR_RESERVATION_NOT_FOUND' });
+    const found = testDb.prepare('SELECT * FROM chargepoints WHERE id = ?').get(reservation.chargepoint_id);
+    if (!found) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (['Pending', 'Active', 'InUse'].includes(reservation.status)) {
+      return res.status(400).json({ error: 'ERR_RESERVATION_NOT_TERMINATED' });
+    }
+    testDb.prepare('DELETE FROM reservations WHERE id = ?').run(reservationId);
+    res.json({ ok: true });
+  });
+
   return { app, db: testDb, cp, adminUser };
 }
 
@@ -527,6 +541,74 @@ describe('DELETE /api/reservations/:reservationId', () => {
 
     const row = db.prepare('SELECT * FROM reservations WHERE id = ?').get(id);
     expect(row.status).toBe('InUse');
+  });
+});
+
+// ══════════════════════════════════════════════════════
+//  DELETE /reservations/:reservationId/delete
+// ══════════════════════════════════════════════════════
+describe('DELETE /api/reservations/:reservationId/delete', () => {
+  function insertReservation(db, cpId, adminId, opts = {}) {
+    const info = db
+      .prepare(
+        'INSERT INTO reservations (chargepoint_id, connector_id, reservation_id, id_tag, expiry_date, status, created_by) VALUES (?,?,?,?,?,?,?)'
+      )
+      .run(cpId, opts.connector_id ?? 1, opts.reservation_id ?? 1, opts.id_tag ?? 'TAG001', EXPIRY, opts.status ?? 'Expired', adminId);
+    return info.lastInsertRowid;
+  }
+
+  it('retourne 401 si non authentifié', async () => {
+    const { app, db, cp, adminUser } = createApp();
+    const id = insertReservation(db, cp.id, adminUser.id);
+    const agent = request.agent(app);
+    const meRes = await agent.get('/api/auth/me');
+    const cookie = (meRes.headers['set-cookie'] || []).join('; ');
+    const match = cookie.match(/XSRF-TOKEN=([^;]+)/);
+    const csrf = match ? decodeURIComponent(match[1]) : '';
+    const res = await agent.delete(`/api/reservations/${id}/delete`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(401);
+  });
+
+  it('retourne 404 si réservation inconnue', async () => {
+    const { app } = createApp();
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.delete('/api/reservations/9999/delete').set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('ERR_RESERVATION_NOT_FOUND');
+  });
+
+  it.each(['Pending', 'Active', 'InUse'])('retourne 400 ERR_RESERVATION_NOT_TERMINATED pour le statut %s', async (status) => {
+    const { app, db, cp, adminUser } = createApp();
+    const id = insertReservation(db, cp.id, adminUser.id, { status });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.delete(`/api/reservations/${id}/delete`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('ERR_RESERVATION_NOT_TERMINATED');
+    expect(db.prepare('SELECT * FROM reservations WHERE id = ?').get(id)).toBeDefined();
+  });
+
+  it.each(['Expired', 'Cancelled', 'Fulfilled'])('supprime la réservation en DB pour le statut %s', async (status) => {
+    const { app, db, cp, adminUser } = createApp();
+    const id = insertReservation(db, cp.id, adminUser.id, { status });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.delete(`/api/reservations/${id}/delete`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(db.prepare('SELECT * FROM reservations WHERE id = ?').get(id)).toBeUndefined();
+  });
+
+  it("ne fait aucun appel OCPP (pas de callClient)", async () => {
+    const callClient = jest.fn();
+    const { app, db, cp, adminUser } = createApp({ callClient });
+    const id = insertReservation(db, cp.id, adminUser.id, { status: 'Expired' });
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent);
+    const res = await agent.delete(`/api/reservations/${id}/delete`).set(CSRF_HEADER, csrf);
+    expect(res.status).toBe(200);
+    expect(callClient).not.toHaveBeenCalled();
   });
 });
 

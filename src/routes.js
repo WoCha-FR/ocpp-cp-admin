@@ -1295,6 +1295,30 @@ router.delete(
   }
 );
 
+router.delete(
+  '/reservations/:reservationId/delete',
+  requireManager,
+  ...validateSchema(schema.ReservationIdParam),
+  (req, res) => {
+    const reservation = db.getReservationById(Number(req.params.reservationId));
+    if (!reservation) return res.status(404).json({ error: 'ERR_RESERVATION_NOT_FOUND' });
+    const cp = db.getChargepointById(reservation.chargepoint_id);
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    if (reservation.status === 'Pending' || reservation.status === 'Active' || reservation.status === 'InUse') {
+      return res.status(400).json({ error: 'ERR_RESERVATION_NOT_TERMINATED' });
+    }
+    db.deleteReservation(reservation.id);
+    broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
+    res.json({ ok: true });
+  }
+);
+
 // ══════════════════════════════════════
 //  CONNECTEURS (vue globale)
 // ══════════════════════════════════════

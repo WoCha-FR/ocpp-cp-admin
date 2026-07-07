@@ -670,6 +670,25 @@ describe('database — Reservations CRUD', () => {
     db.deleteChargepoint(cascadeCp.id);
     expect(db.getReservationsByChargepoint(cascadeCp.id).length).toBe(0);
   });
+
+  it('deleteReservation removes the row and returns the number of changes', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 9,
+      reservation_id: 9,
+      id_tag: 'TAG009',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.updateReservationStatus(id, 'Expired');
+    const changes = db.deleteReservation(id);
+    expect(changes).toBe(1);
+    expect(db.getReservationById(id)).toBeUndefined();
+  });
+
+  it('deleteReservation returns 0 for an unknown id', () => {
+    expect(db.deleteReservation(999999)).toBe(0);
+  });
 });
 
 // ── getExpiredActiveReservations ──
