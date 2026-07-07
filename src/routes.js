@@ -1310,7 +1310,11 @@ router.delete(
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
       }
     }
-    if (reservation.status === 'Pending' || reservation.status === 'Active' || reservation.status === 'InUse') {
+    if (
+      reservation.status === 'Pending' ||
+      reservation.status === 'Active' ||
+      reservation.status === 'InUse'
+    ) {
       return res.status(400).json({ error: 'ERR_RESERVATION_NOT_TERMINATED' });
     }
     db.deleteReservation(reservation.id);
@@ -2451,6 +2455,27 @@ router.get(
     if (siteIds !== null) filters.site_ids = siteIds;
     const events = db.getIdTagEvents(filters);
     res.json(events);
+  }
+);
+
+router.delete(
+  '/id-tags-events/:id',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const existing = db.getIdTagEventById(Number(req.params.id));
+    if (!existing) return res.status(404).json({ error: 'ERR_EVENT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedSiteIds = getUserManagedSiteIds(req);
+      if (
+        managedSiteIds !== null &&
+        (!existing.site_id || !managedSiteIds.includes(existing.site_id))
+      ) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    db.deleteIdTagEvent(existing.id);
+    res.json({ ok: true });
   }
 );
 

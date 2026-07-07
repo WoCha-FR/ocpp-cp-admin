@@ -1855,6 +1855,21 @@ function getIdTagEvents(filters = {}) {
   return db.prepare(query).all(...params);
 }
 
+function getIdTagEventById(id) {
+  return db
+    .prepare(
+      `SELECT ite.*, cp.site_id
+     FROM id_tags_events ite
+     LEFT JOIN chargepoints cp ON cp.id = ite.chargepoint_id
+     WHERE ite.id = ?`
+    )
+    .get(id);
+}
+
+function deleteIdTagEvent(id) {
+  return db.prepare('DELETE FROM id_tags_events WHERE id = ?').run(id).changes;
+}
+
 // ── Notification Preferences ──
 function getNotificationPreferences(userId) {
   return db
@@ -2585,6 +2600,8 @@ module.exports = {
   authorizeIdTag,
   addIdTagEvent,
   getIdTagEvents,
+  getIdTagEventById,
+  deleteIdTagEvent,
   getAvailableConnectorsForUser,
   getChargingKpi,
   getUserDashboardStats,

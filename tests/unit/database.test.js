@@ -691,6 +691,42 @@ describe('database — Reservations CRUD', () => {
   });
 });
 
+// ── Id Tags Events ──
+describe('database — Id Tags Events', () => {
+  let cpId, siteId;
+
+  beforeAll(() => {
+    const site = db.createSite('Site Id Tags Events', '1 Test Street');
+    siteId = site.id;
+    db.upsertChargepoint('CP-IDTAGEVT-TEST', { cpstatus: 'Available', connected: 0, site_id: siteId });
+    cpId = db.getChargepointByIdentity('CP-IDTAGEVT-TEST').id;
+  });
+
+  it('getIdTagEventById returns the event with the joined site_id', () => {
+    db.addIdTagEvent(cpId, 1, 'TAGEVT1', 'Blocked', 'expired', 'authorize');
+    const events = db.getIdTagEvents({ chargepoint_id: cpId });
+    const event = db.getIdTagEventById(events[0].id);
+    expect(event).toMatchObject({ id_tag: 'TAGEVT1', status: 'Blocked', site_id: siteId });
+  });
+
+  it('getIdTagEventById returns undefined for an unknown id', () => {
+    expect(db.getIdTagEventById(999999)).toBeUndefined();
+  });
+
+  it('deleteIdTagEvent removes the row and returns the number of changes', () => {
+    db.addIdTagEvent(cpId, 1, 'TAGEVT2', 'Blocked', 'expired', 'authorize');
+    const events = db.getIdTagEvents({ chargepoint_id: cpId, id_tag: 'TAGEVT2' });
+    const id = events[0].id;
+    const changes = db.deleteIdTagEvent(id);
+    expect(changes).toBe(1);
+    expect(db.getIdTagEventById(id)).toBeUndefined();
+  });
+
+  it('deleteIdTagEvent returns 0 for an unknown id', () => {
+    expect(db.deleteIdTagEvent(999999)).toBe(0);
+  });
+});
+
 // ── getExpiredActiveReservations ──
 describe('database — getExpiredActiveReservations', () => {
   let cpId, userId;

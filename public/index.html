@@ -3730,6 +3730,15 @@ async function deleteIdTag(id, name) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
+async function deleteIdTagEvent(id) {
+  if (!await confirmDialog(t('idtags.rfHistoDeleteConfirm'), { danger: true })) return;
+  try {
+    await api('DELETE', `/id-tags-events/${id}`);
+    toast(t('idtags.rfHistoDeleted'), 'success');
+    renderIdTagsEvents();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
 function switchIdTagsTab(tab) {
   renderIdTags(tab, true);
 }
@@ -3800,7 +3809,7 @@ async function renderIdTagsEvents() {
       ${events.length === 0 ? `<p class="text-muted" style="padding: 16px;">${t('idtags.rfNoHisto')}</p>` : `
       <div class="table-wrap">
       <table>
-        <thead><tr><th>${t('common.date')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('idtags.rfTagIdent')}</th><th>${t('common.status')}</th><th>${t('idtags.rfDenialDetails')}</th><th>${t('common.source')}</th></tr></thead>
+        <thead><tr><th>${t('common.date')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('idtags.rfTagIdent')}</th><th>${t('common.status')}</th><th>${t('idtags.rfDenialDetails')}</th><th>${t('common.source')}</th><th>${t('common.actions')}</th></tr></thead>
         <tbody>
           ${events.map(e => `
             <tr>
@@ -3811,6 +3820,7 @@ async function renderIdTagsEvents() {
               <td>${eventStatusBadge(e.status)}</td>
               <td>${e.reason ? escapeHtml(eventReasonLabels[e.reason] || e.reason) : '<span class="text-muted">-</span>'}</td>
               <td><span class="badge badge-blue">${escapeHtml(e.source || 'authorize')}</span></td>
+              <td>${canManage() ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteIdTagEvent(${e.id}))">${t('common.delete')}</button>` : ''}</td>
             </tr>
           `).join('')}
         </tbody>
