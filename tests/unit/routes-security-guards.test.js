@@ -29,5 +29,13 @@ describe('Backend access control guards', () => {
     expect(src).toMatch(/!existing\.site_id \|\| !managedSiteIds\.includes\(existing\.site_id\)/);
     expect(src).toMatch(/ERR_SITE_NOT_MANAGED/);
   });
+
+  it('protects DELETE /error-events/:id with requireManager and managed-site authorization check', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    expect(src).toMatch(/router\.delete\(\s*'\/error-events\/:id',\s*requireManager/);
+    expect(src).toMatch(/const managedSiteIds = getUserManagedSiteIds\(req\)/);
+    expect(src).toMatch(/!existing\.site_id \|\| !managedSiteIds\.includes\(existing\.site_id\)/);
+    expect(src).toMatch(/ERR_SITE_NOT_MANAGED/);
+  });
 });
 

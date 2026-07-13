@@ -2506,6 +2506,27 @@ router.get(
   }
 );
 
+router.delete(
+  '/error-events/:id',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const existing = db.getErrorEventById(Number(req.params.id));
+    if (!existing) return res.status(404).json({ error: 'ERR_EVENT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedSiteIds = getUserManagedSiteIds(req);
+      if (
+        managedSiteIds !== null &&
+        (!existing.site_id || !managedSiteIds.includes(existing.site_id))
+      ) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    db.deleteErrorEvent(existing.id);
+    res.json({ ok: true });
+  }
+);
+
 // ══════════════════════════════════════
 //  DASHBOARD STATS
 // ══════════════════════════════════════

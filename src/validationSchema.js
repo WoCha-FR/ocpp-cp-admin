@@ -595,7 +595,11 @@ const ErrorEventsQuery = {
   event_type: {
     in: ['query'],
     optional: true,
-    isIn: { options: [['status_error', 'disconnect', 'heartbeat_timeout']] },
+    isIn: {
+      options: [
+        ['status_error', 'disconnect', 'heartbeat_timeout', 'security_event', 'notify_event'],
+      ],
+    },
     errorMessage: 'VALIDATION_EVENT_TYPE',
   },
   ocpp_version: {

@@ -35,16 +35,34 @@ function createApp() {
   const userHash = bcrypt.hashSync('User!1234', 4);
   testDb.prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)').run('user@test.com', userHash, 'user', 'RegularUser');
 
+  const managerHash = bcrypt.hashSync('Manager!123', 4);
+  testDb.prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)').run('manager@test.com', managerHash, 'user', 'Manager');
+  const managerId = testDb.prepare("SELECT id FROM users WHERE useremail = 'manager@test.com'").get().id;
+
+  const siteA = testDb.prepare("INSERT INTO sites (sname) VALUES ('Site A')").run().lastInsertRowid;
+  const siteB = testDb.prepare("INSERT INTO sites (sname) VALUES ('Site B')").run().lastInsertRowid;
+  testDb.prepare('INSERT INTO user_sites (user_id, site_id, role) VALUES (?, ?, ?)').run(managerId, siteA, 'manager');
+
+  testDb.prepare('INSERT INTO chargepoints (identity, cpname, site_id) VALUES (?,?,?)').run('CP-A', 'CP Site A', siteA);
+  testDb.prepare('INSERT INTO chargepoints (identity, cpname, site_id) VALUES (?,?,?)').run('CP-B', 'CP Site B', siteB);
+  const cpA = testDb.prepare("SELECT * FROM chargepoints WHERE identity = 'CP-A'").get();
+  const cpB = testDb.prepare("SELECT * FROM chargepoints WHERE identity = 'CP-B'").get();
+
+  function loadUser(row) {
+    const sites = testDb.prepare('SELECT site_id, role FROM user_sites WHERE user_id = ?').all(row.id);
+    return { id: row.id, useremail: row.useremail, role: row.role, sites };
+  }
+
   const testPassport = new passport.Passport();
   testPassport.use(new LocalStrategy({ usernameField: 'useremail', passwordField: 'password' }, (email, pwd, done) => {
     const u = testDb.prepare('SELECT * FROM users WHERE useremail = ?').get(email);
     if (!u || !bcrypt.compareSync(pwd, u.password)) return done(null, false);
-    return done(null, { id: u.id, useremail: u.useremail, role: u.role, sites: [] });
+    return done(null, loadUser(u));
   }));
   testPassport.serializeUser((u, done) => done(null, u.id));
   testPassport.deserializeUser((id, done) => {
     const u = testDb.prepare('SELECT * FROM users WHERE id = ?').get(id);
-    done(null, u ? { id: u.id, useremail: u.useremail, role: u.role, sites: [] } : false);
+    done(null, u ? loadUser(u) : false);
   });
 
   const app = express();
@@ -78,6 +96,11 @@ function createApp() {
     next();
   }
 
+  function getUserManagedSiteIds(req) {
+    if (req.user.role === 'admin') return null;
+    return (req.user.sites || []).filter((s) => s.role === 'manager').map((s) => s.site_id);
+  }
+
   app.get('/api/auth/me', requireAuth, (req, res) => res.json(req.user));
 
   app.post('/api/auth/login', (req, res, next) => {
@@ -98,7 +121,7 @@ function createApp() {
     // Validation manuelle des params (simule express-validator)
     if (chargepoint_id && !/^\d+$/.test(chargepoint_id)) return res.status(400).json({ error: 'VALIDATION_CHARGEPOINT_ID' });
     if (site_id && !/^\d+$/.test(site_id)) return res.status(400).json({ error: 'VALIDATION_SITE_ID' });
-    if (event_type && !['status_error', 'disconnect', 'heartbeat_timeout'].includes(event_type)) return res.status(400).json({ error: 'VALIDATION_EVENT_TYPE' });
+    if (event_type && !['status_error', 'disconnect', 'heartbeat_timeout', 'security_event', 'notify_event'].includes(event_type)) return res.status(400).json({ error: 'VALIDATION_EVENT_TYPE' });
     if (ocpp_version && !['1.6', '2.0.1'].includes(ocpp_version)) return res.status(400).json({ error: 'VALIDATION_OCPP_VERSION' });
 
     let query = `SELECT ee.*, cp.identity AS chargepoint_identity, cp.cpname AS chargepoint_name, cp.site_id, s.sname AS site_name
@@ -124,7 +147,27 @@ function createApp() {
     res.json(testDb.prepare(query).all(...params));
   });
 
-  return { app, db: testDb };
+  // DELETE — supprime un événement error_events
+  app.delete('/api/error-events/:id', requireManager, (req, res) => {
+    const id = Number(req.params.id);
+    const existing = testDb.prepare(
+      `SELECT ee.*, cp.site_id
+       FROM error_events ee
+       LEFT JOIN chargepoints cp ON cp.id = ee.chargepoint_id
+       WHERE ee.id = ?`
+    ).get(id);
+    if (!existing) return res.status(404).json({ error: 'ERR_EVENT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedSiteIds = getUserManagedSiteIds(req);
+      if (managedSiteIds !== null && (!existing.site_id || !managedSiteIds.includes(existing.site_id))) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    testDb.prepare('DELETE FROM error_events WHERE id = ?').run(id);
+    res.json({ ok: true });
+  });
+
+  return { app, db: testDb, cpA, cpB };
 }
 
 async function loginAs(agent, email, password) {
@@ -136,10 +179,18 @@ async function loginAs(agent, email, password) {
   return csrf;
 }
 
-let app, db;
+function insertErrorEvent(db, cpId, eventType = 'disconnect') {
+  const info = db.prepare(
+    `INSERT INTO error_events (chargepoint_id, ocpp_version, event_type)
+     VALUES (?, '1.6', ?)`
+  ).run(cpId, eventType);
+  return info.lastInsertRowid;
+}
+
+let app, db, cpA, cpB;
 
 beforeEach(() => {
-  ({ app, db } = createApp());
+  ({ app, db, cpA, cpB } = createApp());
 });
 
 afterEach(() => {
@@ -206,6 +257,23 @@ describe('GET /api/error-events', () => {
     const res = await agent.get('/api/error-events?event_type=disconnect');
     expect(res.status).toBe(200);
     expect(res.body.every(e => e.event_type === 'disconnect')).toBe(true);
+  });
+
+  it('filtre par event_type security_event / notify_event (OCPP 2.0.1)', async () => {
+    const cpId = db.prepare("INSERT INTO chargepoints (identity, cpstatus) VALUES ('EE-CP-201', 'Available')").run().lastInsertRowid;
+    db.prepare("INSERT INTO error_events (chargepoint_id, ocpp_version, event_type) VALUES (?, '2.0.1', 'security_event')").run(cpId);
+    db.prepare("INSERT INTO error_events (chargepoint_id, ocpp_version, event_type) VALUES (?, '2.0.1', 'notify_event')").run(cpId);
+
+    const agent = request.agent(app);
+    await loginAs(agent, 'admin@test.com', 'Admin!123');
+
+    const secRes = await agent.get('/api/error-events?event_type=security_event');
+    expect(secRes.status).toBe(200);
+    expect(secRes.body.every(e => e.event_type === 'security_event')).toBe(true);
+
+    const notifyRes = await agent.get('/api/error-events?event_type=notify_event');
+    expect(notifyRes.status).toBe(200);
+    expect(notifyRes.body.every(e => e.event_type === 'notify_event')).toBe(true);
   });
 
   it('rejette un event_type invalide avec 400', async () => {
@@ -294,5 +362,59 @@ describe('GET /api/error-events', () => {
     await loginAs(agent, 'admin@test.com', 'Admin!123');
     const res = await agent.get('/api/error-events?site_id=abc');
     expect(res.status).toBe(400);
+  });
+});
+
+// ══════════════════════════════════════════════════════
+//  DELETE /api/error-events/:id
+// ══════════════════════════════════════════════════════
+describe('DELETE /api/error-events/:id', () => {
+  it('retourne 401 si non authentifié', async () => {
+    const id = insertErrorEvent(db, cpA.id);
+    const agent = request.agent(app);
+    const meRes = await agent.get('/api/auth/me');
+    const cookie = (meRes.headers['set-cookie'] || []).join('; ');
+    const match = cookie.match(/XSRF-TOKEN=([^;]+)/);
+    const csrf = match ? decodeURIComponent(match[1]) : '';
+    const res = await agent.delete(`/api/error-events/${id}`).set('x-xsrf-token', csrf);
+    expect(res.status).toBe(401);
+  });
+
+  it('retourne 404 + ERR_EVENT_NOT_FOUND si l\'id n\'existe pas', async () => {
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.delete('/api/error-events/9999').set('x-xsrf-token', csrf);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe('ERR_EVENT_NOT_FOUND');
+  });
+
+  it('retourne 403 + ERR_SITE_NOT_MANAGED si un manager supprime un événement d\'un site non géré', async () => {
+    const id = insertErrorEvent(db, cpB.id);
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent, 'manager@test.com', 'Manager!123');
+    const res = await agent.delete(`/api/error-events/${id}`).set('x-xsrf-token', csrf);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('ERR_SITE_NOT_MANAGED');
+    expect(db.prepare('SELECT * FROM error_events WHERE id = ?').get(id)).toBeDefined();
+  });
+
+  it('retourne 200 + { ok: true } pour un manager autorisé sur le site et supprime la ligne', async () => {
+    const id = insertErrorEvent(db, cpA.id);
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent, 'manager@test.com', 'Manager!123');
+    const res = await agent.delete(`/api/error-events/${id}`).set('x-xsrf-token', csrf);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(db.prepare('SELECT * FROM error_events WHERE id = ?').get(id)).toBeUndefined();
+  });
+
+  it('retourne 200 pour un admin quel que soit le site et supprime la ligne', async () => {
+    const id = insertErrorEvent(db, cpB.id);
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.delete(`/api/error-events/${id}`).set('x-xsrf-token', csrf);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(db.prepare('SELECT * FROM error_events WHERE id = ?').get(id)).toBeUndefined();
   });
 });

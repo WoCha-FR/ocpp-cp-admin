@@ -668,6 +668,8 @@
     "eventTypeStatusError": "Erreur connecteur",
     "eventTypeDisconnect": "Déconnexion",
     "eventTypeHeartbeatTimeout": "Timeout heartbeat",
+    "eventTypeSecurityEvent": "Événement de sécurité",
+    "eventTypeNotifyEvent": "Notification",
     "noEvents": "Aucun événement d'erreur enregistré.",
     "count": "{{count}} événement",
     "count_plural": "{{count}} événements",
@@ -680,7 +682,9 @@
     "colInfo": "Info",
     "colProtocol": "Protocole",
     "filterFrom": "Depuis",
-    "filterTo": "Jusqu'au"
+    "filterTo": "Jusqu'au",
+    "deleteConfirm": "Supprimer cet événement de l'historique ?",
+    "deleted": "Événement supprimé"
   },
   "notifications": {
     "common": {

@@ -4891,6 +4891,8 @@ async function renderErrorEvents(keepState = false) {
       if (type === 'status_error') return `<span class="badge badge-red">${t('errorEvents.eventTypeStatusError')}</span>`;
       if (type === 'disconnect') return `<span class="badge badge-gray">${t('errorEvents.eventTypeDisconnect')}</span>`;
       if (type === 'heartbeat_timeout') return `<span class="badge badge-yellow">${t('errorEvents.eventTypeHeartbeatTimeout')}</span>`;
+      if (type === 'security_event') return `<span class="badge badge-purple">${t('errorEvents.eventTypeSecurityEvent')}</span>`;
+      if (type === 'notify_event') return `<span class="badge badge-blue">${t('errorEvents.eventTypeNotifyEvent')}</span>`;
       return `<span class="badge">${escapeHtml(type)}</span>`;
     }
 
@@ -4919,6 +4921,8 @@ async function renderErrorEvents(keepState = false) {
             <option value="status_error" ${errorEventsFilters.event_type === 'status_error' ? 'selected' : ''}>${t('errorEvents.eventTypeStatusError')}</option>
             <option value="disconnect" ${errorEventsFilters.event_type === 'disconnect' ? 'selected' : ''}>${t('errorEvents.eventTypeDisconnect')}</option>
             <option value="heartbeat_timeout" ${errorEventsFilters.event_type === 'heartbeat_timeout' ? 'selected' : ''}>${t('errorEvents.eventTypeHeartbeatTimeout')}</option>
+            <option value="security_event" ${errorEventsFilters.event_type === 'security_event' ? 'selected' : ''}>${t('errorEvents.eventTypeSecurityEvent')}</option>
+            <option value="notify_event" ${errorEventsFilters.event_type === 'notify_event' ? 'selected' : ''}>${t('errorEvents.eventTypeNotifyEvent')}</option>
           </select>
         </div>
         <div class="form-group">
@@ -4956,6 +4960,7 @@ async function renderErrorEvents(keepState = false) {
           <th>${t('errorEvents.colVendorError')}</th>
           <th>${t('errorEvents.colInfo')}</th>
           ${appSettings.v16Enabled && appSettings.v201Enabled ? `<th>${t('errorEvents.colProtocol')}</th>` : ''}
+          ${canManage() ? `<th>${t('common.actions')}</th>` : ''}
         </tr></thead>
         <tbody>
           ${events.map(e => `
@@ -4969,6 +4974,7 @@ async function renderErrorEvents(keepState = false) {
               <td>${e.vendor_error_code ? escapeHtml(e.vendor_error_code) : '<span class="text-muted">-</span>'}</td>
               <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${e.info ? escapeAttr(e.info) : ''}">${e.info ? escapeHtml(e.info) : '<span class="text-muted">-</span>'}</td>
               ${appSettings.v16Enabled && appSettings.v201Enabled ? `<td><span class="badge badge-blue">${escapeHtml(e.ocpp_version)}</span></td>` : ''}
+              ${canManage() ? `<td><button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteErrorEvent(${e.id}))">${t('common.delete')}</button></td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -5005,6 +5011,15 @@ function applyErrorEventsFilters() {
 function resetErrorEventsFilters() {
   errorEventsFilters = { site_id: '', chargepoint_id: '', event_type: '', from: '', to: '', limit: '100' };
   renderErrorEvents();
+}
+
+async function deleteErrorEvent(id) {
+  if (!await confirmDialog(t('errorEvents.deleteConfirm'), { danger: true })) return;
+  try {
+    await api('DELETE', `/error-events/${id}`);
+    toast(t('errorEvents.deleted'), 'success');
+    renderErrorEvents(true);
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // ══════════════════════════════════════

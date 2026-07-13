@@ -668,6 +668,8 @@
     "eventTypeStatusError": "Connector error",
     "eventTypeDisconnect": "Disconnection",
     "eventTypeHeartbeatTimeout": "Heartbeat timeout",
+    "eventTypeSecurityEvent": "Security event",
+    "eventTypeNotifyEvent": "Notification",
     "noEvents": "No error events recorded.",
     "count": "{{count}} event",
     "count_plural": "{{count}} events",
@@ -680,7 +682,9 @@
     "colInfo": "Info",
     "colProtocol": "Protocol",
     "filterFrom": "From",
-    "filterTo": "To"
+    "filterTo": "To",
+    "deleteConfirm": "Delete this event from the history?",
+    "deleted": "Event deleted"
   },
   "notifications": {
     "common": {

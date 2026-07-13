@@ -2112,6 +2112,21 @@ function getErrorEvents(filters = {}) {
   return db.prepare(query).all(...params);
 }
 
+function getErrorEventById(id) {
+  return db
+    .prepare(
+      `SELECT ee.*, cp.site_id
+     FROM error_events ee
+     LEFT JOIN chargepoints cp ON cp.id = ee.chargepoint_id
+     WHERE ee.id = ?`
+    )
+    .get(id);
+}
+
+function deleteErrorEvent(id) {
+  return db.prepare('DELETE FROM error_events WHERE id = ?').run(id).changes;
+}
+
 // ── Notification Log ──
 function addNotificationLog(userId, eventType, channel, title, body, success, errorMessage) {
   db.prepare(
@@ -2650,6 +2665,8 @@ module.exports = {
   resetConnectorsByChargepoint,
   insertErrorEvent,
   getErrorEvents,
+  getErrorEventById,
+  deleteErrorEvent,
   upsertEvse,
   getEvsesByChargepoint,
   updateEvseName,

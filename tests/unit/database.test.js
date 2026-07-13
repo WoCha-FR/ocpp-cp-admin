@@ -1464,6 +1464,31 @@ describe('database — Error Events', () => {
     expect(events[0]).toHaveProperty('chargepoint_identity');
     expect(events[0].chargepoint_identity).toBe('EE-CP-001');
   });
+
+  it('getErrorEventById returns the event with the joined site_id', () => {
+    db.insertErrorEvent(cpId, 'disconnect', { ocpp_version: '1.6' });
+    const events = db.getErrorEvents({ chargepoint_id: cpId, event_type: 'disconnect' });
+    const event = db.getErrorEventById(events[0].id);
+    expect(event).toMatchObject({ event_type: 'disconnect' });
+    expect(event.site_id).toBeDefined();
+  });
+
+  it('getErrorEventById returns undefined for an unknown id', () => {
+    expect(db.getErrorEventById(999999)).toBeUndefined();
+  });
+
+  it('deleteErrorEvent removes the row and returns the number of changes', () => {
+    db.insertErrorEvent(cpId, 'heartbeat_timeout', { ocpp_version: '1.6' });
+    const events = db.getErrorEvents({ chargepoint_id: cpId, event_type: 'heartbeat_timeout' });
+    const id = events[0].id;
+    const changes = db.deleteErrorEvent(id);
+    expect(changes).toBe(1);
+    expect(db.getErrorEventById(id)).toBeUndefined();
+  });
+
+  it('deleteErrorEvent returns 0 for an unknown id', () => {
+    expect(db.deleteErrorEvent(999999)).toBe(0);
+  });
 });
 
 // ── Transaction Values (nouvelles métriques) ──
