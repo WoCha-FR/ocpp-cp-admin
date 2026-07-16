@@ -461,7 +461,8 @@
     "uCannotDeleteSelf": "You cannot delete your own account",
     "uDeleted": "User deleted",
     "uBtnResendSetupPassword": "Resend welcome email",
-    "uSetupPasswordResent": "Welcome email resent"
+    "uSetupPasswordResent": "Welcome email resent",
+    "uNotifications": "Notifications"
   },
   "transac": {
     "transacGraphTitle": "Transaction #{{id}}",

@@ -671,6 +671,44 @@ router.put(
   }
 );
 
+// ── Préférences de notification (administration) ──
+router.get(
+  '/users/:id/notifications/preferences',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const targetId = Number(req.params.id);
+    const target = db.getUserById(targetId);
+    if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+    res.json(loadNotificationPreferences(target));
+  }
+);
+
+router.put(
+  '/users/:id/notifications/preferences',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam, schema.NotificationPreferences),
+  (req, res) => {
+    const targetId = Number(req.params.id);
+    const target = db.getUserById(targetId);
+    if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+    const { preferences } = req.body;
+    if (!Array.isArray(preferences)) {
+      return res.status(400).json({ error: 'ERR_USERPREF_TABLE' });
+    }
+    const allowedEvents = notifications.getEventsForUser(target);
+    const invalid = preferences.filter((p) => !allowedEvents[p.event_type]);
+    if (invalid.length > 0) {
+      return res.status(403).json({
+        error: 'ERR_UNAUTHORIZED_EVENTS',
+        params: { events: invalid.map((p) => p.event_type).join(', ') },
+      });
+    }
+    db.setNotificationPreferencesBulk(targetId, preferences);
+    res.json({ ok: true });
+  }
+);
+
 // ══════════════════════════════════════
 //  CHARGEPOINTS
 // ══════════════════════════════════════
@@ -2931,14 +2969,13 @@ router.put('/user/profile', requireAuth, checkSchema(schema.UserProfile), (req, 
 //  NOTIFICATIONS
 // ══════════════════════════════════════
 
-// Récupérer les événements disponibles et les préférences de l'utilisateur connecté
-router.get('/notifications/preferences', requireAuth, (req, res) => {
-  const events = notifications.getEventsForUser(req.user);
-  const prefs = db.getNotificationPreferences(req.user.id);
+// Construit les événements/préférences/canaux d'un utilisateur, en matérialisant
+// en DB les préférences par défaut pour les événements sans entrée existante.
+function loadNotificationPreferences(user) {
+  const events = notifications.getEventsForUser(user);
   const channels = notifications.getAvailableChannels();
-  const subscriptions = db.getPushSubscriptions(req.user.id);
+  const prefs = db.getNotificationPreferences(user.id);
 
-  // Matérialiser les préférences par défaut en DB pour les événements sans entrée
   const eventsWithPrefs = new Set(prefs.map((p) => p.event_type));
   const missingPrefs = [];
   for (const [eventType, eventDef] of Object.entries(events)) {
@@ -2953,13 +2990,20 @@ router.get('/notifications/preferences', requireAuth, (req, res) => {
     }
   }
   if (missingPrefs.length > 0) {
-    db.setNotificationPreferencesBulk(req.user.id, missingPrefs);
+    db.setNotificationPreferencesBulk(user.id, missingPrefs);
   }
 
-  const allPrefs = missingPrefs.length > 0 ? db.getNotificationPreferences(req.user.id) : prefs;
+  const allPrefs = missingPrefs.length > 0 ? db.getNotificationPreferences(user.id) : prefs;
+  return { events, preferences: allPrefs, channels };
+}
+
+// Récupérer les événements disponibles et les préférences de l'utilisateur connecté
+router.get('/notifications/preferences', requireAuth, (req, res) => {
+  const { events, preferences, channels } = loadNotificationPreferences(req.user);
+  const subscriptions = db.getPushSubscriptions(req.user.id);
   res.json({
     events,
-    preferences: allPrefs,
+    preferences,
     channels,
     hasPushSubscription: subscriptions.length > 0,
   });
