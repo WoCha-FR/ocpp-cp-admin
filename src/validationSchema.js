@@ -494,13 +494,13 @@ const OcppMessagesQuery = {
   origin: {
     in: ['query'],
     optional: true,
-    isIn: { options: [['csms', 'chargepoint']] },
+    isIn: { options: [['csms', 'chargepoint', 'system']] },
     errorMessage: 'VALIDATION_OCPP_ORIGIN',
   },
   message_type: {
     in: ['query'],
     optional: true,
-    isIn: { options: [['CALL', 'CALLRESULT', 'CALLERROR']] },
+    isIn: { options: [['CALL', 'CALLRESULT', 'CALLERROR', 'EVENT']] },
     errorMessage: 'VALIDATION_OCPP_MESSAGE_TYPE',
   },
   action: {

@@ -333,6 +333,16 @@ describe('validationSchema — OcppMessagesQuery', () => {
     expect(result.isEmpty()).toBe(false);
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_DATE_TO');
   });
+
+  it('passes with origin=system', async () => {
+    const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { origin: 'system' });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('passes with message_type=EVENT', async () => {
+    const result = await runSchema(schema.OcppMessagesQuery, {}, {}, { message_type: 'EVENT' });
+    expect(result.isEmpty()).toBe(true);
+  });
 });
 
 // ── TransactionsQuery ──

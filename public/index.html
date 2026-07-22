@@ -2076,6 +2076,7 @@ async function renderDetailTabLogs(cp) {
             <option value="">${t('filters.allf')}</option>
             <option value="chargepoint" ${cpLogsFilters.origin === 'chargepoint' ? 'selected' : ''}>${t('common.chargepoint_one')}</option>
             <option value="csms" ${cpLogsFilters.origin === 'csms' ? 'selected' : ''}>CSMS</option>
+            <option value="system" ${cpLogsFilters.origin === 'system' ? 'selected' : ''}>${t('common.system')}</option>
           </select>
         </div>
         <div class="form-group">
@@ -2085,6 +2086,7 @@ async function renderDetailTabLogs(cp) {
             <option value="CALL" ${cpLogsFilters.message_type === 'CALL' ? 'selected' : ''}>CALL</option>
             <option value="CALLRESULT" ${cpLogsFilters.message_type === 'CALLRESULT' ? 'selected' : ''}>CALLRESULT</option>
             <option value="CALLERROR" ${cpLogsFilters.message_type === 'CALLERROR' ? 'selected' : ''}>CALLERROR</option>
+            <option value="EVENT" ${cpLogsFilters.message_type === 'EVENT' ? 'selected' : ''}>EVENT</option>
           </select>
         </div>
         <div class="form-group">
@@ -2119,7 +2121,7 @@ async function renderDetailTabLogs(cp) {
           ${messages.map(m => `
             <tr>
               <td class="td-date">${formatDate(m.timestamp)}</td>
-              <td><span class="badge ${m.origin === 'chargepoint' ? 'badge-chargepoint' : 'badge-csms'}">${m.origin === 'chargepoint' ? `← ${t('common.chargepoint_one')}` : `→ ${t('common.csms')}`}</span></td>
+              <td><span class="badge ${m.origin === 'chargepoint' ? 'badge-chargepoint' : m.origin === 'csms' ? 'badge-csms' : 'badge-gray'}">${m.origin === 'chargepoint' ? `← ${t('common.chargepoint_one')}` : m.origin === 'csms' ? `→ ${t('common.csms')}` : `⚙ ${t('common.system')}`}</span></td>
               <td><span class="badge badge-${m.message_type.toLowerCase()}">${m.message_type}</span></td>
               <td class="msg-payload">${m.action || '-'}</td>
               <td class="msg-payload" title="${t('chargepoint.cpLogsMsgHint')}" data-onclick="showPayloadDetail(this)">${escapeHtml(m.payload || '{}')}</td>

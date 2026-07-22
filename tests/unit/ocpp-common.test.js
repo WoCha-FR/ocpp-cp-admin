@@ -290,6 +290,40 @@ describe('ocpp-common — heartbeat watchdog', () => {
     expect(() => ocppCommon.stopHeartbeatWatchdog()).not.toThrow();
     expect(() => ocppCommon.stopHeartbeatWatchdog()).not.toThrow();
   });
+
+  it('journalise un EVENT/HeartbeatTimeout dans ocpp_messages avant la déconnexion', async () => {
+    jest.useFakeTimers();
+    try {
+      const mockClient = { close: jest.fn() };
+      ocppCommon.getConnectedClients().set('CP_HB_TIMEOUT', mockClient);
+      mockDb.getInitialChargepointConfigByKey.mockReturnValue({ value: '60' });
+      mockDb.getChargepointConfigByKey.mockReturnValue(null);
+      mockDb.getChargepointByIdentity.mockReturnValue({
+        id: 7,
+        site_id: 3,
+        cpname: 'CP HB',
+        site_name: 'Site',
+        ocpp_version: '1.6',
+        last_heartbeat: new Date(Date.now() - 200000).toISOString(),
+      });
+
+      ocppCommon.startHeartbeatWatchdog();
+      await jest.advanceTimersByTimeAsync(60000);
+
+      expect(mockDb.addOcppMessage).toHaveBeenCalledWith(
+        7,
+        'system',
+        'EVENT',
+        'HeartbeatTimeout',
+        expect.objectContaining({ seconds_elapsed: expect.any(Number), limit_seconds: 120 })
+      );
+    } finally {
+      ocppCommon.stopHeartbeatWatchdog();
+      ocppCommon.getConnectedClients().delete('CP_HB_TIMEOUT');
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
 });
 
 // ── startReservationCleanupWatchdog / stopReservationCleanupWatchdog ──
@@ -449,6 +483,19 @@ describe('ocpp-common — connexion chargepoint — ocpp_version', () => {
     expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
       'CP-UNK-CONN',
       expect.objectContaining({ ocpp_version: '1.6' })
+    );
+  });
+
+  it('journalise un EVENT/Connect dans ocpp_messages à la connexion', () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeVersionedClient('CP201-CONN-EVT', 'ocpp2.0.1');
+    server.emit('client', client);
+    expect(mockDb.addOcppMessage).toHaveBeenCalledWith(
+      1,
+      'system',
+      'EVENT',
+      'Connect',
+      expect.objectContaining({ ocpp_version: '2.0.1' })
     );
   });
 });
@@ -675,6 +722,41 @@ describe('ocpp-common — période de grâce offline', () => {
       'chargepoint_offline',
       expect.any(Object),
       expect.any(Object)
+    );
+  });
+
+  it('journalise un EVENT/Disconnect immédiatement à la fermeture, sans attendre la période de grâce', () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeClient('CP_GRACE_DISCONNECT_EVT');
+    server.emit('client', client);
+    jest.clearAllMocks();
+
+    client.emit('close');
+
+    expect(mockDb.addOcppMessage).toHaveBeenCalledWith(
+      1,
+      'system',
+      'EVENT',
+      'Disconnect',
+      expect.objectContaining({ reason: null })
+    );
+  });
+
+  it("journalise le reason='heartbeat_timeout' dans le payload Disconnect", () => {
+    const server = ocppCommon.createOCPPServerBase();
+    const client = makeClient('CP_GRACE_DISCONNECT_HBT');
+    server.emit('client', client);
+    jest.clearAllMocks();
+
+    client._disconnectReason = 'heartbeat_timeout';
+    client.emit('close');
+
+    expect(mockDb.addOcppMessage).toHaveBeenCalledWith(
+      1,
+      'system',
+      'EVENT',
+      'Disconnect',
+      expect.objectContaining({ reason: 'heartbeat_timeout' })
     );
   });
 });

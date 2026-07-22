@@ -232,8 +232,8 @@ CREATE TABLE IF NOT EXISTS transactions_values (
 CREATE TABLE IF NOT EXISTS ocpp_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   chargepoint_id INTEGER NOT NULL,
-  origin TEXT NOT NULL CHECK(origin IN ('chargepoint','csms')),
-  message_type TEXT NOT NULL CHECK(message_type IN ('CALL','CALLRESULT','CALLERROR')),
+  origin TEXT NOT NULL CHECK(origin IN ('chargepoint','csms','system')),
+  message_type TEXT NOT NULL CHECK(message_type IN ('CALL','CALLRESULT','CALLERROR','EVENT')),
   action TEXT,
   payload TEXT,
   timestamp TEXT DEFAULT (datetime('now')),
