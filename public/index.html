@@ -2943,10 +2943,14 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
     <table id="configTable">
       <thead><tr><th>Component</th><th>Variable</th><th>Attribute</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfReadOnly')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
       <tbody>
-        ${config.map(c => `
+        ${config.map(c => {
+          const hasInstance = !!c.instance;
+          const hasEvse = !!(c.evse_id || c.connector_id);
+          const isAmbiguous = hasInstance || hasEvse;
+          return `
           <tr data-key="${escapeAttr(c.component + '.' + c.variable)}">
-            <td class="td-mono">${escapeHtml(c.component)}</td>
-            <td class="td-mono">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
+            <td class="td-mono">${escapeHtml(c.component)}${hasEvse ? ` <span class="badge badge-gray" title="EVSE">evse:${c.evse_id}${c.connector_id ? `/${c.connector_id}` : ''}</span>` : ''}</td>
+            <td class="td-mono">${escapeHtml(c.variable)}${hasInstance ? ` <span class="td-meta">[${escapeHtml(c.instance)}]</span>` : ''}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
             <td class="td-meta">${escapeHtml(c.attribute || 'Actual')}</td>
             <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
             <td>${c.readonly ? '<span class="badge badge-yellow">' + t('common.yes') + '</span>' : '<span class="badge badge-green">' + t('common.no') + '</span>'}</td>
@@ -2954,11 +2958,14 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
             ${adminManage() ? `<td style="white-space:nowrap;">
               ${GLOBAL_ONLY_VARS_201.some(v => v.component === c.component && v.variable === c.variable)
                 ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
+                : isAmbiguous
+                ? `<span class="text-muted" title="${t('chargepoint.cpConfAmbiguousHint', { defaultValue: 'Non modifiable : plusieurs instances partagent cette clé' })}">-</span>`
                 : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
               }
             </td>` : ''}
           </tr>
-        `).join('')}
+        `;
+        }).join('')}
       </tbody>
     </table>
     <p class="text-muted mt-2">${t('chargepoint.cpConfNbKeys', { count: config.length })}</p>

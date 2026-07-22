@@ -1208,11 +1208,24 @@ function register201Handlers(client, loggedHandle) {
       const component = reportData.component?.name || null;
       const variable = reportData.variable?.name || null;
       if (!component || !variable) continue;
+      const instance = reportData.variable?.instance || '';
+      const evseId = reportData.component?.evse?.id ?? 0;
+      const connectorId = reportData.component?.evse?.connectorId ?? 0;
       for (const attrProp of reportData.variableAttribute || []) {
         const attribute = attrProp.type || 'Actual';
         const value = attrProp.value ?? null;
         const readonly = attrProp.mutability === 'ReadOnly' ? 1 : 0;
-        db.upsertChargepointVariable(cp.id, component, variable, attribute, value, readonly);
+        db.upsertChargepointVariable(
+          cp.id,
+          component,
+          variable,
+          attribute,
+          value,
+          readonly,
+          instance,
+          evseId,
+          connectorId
+        );
       }
     }
 

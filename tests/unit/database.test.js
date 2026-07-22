@@ -1643,6 +1643,38 @@ describe('database — upsertChargepointVariable', () => {
     const v = vars.find((r) => r.component === 'SecurityCtrlr' && r.variable === 'CertificateEntries');
     expect(v.readonly).toBe(0);
   });
+
+  it('keeps distinct instances of the same component/variable/attribute as separate rows', () => {
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '1024', 0, 'GetReport');
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '2048', 0, 'SetVariables');
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '4096', 0, 'GetVariables');
+    const vars = db
+      .getChargepointVariables(cpId)
+      .filter((r) => r.component === 'DeviceDataCtrlr' && r.variable === 'BytesPerMessage');
+    expect(vars.length).toBe(3);
+    expect(vars.map((v) => v.value).sort()).toEqual(['1024', '2048', '4096']);
+  });
+
+  it('keeps distinct evse_id/connector_id combinations as separate rows', () => {
+    db.upsertChargepointVariable(cpId, 'Connector', 'AvailabilityState', 'Actual', 'Available', 0, '', 1, 1);
+    db.upsertChargepointVariable(cpId, 'Connector', 'AvailabilityState', 'Actual', 'Occupied', 0, '', 1, 2);
+    const vars = db
+      .getChargepointVariables(cpId)
+      .filter((r) => r.component === 'Connector' && r.variable === 'AvailabilityState');
+    expect(vars.length).toBe(2);
+    expect(vars.find((v) => v.connector_id === 1).value).toBe('Available');
+    expect(vars.find((v) => v.connector_id === 2).value).toBe('Occupied');
+  });
+
+  it('updates the same row when instance/evse_id/connector_id match again', () => {
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '1024', 0, 'GetReport');
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '9999', 0, 'GetReport');
+    const vars = db
+      .getChargepointVariables(cpId)
+      .filter((r) => r.component === 'DeviceDataCtrlr' && r.variable === 'BytesPerMessage' && r.instance === 'GetReport');
+    expect(vars.length).toBe(1);
+    expect(vars[0].value).toBe('9999');
+  });
 });
 
 // ── getChargepointVariableByKey ──

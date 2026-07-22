@@ -147,9 +147,9 @@ function createApp(connectedClients = new Map(), mockCallClient = jest.fn()) {
           setVariableData: [{ component: { name: component }, variable: { name: variable }, attributeType: 'Actual', attributeValue: String(value) }],
         });
         rawDb.prepare(
-          `INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value)
-           VALUES (?, ?, ?, 'Actual', ?)
-           ON CONFLICT(chargepoint_id, component, variable, attribute) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+          `INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, instance, evse_id, connector_id, value)
+           VALUES (?, ?, ?, 'Actual', '', 0, 0, ?)
+           ON CONFLICT(chargepoint_id, component, variable, attribute, instance, evse_id, connector_id) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
         ).run(cp.id, component, variable, String(value));
         return res.json({ result });
       } catch (e) {

@@ -2002,22 +2002,35 @@ function upsertChargepointVariable(
   variable,
   attribute,
   value,
-  readonly = 0
+  readonly = 0,
+  instance = '',
+  evseId = 0,
+  connectorId = 0
 ) {
   const attr = attribute || 'Actual';
   const existing = db
     .prepare(
-      'SELECT id FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?'
+      'SELECT id FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ? AND instance = ? AND evse_id = ? AND connector_id = ?'
     )
-    .get(chargepointId, component, variable, attr);
+    .get(chargepointId, component, variable, attr, instance, evseId, connectorId);
   if (existing) {
     db.prepare(
       "UPDATE chargepoint_variables SET value = ?, readonly = ?, updated_at = datetime('now') WHERE id = ?"
     ).run(value ?? null, readonly, existing.id);
   } else {
     db.prepare(
-      'INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value, readonly) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(chargepointId, component, variable, attr, value ?? null, readonly);
+      'INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value, readonly, instance, evse_id, connector_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      chargepointId,
+      component,
+      variable,
+      attr,
+      value ?? null,
+      readonly,
+      instance,
+      evseId,
+      connectorId
+    );
   }
 }
 

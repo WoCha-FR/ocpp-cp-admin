@@ -1433,7 +1433,7 @@ describe('ocpp-server-201 — NotifyReport', () => {
       ],
     });
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
-      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '300', 0
+      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '300', 0, '', 0, 0
     );
   });
 
@@ -1450,7 +1450,7 @@ describe('ocpp-server-201 — NotifyReport', () => {
       ],
     });
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
-      1, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1
+      1, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1, '', 0, 0
     );
   });
 
@@ -1467,7 +1467,58 @@ describe('ocpp-server-201 — NotifyReport', () => {
       ],
     });
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
-      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60', 0
+      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60', 0, '', 0, 0
+    );
+  });
+
+  it('passes variable.instance to upsertChargepointVariable', () => {
+    client._handlers['NotifyReport']({
+      seqNo: 0,
+      tbc: false,
+      reportData: [
+        {
+          component: { name: 'DeviceDataCtrlr' },
+          variable: { name: 'BytesPerMessage', instance: 'GetReport' },
+          variableAttribute: [{ type: 'Actual', value: '1024' }],
+        },
+      ],
+    });
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '1024', 0, 'GetReport', 0, 0
+    );
+  });
+
+  it('passes component.evse.id to upsertChargepointVariable', () => {
+    client._handlers['NotifyReport']({
+      seqNo: 0,
+      tbc: false,
+      reportData: [
+        {
+          component: { name: 'Connector', evse: { id: 1 } },
+          variable: { name: 'AvailabilityState' },
+          variableAttribute: [{ type: 'Actual', value: 'Available' }],
+        },
+      ],
+    });
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'Connector', 'AvailabilityState', 'Actual', 'Available', 0, '', 1, 0
+    );
+  });
+
+  it('passes component.evse.connectorId to upsertChargepointVariable', () => {
+    client._handlers['NotifyReport']({
+      seqNo: 0,
+      tbc: false,
+      reportData: [
+        {
+          component: { name: 'Connector', evse: { id: 1, connectorId: 2 } },
+          variable: { name: 'AvailabilityState' },
+          variableAttribute: [{ type: 'Actual', value: 'Available' }],
+        },
+      ],
+    });
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'Connector', 'AvailabilityState', 'Actual', 'Available', 0, '', 1, 2
     );
   });
 
