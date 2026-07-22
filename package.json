@@ -48,17 +48,17 @@
   "type": "commonjs",
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.1",
     "better-sqlite3-session-store": "^0.1.0",
     "chart.js": "^4.5.1",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.5.2",
+    "express-rate-limit": "^8.6.0",
     "express-session": "^1.19.0",
     "express-validator": "^7.3.2",
     "flatpickr": "^4.6.13",
     "helmet": "^8.3.0",
     "i18next": "^26.3.6",
-    "marked": "^18.0.6",
+    "marked": "^18.0.7",
     "nodemailer": "^9.0.3",
     "ocpp-rpc": "2.1.2",
     "passport": "^0.7.0",
@@ -72,7 +72,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
-    "@secretlint/secretlint-rule-preset-recommend": "^13.0.2",
+    "@secretlint/secretlint-rule-preset-recommend": "^13.0.4",
     "cross-env": "^10.1.0",
     "eslint": "^10.7.0",
     "eslint-config-prettier": "^10.1.8",
@@ -80,15 +80,15 @@
     "globals": "^17.7.0",
     "jest": "^30.4.2",
     "jest-environment-node": "^30.3.0",
-    "prettier": "^3.9.5",
-    "secretlint": "^13.0.2",
+    "prettier": "^3.9.6",
+    "secretlint": "^13.0.4",
     "supertest": "^7.2.2"
   },
   "engines": {
     "node": ">=22.0.0"
   },
   "allowScripts": {
-    "better-sqlite3@12.11.1": true,
+    "better-sqlite3@13.0.1": true,
     "unrs-resolver@1.12.2": true
   }
 }

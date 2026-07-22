@@ -1,4 +1,15 @@
-FROM node:22-alpine3.23
+FROM node:22-alpine3.24 AS builder
+
+WORKDIR /app
+
+# better-sqlite3 13.x ships no musl prebuilt binary yet; compile it from source here
+# so the final stage stays free of build tools.
+RUN apk add --no-cache python3 make g++
+
+COPY package*.json ./
+RUN npm ci --omit=dev --no-audit --no-fund
+
+FROM node:22-alpine3.24
 
 LABEL org.opencontainers.image.title="ocpp-cp-admin" \
       org.opencontainers.image.description="Administration and monitoring dashboard for OCPP charge points" \
@@ -15,9 +26,8 @@ ENV NODE_ENV=production
 RUN addgroup -S app && adduser -S app -G app \
     && apk add --no-cache su-exec
 
-# Install runtime dependencies first for better layer caching.
 COPY --chown=app:app package*.json ./
-RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
+COPY --chown=app:app --from=builder /app/node_modules ./node_modules
 
 COPY --chown=app:app src ./src
 COPY --chown=app:app locales ./locales
