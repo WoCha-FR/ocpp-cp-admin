@@ -3168,6 +3168,37 @@ async function renderConnectors() {
                 : !isOnline
                   ? 'border-color: var(--gray-300); opacity: 0.7;'
                   : 'border-color: var(--warning);';
+        let beforeHtml = '';
+        let primaryHtml = '';
+        let afterHtml = '';
+        if (canStart) {
+          primaryHtml = `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                  ⚡ ${t('connectors.cStartCharge')}
+                </button>`;
+        } else if (isCharging && c.active_transaction_id) {
+          beforeHtml = `<div style="text-align:center;padding:4px 0 8px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>
+                    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:8px;font-size:13px;flex-wrap:wrap;">
+                      <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
+                      <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
+                    </div>`;
+          primaryHtml = `<button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                      ⏹ ${t('connectors.cStopCharge')}
+                    </button>`;
+          afterHtml = hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : '';
+        } else if (isFaulted || isUnavailable) {
+          primaryHtml = `<div style="text-align:center;padding:6px;color:var(--danger);font-size:13px;">⚠ ${chargeConnectorReason(c.cnstatus)}${c.error_code && c.error_code !== 'NoError' ? ' — ' + escapeHtml(c.error_code) : ''}</div>`;
+        } else if (!isOnline) {
+          primaryHtml = `<div style="text-align:center;padding:6px;color:var(--gray-500);font-size:13px;">⛓️‍💥 ${t('chargepoint.cpOffline')}</div>`;
+        } else if (isCharging) {
+          primaryHtml = `<div style="text-align:center;padding:6px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>`;
+          afterHtml = hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : '';
+        } else {
+          primaryHtml = `<div style="text-align:center;padding:6px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>`;
+          afterHtml = hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : '';
+        }
+        const unlockHtml = isOnline
+          ? `<button class="btn btn-purple btn-block" data-onclick="withBtn(this, () => mgrUnlockConnector(${c.chargepoint_id}, ${c.connector_id}, ${c.evse_id ?? 'null'}, '${c.ocpp_version || '1.6'}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">🔓 ${t('connectors.cUnlock')}</button>`
+          : '';
         return `
           <div class="connector-card" style="text-align:left;padding:14px 16px;${cardStyle}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:4px;">
@@ -3185,28 +3216,11 @@ async function renderConnectors() {
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">📍 ${escapeHtml(c.site_name || t('sites.siteNoSite'))}</div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
             <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${c.evse_id != null ? `${c.evse_name ? escapeHtml(c.evse_name) : 'EVSE ' + c.evse_id} · ${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}` : `${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}`}</div>
-            ${canStart
-            ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
-                  ⚡ ${t('connectors.cStartCharge')}
-                </button>`
-            : isCharging && c.active_transaction_id
-              ? `<div style="text-align:center;padding:4px 0 8px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>
-                    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:8px;font-size:13px;flex-wrap:wrap;">
-                      <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
-                      <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
-                    </div>
-                    <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
-                      ⏹ ${t('connectors.cStopCharge')}
-                    </button>
-                    ${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
-              : isFaulted || isUnavailable
-                ? `<div style="text-align:center;padding:6px;color:var(--danger);font-size:13px;">⚠ ${chargeConnectorReason(c.cnstatus)}${c.error_code && c.error_code !== 'NoError' ? ' — ' + escapeHtml(c.error_code) : ''}</div>`
-                : !isOnline
-                    ? `<div style="text-align:center;padding:6px;color:var(--gray-500);font-size:13px;">⛓️‍💥 ${t('chargepoint.cpOffline')}</div>`
-                    : isCharging
-                      ? `<div style="text-align:center;padding:6px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
-                      : `<div style="text-align:center;padding:6px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
-          }
+            ${beforeHtml}
+            ${isOnline
+              ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch;">${primaryHtml}${unlockHtml}</div>`
+              : primaryHtml}
+            ${afterHtml}
           </div>`;
       }).join('')}
       </div>
@@ -3247,6 +3261,27 @@ async function mgrStopCharge(chargepointId, transactionId, cpName, connId) {
       toast(`${t('dashboard.cnStopChargeOk', { cpName, connId })}`, 'success');
     } else {
       toast(`${t('dashboard.cnStopChargeKo', { status: data.result?.status || t('common.error') })}`, 'error');
+    }
+    setTimeout(() => renderConnectors(), 2000);
+  } catch (err) {
+    toast(`${t('common.error')}: ${err.message}`, 'error');
+  }
+}
+
+async function mgrUnlockConnector(chargepointId, connectorId, evseId, ocppVersion, cpName, connId) {
+  if (!await confirmDialog(t('dashboard.cnUnlockConnector', { cpName, connId }), { danger: true })) return;
+  try {
+    const params = ocppVersion === '2.0.1'
+      ? { evseId: evseId ?? connectorId, connectorId }
+      : { connectorId };
+    const data = await api('POST', `/chargepoints/${chargepointId}/command`, {
+      method: 'UnlockConnector',
+      params,
+    });
+    if (data.result && data.result.status === 'Unlocked') {
+      toast(`${t('dashboard.cnUnlockConnectorOk', { cpName, connId })}`, 'success');
+    } else {
+      toast(`${t('dashboard.cnUnlockConnectorKo', { status: data.result?.status || t('common.error') })}`, 'error');
     }
     setTimeout(() => renderConnectors(), 2000);
   } catch (err) {

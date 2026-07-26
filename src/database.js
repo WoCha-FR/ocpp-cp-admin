@@ -679,7 +679,7 @@ function getAllConnectorsGrouped(siteIds) {
   let query = `
     SELECT c.*, cp.identity as chargepoint_identity, cp.id as chargepoint_id,
            cp.cpname as chargepoint_name, cp.connected, cp.cpstatus as cp_status,
-           cp.mode,
+           cp.mode, cp.ocpp_version,
            s.sname as site_name, s.id as site_id,
            t.transaction_id as active_transaction_id, t.id_tag as active_id_tag,
            t.power as active_power, t.energy as active_energy,
