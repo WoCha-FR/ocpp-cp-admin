@@ -160,7 +160,7 @@ services:
   # ── Extraction des certificats Traefik → config/certs/ ─────
   # Surveille acme.json et copie les certs dès qu'ils sont émis ou renouvelés.
   cert-dumper-rsa:
-    image: ldez/traefik-certs-dumper:v2.11.0
+    image: ldez/traefik-certs-dumper:v2.11.4
     container_name: ocpp-cert-dumper-rsa
     restart: unless-stopped
     depends_on:
@@ -191,7 +191,7 @@ services:
       start_period: 5s
 
   cert-dumper-ecdsa:
-    image: ldez/traefik-certs-dumper:v2.11.0
+    image: ldez/traefik-certs-dumper:v2.11.4
     container_name: ocpp-cert-dumper-ecdsa
     restart: unless-stopped
     depends_on:
