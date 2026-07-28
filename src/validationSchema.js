@@ -51,7 +51,7 @@ const Site = {
   name: {
     in: ['body'],
     matches: { options: /^[a-zA-ZÀ-Ÿ0-9-_,.' ]*$/ },
-    isLength: { options: { min: 5, max: 75 } },
+    isLength: { options: { min: 3, max: 75 } },
     trim: true,
     errorMessage: 'VALIDATION_SITE_NAME',
   },
