@@ -165,15 +165,15 @@ services:
       - -c
       - |
         echo '#!/bin/sh' > /tmp/hook.sh
-        echo 'cp /dump/certs/cpadmin.local.crt /app/config/certs/rsa-server.crt' >> /tmp/hook.sh
-        echo 'cp /dump/private/cpadmin.local.key /app/config/certs/rsa-server.key' >> /tmp/hook.sh
-        echo 'chmod 644 /app/config/certs/rsa-server.crt /app/config/certs/rsa-server.key' >> /tmp/hook.sh
+        echo 'cp /dump/certs/cpadmin.local.crt /app/config/certs/rsa-server.crt || true' >> /tmp/hook.sh
+        echo 'cp /dump/private/cpadmin.local.key /app/config/certs/rsa-server.key || true' >> /tmp/hook.sh
+        echo 'chmod 644 /app/config/certs/rsa-server.crt /app/config/certs/rsa-server.key || true' >> /tmp/hook.sh
         chmod +x /tmp/hook.sh
         mkdir -p /dump /app/config/certs
         traefik-certs-dumper file --version v3 --source /traefik/acme-rsa.json --dest /dump
-        /tmp/hook.sh
-        exec traefik-certs-dumper file --watch --version v3 --source /traefik/acme-rsa.json --dest /dump --post-hook /tmp/hook.sh
+        /tmp/hook.sh || true
         touch /tmp/cert-ready
+        exec traefik-certs-dumper file --watch --version v3 --source /traefik/acme-rsa.json --dest /dump --post-hook /tmp/hook.sh
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/cert-ready"]
       interval: 2s
@@ -198,15 +198,15 @@ services:
       - -c
       - |
         echo '#!/bin/sh' > /tmp/hook.sh
-        echo 'cp /dump/certs/cpadmin.local.crt /app/config/certs/ecdsa-server.crt' >> /tmp/hook.sh
-        echo 'cp /dump/private/cpadmin.local.key /app/config/certs/ecdsa-server.key' >> /tmp/hook.sh
-        echo 'chmod 644 /app/config/certs/ecdsa-server.crt /app/config/certs/ecdsa-server.key' >> /tmp/hook.sh
+        echo 'cp /dump/certs/cpadmin.local.crt /app/config/certs/ecdsa-server.crt || true' >> /tmp/hook.sh
+        echo 'cp /dump/private/cpadmin.local.key /app/config/certs/ecdsa-server.key || true' >> /tmp/hook.sh
+        echo 'chmod 644 /app/config/certs/ecdsa-server.crt /app/config/certs/ecdsa-server.key || true' >> /tmp/hook.sh
         chmod +x /tmp/hook.sh
         mkdir -p /dump /app/config/certs
         traefik-certs-dumper file --version v3 --source /traefik/acme-ecdsa.json --dest /dump
-        /tmp/hook.sh
-        exec traefik-certs-dumper file --watch --version v3 --source /traefik/acme-ecdsa.json --dest /dump --post-hook /tmp/hook.sh
+        /tmp/hook.sh || true
         touch /tmp/cert-ready
+        exec traefik-certs-dumper file --watch --version v3 --source /traefik/acme-ecdsa.json --dest /dump --post-hook /tmp/hook.sh
     healthcheck:
       test: ["CMD", "test", "-f", "/tmp/cert-ready"]
       interval: 2s
@@ -263,6 +263,28 @@ services:
           echo "[cert-init] Certificat client créé : client.pem"
         else
           echo "[cert-init] Certificat client déjà présent, skip."
+        fi
+
+        if [ ! -f $$CERTS/rsa-server.crt ] || [ ! -f $$CERTS/rsa-server.key ]; then
+          echo "[cert-init] Génération d'un certificat serveur RSA temporaire (bootstrap)..."
+          openssl req -x509 -newkey rsa:2048 -sha256 -days 7 -nodes \
+            -keyout $$CERTS/rsa-server.key \
+            -out    $$CERTS/rsa-server.crt \
+            -subj   "/CN=bootstrap.local"
+          chmod 644 $$CERTS/rsa-server.crt $$CERTS/rsa-server.key
+        else
+          echo "[cert-init] Certificat serveur RSA déjà présent, skip."
+        fi
+
+        if [ ! -f $$CERTS/ecdsa-server.crt ] || [ ! -f $$CERTS/ecdsa-server.key ]; then
+          echo "[cert-init] Génération d'un certificat serveur ECDSA temporaire (bootstrap)..."
+          openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -sha256 -days 7 -nodes \
+            -keyout $$CERTS/ecdsa-server.key \
+            -out    $$CERTS/ecdsa-server.crt \
+            -subj   "/CN=bootstrap.local"
+          chmod 644 $$CERTS/ecdsa-server.crt $$CERTS/ecdsa-server.key
+        else
+          echo "[cert-init] Certificat serveur ECDSA déjà présent, skip."
         fi
 
   # ── Serveur FTP pour les diagnostics de bornes ─────────────
