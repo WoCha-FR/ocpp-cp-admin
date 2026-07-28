@@ -547,6 +547,14 @@ function register201Handlers(client, loggedHandle) {
       );
       db.upsertEvse(cp.id, evseId, cnstatus);
 
+      if (cp.cpstatus === 'Unavailable' || cp.cpstatus === 'Planned' || cp.cpstatus === null) {
+        const allConnectors = db.getConnectorsByChargepoint(cp.id);
+        const derivedStatus = allConnectors.some((c) => c.cnstatus !== 'Unavailable')
+          ? 'Available'
+          : 'Unavailable';
+        db.updateChargepointStatus(identity, derivedStatus, true);
+      }
+
       // Gestion des réservations
       if (cnstatus === 'Reserved') {
         db.activateReservationByEvse(cp.id, evseId);

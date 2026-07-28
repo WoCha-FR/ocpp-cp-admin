@@ -803,7 +803,7 @@ function shouldRefreshDetail(eventType, cpIdentity, cpId) {
   if (currentPage !== 'chargepointdetail') {
     const pageEvents = {
       dashboard:      ['chargepoint_connected', 'chargepoint_disconnected', 'status_update', 'transaction_start', 'transaction_stop', 'transaction_updated'],
-      chargepoints:   ['chargepoint_connected', 'chargepoint_disconnected', 'chargepoint_heartbeat', 'chargepoint_update', 'pending_chargepoint'],
+      chargepoints:   ['chargepoint_connected', 'chargepoint_disconnected', 'chargepoint_heartbeat', 'chargepoint_update', 'status_update', 'pending_chargepoint'],
       connectors:     ['chargepoint_connected', 'chargepoint_disconnected', 'status_update', 'transaction_updated', 'transaction_start', 'transaction_stop'],
       errorevents:    ['error_event'],
       transactions:   ['transaction_start', 'transaction_stop', 'transaction_updated'],

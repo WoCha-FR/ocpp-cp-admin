@@ -505,7 +505,7 @@ function register16Handlers(client, loggedHandle) {
           db.fulfillInUseReservationByConnector(cp.id, params.connectorId);
           broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
         }
-        if (cp.cpstatus === 'Unavailable') {
+        if (cp.cpstatus === 'Unavailable' || cp.cpstatus === 'Planned' || cp.cpstatus === null) {
           const allConnectors = db.getConnectorsByChargepoint(cp.id);
           const derivedStatus = allConnectors.some((c) => c.cnstatus !== 'Unavailable')
             ? 'Available'
