@@ -685,6 +685,7 @@
     .badge-call { background: var(--badge-blue-bg); color: var(--badge-blue-text); }
     .badge-callresult { background: var(--badge-green-bg); color: var(--badge-green-text); }
     .badge-callerror { background: var(--badge-red-bg); color: var(--badge-red-text); }
+    .badge-event { background: var(--badge-purple-bg); color: var(--badge-purple-text); }
     .badge-chargepoint { background: var(--badge-yellow-bg); color: var(--badge-yellow-text); }
     .badge-csms { background: var(--badge-blue-bg); color: var(--badge-blue-text); }
 

@@ -256,6 +256,33 @@ describe('database — Chargepoint initialization flags', () => {
   });
 });
 
+// ── touchLastHeartbeat ──
+describe('database — touchLastHeartbeat', () => {
+  let identity;
+
+  beforeAll(() => {
+    identity = 'TEST-TOUCH-HB';
+    db.upsertChargepoint(identity, { cpstatus: 'Available', connected: 1 });
+    db.getDb().prepare(
+      "UPDATE chargepoints SET last_heartbeat = '2000-01-01T00:00:00Z' WHERE identity = ?"
+    ).run(identity);
+  });
+
+  it('met à jour last_heartbeat vers maintenant', () => {
+    const before = new Date(db.getChargepointByIdentity(identity).last_heartbeat).getTime();
+    db.touchLastHeartbeat(identity);
+    const after = new Date(db.getChargepointByIdentity(identity).last_heartbeat).getTime();
+    expect(after).toBeGreaterThan(before);
+  });
+
+  it("ne modifie pas cpstatus ni connected", () => {
+    db.touchLastHeartbeat(identity);
+    const cp = db.getChargepointByIdentity(identity);
+    expect(cp.cpstatus).toBe('Available');
+    expect(cp.connected).toBe(1);
+  });
+});
+
 // ── Charging Profiles ──
 describe('database — Charging Profiles CRUD', () => {
   let cpId;
@@ -642,6 +669,61 @@ describe('database — Reservations CRUD', () => {
     expect(db.getReservationsByChargepoint(cascadeCp.id).length).toBe(1);
     db.deleteChargepoint(cascadeCp.id);
     expect(db.getReservationsByChargepoint(cascadeCp.id).length).toBe(0);
+  });
+
+  it('deleteReservation removes the row and returns the number of changes', () => {
+    const id = db.createReservation({
+      chargepoint_id: cpId,
+      connector_id: 9,
+      reservation_id: 9,
+      id_tag: 'TAG009',
+      expiry_date: EXPIRY,
+      created_by: userId,
+    });
+    db.updateReservationStatus(id, 'Expired');
+    const changes = db.deleteReservation(id);
+    expect(changes).toBe(1);
+    expect(db.getReservationById(id)).toBeUndefined();
+  });
+
+  it('deleteReservation returns 0 for an unknown id', () => {
+    expect(db.deleteReservation(999999)).toBe(0);
+  });
+});
+
+// ── Id Tags Events ──
+describe('database — Id Tags Events', () => {
+  let cpId, siteId;
+
+  beforeAll(() => {
+    const site = db.createSite('Site Id Tags Events', '1 Test Street');
+    siteId = site.id;
+    db.upsertChargepoint('CP-IDTAGEVT-TEST', { cpstatus: 'Available', connected: 0, site_id: siteId });
+    cpId = db.getChargepointByIdentity('CP-IDTAGEVT-TEST').id;
+  });
+
+  it('getIdTagEventById returns the event with the joined site_id', () => {
+    db.addIdTagEvent(cpId, 1, 'TAGEVT1', 'Blocked', 'expired', 'authorize');
+    const events = db.getIdTagEvents({ chargepoint_id: cpId });
+    const event = db.getIdTagEventById(events[0].id);
+    expect(event).toMatchObject({ id_tag: 'TAGEVT1', status: 'Blocked', site_id: siteId });
+  });
+
+  it('getIdTagEventById returns undefined for an unknown id', () => {
+    expect(db.getIdTagEventById(999999)).toBeUndefined();
+  });
+
+  it('deleteIdTagEvent removes the row and returns the number of changes', () => {
+    db.addIdTagEvent(cpId, 1, 'TAGEVT2', 'Blocked', 'expired', 'authorize');
+    const events = db.getIdTagEvents({ chargepoint_id: cpId, id_tag: 'TAGEVT2' });
+    const id = events[0].id;
+    const changes = db.deleteIdTagEvent(id);
+    expect(changes).toBe(1);
+    expect(db.getIdTagEventById(id)).toBeUndefined();
+  });
+
+  it('deleteIdTagEvent returns 0 for an unknown id', () => {
+    expect(db.deleteIdTagEvent(999999)).toBe(0);
   });
 });
 
@@ -1382,6 +1464,31 @@ describe('database — Error Events', () => {
     expect(events[0]).toHaveProperty('chargepoint_identity');
     expect(events[0].chargepoint_identity).toBe('EE-CP-001');
   });
+
+  it('getErrorEventById returns the event with the joined site_id', () => {
+    db.insertErrorEvent(cpId, 'disconnect', { ocpp_version: '1.6' });
+    const events = db.getErrorEvents({ chargepoint_id: cpId, event_type: 'disconnect' });
+    const event = db.getErrorEventById(events[0].id);
+    expect(event).toMatchObject({ event_type: 'disconnect' });
+    expect(event.site_id).toBeDefined();
+  });
+
+  it('getErrorEventById returns undefined for an unknown id', () => {
+    expect(db.getErrorEventById(999999)).toBeUndefined();
+  });
+
+  it('deleteErrorEvent removes the row and returns the number of changes', () => {
+    db.insertErrorEvent(cpId, 'heartbeat_timeout', { ocpp_version: '1.6' });
+    const events = db.getErrorEvents({ chargepoint_id: cpId, event_type: 'heartbeat_timeout' });
+    const id = events[0].id;
+    const changes = db.deleteErrorEvent(id);
+    expect(changes).toBe(1);
+    expect(db.getErrorEventById(id)).toBeUndefined();
+  });
+
+  it('deleteErrorEvent returns 0 for an unknown id', () => {
+    expect(db.deleteErrorEvent(999999)).toBe(0);
+  });
 });
 
 // ── Transaction Values (nouvelles métriques) ──
@@ -1535,6 +1642,38 @@ describe('database — upsertChargepointVariable', () => {
     const vars = db.getChargepointVariables(cpId);
     const v = vars.find((r) => r.component === 'SecurityCtrlr' && r.variable === 'CertificateEntries');
     expect(v.readonly).toBe(0);
+  });
+
+  it('keeps distinct instances of the same component/variable/attribute as separate rows', () => {
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '1024', 0, 'GetReport');
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '2048', 0, 'SetVariables');
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '4096', 0, 'GetVariables');
+    const vars = db
+      .getChargepointVariables(cpId)
+      .filter((r) => r.component === 'DeviceDataCtrlr' && r.variable === 'BytesPerMessage');
+    expect(vars.length).toBe(3);
+    expect(vars.map((v) => v.value).sort()).toEqual(['1024', '2048', '4096']);
+  });
+
+  it('keeps distinct evse_id/connector_id combinations as separate rows', () => {
+    db.upsertChargepointVariable(cpId, 'Connector', 'AvailabilityState', 'Actual', 'Available', 0, '', 1, 1);
+    db.upsertChargepointVariable(cpId, 'Connector', 'AvailabilityState', 'Actual', 'Occupied', 0, '', 1, 2);
+    const vars = db
+      .getChargepointVariables(cpId)
+      .filter((r) => r.component === 'Connector' && r.variable === 'AvailabilityState');
+    expect(vars.length).toBe(2);
+    expect(vars.find((v) => v.connector_id === 1).value).toBe('Available');
+    expect(vars.find((v) => v.connector_id === 2).value).toBe('Occupied');
+  });
+
+  it('updates the same row when instance/evse_id/connector_id match again', () => {
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '1024', 0, 'GetReport');
+    db.upsertChargepointVariable(cpId, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '9999', 0, 'GetReport');
+    const vars = db
+      .getChargepointVariables(cpId)
+      .filter((r) => r.component === 'DeviceDataCtrlr' && r.variable === 'BytesPerMessage' && r.instance === 'GetReport');
+    expect(vars.length).toBe(1);
+    expect(vars[0].value).toBe('9999');
   });
 });
 
@@ -1883,5 +2022,37 @@ describe('database — getTransactionFull', () => {
     });
     const result = db.getTransactionFull(txId);
     expect(result.has_values).toBe(1);
+  });
+});
+
+describe('database — updateChargepoint password handling', () => {
+  const bcrypt = require('bcryptjs');
+  let cpId;
+
+  beforeAll(() => {
+    const cp = db.createChargepoint('TESTPWDCP', 'Test PWD CP', 'initialpass', 1, null);
+    cpId = cp.id;
+  });
+
+  afterAll(() => {
+    db.deleteChargepoint(cpId);
+  });
+
+  it('hashes the new password when updating with a string', () => {
+    const updated = db.updateChargepoint(cpId, { password: 'newpassword' });
+    expect(updated.password).not.toBe('newpassword');
+    expect(bcrypt.compareSync('newpassword', updated.password)).toBe(true);
+  });
+
+  it('sets password to null when data.password === null', () => {
+    const updated = db.updateChargepoint(cpId, { password: null });
+    expect(updated.password).toBeNull();
+  });
+
+  it('preserves existing password when password key is absent from data', () => {
+    db.updateChargepoint(cpId, { password: 'preserved' });
+    const before = db.getChargepointById(cpId);
+    const updated = db.updateChargepoint(cpId, { identity: 'TESTPWDCP' });
+    expect(updated.password).toBe(before.password);
   });
 });

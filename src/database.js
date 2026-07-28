@@ -679,7 +679,7 @@ function getAllConnectorsGrouped(siteIds) {
   let query = `
     SELECT c.*, cp.identity as chargepoint_identity, cp.id as chargepoint_id,
            cp.cpname as chargepoint_name, cp.connected, cp.cpstatus as cp_status,
-           cp.mode,
+           cp.mode, cp.ocpp_version,
            s.sname as site_name, s.id as site_id,
            t.transaction_id as active_transaction_id, t.id_tag as active_id_tag,
            t.power as active_power, t.energy as active_energy,
@@ -1855,6 +1855,21 @@ function getIdTagEvents(filters = {}) {
   return db.prepare(query).all(...params);
 }
 
+function getIdTagEventById(id) {
+  return db
+    .prepare(
+      `SELECT ite.*, cp.site_id
+     FROM id_tags_events ite
+     LEFT JOIN chargepoints cp ON cp.id = ite.chargepoint_id
+     WHERE ite.id = ?`
+    )
+    .get(id);
+}
+
+function deleteIdTagEvent(id) {
+  return db.prepare('DELETE FROM id_tags_events WHERE id = ?').run(id).changes;
+}
+
 // ── Notification Preferences ──
 function getNotificationPreferences(userId) {
   return db
@@ -1987,22 +2002,35 @@ function upsertChargepointVariable(
   variable,
   attribute,
   value,
-  readonly = 0
+  readonly = 0,
+  instance = '',
+  evseId = 0,
+  connectorId = 0
 ) {
   const attr = attribute || 'Actual';
   const existing = db
     .prepare(
-      'SELECT id FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?'
+      'SELECT id FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ? AND instance = ? AND evse_id = ? AND connector_id = ?'
     )
-    .get(chargepointId, component, variable, attr);
+    .get(chargepointId, component, variable, attr, instance, evseId, connectorId);
   if (existing) {
     db.prepare(
       "UPDATE chargepoint_variables SET value = ?, readonly = ?, updated_at = datetime('now') WHERE id = ?"
     ).run(value ?? null, readonly, existing.id);
   } else {
     db.prepare(
-      'INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value, readonly) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(chargepointId, component, variable, attr, value ?? null, readonly);
+      'INSERT INTO chargepoint_variables (chargepoint_id, component, variable, attribute, value, readonly, instance, evse_id, connector_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(
+      chargepointId,
+      component,
+      variable,
+      attr,
+      value ?? null,
+      readonly,
+      instance,
+      evseId,
+      connectorId
+    );
   }
 }
 
@@ -2095,6 +2123,21 @@ function getErrorEvents(filters = {}) {
     params.push(limit, offset);
   }
   return db.prepare(query).all(...params);
+}
+
+function getErrorEventById(id) {
+  return db
+    .prepare(
+      `SELECT ee.*, cp.site_id
+     FROM error_events ee
+     LEFT JOIN chargepoints cp ON cp.id = ee.chargepoint_id
+     WHERE ee.id = ?`
+    )
+    .get(id);
+}
+
+function deleteErrorEvent(id) {
+  return db.prepare('DELETE FROM error_events WHERE id = ?').run(id).changes;
 }
 
 // ── Notification Log ──
@@ -2430,6 +2473,10 @@ function getExpiredActiveReservations(graceSeconds) {
     .all(`-${graceSeconds} seconds`);
 }
 
+function deleteReservation(id) {
+  return db.prepare('DELETE FROM reservations WHERE id = ?').run(id).changes;
+}
+
 function resetStateOnStartup() {
   const cpResult = db
     .prepare(
@@ -2475,6 +2522,12 @@ function resetConnectorsByChargepoint(cpId) {
   ).run(cpId);
 }
 
+function touchLastHeartbeat(identity) {
+  db.prepare(
+    "UPDATE chargepoints SET last_heartbeat = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE identity = ?"
+  ).run(identity);
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -2517,6 +2570,7 @@ module.exports = {
   deleteChargepoint,
   assignChargepointToSite,
   updateChargepointStatus,
+  touchLastHeartbeat,
   upsertConnector,
   getConnectorById,
   getConnectorsByChargepoint,
@@ -2574,6 +2628,8 @@ module.exports = {
   authorizeIdTag,
   addIdTagEvent,
   getIdTagEvents,
+  getIdTagEventById,
+  deleteIdTagEvent,
   getAvailableConnectorsForUser,
   getChargingKpi,
   getUserDashboardStats,
@@ -2617,10 +2673,13 @@ module.exports = {
   fulfillInUseReservationByEvse,
   fulfillReservationByEvseAndIdTag,
   getExpiredActiveReservations,
+  deleteReservation,
   resetStateOnStartup,
   resetConnectorsByChargepoint,
   insertErrorEvent,
   getErrorEvents,
+  getErrorEventById,
+  deleteErrorEvent,
   upsertEvse,
   getEvsesByChargepoint,
   updateEvseName,

@@ -14,13 +14,27 @@ const CSRF_COOKIE = 'XSRF-TOKEN';
 const CSRF_HEADER = 'x-xsrf-token';
 const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-// Événements fictifs utilisés dans les tests (subset représentatif)
-const MOCK_EVENTS = {
-  server_started: { defaultChannels: [] },
-  chargepoint_online: { defaultChannels: ['email'] },
-  transaction_started: { defaultChannels: ['email', 'webpush'] },
+// Événements fictifs utilisés dans les tests (subset représentatif, avec rôles
+// comme dans src/notifications.js pour pouvoir tester le filtrage par rôle cible)
+const MOCK_EVENT_DEFS = {
+  server_started: { roles: ['admin'], defaultChannels: [] },
+  chargepoint_online: { roles: ['admin', 'manager'], defaultChannels: ['email'] },
+  transaction_started: { roles: ['user'], defaultChannels: ['email', 'webpush'] },
 };
 const MOCK_CHANNELS = ['email', 'webpush', 'pushover'];
+
+// Miroir simplifié de notifications.getEventsForUser : un admin a tous les rôles,
+// un utilisateur classique n'a que le rôle "user" (pas de gestion de site dans ces tests).
+function getEventsForUser(user) {
+  const roles = user.role === 'admin' ? ['admin', 'manager', 'user'] : ['user'];
+  const result = {};
+  for (const [event, def] of Object.entries(MOCK_EVENT_DEFS)) {
+    if (roles.some((r) => def.roles.includes(r))) {
+      result[event] = { defaultChannels: def.defaultChannels };
+    }
+  }
+  return result;
+}
 
 function createApp() {
   const db = new Database(':memory:');
@@ -118,13 +132,11 @@ function createApp() {
     upsert(prefs);
   }
 
-  // Route GET /api/notifications/preferences — miroir de routes.js avec la logique B
-  app.get('/api/notifications/preferences', (req, res) => {
-    if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
-
-    const events = MOCK_EVENTS;
+  // Miroir de la fonction loadNotificationPreferences() de src/routes.js
+  function loadPreferencesForUser(user) {
+    const events = getEventsForUser(user);
     const channels = MOCK_CHANNELS;
-    const prefs = getPrefs(req.user.id);
+    const prefs = getPrefs(user.id);
 
     const eventsWithPrefs = new Set(prefs.map((p) => p.event_type));
     const missingPrefs = [];
@@ -140,11 +152,44 @@ function createApp() {
       }
     }
     if (missingPrefs.length > 0) {
-      upsertPrefsBulk(req.user.id, missingPrefs);
+      upsertPrefsBulk(user.id, missingPrefs);
     }
 
-    const allPrefs = missingPrefs.length > 0 ? getPrefs(req.user.id) : prefs;
-    res.json({ events, preferences: allPrefs, channels });
+    const allPrefs = missingPrefs.length > 0 ? getPrefs(user.id) : prefs;
+    return { events, preferences: allPrefs, channels };
+  }
+
+  // Route GET /api/notifications/preferences — miroir de routes.js avec la logique B
+  app.get('/api/notifications/preferences', (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    res.json(loadPreferencesForUser(req.user));
+  });
+
+  // Routes admin — miroir de GET/PUT /api/users/:id/notifications/preferences de routes.js
+  app.get('/api/users/:id/notifications/preferences', (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
+    const targetId = Number(req.params.id);
+    const target = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+    res.json(loadPreferencesForUser(target));
+  });
+
+  app.put('/api/users/:id/notifications/preferences', (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    if (req.user.role !== 'admin') return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
+    const targetId = Number(req.params.id);
+    const target = db.prepare('SELECT * FROM users WHERE id = ?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+    const { preferences } = req.body;
+    if (!Array.isArray(preferences)) return res.status(400).json({ error: 'ERR_USERPREF_TABLE' });
+    const allowedEvents = getEventsForUser(target);
+    const invalid = preferences.filter((p) => !allowedEvents[p.event_type]);
+    if (invalid.length > 0) {
+      return res.status(403).json({ error: 'ERR_UNAUTHORIZED_EVENTS' });
+    }
+    upsertPrefsBulk(targetId, preferences);
+    res.json({ ok: true });
   });
 
   return { app, db };
@@ -202,7 +247,7 @@ describe('GET /api/notifications/preferences', () => {
     const after = db
       .prepare('SELECT * FROM notification_preferences WHERE user_id = ?')
       .all(user.id);
-    const expectedCount = Object.keys(MOCK_EVENTS).length * MOCK_CHANNELS.length;
+    const expectedCount = Object.keys(MOCK_EVENT_DEFS).length * MOCK_CHANNELS.length;
     expect(after).toHaveLength(expectedCount);
   });
 
@@ -300,7 +345,90 @@ describe('GET /api/notifications/preferences', () => {
     const prefs = db
       .prepare('SELECT * FROM notification_preferences WHERE user_id = ?')
       .all(user.id);
-    const expectedCount = Object.keys(MOCK_EVENTS).length * MOCK_CHANNELS.length;
+    const expectedCount = Object.keys(MOCK_EVENT_DEFS).length * MOCK_CHANNELS.length;
     expect(prefs).toHaveLength(expectedCount);
+  });
+});
+
+describe('Admin : GET/PUT /api/users/:id/notifications/preferences', () => {
+  it('GET retourne 401 si non authentifié', async () => {
+    const res = await request(app).get('/api/users/1/notifications/preferences');
+    expect(res.status).toBe(401);
+  });
+
+  it('GET retourne 403 si non admin', async () => {
+    const admin = db.prepare("SELECT * FROM users WHERE useremail = 'admin@test.com'").get();
+    const agent = request.agent(app);
+    await loginAs(agent, 'user@test.com', 'User!1234');
+    const res = await agent.get(`/api/users/${admin.id}/notifications/preferences`);
+    expect(res.status).toBe(403);
+  });
+
+  it('GET retourne 404 pour un utilisateur inconnu', async () => {
+    const agent = request.agent(app);
+    await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.get('/api/users/999999/notifications/preferences');
+    expect(res.status).toBe(404);
+  });
+
+  it("admin peut lire les préférences d'un autre utilisateur (matérialisées pour la cible, pas pour l'admin)", async () => {
+    const admin = db.prepare("SELECT * FROM users WHERE useremail = 'admin@test.com'").get();
+    const target = db.prepare("SELECT * FROM users WHERE useremail = 'user@test.com'").get();
+
+    const agent = request.agent(app);
+    await loginAs(agent, 'admin@test.com', 'Admin!123');
+    const res = await agent.get(`/api/users/${target.id}/notifications/preferences`);
+
+    expect(res.status).toBe(200);
+    // La cible ('user') ne voit que les événements de rôle 'user'
+    expect(Object.keys(res.body.events)).toEqual(['transaction_started']);
+
+    const targetPrefs = db
+      .prepare('SELECT * FROM notification_preferences WHERE user_id = ?')
+      .all(target.id);
+    expect(targetPrefs.length).toBeGreaterThan(0);
+
+    // Les préférences de l'admin lui-même ne doivent pas avoir été matérialisées
+    const adminPrefs = db
+      .prepare('SELECT * FROM notification_preferences WHERE user_id = ?')
+      .all(admin.id);
+    expect(adminPrefs).toHaveLength(0);
+  });
+
+  it("admin peut modifier les préférences d'un autre utilisateur, persistées pour le bon user_id", async () => {
+    const target = db.prepare("SELECT * FROM users WHERE useremail = 'user@test.com'").get();
+
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent, 'admin@test.com', 'Admin!123');
+
+    const res = await agent
+      .put(`/api/users/${target.id}/notifications/preferences`)
+      .set(CSRF_HEADER, csrf)
+      .send({ preferences: [{ event_type: 'transaction_started', channel: 'email', enabled: false }] });
+
+    expect(res.status).toBe(200);
+
+    const pref = db
+      .prepare(
+        'SELECT * FROM notification_preferences WHERE user_id = ? AND event_type = ? AND channel = ?'
+      )
+      .get(target.id, 'transaction_started', 'email');
+    expect(pref.enabled).toBe(0);
+  });
+
+  it("rejette les event_type hors du rôle effectif de l'utilisateur ciblé", async () => {
+    const target = db.prepare("SELECT * FROM users WHERE useremail = 'user@test.com'").get();
+
+    const agent = request.agent(app);
+    const csrf = await loginAs(agent, 'admin@test.com', 'Admin!123');
+
+    // chargepoint_online est réservé aux rôles admin/manager, pas au rôle 'user' de la cible
+    const res = await agent
+      .put(`/api/users/${target.id}/notifications/preferences`)
+      .set(CSRF_HEADER, csrf)
+      .send({ preferences: [{ event_type: 'chargepoint_online', channel: 'email', enabled: true }] });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('ERR_UNAUTHORIZED_EVENTS');
   });
 });

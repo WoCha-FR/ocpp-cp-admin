@@ -131,12 +131,15 @@ CREATE TABLE IF NOT EXISTS chargepoint_variables (
   component      TEXT NOT NULL,
   variable       TEXT NOT NULL,
   attribute      TEXT NOT NULL DEFAULT 'Actual',  -- Actual | Target | MinSet | MaxSet
+  instance       TEXT NOT NULL DEFAULT '',
+  evse_id        INTEGER NOT NULL DEFAULT 0,
+  connector_id   INTEGER NOT NULL DEFAULT 0,
   value          TEXT,
   readonly       INTEGER DEFAULT 0,
   is_override    INTEGER NOT NULL DEFAULT 0,
   updated_at     TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE,
-  UNIQUE (chargepoint_id, component, variable, attribute)
+  UNIQUE (chargepoint_id, component, variable, attribute, instance, evse_id, connector_id)
 );
 
 CREATE TABLE IF NOT EXISTS chargepoint_init_config (
@@ -229,8 +232,8 @@ CREATE TABLE IF NOT EXISTS transactions_values (
 CREATE TABLE IF NOT EXISTS ocpp_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   chargepoint_id INTEGER NOT NULL,
-  origin TEXT NOT NULL CHECK(origin IN ('chargepoint','csms')),
-  message_type TEXT NOT NULL CHECK(message_type IN ('CALL','CALLRESULT','CALLERROR')),
+  origin TEXT NOT NULL CHECK(origin IN ('chargepoint','csms','system')),
+  message_type TEXT NOT NULL CHECK(message_type IN ('CALL','CALLRESULT','CALLERROR','EVENT')),
   action TEXT,
   payload TEXT,
   timestamp TEXT DEFAULT (datetime('now')),

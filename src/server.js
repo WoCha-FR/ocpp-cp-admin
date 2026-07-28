@@ -485,8 +485,18 @@ function reloadCerts() {
       logOCPP.info('OCPP WSS: TLS certificates hot-reloaded');
     }
   } catch (err) {
-    logger.error('Failed to hot-reload TLS certificates:', err);
-    gracefulShutdown('CERT_RELOAD_ERROR');
+    if (err.code === 'EACCES') {
+      logger.error(
+        `Failed to hot-reload TLS certificates: permission denied on "${err.path}". ` +
+          `The app user cannot read the file. Fix with: chmod o+r "${err.path}". ` +
+          `Server keeps running with existing certificates.`
+      );
+    } else {
+      logger.error(
+        'Failed to hot-reload TLS certificates (server keeps running with existing certificates):',
+        err
+      );
+    }
   }
 }
 

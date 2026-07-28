@@ -37,6 +37,7 @@ if [ ! -f /app/config/config.json ]; then
 fi
 
 # Fix ownership on mounted volumes so the app user can write.
-chown -R app:app /app/config /app/logs /app/public/img /app/locales-custom 2>/dev/null || true
+chown -R app:app /app/config /app/logs /app/public/img /app/locales-custom 2>/dev/null || \
+  echo "[entrypoint] Warning: could not fix ownership on some directories — certificate files may be unreadable by the app user. Run: chmod o+r on your cert/key files, or remove ':ro' from the certs volume mount."
 
 exec su-exec app "$@"

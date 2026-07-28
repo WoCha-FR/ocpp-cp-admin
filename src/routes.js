@@ -671,6 +671,44 @@ router.put(
   }
 );
 
+// ── Préférences de notification (administration) ──
+router.get(
+  '/users/:id/notifications/preferences',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const targetId = Number(req.params.id);
+    const target = db.getUserById(targetId);
+    if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+    res.json(loadNotificationPreferences(target));
+  }
+);
+
+router.put(
+  '/users/:id/notifications/preferences',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam, schema.NotificationPreferences),
+  (req, res) => {
+    const targetId = Number(req.params.id);
+    const target = db.getUserById(targetId);
+    if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+    const { preferences } = req.body;
+    if (!Array.isArray(preferences)) {
+      return res.status(400).json({ error: 'ERR_USERPREF_TABLE' });
+    }
+    const allowedEvents = notifications.getEventsForUser(target);
+    const invalid = preferences.filter((p) => !allowedEvents[p.event_type]);
+    if (invalid.length > 0) {
+      return res.status(403).json({
+        error: 'ERR_UNAUTHORIZED_EVENTS',
+        params: { events: invalid.map((p) => p.event_type).join(', ') },
+      });
+    }
+    db.setNotificationPreferencesBulk(targetId, preferences);
+    res.json({ ok: true });
+  }
+);
+
 // ══════════════════════════════════════
 //  CHARGEPOINTS
 // ══════════════════════════════════════
@@ -1243,7 +1281,7 @@ router.post(
         });
       }
       const status = result?.status ?? 'Rejected';
-      if (status !== 'Accepted') return res.status(422).json({ status });
+      if (status !== 'Accepted') return res.json({ status });
       const id = db.createReservation({
         chargepoint_id: cp.id,
         connector_id: cp.ocpp_version === '2.0.1' ? null : connector_id,
@@ -1292,6 +1330,34 @@ router.delete(
     } catch (e) {
       errorResponse(res, 500, e.message);
     }
+  }
+);
+
+router.delete(
+  '/reservations/:reservationId/delete',
+  requireManager,
+  ...validateSchema(schema.ReservationIdParam),
+  (req, res) => {
+    const reservation = db.getReservationById(Number(req.params.reservationId));
+    if (!reservation) return res.status(404).json({ error: 'ERR_RESERVATION_NOT_FOUND' });
+    const cp = db.getChargepointById(reservation.chargepoint_id);
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    if (
+      reservation.status === 'Pending' ||
+      reservation.status === 'Active' ||
+      reservation.status === 'InUse'
+    ) {
+      return res.status(400).json({ error: 'ERR_RESERVATION_NOT_TERMINATED' });
+    }
+    db.deleteReservation(reservation.id);
+    broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
+    res.json({ ok: true });
   }
 );
 
@@ -1497,7 +1563,7 @@ router.post(
     if (client.protocol === 'ocpp2.0.1') {
       try {
         const result = await callClient(cp.identity, 'GetBaseReport', {
-          requestId: Date.now(),
+          requestId: Math.floor(Date.now() / 1000) % 2147483647,
           reportBase: 'FullInventory',
         });
         return res.json({ result, config: db.getChargepointVariables(cp.id) });
@@ -1558,8 +1624,35 @@ router.post(
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
 
-    if (!getConnectedClients().has(cp.identity))
-      return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+    const client = getConnectedClients().get(cp.identity);
+    if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
+
+    if (client.protocol === 'ocpp2.0.1') {
+      const dotIdx = key.indexOf('.');
+      if (dotIdx === -1) return res.status(400).json({ error: 'ERR_INVALID_KEY_FORMAT' });
+      const component = key.slice(0, dotIdx);
+      const variable = key.slice(dotIdx + 1);
+      try {
+        const result = await callClient(cp.identity, 'GetVariables', {
+          getVariableData: [
+            {
+              component: { name: component },
+              variable: { name: variable },
+              attributeType: 'Actual',
+            },
+          ],
+        });
+        const r = result?.getVariableResult?.[0];
+        const found = r?.attributeStatus === 'Accepted';
+        return res.json({
+          found,
+          entry: found ? { key, value: r.attributeValue ?? '' } : null,
+          unknown: found ? [] : [key],
+        });
+      } catch (e) {
+        return errorResponse(res, 500, e.message);
+      }
+    }
 
     try {
       const result = await callClient(cp.identity, 'GetConfiguration', { key: [key] });
@@ -2403,6 +2496,27 @@ router.get(
   }
 );
 
+router.delete(
+  '/id-tags-events/:id',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const existing = db.getIdTagEventById(Number(req.params.id));
+    if (!existing) return res.status(404).json({ error: 'ERR_EVENT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedSiteIds = getUserManagedSiteIds(req);
+      if (
+        managedSiteIds !== null &&
+        (!existing.site_id || !managedSiteIds.includes(existing.site_id))
+      ) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    db.deleteIdTagEvent(existing.id);
+    res.json({ ok: true });
+  }
+);
+
 // ══════════════════════════════════════
 //  ERROR EVENTS
 // ══════════════════════════════════════
@@ -2427,6 +2541,27 @@ router.get(
     const siteIds = getUserSiteIds(req);
     if (siteIds !== null) filters.site_ids = siteIds;
     res.json(db.getErrorEvents(filters));
+  }
+);
+
+router.delete(
+  '/error-events/:id',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const existing = db.getErrorEventById(Number(req.params.id));
+    if (!existing) return res.status(404).json({ error: 'ERR_EVENT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedSiteIds = getUserManagedSiteIds(req);
+      if (
+        managedSiteIds !== null &&
+        (!existing.site_id || !managedSiteIds.includes(existing.site_id))
+      ) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    db.deleteErrorEvent(existing.id);
+    res.json({ ok: true });
   }
 );
 
@@ -2834,14 +2969,13 @@ router.put('/user/profile', requireAuth, checkSchema(schema.UserProfile), (req, 
 //  NOTIFICATIONS
 // ══════════════════════════════════════
 
-// Récupérer les événements disponibles et les préférences de l'utilisateur connecté
-router.get('/notifications/preferences', requireAuth, (req, res) => {
-  const events = notifications.getEventsForUser(req.user);
-  const prefs = db.getNotificationPreferences(req.user.id);
+// Construit les événements/préférences/canaux d'un utilisateur, en matérialisant
+// en DB les préférences par défaut pour les événements sans entrée existante.
+function loadNotificationPreferences(user) {
+  const events = notifications.getEventsForUser(user);
   const channels = notifications.getAvailableChannels();
-  const subscriptions = db.getPushSubscriptions(req.user.id);
+  const prefs = db.getNotificationPreferences(user.id);
 
-  // Matérialiser les préférences par défaut en DB pour les événements sans entrée
   const eventsWithPrefs = new Set(prefs.map((p) => p.event_type));
   const missingPrefs = [];
   for (const [eventType, eventDef] of Object.entries(events)) {
@@ -2856,13 +2990,20 @@ router.get('/notifications/preferences', requireAuth, (req, res) => {
     }
   }
   if (missingPrefs.length > 0) {
-    db.setNotificationPreferencesBulk(req.user.id, missingPrefs);
+    db.setNotificationPreferencesBulk(user.id, missingPrefs);
   }
 
-  const allPrefs = missingPrefs.length > 0 ? db.getNotificationPreferences(req.user.id) : prefs;
+  const allPrefs = missingPrefs.length > 0 ? db.getNotificationPreferences(user.id) : prefs;
+  return { events, preferences: allPrefs, channels };
+}
+
+// Récupérer les événements disponibles et les préférences de l'utilisateur connecté
+router.get('/notifications/preferences', requireAuth, (req, res) => {
+  const { events, preferences, channels } = loadNotificationPreferences(req.user);
+  const subscriptions = db.getPushSubscriptions(req.user.id);
   res.json({
     events,
-    preferences: allPrefs,
+    preferences,
     channels,
     hasPushSubscription: subscriptions.length > 0,
   });

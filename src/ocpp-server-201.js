@@ -160,6 +160,7 @@ function extractMeterEnergy(meterValue = []) {
 }
 
 const initSeqVersions201 = new Map();
+const pendingNotifyReportWaiters = new Map(); // clé: `${identity}_${requestId}` → resolve fn
 
 function isDisconnectionError(e) {
   const msg = e.message || '';
@@ -229,9 +230,11 @@ function register201Handlers(client, loggedHandle) {
   const cpRecord = db.getChargepointByIdentity(identity);
   const chargepointId = cpRecord ? cpRecord.id : null;
   let pendingStatusAfterBootCallback = null;
+  let refreshTimer = null;
 
   // ── BootNotification ──
   loggedHandle('BootNotification', (params) => {
+    clearTimeout(refreshTimer);
     const cs = params.chargingStation || {};
     const modem = cs.modem || {};
 
@@ -293,12 +296,16 @@ function register201Handlers(client, loggedHandle) {
           }
         }
 
-        // Step 3/4 — GetBaseReport (synchronise l'état courant en DB via NotifyReport)
+        // Step 3/5 — GetBaseReport (synchronise l'état courant en DB via NotifyReport)
         if (isSuperseded()) return;
+        const baseReportRequestId = Math.floor(Date.now() / 1000) % 2147483647;
+        const notifyReportDone = new Promise((resolve) => {
+          pendingNotifyReportWaiters.set(`${identity}_${baseReportRequestId}`, resolve);
+        });
         try {
           logger.debug(`[InitSeq201] ${identity} step 3/5 — GetBaseReport`);
           await callClient201(identity, 'GetBaseReport', {
-            requestId: Date.now(),
+            requestId: baseReportRequestId,
             reportBase: 'FullInventory',
           });
         } catch (e) {
@@ -308,6 +315,26 @@ function register201Handlers(client, loggedHandle) {
             lastFailedStep = 'GetBaseReport';
           }
         }
+        if (!disconnectedDuringInit && !isSuperseded()) {
+          let timeoutId;
+          try {
+            logger.debug(`[InitSeq201] ${identity} en attente des NotifyReport…`);
+            await Promise.race([
+              notifyReportDone,
+              new Promise((_, reject) => {
+                timeoutId = setTimeout(
+                  () => reject(new Error('NotifyReport timeout (30s)')),
+                  30000
+                );
+              }),
+            ]);
+          } catch (e) {
+            logger.warn(`[InitSeq201] ${identity} ${e.message} — on continue`);
+          } finally {
+            clearTimeout(timeoutId);
+          }
+        }
+        pendingNotifyReportWaiters.delete(`${identity}_${baseReportRequestId}`);
 
         // Step 4/4 — SetVariables (application des variables initiales)
         if (isSuperseded()) return;
@@ -435,7 +462,6 @@ function register201Handlers(client, loggedHandle) {
 
   // ── Heartbeat ──
   loggedHandle('Heartbeat', (_params) => {
-    db.updateChargepointStatus(identity, undefined, true);
     const cp = db.getChargepointByIdentity(identity);
     broadcast(
       'chargepoint_heartbeat',
@@ -489,6 +515,7 @@ function register201Handlers(client, loggedHandle) {
           pendingRemoteStartTimer.unref();
 
           callClient201(identity, 'RequestStartTransaction', {
+            remoteStartId: Math.floor(Math.random() * 2147483647),
             evseId,
             idToken: { idToken: idTag, type: 'ISO14443' },
           })
@@ -536,8 +563,6 @@ function register201Handlers(client, loggedHandle) {
         db.fulfillInUseReservationByEvse(cp.id, evseId);
         broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
-
-      db.updateChargepointStatus(identity, undefined, true);
 
       // Transaction orpheline : borne redevenue Available sans TransactionEvent Ended
       const activeTx = db
@@ -1183,11 +1208,24 @@ function register201Handlers(client, loggedHandle) {
       const component = reportData.component?.name || null;
       const variable = reportData.variable?.name || null;
       if (!component || !variable) continue;
+      const instance = reportData.variable?.instance || '';
+      const evseId = reportData.component?.evse?.id ?? 0;
+      const connectorId = reportData.component?.evse?.connectorId ?? 0;
       for (const attrProp of reportData.variableAttribute || []) {
         const attribute = attrProp.type || 'Actual';
         const value = attrProp.value ?? null;
         const readonly = attrProp.mutability === 'ReadOnly' ? 1 : 0;
-        db.upsertChargepointVariable(cp.id, component, variable, attribute, value, readonly);
+        db.upsertChargepointVariable(
+          cp.id,
+          component,
+          variable,
+          attribute,
+          value,
+          readonly,
+          instance,
+          evseId,
+          connectorId
+        );
       }
     }
 
@@ -1195,6 +1233,12 @@ function register201Handlers(client, loggedHandle) {
       db.updateChargepointFeatures201(cp.id);
       broadcast('config_refreshed', { chargepointId: cp.id, identity }, cp.site_id ?? null);
       logger.info(`[2.0.1] NotifyReport complete for ${identity}`);
+      const waiterKey = `${identity}_${params.requestId}`;
+      const resolve = pendingNotifyReportWaiters.get(waiterKey);
+      if (resolve) {
+        pendingNotifyReportWaiters.delete(waiterKey);
+        resolve();
+      }
     }
     return {};
   });
@@ -1290,15 +1334,26 @@ function register201Handlers(client, loggedHandle) {
 
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {
-    const refreshTimer = setTimeout(async () => {
+    let cancelled = false;
+    refreshTimer = setTimeout(async () => {
       const current = db.getChargepointByIdentity(identity);
       if (!current || !current.connected || current.cpstatus) return;
 
       logger.info(
         `[StateRefresh201] ${identity}: reconnecté sans BootNotification, envoi TriggerMessage`
       );
+      const waitUnref = (ms) =>
+        new Promise((r) => {
+          const t = setTimeout(r, ms);
+          t.unref();
+        });
+
+      // BootNotification : exception = WS cassé → bail out ; Rejected = état transitoire → retry
+      let bootResult;
       try {
-        await callClient201(identity, 'TriggerMessage', { requestedMessage: 'BootNotification' });
+        bootResult = await callClient201(identity, 'TriggerMessage', {
+          requestedMessage: 'BootNotification',
+        });
       } catch (e) {
         logger.warn(
           `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) échoué: ${e.message}`
@@ -1306,38 +1361,88 @@ function register201Handlers(client, loggedHandle) {
         return;
       }
 
-      const statusReceived = await new Promise((resolve) => {
-        const timer = setTimeout(() => {
-          pendingStatusAfterBootCallback = null;
-          resolve(false);
-        }, 10000);
-        timer.unref();
-        pendingStatusAfterBootCallback = () => {
-          clearTimeout(timer);
-          resolve(true);
-        };
-      });
+      if (bootResult?.status !== 'Accepted') {
+        logger.info(
+          `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) ${bootResult?.status} — retry dans 15s`
+        );
+        await waitUnref(15000);
+        if (cancelled) return;
+        if (!db.getChargepointByIdentity(identity)?.connected) return;
+        try {
+          bootResult = await callClient201(identity, 'TriggerMessage', {
+            requestedMessage: 'BootNotification',
+          });
+        } catch (e) {
+          logger.warn(
+            `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) retry échoué: ${e.message}`
+          );
+          return;
+        }
+      }
+
+      const skipStatusWait = bootResult?.status !== 'Accepted';
+      if (skipStatusWait) {
+        logger.info(
+          `[StateRefresh201] ${identity}: TriggerMessage(BootNotification) ${bootResult?.status} — skip attente StatusNotification`
+        );
+      }
+
+      if (!skipStatusWait) {
+        const statusReceived = await new Promise((resolve) => {
+          const timer = setTimeout(() => {
+            pendingStatusAfterBootCallback = null;
+            resolve(false);
+          }, 10000);
+          timer.unref();
+          pendingStatusAfterBootCallback = () => {
+            clearTimeout(timer);
+            resolve(true);
+          };
+        });
+
+        if (!db.getChargepointByIdentity(identity)?.connected) return;
+
+        if (statusReceived) {
+          logger.info(
+            `[StateRefresh201] ${identity}: StatusNotification auto-reçu, skip TriggerMessage(StatusNotification)`
+          );
+          return;
+        }
+      }
 
       if (!db.getChargepointByIdentity(identity)?.connected) return;
 
-      if (statusReceived) {
-        logger.info(
-          `[StateRefresh201] ${identity}: StatusNotification auto-reçu, skip TriggerMessage(StatusNotification)`
-        );
-        return;
-      }
+      // StatusNotification : exceptions catchées, retry sur Rejected
+      const tryStatus = async () => {
+        try {
+          return await callClient201(identity, 'TriggerMessage', {
+            requestedMessage: 'StatusNotification',
+          });
+        } catch (e) {
+          logger.warn(
+            `[StateRefresh201] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`
+          );
+          return null;
+        }
+      };
 
-      try {
-        await callClient201(identity, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
-      } catch (e) {
-        logger.warn(
-          `[StateRefresh201] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`
+      const statusResult = await tryStatus();
+      if (statusResult?.status !== 'Accepted') {
+        logger.info(
+          `[StateRefresh201] ${identity}: TriggerMessage(StatusNotification) ${statusResult?.status} — retry dans 15s`
         );
+        await waitUnref(15000);
+        if (cancelled) return;
+        if (!db.getChargepointByIdentity(identity)?.connected) return;
+        await tryStatus();
       }
-    }, 8000);
+    }, 20000);
     refreshTimer.unref();
 
-    client.once('close', () => clearTimeout(refreshTimer));
+    client.once('close', () => {
+      clearTimeout(refreshTimer);
+      cancelled = true;
+    });
   }
 }
 

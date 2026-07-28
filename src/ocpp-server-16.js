@@ -207,9 +207,11 @@ function register16Handlers(client, loggedHandle) {
   const cpRecord = db.getChargepointByIdentity(identity);
   const chargepointId = cpRecord ? cpRecord.id : null;
   let pendingStatusAfterBootCallback = null;
+  let refreshTimer = null;
 
   // ── BootNotification ──
   loggedHandle('BootNotification', (params) => {
+    clearTimeout(refreshTimer);
     const safeVendor = sanitizeText(params.chargePointVendor, 25);
     const safeModel = sanitizeText(params.chargePointModel, 20);
     const safeSerial = sanitizeText(params.chargePointSerialNumber, 25);
@@ -438,7 +440,6 @@ function register16Handlers(client, loggedHandle) {
 
   // ── Heartbeat ──
   loggedHandle('Heartbeat', (_params) => {
-    db.updateChargepointStatus(identity, undefined, true);
     const cp = db.getChargepointByIdentity(identity);
     broadcast(
       'chargepoint_heartbeat',
@@ -510,8 +511,6 @@ function register16Handlers(client, loggedHandle) {
             ? 'Available'
             : 'Unavailable';
           db.updateChargepointStatus(identity, derivedStatus, true);
-        } else {
-          db.updateChargepointStatus(identity, undefined, true);
         }
         const activeTx = db
           .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
@@ -1264,7 +1263,8 @@ function register16Handlers(client, loggedHandle) {
 
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {
-    const refreshTimer = setTimeout(async () => {
+    let cancelled = false;
+    refreshTimer = setTimeout(async () => {
       const current = db.getChargepointByIdentity(identity);
       if (!current || !current.connected || current.cpstatus) return;
 
@@ -1293,6 +1293,7 @@ function register16Handlers(client, loggedHandle) {
         };
       });
 
+      if (cancelled) return;
       if (!db.getChargepointByIdentity(identity)?.connected) return;
 
       if (statusReceived) {
@@ -1309,9 +1310,12 @@ function register16Handlers(client, loggedHandle) {
           `[StateRefresh] ${identity}: TriggerMessage(StatusNotification) échoué: ${e.message}`
         );
       }
-    }, 8000);
+    }, 20000);
 
-    client.once('close', () => clearTimeout(refreshTimer));
+    client.once('close', () => {
+      clearTimeout(refreshTimer);
+      cancelled = true;
+    });
   }
 }
 

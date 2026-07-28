@@ -1463,6 +1463,7 @@ async function showEditChargepointModal(id) {
   <div class="form-group"><label>${t('chargepoint.cpIdentity')}</label><input type="text" id="editIdentity" value="${escapeAttr(cp.identity)}" /></div>
   <div class="form-group"><label>${t('common.name')}</label><input type="text" id="editName" value="${escapeAttr(cp.cpname || '')}" /></div>
   <div class="form-group"><label>${t('common.password')}</label><input type="password" id="editPassword" ${cp.password ? 'placeholder="••••••••"' : ''} /></div>
+  ${cp.password ? `<div class="form-group"><label><input type="checkbox" id="editDeletePassword" /> ${t('chargepoint.cpDeletePassword')}</label></div>` : ''}
   <div class="form-group">
     <label>${t('chargepoint.cpModeCharge')}</label>
     <select id="editMode">
@@ -1509,7 +1510,7 @@ async function updateChargepoint(id) {
     const data = {
       identity: document.getElementById('editIdentity').value.toUpperCase(),
       name: document.getElementById('editName').value || null,
-      password: document.getElementById('editPassword').value || null,
+      password: (() => { const del = document.getElementById('editDeletePassword'); if (del && del.checked) return null; return document.getElementById('editPassword').value || undefined; })(),
       mode: Number(document.getElementById('editMode').value),
       site_id: document.getElementById('editSiteId').value ? Number(document.getElementById('editSiteId').value) : null,
       authorized: document.getElementById('editAuthorized').checked ? 1 : 0
@@ -1715,7 +1716,7 @@ async function renderDetailTabBorne(cp) {
               <span class="cmd-subgroup-label">🔧 ${t('chargepoint.cpManagement')}</span>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
-              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, ${cp.ocpp_version === '2.0.1' ? `'GetLog', {logType:'DiagnosticsLog', logParameters:{remoteLocation:'${ocppSettings.diagnosticsLocation || ''}'}}` : `'GetDiagnostics', {location:'${ocppSettings.diagnosticsLocation || ''}'}`})">${t('chargepoint.cpGetDiagnostics')}</button>
+              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, ${cp.ocpp_version === '2.0.1' ? `'GetLog', {logType:'DiagnosticsLog', requestId:Math.floor(Math.random()*2147483647), log:{remoteLocation:'${ocppSettings.diagnosticsLocation || ''}'}}` : `'GetDiagnostics', {location:'${ocppSettings.diagnosticsLocation || ''}'}`})">${t('chargepoint.cpGetDiagnostics')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
@@ -2075,6 +2076,7 @@ async function renderDetailTabLogs(cp) {
             <option value="">${t('filters.allf')}</option>
             <option value="chargepoint" ${cpLogsFilters.origin === 'chargepoint' ? 'selected' : ''}>${t('common.chargepoint_one')}</option>
             <option value="csms" ${cpLogsFilters.origin === 'csms' ? 'selected' : ''}>CSMS</option>
+            <option value="system" ${cpLogsFilters.origin === 'system' ? 'selected' : ''}>${t('common.system')}</option>
           </select>
         </div>
         <div class="form-group">
@@ -2084,6 +2086,7 @@ async function renderDetailTabLogs(cp) {
             <option value="CALL" ${cpLogsFilters.message_type === 'CALL' ? 'selected' : ''}>CALL</option>
             <option value="CALLRESULT" ${cpLogsFilters.message_type === 'CALLRESULT' ? 'selected' : ''}>CALLRESULT</option>
             <option value="CALLERROR" ${cpLogsFilters.message_type === 'CALLERROR' ? 'selected' : ''}>CALLERROR</option>
+            <option value="EVENT" ${cpLogsFilters.message_type === 'EVENT' ? 'selected' : ''}>EVENT</option>
           </select>
         </div>
         <div class="form-group">
@@ -2118,7 +2121,7 @@ async function renderDetailTabLogs(cp) {
           ${messages.map(m => `
             <tr>
               <td class="td-date">${formatDate(m.timestamp)}</td>
-              <td><span class="badge ${m.origin === 'chargepoint' ? 'badge-chargepoint' : 'badge-csms'}">${m.origin === 'chargepoint' ? `← ${t('common.chargepoint_one')}` : `→ ${t('common.csms')}`}</span></td>
+              <td><span class="badge ${m.origin === 'chargepoint' ? 'badge-chargepoint' : m.origin === 'csms' ? 'badge-csms' : 'badge-gray'}">${m.origin === 'chargepoint' ? `← ${t('common.chargepoint_one')}` : m.origin === 'csms' ? `→ ${t('common.csms')}` : `⚙ ${t('common.system')}`}</span></td>
               <td><span class="badge badge-${m.message_type.toLowerCase()}">${m.message_type}</span></td>
               <td class="msg-payload">${m.action || '-'}</td>
               <td class="msg-payload" title="${t('chargepoint.cpLogsMsgHint')}" data-onclick="showPayloadDetail(this)">${escapeHtml(m.payload || '{}')}</td>
@@ -2385,7 +2388,10 @@ async function loadReservations(cpId) {
                 <td><span class="badge ${reservationBadgeClass(r.status)}">${t('chargepoint.cpReservationStatus' + r.status, { defaultValue: r.status })}</span></td>
                 <td class="td-meta">${r.created_by_name ? escapeHtml(r.created_by_name) : '—'}</td>
                 <td class="td-date">${formatDateShort(r.created_at)}</td>
-                ${canManage() ? `<td>${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}</td>` : ''}
+                ${canManage() ? `<td>
+                  ${(r.status === 'Pending' || r.status === 'Active') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => cancelReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationCancel')}</button>` : ''}
+                  ${(r.status === 'Expired' || r.status === 'Cancelled' || r.status === 'Fulfilled') ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteReservation(${cpId}, ${r.id}))">${t('chargepoint.cpReservationDelete')}</button>` : ''}
+                </td>` : ''}
               </tr>
             `).join('')}
           </tbody>
@@ -2551,6 +2557,15 @@ async function cancelReservation(cpId, reservationId) {
   } else {
     toast(t('chargepoint.cpReservationRejected', { status: result.status }), 'error');
   }
+}
+
+async function deleteReservation(cpId, reservationId) {
+  if (!await confirmDialog(t('chargepoint.cpReservationDeleteConfirm'), { danger: true })) return;
+  try {
+    await api('DELETE', `/reservations/${reservationId}/delete`);
+    toast(t('chargepoint.cpReservationDeleted'), 'success');
+    await loadReservations(cpId);
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // ── Onglet Profils de Charge ─────────────────────────────────────────────
@@ -2930,10 +2945,14 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
     <table id="configTable">
       <thead><tr><th>Component</th><th>Variable</th><th>Attribute</th><th>${t('chargepoint.cpConfValue')}</th><th>${t('chargepoint.cpConfReadOnly')}</th><th>${t('chargepoint.cpConfKeyUpdated')}</th>${adminManage() ? `<th>${t('common.actions')}</th>` : ''}</tr></thead>
       <tbody>
-        ${config.map(c => `
+        ${config.map(c => {
+          const hasInstance = !!c.instance;
+          const hasEvse = !!(c.evse_id || c.connector_id);
+          const isAmbiguous = hasInstance || hasEvse;
+          return `
           <tr data-key="${escapeAttr(c.component + '.' + c.variable)}">
-            <td class="td-mono">${escapeHtml(c.component)}</td>
-            <td class="td-mono">${escapeHtml(c.variable)}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
+            <td class="td-mono">${escapeHtml(c.component)}${hasEvse ? ` <span class="badge badge-gray" title="EVSE">evse:${c.evse_id}${c.connector_id ? `/${c.connector_id}` : ''}</span>` : ''}</td>
+            <td class="td-mono">${escapeHtml(c.variable)}${hasInstance ? ` <span class="td-meta">[${escapeHtml(c.instance)}]</span>` : ''}${c.is_override ? ` <span class="badge badge-blue" title="${t('chargepoint.cpConfOverrideHint')}">🔒 ${t('chargepoint.cpConfOverride')}</span>` : ''}</td>
             <td class="td-meta">${escapeHtml(c.attribute || 'Actual')}</td>
             <td style="max-width:300px;word-break:break-all;">${escapeHtml(c.value || '')}</td>
             <td>${c.readonly ? '<span class="badge badge-yellow">' + t('common.yes') + '</span>' : '<span class="badge badge-green">' + t('common.no') + '</span>'}</td>
@@ -2941,11 +2960,14 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
             ${adminManage() ? `<td style="white-space:nowrap;">
               ${GLOBAL_ONLY_VARS_201.some(v => v.component === c.component && v.variable === c.variable)
                 ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
+                : isAmbiguous
+                ? `<span class="text-muted" title="${t('chargepoint.cpConfAmbiguousHint', { defaultValue: 'Non modifiable : plusieurs instances partagent cette clé' })}">-</span>`
                 : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
               }
             </td>` : ''}
           </tr>
-        `).join('')}
+        `;
+        }).join('')}
       </tbody>
     </table>
     <p class="text-muted mt-2">${t('chargepoint.cpConfNbKeys', { count: config.length })}</p>
@@ -3146,6 +3168,37 @@ async function renderConnectors() {
                 : !isOnline
                   ? 'border-color: var(--gray-300); opacity: 0.7;'
                   : 'border-color: var(--warning);';
+        let beforeHtml = '';
+        let primaryHtml = '';
+        let afterHtml = '';
+        if (canStart) {
+          primaryHtml = `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                  ⚡ ${t('connectors.cStartCharge')}
+                </button>`;
+        } else if (isCharging && c.active_transaction_id) {
+          beforeHtml = `<div style="text-align:center;padding:4px 0 8px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>
+                    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:8px;font-size:13px;flex-wrap:wrap;">
+                      <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
+                      <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
+                    </div>`;
+          primaryHtml = `<button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                      ⏹ ${t('connectors.cStopCharge')}
+                    </button>`;
+          afterHtml = hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : '';
+        } else if (isFaulted || isUnavailable) {
+          primaryHtml = `<div style="text-align:center;padding:6px;color:var(--danger);font-size:13px;">⚠ ${chargeConnectorReason(c.cnstatus)}${c.error_code && c.error_code !== 'NoError' ? ' — ' + escapeHtml(c.error_code) : ''}</div>`;
+        } else if (!isOnline) {
+          primaryHtml = `<div style="text-align:center;padding:6px;color:var(--gray-500);font-size:13px;">⛓️‍💥 ${t('chargepoint.cpOffline')}</div>`;
+        } else if (isCharging) {
+          primaryHtml = `<div style="text-align:center;padding:6px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>`;
+          afterHtml = hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : '';
+        } else {
+          primaryHtml = `<div style="text-align:center;padding:6px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>`;
+          afterHtml = hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : '';
+        }
+        const unlockHtml = isOnline
+          ? `<button class="btn btn-purple btn-block" data-onclick="withBtn(this, () => mgrUnlockConnector(${c.chargepoint_id}, ${c.connector_id}, ${c.evse_id ?? 'null'}, '${c.ocpp_version || '1.6'}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">🔓 ${t('connectors.cUnlock')}</button>`
+          : '';
         return `
           <div class="connector-card" style="text-align:left;padding:14px 16px;${cardStyle}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:4px;">
@@ -3163,28 +3216,11 @@ async function renderConnectors() {
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">📍 ${escapeHtml(c.site_name || t('sites.siteNoSite'))}</div>
             <div class="text-muted" style="margin-bottom:3px;font-size:12px;">${dashboardCpMode(c.mode)}</div>
             <div class="text-muted" style="margin-bottom:8px;font-size:12px;">🔌 ${c.evse_id != null ? `${c.evse_name ? escapeHtml(c.evse_name) : 'EVSE ' + c.evse_id} · ${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}` : `${c.connector_name ? escapeHtml(c.connector_name) : '#' + c.connector_id}`}</div>
-            ${canStart
-            ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
-                  ⚡ ${t('connectors.cStartCharge')}
-                </button>`
-            : isCharging && c.active_transaction_id
-              ? `<div style="text-align:center;padding:4px 0 8px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>
-                    <div style="display:flex;justify-content:center;gap:16px;margin-bottom:8px;font-size:13px;flex-wrap:wrap;">
-                      <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
-                      <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
-                    </div>
-                    <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
-                      ⏹ ${t('connectors.cStopCharge')}
-                    </button>
-                    ${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
-              : isFaulted || isUnavailable
-                ? `<div style="text-align:center;padding:6px;color:var(--danger);font-size:13px;">⚠ ${chargeConnectorReason(c.cnstatus)}${c.error_code && c.error_code !== 'NoError' ? ' — ' + escapeHtml(c.error_code) : ''}</div>`
-                : !isOnline
-                    ? `<div style="text-align:center;padding:6px;color:var(--gray-500);font-size:13px;">⛓️‍💥 ${t('chargepoint.cpOffline')}</div>`
-                    : isCharging
-                      ? `<div style="text-align:center;padding:6px;color:var(--primary);font-size:13px;">⚡ ${chargeConnectorReason(c.cnstatus)}</div>${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
-                      : `<div style="text-align:center;padding:6px;color:var(--warning);font-size:13px;">⏳ ${chargeConnectorReason(c.cnstatus)}</div>${hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : ''}`
-          }
+            ${beforeHtml}
+            ${isOnline
+              ? `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;align-items:stretch;">${primaryHtml}${unlockHtml}</div>`
+              : primaryHtml}
+            ${afterHtml}
           </div>`;
       }).join('')}
       </div>
@@ -3225,6 +3261,27 @@ async function mgrStopCharge(chargepointId, transactionId, cpName, connId) {
       toast(`${t('dashboard.cnStopChargeOk', { cpName, connId })}`, 'success');
     } else {
       toast(`${t('dashboard.cnStopChargeKo', { status: data.result?.status || t('common.error') })}`, 'error');
+    }
+    setTimeout(() => renderConnectors(), 2000);
+  } catch (err) {
+    toast(`${t('common.error')}: ${err.message}`, 'error');
+  }
+}
+
+async function mgrUnlockConnector(chargepointId, connectorId, evseId, ocppVersion, cpName, connId) {
+  if (!await confirmDialog(t('dashboard.cnUnlockConnector', { cpName, connId }), { danger: true })) return;
+  try {
+    const params = ocppVersion === '2.0.1'
+      ? { evseId: evseId ?? connectorId, connectorId }
+      : { connectorId };
+    const data = await api('POST', `/chargepoints/${chargepointId}/command`, {
+      method: 'UnlockConnector',
+      params,
+    });
+    if (data.result && data.result.status === 'Unlocked') {
+      toast(`${t('dashboard.cnUnlockConnectorOk', { cpName, connId })}`, 'success');
+    } else {
+      toast(`${t('dashboard.cnUnlockConnectorKo', { status: data.result?.status || t('common.error') })}`, 'error');
     }
     setTimeout(() => renderConnectors(), 2000);
   } catch (err) {
@@ -3717,6 +3774,15 @@ async function deleteIdTag(id, name) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
+async function deleteIdTagEvent(id) {
+  if (!await confirmDialog(t('idtags.rfHistoDeleteConfirm'), { danger: true })) return;
+  try {
+    await api('DELETE', `/id-tags-events/${id}`);
+    toast(t('idtags.rfHistoDeleted'), 'success');
+    renderIdTagsEvents();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
 function switchIdTagsTab(tab) {
   renderIdTags(tab, true);
 }
@@ -3787,7 +3853,7 @@ async function renderIdTagsEvents() {
       ${events.length === 0 ? `<p class="text-muted" style="padding: 16px;">${t('idtags.rfNoHisto')}</p>` : `
       <div class="table-wrap">
       <table>
-        <thead><tr><th>${t('common.date')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('idtags.rfTagIdent')}</th><th>${t('common.status')}</th><th>${t('idtags.rfDenialDetails')}</th><th>${t('common.source')}</th></tr></thead>
+        <thead><tr><th>${t('common.date')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('idtags.rfTagIdent')}</th><th>${t('common.status')}</th><th>${t('idtags.rfDenialDetails')}</th><th>${t('common.source')}</th><th>${t('common.actions')}</th></tr></thead>
         <tbody>
           ${events.map(e => `
             <tr>
@@ -3798,6 +3864,7 @@ async function renderIdTagsEvents() {
               <td>${eventStatusBadge(e.status)}</td>
               <td>${e.reason ? escapeHtml(eventReasonLabels[e.reason] || e.reason) : '<span class="text-muted">-</span>'}</td>
               <td><span class="badge badge-blue">${escapeHtml(e.source || 'authorize')}</span></td>
+              <td>${canManage() ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteIdTagEvent(${e.id}))">${t('common.delete')}</button>` : ''}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -3880,6 +3947,7 @@ async function renderUsers() {
                 <td>
                   <button class="btn btn-indigo btn-sm" data-onclick="showUserSitesModal(${u.id})">${t('users.uAssignedSites')}</button>
                   <button class="btn btn-teal btn-sm" data-onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
+                  <button class="btn btn-purple btn-sm" data-onclick="showUserNotificationsModal(${u.id})">${t('users.uNotifications')}</button>
                   ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
                   ${canDelete ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteUser(${u.id}, '${escapeAttr(u.useremail)}'))">${t('common.delete')}</button>` : ''}
                 </td>
@@ -4098,6 +4166,44 @@ function onSiteCheckChange(siteId) {
   const chk = document.getElementById('siteChk_' + siteId);
   const roleSelect = document.getElementById('siteRole_' + siteId);
   if (roleSelect) roleSelect.disabled = !chk.checked;
+}
+
+async function showUserNotificationsModal(id) {
+  const users = await api('GET', '/users');
+  const user = users.find(u => u.id === id);
+  if (!user) return;
+  const { events, preferences, channels } = await api('GET', `/users/${id}/notifications/preferences`);
+  openModal(`
+    <h3>${t('push.prefTitle')} — ${escapeHtml(user.shortname || user.useremail)}</h3>
+    <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px;">${t('push.prefHint')}</p>
+    <form id="userNotifPrefsForm" data-onsubmit="saveUserNotificationPrefs(event, ${id})">
+      ${buildNotifPrefsTable(events, preferences, channels)}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+        ${Object.keys(events).length > 0 ? `<button type="submit" class="btn btn-primary">${t('common.save')}</button>` : ''}
+      </div>
+    </form>
+  `);
+}
+
+async function saveUserNotificationPrefs(e, id) {
+  e.preventDefault();
+  const checkboxes = document.querySelectorAll('#userNotifPrefsForm input[type="checkbox"]');
+  const preferences = [];
+  checkboxes.forEach(cb => {
+    preferences.push({
+      event_type: cb.dataset.event,
+      channel: cb.dataset.channel,
+      enabled: cb.checked,
+    });
+  });
+  try {
+    await api('PUT', `/users/${id}/notifications/preferences`, { preferences });
+    closeModal();
+    toast(t('push.prefSaved'), 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 // ══════════════════════════════════════
@@ -4868,6 +4974,8 @@ async function renderErrorEvents(keepState = false) {
       if (type === 'status_error') return `<span class="badge badge-red">${t('errorEvents.eventTypeStatusError')}</span>`;
       if (type === 'disconnect') return `<span class="badge badge-gray">${t('errorEvents.eventTypeDisconnect')}</span>`;
       if (type === 'heartbeat_timeout') return `<span class="badge badge-yellow">${t('errorEvents.eventTypeHeartbeatTimeout')}</span>`;
+      if (type === 'security_event') return `<span class="badge badge-purple">${t('errorEvents.eventTypeSecurityEvent')}</span>`;
+      if (type === 'notify_event') return `<span class="badge badge-blue">${t('errorEvents.eventTypeNotifyEvent')}</span>`;
       return `<span class="badge">${escapeHtml(type)}</span>`;
     }
 
@@ -4896,6 +5004,8 @@ async function renderErrorEvents(keepState = false) {
             <option value="status_error" ${errorEventsFilters.event_type === 'status_error' ? 'selected' : ''}>${t('errorEvents.eventTypeStatusError')}</option>
             <option value="disconnect" ${errorEventsFilters.event_type === 'disconnect' ? 'selected' : ''}>${t('errorEvents.eventTypeDisconnect')}</option>
             <option value="heartbeat_timeout" ${errorEventsFilters.event_type === 'heartbeat_timeout' ? 'selected' : ''}>${t('errorEvents.eventTypeHeartbeatTimeout')}</option>
+            <option value="security_event" ${errorEventsFilters.event_type === 'security_event' ? 'selected' : ''}>${t('errorEvents.eventTypeSecurityEvent')}</option>
+            <option value="notify_event" ${errorEventsFilters.event_type === 'notify_event' ? 'selected' : ''}>${t('errorEvents.eventTypeNotifyEvent')}</option>
           </select>
         </div>
         <div class="form-group">
@@ -4933,6 +5043,7 @@ async function renderErrorEvents(keepState = false) {
           <th>${t('errorEvents.colVendorError')}</th>
           <th>${t('errorEvents.colInfo')}</th>
           ${appSettings.v16Enabled && appSettings.v201Enabled ? `<th>${t('errorEvents.colProtocol')}</th>` : ''}
+          ${canManage() ? `<th>${t('common.actions')}</th>` : ''}
         </tr></thead>
         <tbody>
           ${events.map(e => `
@@ -4946,6 +5057,7 @@ async function renderErrorEvents(keepState = false) {
               <td>${e.vendor_error_code ? escapeHtml(e.vendor_error_code) : '<span class="text-muted">-</span>'}</td>
               <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${e.info ? escapeAttr(e.info) : ''}">${e.info ? escapeHtml(e.info) : '<span class="text-muted">-</span>'}</td>
               ${appSettings.v16Enabled && appSettings.v201Enabled ? `<td><span class="badge badge-blue">${escapeHtml(e.ocpp_version)}</span></td>` : ''}
+              ${canManage() ? `<td><button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteErrorEvent(${e.id}))">${t('common.delete')}</button></td>` : ''}
             </tr>
           `).join('')}
         </tbody>
@@ -4984,30 +5096,74 @@ function resetErrorEventsFilters() {
   renderErrorEvents();
 }
 
+async function deleteErrorEvent(id) {
+  if (!await confirmDialog(t('errorEvents.deleteConfirm'), { danger: true })) return;
+  try {
+    await api('DELETE', `/error-events/${id}`);
+    toast(t('errorEvents.deleted'), 'success');
+    renderErrorEvents(true);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
 // ══════════════════════════════════════
 //  NOTIFICATIONS
 // ══════════════════════════════════════
+// Construit le tableau HTML des préférences de notification (événement × canal),
+// réutilisé par la page "Mes Notifications" et par la modale admin sur un autre utilisateur.
+function buildNotifPrefsTable(events, preferences, channels) {
+  // Construire la map des préférences existantes : { event_type: { channel: enabled } }
+  const prefMap = {};
+  for (const p of preferences) {
+    if (!prefMap[p.event_type]) prefMap[p.event_type] = {};
+    prefMap[p.event_type][p.channel] = !!p.enabled;
+  }
+  // Déterminer l'état de chaque case : préférence utilisateur ou défaut
+  function isChecked(eventType, channel, eventDef) {
+    if (prefMap[eventType] && prefMap[eventType][channel] !== undefined) {
+      return prefMap[eventType][channel];
+    }
+    // Pas de préférence → utiliser le défaut
+    return eventDef.defaultChannels.includes(channel);
+  }
+
+  const channelLabels = { email: '📧 ' + t('push.channelEmail'), webpush: '🔔 ' + t('push.channelWebpush'), pushover: '📱 ' + t('push.channelPushover') };
+  const eventKeys = Object.keys(events);
+
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th>${t('push.prefEvent')}</th>
+          ${channels.map(c => `<th class="th-center">${channelLabels[c] || c}</th>`).join('')}
+        </tr>
+      </thead>
+      <tbody>
+        ${eventKeys.length === 0 ? `
+          <tr><td colspan="${channels.length + 1}" class="text-muted">${t('push.prefNoEvent')}</td></tr>
+        ` : eventKeys.map(ev => `
+          <tr>
+            <td>
+              <strong>${escapeHtml(events[ev].label)}</strong> <small class="text-muted">${escapeHtml(events[ev].description)}</small>
+            </td>
+            ${channels.map(ch => `
+              <td class="td-center">
+                <input type="checkbox"
+                  data-event="${ev}" data-channel="${ch}"
+                  ${isChecked(ev, ch, events[ev]) ? 'checked' : ''}>
+              </td>
+            `).join('')}
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
 async function renderNotifications() {
   document.getElementById('topbarActions').innerHTML = '';
   try {
     const data = await api('GET', '/notifications/preferences');
     const { events, preferences, channels, hasPushSubscription } = data;
-    // Construire la map des préférences existantes : { event_type: { channel: enabled } }
-    const prefMap = {};
-    for (const p of preferences) {
-      if (!prefMap[p.event_type]) prefMap[p.event_type] = {};
-      prefMap[p.event_type][p.channel] = !!p.enabled;
-    }
-    // Déterminer l'état de chaque case : préférence utilisateur ou défaut
-    function isChecked(eventType, channel, eventDef) {
-      if (prefMap[eventType] && prefMap[eventType][channel] !== undefined) {
-        return prefMap[eventType][channel];
-      }
-      // Pas de préférence → utiliser le défaut
-      return eventDef.defaultChannels.includes(channel);
-    }
-
-    const channelLabels = { email: '📧 ' + t('push.channelEmail'), webpush: '🔔 ' + t('push.channelWebpush'), pushover: '📱 ' + t('push.channelPushover') };
     const eventKeys = Object.keys(events);
 
     let pushSection = '';
@@ -5063,32 +5219,7 @@ async function renderNotifications() {
       <div id="notifPrefsContent" class="hidden">
       <p style="font-size:13px;color:var(--gray-600);margin-bottom:16px;">${t('push.prefHint')}</p>
       <form id="notifPrefsForm" data-onsubmit="saveNotificationPrefs(event)">
-        <table>
-          <thead>
-            <tr>
-              <th>${t('push.prefEvent')}</th>
-              ${channels.map(c => `<th class="th-center">${channelLabels[c] || c}</th>`).join('')}
-            </tr>
-          </thead>
-          <tbody>
-            ${eventKeys.length === 0 ? `
-              <tr><td colspan="${channels.length + 1}" class="text-muted">${t('push.prefNoEvent')}</td></tr>
-            ` : eventKeys.map(ev => `
-              <tr>
-                <td>
-                  <strong>${escapeHtml(events[ev].label)}</strong> <small class="text-muted">${escapeHtml(events[ev].description)}</small>
-                </td>
-                ${channels.map(ch => `
-                  <td class="td-center">
-                    <input type="checkbox"
-                      data-event="${ev}" data-channel="${ch}"
-                      ${isChecked(ev, ch, events[ev]) ? 'checked' : ''}>
-                  </td>
-                `).join('')}
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+        ${buildNotifPrefsTable(events, preferences, channels)}
         ${eventKeys.length > 0 ? `
           <div style="margin-top:16px;display:flex;gap:8px;">
             <button type="submit" class="btn btn-primary">${t('common.save')}</button>

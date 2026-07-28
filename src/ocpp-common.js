@@ -126,6 +126,7 @@ function makeLoggedHandle(client, identity, chargepointId) {
       const params = msg.params;
       if (chargepointId) db.addOcppMessage(chargepointId, 'chargepoint', 'CALL', action, params);
       logger.debug(`Received ${action} from ${identity}: ${JSON.stringify(params)}`);
+      db.touchLastHeartbeat(identity);
       broadcast(
         'ocpp_message',
         {
@@ -464,6 +465,23 @@ function createOCPPServerBase(options = {}) {
 
     const cpRecord = cpExisting ?? db.getChargepointByIdentity(identity);
     const chargepointId = cpRecord ? cpRecord.id : null;
+
+    if (chargepointId) {
+      const connectPayload = { ocpp_version: client.protocol === 'ocpp2.0.1' ? '2.0.1' : '1.6' };
+      db.addOcppMessage(chargepointId, 'system', 'EVENT', 'Connect', connectPayload);
+      broadcast(
+        'ocpp_message',
+        {
+          identity,
+          origin: 'system',
+          message_type: 'EVENT',
+          action: 'Connect',
+          payload: connectPayload,
+        },
+        getSiteIdByIdentity(identity)
+      );
+    }
+
     const loggedHandle = makeLoggedHandle(client, identity, chargepointId);
 
     if (client.protocol === 'ocpp2.0.1' && _register201Handlers) {
@@ -475,6 +493,7 @@ function createOCPPServerBase(options = {}) {
     }
 
     client.handle(({ method, params }) => {
+      db.touchLastHeartbeat(identity);
       logger.warn(`OCPP method not managed ${method} from ${identity}`);
       if (chargepointId) db.addOcppMessage(chargepointId, 'chargepoint', 'CALL', method, params);
       broadcast(
@@ -524,6 +543,19 @@ function createOCPPServerBase(options = {}) {
       const cpDisc = db.getChargepointByIdentity(identity);
       if (cpDisc) {
         db.resetConnectorsByChargepoint(cpDisc.id);
+        const disconnectPayload = { reason: client._disconnectReason || null };
+        db.addOcppMessage(cpDisc.id, 'system', 'EVENT', 'Disconnect', disconnectPayload);
+        broadcast(
+          'ocpp_message',
+          {
+            identity,
+            origin: 'system',
+            message_type: 'EVENT',
+            action: 'Disconnect',
+            payload: disconnectPayload,
+          },
+          cpDisc.site_id ?? null
+        );
       }
       if (client._disconnectReason !== 'heartbeat_timeout') {
         const cfg = getConfig();
@@ -721,6 +753,22 @@ function startHeartbeatWatchdog() {
           ocpp_version: cp.ocpp_version || '1.6',
         });
         broadcast('error_event', { chargepoint_id: cp.id }, cp.site_id ?? null);
+        const heartbeatTimeoutPayload = {
+          seconds_elapsed: secondsElapsed,
+          limit_seconds: limitSeconds,
+        };
+        db.addOcppMessage(cp.id, 'system', 'EVENT', 'HeartbeatTimeout', heartbeatTimeoutPayload);
+        broadcast(
+          'ocpp_message',
+          {
+            identity,
+            origin: 'system',
+            message_type: 'EVENT',
+            action: 'HeartbeatTimeout',
+            payload: heartbeatTimeoutPayload,
+          },
+          cp.site_id ?? null
+        );
         disconnectChargepoint(identity, 'heartbeat_timeout');
       }
     }
@@ -798,6 +846,7 @@ async function remoteStartTransaction(identity, connectorId, idToken) {
     const tag = db.getIdTagByTag(idToken, cp.site_id);
     const tokenType = tag?.token_type || 'ISO14443';
     return callClient(identity, 'RequestStartTransaction', {
+      remoteStartId: Math.floor(Math.random() * 2147483647),
       evseId: connectorId,
       idToken: { idToken, type: tokenType },
     });

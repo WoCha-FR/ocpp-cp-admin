@@ -11,6 +11,7 @@ const mockDb = {
   getTransactionByTransactionId: jest.fn(),
   getActiveTransactionByConnector: jest.fn(),
   updateChargepointStatus: jest.fn(),
+  touchLastHeartbeat: jest.fn(),
   upsertConnector: jest.fn(),
   upsertEvse: jest.fn(),
   getConnectorByChargepointAndId: jest.fn(),
@@ -255,9 +256,10 @@ describe('ocpp-server-201 — Heartbeat', () => {
     expect(result.currentTime).toBeDefined();
   });
 
-  it('calls updateChargepointStatus', () => {
+  it('does not call updateChargepointStatus (handled by makeLoggedHandle)', () => {
+    mockDb.updateChargepointStatus.mockClear();
     client._handlers['Heartbeat']({});
-    expect(mockDb.updateChargepointStatus).toHaveBeenCalledWith('CP001', undefined, true);
+    expect(mockDb.updateChargepointStatus).not.toHaveBeenCalled();
   });
 
   it('broadcasts chargepoint_heartbeat', () => {
@@ -540,6 +542,7 @@ describe('ocpp-server-201 — StatusNotification', () => {
     await new Promise((r) => setImmediate(r));
 
     expect(client.call).toHaveBeenCalledWith('RequestStartTransaction', {
+      remoteStartId: expect.any(Number),
       evseId: 1,
       idToken: { idToken: 'MGR-42', type: 'ISO14443' },
     });
@@ -1430,7 +1433,7 @@ describe('ocpp-server-201 — NotifyReport', () => {
       ],
     });
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
-      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '300', 0
+      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '300', 0, '', 0, 0
     );
   });
 
@@ -1447,7 +1450,7 @@ describe('ocpp-server-201 — NotifyReport', () => {
       ],
     });
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
-      1, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1
+      1, 'SecurityCtrlr', 'CertificateEntries', 'Actual', '5', 1, '', 0, 0
     );
   });
 
@@ -1464,7 +1467,58 @@ describe('ocpp-server-201 — NotifyReport', () => {
       ],
     });
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
-      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60', 0
+      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60', 0, '', 0, 0
+    );
+  });
+
+  it('passes variable.instance to upsertChargepointVariable', () => {
+    client._handlers['NotifyReport']({
+      seqNo: 0,
+      tbc: false,
+      reportData: [
+        {
+          component: { name: 'DeviceDataCtrlr' },
+          variable: { name: 'BytesPerMessage', instance: 'GetReport' },
+          variableAttribute: [{ type: 'Actual', value: '1024' }],
+        },
+      ],
+    });
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'DeviceDataCtrlr', 'BytesPerMessage', 'Actual', '1024', 0, 'GetReport', 0, 0
+    );
+  });
+
+  it('passes component.evse.id to upsertChargepointVariable', () => {
+    client._handlers['NotifyReport']({
+      seqNo: 0,
+      tbc: false,
+      reportData: [
+        {
+          component: { name: 'Connector', evse: { id: 1 } },
+          variable: { name: 'AvailabilityState' },
+          variableAttribute: [{ type: 'Actual', value: 'Available' }],
+        },
+      ],
+    });
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'Connector', 'AvailabilityState', 'Actual', 'Available', 0, '', 1, 0
+    );
+  });
+
+  it('passes component.evse.connectorId to upsertChargepointVariable', () => {
+    client._handlers['NotifyReport']({
+      seqNo: 0,
+      tbc: false,
+      reportData: [
+        {
+          component: { name: 'Connector', evse: { id: 1, connectorId: 2 } },
+          variable: { name: 'AvailabilityState' },
+          variableAttribute: [{ type: 'Actual', value: 'Available' }],
+        },
+      ],
+    });
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1, 'Connector', 'AvailabilityState', 'Actual', 'Available', 0, '', 1, 2
     );
   });
 
@@ -1602,6 +1656,20 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     register201Handlers(client, makeLoggedHandle(client));
   });
 
+  async function flushThroughInit() {
+    await new Promise((resolve) => setImmediate(resolve));
+    const gbCall = client.call.mock.calls.find(([m]) => m === 'GetBaseReport');
+    if (gbCall) {
+      client._handlers['NotifyReport']({
+        requestId: gbCall[1].requestId,
+        seqNo: 0,
+        tbc: false,
+        reportData: [],
+      });
+    }
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
   it('envoie ClearCache', async () => {
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
     await new Promise((resolve) => setImmediate(resolve));
@@ -1634,7 +1702,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(client.call).toHaveBeenCalledWith('SetVariables', {
       setVariableData: [{
         component: { name: 'OCPPCommCtrlr' },
@@ -1651,7 +1719,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
       1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60'
     );
@@ -1659,7 +1727,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
 
   it('appelle markChargepointInitialized après la séquence réussie', async () => {
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(mockDb.markChargepointInitialized).toHaveBeenCalledWith(1);
   });
 
@@ -1687,7 +1755,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Rejected' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(mockDb.upsertChargepointVariable).not.toHaveBeenCalled();
   });
 
@@ -1697,7 +1765,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(client.call).toHaveBeenCalledWith('SetVariables', {
       setVariableData: [{
         component: { name: 'TxCtrlr' },
@@ -1715,10 +1783,19 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     ]);
     client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
-    await new Promise((resolve) => setImmediate(resolve));
+    await flushThroughInit();
     expect(mockDb.upsertChargepointVariable).not.toHaveBeenCalledWith(
       expect.anything(), 'TxCtrlr', 'MeterValueSampleInterval', expect.anything(), expect.anything()
     );
+  });
+
+  it("n'envoie pas SetVariables avant la fin des NotifyReport", async () => {
+    mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
+      { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' },
+    ]);
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(client.call).not.toHaveBeenCalledWith('SetVariables', expect.anything());
   });
 
   it('stoppe la boucle override si déconnecté pendant le step 5/5', async () => {
@@ -1923,15 +2000,16 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     jest.useRealTimers();
   });
 
-  it('envoie TriggerMessage(BootNotification) + TriggerMessage(StatusNotification) après 8s si initialized=1', async () => {
+  it('envoie TriggerMessage(BootNotification) + TriggerMessage(StatusNotification) après 20s si initialized=1', async () => {
     const client = makeClient('CP001');
+    client.call = jest.fn().mockResolvedValue({ status: 'Accepted' });
     mockDb.getChargepointByIdentity
       .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 })  // cpRecord à l'enregistrement
       .mockReturnValue({ id: 1, connected: 1, site_id: 1 });        // appels suivants
     mockConnectedClients.set('CP001', client);
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(18001); // 8s outer + 10s inner
+    await jest.advanceTimersByTimeAsync(30001); // 20s outer + 10s inner (StatusNotification attendu)
 
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
@@ -1942,7 +2020,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, initialized: 0, site_id: 1 });
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(20001);
 
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
   });
@@ -1952,7 +2030,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockDb.getChargepointByIdentity.mockReturnValue(null);
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(20001);
 
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
   });
@@ -1966,7 +2044,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     expect(client.once).toHaveBeenCalledWith('close', expect.any(Function));
   });
 
-  it('annule le TriggerMessage si la borne se déconnecte avant 8s', async () => {
+  it('annule le TriggerMessage si la borne se déconnecte avant 20s', async () => {
     const client = makeClient('CP001');
     let closeCallback;
     client.once = jest.fn((event, cb) => { if (event === 'close') closeCallback = cb; });
@@ -1974,7 +2052,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
 
     register201Handlers(client, makeLoggedHandle(client));
     closeCallback();
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(20001);
 
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', expect.anything());
   });
@@ -1988,7 +2066,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockConnectedClients.set('CP001', client);
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(8001);
+    await jest.advanceTimersByTimeAsync(20001);
 
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
@@ -1996,6 +2074,7 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
 
   it("n'envoie pas TriggerMessage(StatusNotification) si la borne est déconnectée après le délai de 10s", async () => {
     const client = makeClient('CP001');
+    client.call = jest.fn().mockResolvedValue({ status: 'Accepted' });
     mockDb.getChargepointByIdentity
       .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 })  // cpRecord
       .mockReturnValueOnce({ id: 1, connected: 1, site_id: 1 })    // timer check
@@ -2004,10 +2083,67 @@ describe('ocpp-server-201 — StateRefresh TriggerMessage', () => {
     mockConnectedClients.set('CP001', client);
 
     register201Handlers(client, makeLoggedHandle(client));
-    await jest.advanceTimersByTimeAsync(18001);
+    await jest.advanceTimersByTimeAsync(30001); // 20s outer + 10s inner
 
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
+  });
+
+  it('retry TriggerMessage(BootNotification) après 15s si Rejected, puis tente StatusNotification', async () => {
+    const client = makeClient('CP001');
+    client.call = jest.fn()
+      .mockResolvedValueOnce({ status: 'Rejected' })  // Boot 1 → Rejected
+      .mockResolvedValueOnce({ status: 'Rejected' })  // Boot 2 (retry) → Rejected
+      .mockResolvedValueOnce({ status: 'Accepted' }); // Status 1 → Accepted
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 })
+      .mockReturnValue({ id: 1, connected: 1, site_id: 1 });
+    mockConnectedClients.set('CP001', client);
+
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(36000); // 20s + 15s retry + marge
+
+    expect(client.call).toHaveBeenNthCalledWith(1, 'TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).toHaveBeenNthCalledWith(2, 'TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).toHaveBeenNthCalledWith(3, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
+    expect(client.call).toHaveBeenCalledTimes(3);
+  });
+
+  it("n'envoie pas TriggerMessage(StatusNotification) si borne déconnectée pendant le retry Boot", async () => {
+    const client = makeClient('CP001');
+    client.call = jest.fn().mockResolvedValue({ status: 'Rejected' });
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 }) // register
+      .mockReturnValueOnce({ id: 1, connected: 1, site_id: 1 })   // timer check
+      .mockReturnValueOnce({ id: 1, site_id: 1 })                  // callClient201 Boot 1
+      .mockReturnValue({ id: 1, connected: 0, site_id: 1 });       // après 15s: déconnecté
+    mockConnectedClients.set('CP001', client);
+
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(36000); // 20s + 15s retry + marge
+
+    expect(client.call).toHaveBeenCalledTimes(1); // Boot 1 seulement
+    expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
+  });
+
+  it('retry TriggerMessage(StatusNotification) après 15s si Rejected', async () => {
+    const client = makeClient('CP001');
+    client.call = jest.fn()
+      .mockResolvedValueOnce({ status: 'Accepted' })  // Boot → Accepted
+      .mockResolvedValueOnce({ status: 'Rejected' })  // Status 1 → Rejected
+      .mockResolvedValueOnce({ status: 'Accepted' }); // Status 2 (retry) → Accepted
+    mockDb.getChargepointByIdentity
+      .mockReturnValueOnce({ id: 1, initialized: 1, site_id: 1 })
+      .mockReturnValue({ id: 1, connected: 1, site_id: 1 });
+    mockConnectedClients.set('CP001', client);
+
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(46000); // 20s Boot + 10s attente Status + 15s retry + marge
+
+    expect(client.call).toHaveBeenNthCalledWith(1, 'TriggerMessage', { requestedMessage: 'BootNotification' });
+    expect(client.call).toHaveBeenNthCalledWith(2, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
+    expect(client.call).toHaveBeenNthCalledWith(3, 'TriggerMessage', { requestedMessage: 'StatusNotification' });
+    expect(client.call).toHaveBeenCalledTimes(3);
   });
 });
 
