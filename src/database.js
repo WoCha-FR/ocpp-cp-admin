@@ -2530,15 +2530,16 @@ function touchLastHeartbeat(identity) {
 
 // ── Admin — infos système ──
 const ADMIN_STATS_TABLES = [
-  'transactions',
-  'ocpp_messages',
-  'id_tags_events',
-  'error_events',
-  'reservations',
-  'notification_log',
-  'chargepoints',
   'sites',
   'users',
+  'chargepoints',
+  'ocpp_messages',
+  'transactions',
+  'transactions_values',
+  'id_tags_events',
+  'reservations',
+  'error_events',
+  'notification_log',
 ];
 
 function getDbFileSize() {

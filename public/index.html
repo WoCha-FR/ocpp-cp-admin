@@ -6262,6 +6262,7 @@ async function refreshAdminInfo() {
 
   const countLabels = {
     transactions: t('navigation.transactions'),
+    transactions_values: t('admin.countTransactionsValues'),
     ocpp_messages: t('admin.countOcppMessages'),
     id_tags_events: t('admin.countIdTagEvents'),
     error_events: t('navigation.errorEvents'),
@@ -6299,9 +6300,21 @@ async function refreshAdminInfo() {
     <h4>${t('admin.countsTitle')}</h4>
     <table class="table">
       <tbody>
-        ${Object.entries(info.counts).map(([table, n]) => `
-          <tr><td>${countLabels[table] || table}</td><td class="td-primary">${n}</td></tr>
-        `).join('')}
+        ${(() => {
+          const entries = Object.entries(info.counts);
+          const rows = [];
+          for (let i = 0; i < entries.length; i += 2) {
+            rows.push(entries.slice(i, i + 2));
+          }
+          return rows.map((pair) => `
+            <tr>
+              ${pair.map(([table, n]) => `
+                <td>${countLabels[table] || table}</td><td class="td-primary">${n}</td>
+              `).join('')}
+              ${pair.length < 2 ? '<td></td><td></td>' : ''}
+            </tr>
+          `).join('');
+        })()}
       </tbody>
     </table>`;
 }

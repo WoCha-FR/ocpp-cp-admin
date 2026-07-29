@@ -681,6 +681,7 @@
     "statConnectedDbSuffix": "{{count}} in database",
     "countsTitle": "Record counts per table",
     "countOcppMessages": "OCPP Messages",
+    "countTransactionsValues": "Transaction Values",
     "countIdTagEvents": "ID Tag Events",
     "countReservations": "Reservations",
     "countNotificationLog": "Notification Log",
