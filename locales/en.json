@@ -17,6 +17,7 @@
     "close": "Close",
     "view": "View",
     "hide": "Hide",
+    "clear": "Clear",
     "reset": "Reset",
     "error": "Error",
     "name": "Name",
@@ -684,7 +685,19 @@
     "countReservations": "Reservations",
     "countNotificationLog": "Notification Log",
     "backupTitle": "Database Backup",
-    "backupButton": "Download Backup"
+    "backupButton": "Download Backup",
+    "tabConsole": "OCPP Console",
+    "consoleTitle": "Raw OCPP Console",
+    "consoleSelectCp": "Chargepoint",
+    "consoleNoChargepoints": "No chargepoint currently connected",
+    "consoleMethodLabel": "Command",
+    "consoleMethodPlaceholder": "e.g. GetConfiguration, TriggerMessage, GetBaseReport…",
+    "consoleParamsLabel": "Parameters (JSON)",
+    "consoleSendBtn": "Send",
+    "consoleSelectCpRequired": "Select a chargepoint",
+    "consoleMethodRequired": "Enter the command name",
+    "consoleHistoryTitle": "History (session)",
+    "consoleNoHistory": "No command sent yet"
   },
   "errorEvents": {
     "title": "Error History",

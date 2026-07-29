@@ -6203,11 +6203,13 @@ async function renderAdmin() {
   const html = `
     <div class="tabs">
       <button class="tab ${currentAdminTab === 'info' ? 'active' : ''}" data-onclick="switchAdminTab('info')">${t('admin.tabInfo')}</button>
+      <button class="tab ${currentAdminTab === 'console' ? 'active' : ''}" data-onclick="switchAdminTab('console')">${t('admin.tabConsole')}</button>
     </div>
     <div id="adminTabContent"></div>`;
   document.getElementById('pageContent').innerHTML = html;
 
   if (currentAdminTab === 'info') await renderAdminTabInfo();
+  if (currentAdminTab === 'console') await renderAdminTabConsole();
 }
 
 function switchAdminTab(tab) {
@@ -6217,6 +6219,7 @@ function switchAdminTab(tab) {
     el.classList.toggle('active', el.dataset.onclick === `switchAdminTab('${tab}')`);
   });
   if (tab === 'info') renderAdminTabInfo();
+  if (tab === 'console') renderAdminTabConsole();
 }
 
 async function renderAdminTabInfo() {
@@ -6305,6 +6308,102 @@ async function refreshAdminInfo() {
 
 function downloadDbBackup() {
   window.location.href = '/api/admin/db/backup';
+}
+
+// ── Onglet Console OCPP brute ──
+let _consoleChargepoints = [];
+let _consoleHistory = [];
+
+async function renderAdminTabConsole() {
+  const contentEl = document.getElementById('adminTabContent');
+  try {
+    const all = await api('GET', '/chargepoints');
+    _consoleChargepoints = all.filter(cp => cp.online);
+  } catch (err) {
+    contentEl.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+
+  const cpOptions = _consoleChargepoints.map(cp =>
+    `<option value="${cp.id}">${escapeHtml(cp.name || cp.identity)} (${escapeHtml(cp.identity)}) — OCPP ${escapeHtml(cp.ocpp_version || '1.6')}</option>`
+  ).join('');
+
+  contentEl.innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3>${t('admin.consoleTitle')}</h3></div>
+      <div style="padding:12px 16px">
+        ${_consoleChargepoints.length === 0 ? `<p class="text-muted">${t('admin.consoleNoChargepoints')}</p>` : `
+        <div class="form-group">
+          <label>${t('admin.consoleSelectCp')}</label>
+          <select id="consoleCpSelect" class="form-control">${cpOptions}</select>
+        </div>
+        <div class="form-group">
+          <label>${t('admin.consoleMethodLabel')}</label>
+          <input type="text" id="consoleMethodInput" class="form-control" placeholder="${t('admin.consoleMethodPlaceholder')}">
+        </div>
+        <div class="form-group">
+          <label>${t('admin.consoleParamsLabel')}</label>
+          <textarea id="consoleParamsInput" class="form-control" rows="5" style="font-family:monospace;font-size:13px" placeholder="{}"></textarea>
+        </div>
+        <button class="btn btn-primary btn-sm" data-onclick="withBtn(this, submitOcppConsoleCommand)">📡 ${t('admin.consoleSendBtn')}</button>
+        `}
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h3>${t('admin.consoleHistoryTitle')}</h3>
+        <span id="consoleHistoryClearWrap">${_consoleHistory.length > 0 ? `<button class="btn btn-secondary btn-sm" data-onclick="clearConsoleHistory()">${t('common.clear')}</button>` : ''}</span>
+      </div>
+      <div id="consoleHistoryBody">${renderConsoleHistoryHtml()}</div>
+    </div>`;
+}
+
+function renderConsoleHistoryHtml() {
+  if (_consoleHistory.length === 0) {
+    return `<p class="text-muted" style="padding:12px 16px">${t('admin.consoleNoHistory')}</p>`;
+  }
+  return _consoleHistory.map((entry) => `
+    <div style="padding:12px 16px;border-top:1px solid var(--border-color)">
+      <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+        <div><strong>${escapeHtml(entry.method)}</strong><span class="text-muted"> — ${escapeHtml(entry.identity)}</span></div>
+        <span class="text-muted">${new Date(entry.timestamp).toLocaleTimeString()}</span>
+      </div>
+      <pre style="font-size:12px;overflow-x:auto;background:var(--gray-50);padding:8px;border-radius:4px;margin:8px 0 4px">${escapeHtml(JSON.stringify(entry.params, null, 2))}</pre>
+      ${entry.success
+        ? `<pre style="font-size:12px;overflow-x:auto;background:var(--gray-50);padding:8px;border-radius:4px;margin:0;border-left:3px solid var(--success)">${escapeHtml(JSON.stringify(entry.result, null, 2))}</pre>`
+        : `<div class="alert alert-danger" style="margin:0">${escapeHtml(entry.error)}</div>`}
+    </div>`).join('');
+}
+
+async function submitOcppConsoleCommand() {
+  const cpSelect = document.getElementById('consoleCpSelect');
+  const cpId = Number(cpSelect?.value);
+  if (!cpId) throw new Error(t('admin.consoleSelectCpRequired'));
+  const method = document.getElementById('consoleMethodInput').value.trim();
+  if (!method) throw new Error(t('admin.consoleMethodRequired'));
+  const paramsText = document.getElementById('consoleParamsInput').value.trim();
+  const params = paramsText ? JSON.parse(paramsText) : {};
+
+  const cp = _consoleChargepoints.find(c => c.id === cpId);
+  const entry = { method, params, identity: cp?.identity || '', timestamp: Date.now() };
+  try {
+    const result = await api('POST', `/chargepoints/${cpId}/command`, { method, params });
+    entry.success = true;
+    entry.result = result.result;
+  } catch (err) {
+    entry.success = false;
+    entry.error = err.message;
+  }
+  _consoleHistory.unshift(entry);
+  document.getElementById('consoleHistoryBody').innerHTML = renderConsoleHistoryHtml();
+  document.getElementById('consoleHistoryClearWrap').innerHTML =
+    `<button class="btn btn-secondary btn-sm" data-onclick="clearConsoleHistory()">${t('common.clear')}</button>`;
+}
+
+function clearConsoleHistory() {
+  _consoleHistory = [];
+  document.getElementById('consoleHistoryBody').innerHTML = renderConsoleHistoryHtml();
+  document.getElementById('consoleHistoryClearWrap').innerHTML = '';
 }
 
 // ══════════════════════════════════════

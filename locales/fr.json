@@ -17,6 +17,7 @@
     "close": "Fermer",
     "view": "Voir",
     "hide": "Masquer",
+    "clear": "Vider",
     "reset": "Réinitialiser",
     "error": "Erreur",
     "name": "Nom",
@@ -684,7 +685,19 @@
     "countReservations": "Réservations",
     "countNotificationLog": "Journal des notifications",
     "backupTitle": "Sauvegarde de la base de données",
-    "backupButton": "Télécharger la sauvegarde"
+    "backupButton": "Télécharger la sauvegarde",
+    "tabConsole": "Console OCPP",
+    "consoleTitle": "Console OCPP brute",
+    "consoleSelectCp": "Borne",
+    "consoleNoChargepoints": "Aucune borne connectée actuellement",
+    "consoleMethodLabel": "Commande",
+    "consoleMethodPlaceholder": "Ex : GetConfiguration, TriggerMessage, GetBaseReport…",
+    "consoleParamsLabel": "Paramètres (JSON)",
+    "consoleSendBtn": "Envoyer",
+    "consoleSelectCpRequired": "Sélectionnez une borne",
+    "consoleMethodRequired": "Saisissez le nom de la commande",
+    "consoleHistoryTitle": "Historique (session)",
+    "consoleNoHistory": "Aucune commande envoyée pour l'instant"
   },
   "errorEvents": {
     "title": "Historique des alertes",
