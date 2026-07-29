@@ -34,6 +34,7 @@
     "site_other": "Sites",
     "csvExport": "Export as CSV",
     "select": "Select",
+    "refresh": "Refresh",
     "user": "User",
     "manager": "Manager",
     "admin": "Administrator",
@@ -665,7 +666,25 @@
     "myProfile": "My Profile",
     "configEditor": "Configuration",
     "adminSpace": "Administration",
-    "errorEvents": "Alerts"
+    "errorEvents": "Alerts",
+    "admin": "System Administration"
+  },
+  "admin": {
+    "tabInfo": "System Info",
+    "infoTitle": "System Information",
+    "statVersion": "Version",
+    "statUptime": "Uptime",
+    "statMemory": "Memory (heap)",
+    "statDbSize": "Database size",
+    "statConnected": "Connected chargepoints (live)",
+    "statConnectedDbSuffix": "{{count}} in database",
+    "countsTitle": "Record counts per table",
+    "countOcppMessages": "OCPP Messages",
+    "countIdTagEvents": "ID Tag Events",
+    "countReservations": "Reservations",
+    "countNotificationLog": "Notification Log",
+    "backupTitle": "Database Backup",
+    "backupButton": "Download Backup"
   },
   "errorEvents": {
     "title": "Error History",

@@ -182,6 +182,9 @@
       <a data-onclick="navigate('configeditor')" data-page="configeditor" id="navConfigEditor" class="hidden">
         <span class="icon">⚙️</span> <span data-i18n="navigation.configEditor">Configuration</span>
       </a>
+      <a data-onclick="navigate('admin')" data-page="admin" id="navAdmin" class="hidden">
+        <span class="icon">🛠️</span> <span data-i18n="navigation.admin">Administration système</span>
+      </a>
     </nav>
     <div style="padding: 4px 0; border-top: 1px solid var(--sidebar-border);">
       <button class="theme-toggle" data-onclick="toggleTheme()" title="Changer le thème">
@@ -748,6 +751,7 @@ function showApp() {
   document.getElementById('navAdminDivider').classList.toggle('hidden', !isAdmin);
   document.getElementById('navAdminDividerLabel').classList.toggle('hidden', !isAdmin);
   document.getElementById('navConfigEditor').classList.toggle('hidden', !isAdmin);
+  document.getElementById('navAdmin').classList.toggle('hidden', !isAdmin);
   connectWebSocket();
   navigate('dashboard');
   checkPushPrompt();
@@ -976,9 +980,10 @@ document.addEventListener('DOMContentLoaded', () => {
 function navigate(page, silent = false) {
   closeSidebar();
   // Bloquer l'accès aux pages admin
-  if (page === 'configeditor' && currentUser.role !== 'admin') {
+  if ((page === 'configeditor' || page === 'admin') && currentUser.role !== 'admin') {
     return navigate('dashboard');
   }
+  if (currentPage === 'admin' && page !== 'admin') stopAdminAutoRefresh();
   // Bloquer l'accès aux pages manager sans droits
   if ((page === 'idtags' || page === 'sites' || page === 'errorevents') && !canManage()) {
     return navigate('dashboard');
@@ -1009,12 +1014,13 @@ function navigate(page, silent = false) {
     profile: t('navigation.myProfile'),
     configeditor: t('navigation.configEditor'),
     errorevents: t('errorEvents.title'),
+    admin: t('navigation.admin'),
   };
   document.getElementById('pageTitle').textContent = titles[page] || page;
 
   // Les utilisateurs simples ont leur propre dashboard
   const dashboardRenderer = canManage() ? renderDashboard : renderUserDashboard;
-  const renderers = { dashboard: dashboardRenderer, chargepoints: renderChargepoints, sites: renderSites, siteusers: renderSiteUsers, transactions: renderTransactions, connectors: renderConnectors, mycharge: renderUserDashboard, mytransactions: renderMyTransactions, idtags: renderIdTags, users: renderUsers, notifications: renderNotifications, profile: renderProfile, transactiondetail: refreshTransactionDetail, configeditor: renderConfigEditor, errorevents: renderErrorEvents };
+  const renderers = { dashboard: dashboardRenderer, chargepoints: renderChargepoints, sites: renderSites, siteusers: renderSiteUsers, transactions: renderTransactions, connectors: renderConnectors, mycharge: renderUserDashboard, mytransactions: renderMyTransactions, idtags: renderIdTags, users: renderUsers, notifications: renderNotifications, profile: renderProfile, transactiondetail: refreshTransactionDetail, configeditor: renderConfigEditor, errorevents: renderErrorEvents, admin: renderAdmin };
   if (renderers[page]) renderers[page]();
 }
 
@@ -6152,6 +6158,153 @@ async function saveConfigEditor(e) {
       navigate('dashboard');
     } catch {}
   }, 2000);
+}
+
+// ══════════════════════════════════════
+//  ADMINISTRATION SYSTÈME
+// ══════════════════════════════════════
+let currentAdminTab = 'info';
+let _adminAutoRefreshTimer = null;
+
+function stopAdminAutoRefresh() {
+  if (_adminAutoRefreshTimer) {
+    clearInterval(_adminAutoRefreshTimer);
+    _adminAutoRefreshTimer = null;
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let n = bytes;
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+function formatUptime(seconds) {
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const parts = [];
+  if (d) parts.push(`${d}j`);
+  if (h || d) parts.push(`${h}h`);
+  parts.push(`${m}min`);
+  return parts.join(' ');
+}
+
+async function renderAdmin() {
+  if (currentUser.role !== 'admin') return navigate('dashboard');
+  document.getElementById('topbarActions').innerHTML = '';
+
+  const html = `
+    <div class="tabs">
+      <button class="tab ${currentAdminTab === 'info' ? 'active' : ''}" data-onclick="switchAdminTab('info')">${t('admin.tabInfo')}</button>
+    </div>
+    <div id="adminTabContent"></div>`;
+  document.getElementById('pageContent').innerHTML = html;
+
+  if (currentAdminTab === 'info') await renderAdminTabInfo();
+}
+
+function switchAdminTab(tab) {
+  currentAdminTab = tab;
+  stopAdminAutoRefresh();
+  document.querySelectorAll('#pageContent .tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.onclick === `switchAdminTab('${tab}')`);
+  });
+  if (tab === 'info') renderAdminTabInfo();
+}
+
+async function renderAdminTabInfo() {
+  const contentEl = document.getElementById('adminTabContent');
+  contentEl.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <h3>${t('admin.infoTitle')}</h3>
+        <button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, refreshAdminInfo)">${t('common.refresh')}</button>
+      </div>
+      <div id="adminInfoBody"><p class="text-muted" style="padding:12px 16px">${t('common.loading', { defaultValue: 'Chargement…' })}</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h3>${t('admin.backupTitle')}</h3>
+      </div>
+      <div style="padding:12px 16px">
+        <button class="btn btn-primary btn-sm" data-onclick="downloadDbBackup()">📥 ${t('admin.backupButton')}</button>
+      </div>
+    </div>`;
+  await refreshAdminInfo();
+  stopAdminAutoRefresh();
+  _adminAutoRefreshTimer = setInterval(() => {
+    if (currentPage === 'admin' && currentAdminTab === 'info') refreshAdminInfo();
+    else stopAdminAutoRefresh();
+  }, 15000);
+}
+
+async function refreshAdminInfo() {
+  const bodyEl = document.getElementById('adminInfoBody');
+  if (!bodyEl) return;
+  let info;
+  try {
+    info = await api('GET', '/admin/info');
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  if (!document.getElementById('adminInfoBody')) return;
+
+  const countLabels = {
+    transactions: t('navigation.transactions'),
+    ocpp_messages: t('admin.countOcppMessages'),
+    id_tags_events: t('admin.countIdTagEvents'),
+    error_events: t('navigation.errorEvents'),
+    reservations: t('admin.countReservations'),
+    notification_log: t('admin.countNotificationLog'),
+    chargepoints: t('navigation.chargepoints'),
+    sites: t('navigation.sites'),
+    users: t('navigation.users'),
+  };
+
+  document.getElementById('adminInfoBody').innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">${t('admin.statVersion')}</div>
+        <div class="stat-value">${escapeHtml(info.version)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">${t('admin.statUptime')}</div>
+        <div class="stat-value">${formatUptime(info.uptimeSeconds)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">${t('admin.statMemory')}</div>
+        <div class="stat-value">${formatBytes(info.memory.heapUsed)}</div>
+        <div class="stat-sub">RSS ${formatBytes(info.memory.rss)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">${t('admin.statDbSize')}</div>
+        <div class="stat-value">${formatBytes(info.dbSizeBytes)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">${t('admin.statConnected')}</div>
+        <div class="stat-value">${info.connected.live} <span class="stat-sub-inline">/ ${t('admin.statConnectedDbSuffix', { count: info.connected.db })}</span></div>
+      </div>
+    </div>
+    <h4>${t('admin.countsTitle')}</h4>
+    <table class="table">
+      <tbody>
+        ${Object.entries(info.counts).map(([table, n]) => `
+          <tr><td>${countLabels[table] || table}</td><td class="td-primary">${n}</td></tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+}
+
+function downloadDbBackup() {
+  window.location.href = '/api/admin/db/backup';
 }
 
 // ══════════════════════════════════════

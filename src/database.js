@@ -2528,9 +2528,56 @@ function touchLastHeartbeat(identity) {
   ).run(identity);
 }
 
+// ── Admin — infos système ──
+const ADMIN_STATS_TABLES = [
+  'transactions',
+  'ocpp_messages',
+  'id_tags_events',
+  'error_events',
+  'reservations',
+  'notification_log',
+  'chargepoints',
+  'sites',
+  'users',
+];
+
+function getDbFileSize() {
+  const fs = require('fs');
+  const suffixes = ['', '-wal', '-shm'];
+  return suffixes.reduce((total, suffix) => {
+    const filePath = DB_PATH + suffix;
+    try {
+      return total + fs.statSync(filePath).size;
+    } catch {
+      return total;
+    }
+  }, 0);
+}
+
+function getSystemStats() {
+  const counts = {};
+  for (const table of ADMIN_STATS_TABLES) {
+    counts[table] = db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n;
+  }
+  const connectedDb = db
+    .prepare('SELECT COUNT(*) AS n FROM chargepoints WHERE connected = 1')
+    .get().n;
+  return {
+    counts,
+    dbSizeBytes: getDbFileSize(),
+    connectedDb,
+  };
+}
+
+async function backupDatabase(dest) {
+  await db.backup(dest);
+}
+
 module.exports = {
   getDb,
   closeDb,
+  getSystemStats,
+  backupDatabase,
   getAllSites,
   getSiteById,
   createSite,

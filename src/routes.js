@@ -1,4 +1,6 @@
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { spawn } = require('child_process');
 const express = require('express');
 const crypto = require('crypto');
@@ -3157,6 +3159,39 @@ router.put('/configeditor', requireRole('admin'), (req, res) => {
     }).unref();
     process.exit(0);
   }, 300);
+});
+
+// ══════════════════════════════════════
+//  ADMIN — SYSTÈME
+// ══════════════════════════════════════
+const APP_VERSION = require('../package.json').version;
+
+router.get('/admin/info', requireRole('admin'), (req, res) => {
+  const stats = db.getSystemStats();
+  res.json({
+    version: APP_VERSION,
+    uptimeSeconds: process.uptime(),
+    memory: process.memoryUsage(),
+    dbSizeBytes: stats.dbSizeBytes,
+    counts: stats.counts,
+    connected: {
+      db: stats.connectedDb,
+      live: getConnectedClients().size,
+    },
+  });
+});
+
+router.get('/admin/db/backup', requireRole('admin'), async (req, res) => {
+  const dateStamp = new Date().toISOString().slice(0, 10);
+  const tempPath = path.join(os.tmpdir(), `cpadmin-backup-${crypto.randomUUID()}.sqlite`);
+  try {
+    await db.backupDatabase(tempPath);
+  } catch {
+    return res.status(500).json({ error: 'ERR_BACKUP_FAILED' });
+  }
+  res.download(tempPath, `cpadmin-backup-${dateStamp}.sqlite`, () => {
+    fs.unlink(tempPath, () => {});
+  });
 });
 
 module.exports = router;

@@ -43,6 +43,7 @@
     "site_other": "Sites",
     "csvExport": "Exporter en CSV",
     "select": "Sélectionner",
+    "refresh": "Rafraîchir",
     "user": "Utilisateur",
     "manager": "Gestionnaire",
     "admin": "Administrateur",
@@ -665,7 +666,25 @@
     "myProfile": "Mon profil",
     "configEditor": "Configuration",
     "adminSpace": "Administration",
-    "errorEvents": "Alertes"
+    "errorEvents": "Alertes",
+    "admin": "Administration système"
+  },
+  "admin": {
+    "tabInfo": "Informations système",
+    "infoTitle": "Informations système",
+    "statVersion": "Version",
+    "statUptime": "Temps de fonctionnement",
+    "statMemory": "Mémoire (heap)",
+    "statDbSize": "Taille de la base de données",
+    "statConnected": "Bornes connectées (temps réel)",
+    "statConnectedDbSuffix": "{{count}} en base",
+    "countsTitle": "Nombre d'enregistrements par table",
+    "countOcppMessages": "Messages OCPP",
+    "countIdTagEvents": "Événements ID Tags",
+    "countReservations": "Réservations",
+    "countNotificationLog": "Journal des notifications",
+    "backupTitle": "Sauvegarde de la base de données",
+    "backupButton": "Télécharger la sauvegarde"
   },
   "errorEvents": {
     "title": "Historique des alertes",
