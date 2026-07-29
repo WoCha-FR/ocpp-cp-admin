@@ -6203,12 +6203,14 @@ async function renderAdmin() {
   const html = `
     <div class="tabs">
       <button class="tab ${currentAdminTab === 'info' ? 'active' : ''}" data-onclick="switchAdminTab('info')">${t('admin.tabInfo')}</button>
+      <button class="tab ${currentAdminTab === 'cleanup' ? 'active' : ''}" data-onclick="switchAdminTab('cleanup')">${t('admin.tabCleanup')}</button>
       <button class="tab ${currentAdminTab === 'console' ? 'active' : ''}" data-onclick="switchAdminTab('console')">${t('admin.tabConsole')}</button>
     </div>
     <div id="adminTabContent"></div>`;
   document.getElementById('pageContent').innerHTML = html;
 
   if (currentAdminTab === 'info') await renderAdminTabInfo();
+  if (currentAdminTab === 'cleanup') await renderAdminTabCleanup();
   if (currentAdminTab === 'console') await renderAdminTabConsole();
 }
 
@@ -6219,6 +6221,7 @@ function switchAdminTab(tab) {
     el.classList.toggle('active', el.dataset.onclick === `switchAdminTab('${tab}')`);
   });
   if (tab === 'info') renderAdminTabInfo();
+  if (tab === 'cleanup') renderAdminTabCleanup();
   if (tab === 'console') renderAdminTabConsole();
 }
 
@@ -6260,19 +6263,6 @@ async function refreshAdminInfo() {
   }
   if (!document.getElementById('adminInfoBody')) return;
 
-  const countLabels = {
-    transactions: t('navigation.transactions'),
-    transactions_values: t('admin.countTransactionsValues'),
-    ocpp_messages: t('admin.countOcppMessages'),
-    id_tags_events: t('admin.countIdTagEvents'),
-    error_events: t('navigation.errorEvents'),
-    reservations: t('admin.countReservations'),
-    notification_log: t('admin.countNotificationLog'),
-    chargepoints: t('navigation.chargepoints'),
-    sites: t('navigation.sites'),
-    users: t('navigation.users'),
-  };
-
   document.getElementById('adminInfoBody').innerHTML = `
     <div class="stats-grid">
       <div class="stat-card">
@@ -6309,7 +6299,7 @@ async function refreshAdminInfo() {
           return rows.map((pair) => `
             <tr>
               ${pair.map(([table, n]) => `
-                <td>${countLabels[table] || table}</td><td class="td-primary">${n}</td>
+                <td>${adminTableLabel(table)}</td><td class="td-primary">${n}</td>
               `).join('')}
               ${pair.length < 2 ? '<td></td><td></td>' : ''}
             </tr>
@@ -6321,6 +6311,122 @@ async function refreshAdminInfo() {
 
 function downloadDbBackup() {
   window.location.href = '/api/admin/db/backup';
+}
+
+function adminTableLabel(table) {
+  const map = {
+    transactions: t('navigation.transactions'),
+    transactions_values: t('admin.countTransactionsValues'),
+    ocpp_messages: t('admin.countOcppMessages'),
+    id_tags_events: t('admin.countIdTagEvents'),
+    error_events: t('navigation.errorEvents'),
+    reservations: t('admin.countReservations'),
+    notification_log: t('admin.countNotificationLog'),
+    chargepoints: t('navigation.chargepoints'),
+    sites: t('navigation.sites'),
+    users: t('navigation.users'),
+  };
+  return map[table] || table;
+}
+
+// ── Onglet Nettoyage des données ──
+// mode 'body' → DELETE /admin/cleanup/:action avec { before } ; mode 'query' → DELETE :endpoint?before=
+const CLEANUP_ROWS = [
+  { table: 'transactions_values', action: 'transaction-values', mode: 'body' },
+  { table: 'ocpp_messages', action: 'ocpp-messages', mode: 'query', endpoint: '/ocpp-messages' },
+  { table: 'id_tags_events', action: 'id-tag-events', mode: 'body' },
+  { table: 'error_events', action: 'error-events', mode: 'body' },
+  { table: 'notification_log', action: 'notification-log', mode: 'query' },
+  { table: 'reservations', action: 'reservations', mode: 'body' },
+];
+
+async function renderAdminTabCleanup() {
+  const contentEl = document.getElementById('adminTabContent');
+  contentEl.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <h3>${t('admin.cleanupTitle')}</h3>
+        <button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, refreshCleanupStats)">${t('common.refresh')}</button>
+      </div>
+      <div id="cleanupStatsBody"><p class="text-muted" style="padding:12px 16px">${t('common.loading', { defaultValue: 'Chargement…' })}</p></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>${t('admin.vacuumTitle')}</h3></div>
+      <div style="padding:12px 16px">
+        <button class="btn btn-primary btn-sm" data-onclick="withBtn(this, runDbVacuum)">🧹 ${t('admin.vacuumButton')}</button>
+      </div>
+    </div>`;
+  await refreshCleanupStats();
+}
+
+async function refreshCleanupStats() {
+  const bodyEl = document.getElementById('cleanupStatsBody');
+  if (!bodyEl) return;
+  let stats;
+  try {
+    stats = await api('GET', '/admin/cleanup/stats');
+  } catch (err) {
+    bodyEl.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  if (!document.getElementById('cleanupStatsBody')) return;
+  const statsByTable = Object.fromEntries(stats.map(s => [s.table, s]));
+  document.getElementById('cleanupStatsBody').innerHTML = `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>${t('admin.cleanupColData')}</th>
+          <th>${t('admin.cleanupColCount')}</th>
+          <th>${t('admin.cleanupColSize')}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${CLEANUP_ROWS.map(row => {
+          const s = statsByTable[row.table] || { count: 0, sizeBytes: 0 };
+          return `
+            <tr>
+              <td>${adminTableLabel(row.table)}</td>
+              <td class="td-primary">${s.count}</td>
+              <td>${formatBytes(s.sizeBytes)}</td>
+              <td><button class="btn btn-danger btn-sm" data-onclick="openCleanupModal('${row.table}')">${t('common.delete')}</button></td>
+            </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function openCleanupModal(table) {
+  const row = CLEANUP_ROWS.find(r => r.table === table);
+  if (!row) return;
+  openModal(`
+    <h3>${t('admin.cleanupModalTitle', { name: adminTableLabel(table) })}</h3>
+    <div class="form-group">
+      <label>${t('admin.cleanupModalDateLabel')}</label>
+      <input type="date" id="cleanupModalDate" required>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-danger" data-onclick="withBtn(this, () => confirmCleanupAction('${table}'))">${t('common.delete')}</button>
+    </div>`);
+}
+
+async function confirmCleanupAction(table) {
+  const row = CLEANUP_ROWS.find(r => r.table === table);
+  const before = document.getElementById('cleanupModalDate')?.value;
+  if (!before) { toast(t('admin.cleanupDateRequired'), 'error'); return; }
+  const result = row.mode === 'query'
+    ? await api('DELETE', `${row.endpoint || `/admin/cleanup/${row.action}`}?before=${encodeURIComponent(before)}`)
+    : await api('DELETE', `/admin/cleanup/${row.action}`, { before });
+  closeModal();
+  toast(t('admin.cleanupDeletedCount', { count: result.deleted }), 'success');
+  await refreshCleanupStats();
+}
+
+async function runDbVacuum() {
+  if (!await confirmDialog(t('admin.vacuumConfirm'))) return;
+  await api('POST', '/admin/db/vacuum');
+  toast(t('admin.vacuumDone'), 'success');
 }
 
 // ── Onglet Console OCPP brute ──

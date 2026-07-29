@@ -1265,12 +1265,19 @@ function getOcppMessages(filters = {}) {
   return db.prepare(query).all(...params);
 }
 
-function clearOcppMessages(chargepointId) {
+function clearOcppMessages(chargepointId, before) {
+  const conditions = [];
+  const params = [];
   if (chargepointId) {
-    db.prepare('DELETE FROM ocpp_messages WHERE chargepoint_id = ?').run(chargepointId);
-  } else {
-    db.prepare('DELETE FROM ocpp_messages').run();
+    conditions.push('chargepoint_id = ?');
+    params.push(chargepointId);
   }
+  if (before) {
+    conditions.push('timestamp < ?');
+    params.push(before);
+  }
+  const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+  return db.prepare(`DELETE FROM ocpp_messages${where}`).run(...params).changes;
 }
 
 // ── Chargepoint Configuration ──
@@ -2574,11 +2581,90 @@ async function backupDatabase(dest) {
   await db.backup(dest);
 }
 
+// ── Admin — nettoyage des données ──
+// Whitelist fixe : tableName n'est jamais dérivé d'une entrée utilisateur, ce qui rend
+// son interpolation directe dans le SQL (impossible à paramétrer pour PRAGMA/nom de table) sûre.
+const CLEANUP_TABLES = [
+  'transactions_values',
+  'ocpp_messages',
+  'id_tags_events',
+  'error_events',
+  'notification_log',
+  'reservations',
+];
+
+function estimateTableSize(tableName) {
+  if (!CLEANUP_TABLES.includes(tableName)) {
+    throw new Error('ERR_INVALID_TABLE');
+  }
+  const columns = db.prepare(`PRAGMA table_info(${tableName})`).all();
+  const textColumns = columns.filter((c) => c.type === 'TEXT').map((c) => c.name);
+  if (textColumns.length === 0) return 0;
+  const sumExpr = textColumns.map((c) => `COALESCE(LENGTH(${c}), 0)`).join(' + ');
+  const row = db.prepare(`SELECT SUM(${sumExpr}) AS bytes FROM ${tableName}`).get();
+  return row.bytes || 0;
+}
+
+function getCleanupStats() {
+  return CLEANUP_TABLES.map((table) => ({
+    table,
+    count: db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get().n,
+    sizeBytes: estimateTableSize(table),
+  }));
+}
+
+function deleteTransactionValuesBefore(before) {
+  return db
+    .prepare(
+      `DELETE FROM transactions_values WHERE transaction_id IN (
+         SELECT transaction_id FROM transactions WHERE stop_time IS NOT NULL AND stop_time < ?
+       )`
+    )
+    .run(before).changes;
+}
+
+function deleteIdTagEventsBefore(before) {
+  return db.prepare('DELETE FROM id_tags_events WHERE timestamp < ?').run(before).changes;
+}
+
+function deleteErrorEventsBefore(before) {
+  return db.prepare('DELETE FROM error_events WHERE created_at < ?').run(before).changes;
+}
+
+function deleteExpiredReservations(before) {
+  if (before) {
+    return db
+      .prepare(
+        `DELETE FROM reservations WHERE status IN ('Fulfilled','Cancelled','Expired') AND expiry_date < ?`
+      )
+      .run(before).changes;
+  }
+  return db
+    .prepare(`DELETE FROM reservations WHERE status IN ('Fulfilled','Cancelled','Expired')`)
+    .run().changes;
+}
+
+function deleteNotificationLogBefore(before) {
+  return db.prepare('DELETE FROM notification_log WHERE created_at < ?').run(before).changes;
+}
+
+function vacuumDatabase() {
+  db.exec('VACUUM');
+}
+
 module.exports = {
   getDb,
   closeDb,
   getSystemStats,
   backupDatabase,
+  estimateTableSize,
+  getCleanupStats,
+  deleteTransactionValuesBefore,
+  deleteIdTagEventsBefore,
+  deleteErrorEventsBefore,
+  deleteExpiredReservations,
+  deleteNotificationLogBefore,
+  vacuumDatabase,
   getAllSites,
   getSiteById,
   createSite,

@@ -2275,8 +2275,11 @@ router.delete(
   requireRole('admin'),
   ...validateSchema(schema.OcppMessagesQuery),
   (req, res) => {
-    db.clearOcppMessages(req.query.chargepoint_id ? Number(req.query.chargepoint_id) : null);
-    res.json({ ok: true });
+    const deleted = db.clearOcppMessages(
+      req.query.chargepoint_id ? Number(req.query.chargepoint_id) : null,
+      req.query.before || null
+    );
+    res.json({ deleted });
   }
 );
 
@@ -3192,6 +3195,61 @@ router.get('/admin/db/backup', requireRole('admin'), async (req, res) => {
   res.download(tempPath, `cpadmin-backup-${dateStamp}.sqlite`, () => {
     fs.unlink(tempPath, () => {});
   });
+});
+
+// ── Nettoyage des données ──
+router.get('/admin/cleanup/stats', requireRole('admin'), (req, res) => {
+  res.json(db.getCleanupStats());
+});
+
+router.delete(
+  '/admin/cleanup/transaction-values',
+  requireRole('admin'),
+  ...validateSchema(schema.AdminCleanupBeforeRequired),
+  (req, res) => {
+    res.json({ deleted: db.deleteTransactionValuesBefore(req.body.before) });
+  }
+);
+
+router.delete(
+  '/admin/cleanup/id-tag-events',
+  requireRole('admin'),
+  ...validateSchema(schema.AdminCleanupBeforeRequired),
+  (req, res) => {
+    res.json({ deleted: db.deleteIdTagEventsBefore(req.body.before) });
+  }
+);
+
+router.delete(
+  '/admin/cleanup/error-events',
+  requireRole('admin'),
+  ...validateSchema(schema.AdminCleanupBeforeRequired),
+  (req, res) => {
+    res.json({ deleted: db.deleteErrorEventsBefore(req.body.before) });
+  }
+);
+
+router.delete(
+  '/admin/cleanup/reservations',
+  requireRole('admin'),
+  ...validateSchema(schema.AdminCleanupBeforeOptional),
+  (req, res) => {
+    res.json({ deleted: db.deleteExpiredReservations(req.body.before || null) });
+  }
+);
+
+router.delete(
+  '/admin/cleanup/notification-log',
+  requireRole('admin'),
+  ...validateSchema(schema.AdminNotificationLogCleanupQuery),
+  (req, res) => {
+    res.json({ deleted: db.deleteNotificationLogBefore(req.query.before) });
+  }
+);
+
+router.post('/admin/db/vacuum', requireRole('admin'), (req, res) => {
+  db.vacuumDatabase();
+  res.json({ ok: true });
 });
 
 module.exports = router;

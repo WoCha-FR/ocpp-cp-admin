@@ -544,6 +544,17 @@ const OcppMessagesQuery = {
       },
     },
   },
+  before: {
+    in: ['query'],
+    optional: true,
+    custom: {
+      options: (v) => {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v))
+          return true;
+        throw new Error('VALIDATION_BEFORE');
+      },
+    },
+  },
 };
 
 const IdTagEventsQuery = {
@@ -997,6 +1008,47 @@ const EvseDetails = {
   },
 };
 
+function isValidAdminCleanupDate(v) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(v);
+}
+
+const AdminCleanupBeforeRequired = {
+  before: {
+    in: ['body'],
+    custom: {
+      options: (v) => {
+        if (typeof v === 'string' && isValidAdminCleanupDate(v)) return true;
+        throw new Error('VALIDATION_BEFORE');
+      },
+    },
+  },
+};
+
+const AdminCleanupBeforeOptional = {
+  before: {
+    in: ['body'],
+    optional: true,
+    custom: {
+      options: (v) => {
+        if (v == null || (typeof v === 'string' && isValidAdminCleanupDate(v))) return true;
+        throw new Error('VALIDATION_BEFORE');
+      },
+    },
+  },
+};
+
+const AdminNotificationLogCleanupQuery = {
+  before: {
+    in: ['query'],
+    custom: {
+      options: (v) => {
+        if (typeof v === 'string' && isValidAdminCleanupDate(v)) return true;
+        throw new Error('VALIDATION_BEFORE');
+      },
+    },
+  },
+};
+
 module.exports = {
   User,
   UserUpdate,
@@ -1042,4 +1094,7 @@ module.exports = {
   GetCompositeSchedule,
   CreateReservation,
   ReservationIdParam,
+  AdminCleanupBeforeRequired,
+  AdminCleanupBeforeOptional,
+  AdminNotificationLogCleanupQuery,
 };
