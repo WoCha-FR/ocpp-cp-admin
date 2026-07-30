@@ -1049,6 +1049,21 @@ const AdminNotificationLogCleanupQuery = {
   },
 };
 
+const AdminChargepointsCompareQuery = {
+  ids: {
+    in: ['query'],
+    custom: {
+      options: (v) => {
+        if (typeof v !== 'string') throw new Error('VALIDATION_IDS');
+        const parts = v.split(',');
+        if (parts.length < 2 || parts.length > 4) throw new Error('VALIDATION_IDS');
+        if (!parts.every((p) => /^\d+$/.test(p))) throw new Error('VALIDATION_IDS');
+        return true;
+      },
+    },
+  },
+};
+
 module.exports = {
   User,
   UserUpdate,
@@ -1097,4 +1112,5 @@ module.exports = {
   AdminCleanupBeforeRequired,
   AdminCleanupBeforeOptional,
   AdminNotificationLogCleanupQuery,
+  AdminChargepointsCompareQuery,
 };

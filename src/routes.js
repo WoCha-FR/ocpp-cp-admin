@@ -3252,4 +3252,74 @@ router.post('/admin/db/vacuum', requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Comparaison des paramètres OCPP entre bornes ──
+router.get(
+  '/admin/chargepoints/compare',
+  requireRole('admin'),
+  ...validateSchema(schema.AdminChargepointsCompareQuery),
+  (req, res) => {
+    const ids = [...new Set(req.query.ids.split(',').map(Number))];
+    const cps = ids.map((id) => db.getChargepointById(id)).filter(Boolean);
+    if (cps.length !== ids.length) {
+      return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    }
+    const versions = new Set(cps.map((cp) => cp.ocpp_version || '1.6'));
+    if (versions.size > 1) {
+      return res.status(400).json({ error: 'ERR_MIXED_OCPP_VERSION' });
+    }
+    const version = [...versions][0];
+    const chargepoints = cps.map((cp) => ({
+      id: cp.id,
+      identity: cp.identity,
+      name: cp.cpname,
+      vendor: cp.vendor,
+      model: cp.model,
+    }));
+
+    const rowsMap = new Map();
+    if (version === '2.0.1') {
+      for (const cp of cps) {
+        for (const v of db.getChargepointVariables(cp.id)) {
+          const rowKey = [v.component, v.variable, v.attribute, v.instance].join('|');
+          if (!rowsMap.has(rowKey)) {
+            rowsMap.set(rowKey, {
+              component: v.component,
+              variable: v.variable,
+              attribute: v.attribute,
+              instance: v.instance,
+              sortKey: rowKey,
+              values: {},
+            });
+          }
+          rowsMap.get(rowKey).values[cp.id] = { value: v.value, is_override: !!v.is_override };
+        }
+      }
+    } else {
+      for (const cp of cps) {
+        for (const c of db.getChargepointConfig(cp.id)) {
+          if (!rowsMap.has(c.key)) {
+            rowsMap.set(c.key, { key: c.key, sortKey: c.key, values: {} });
+          }
+          rowsMap.get(c.key).values[cp.id] = { value: c.value, is_override: !!c.is_override };
+        }
+      }
+    }
+
+    const rows = [...rowsMap.values()]
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+      .map((row) => {
+        // eslint-disable-next-line no-unused-vars
+        const { sortKey, ...rest } = row;
+        const missing = !cps.every((cp) => rest.values[cp.id] !== undefined);
+        const presentValues = cps
+          .filter((cp) => rest.values[cp.id] !== undefined)
+          .map((cp) => rest.values[cp.id].value);
+        const valuesDiffer = new Set(presentValues).size > 1;
+        return { ...rest, diff: missing || valuesDiffer, missing, valuesDiffer };
+      });
+
+    res.json({ version, chargepoints, rows });
+  }
+);
+
 module.exports = router;

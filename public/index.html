@@ -926,7 +926,7 @@ function handleRealtimeEvent(type, data) {
   }
 }
 
-const STATIC_PAGES = new Set(['notifications', 'profile', 'configeditor', 'idtags', 'users', 'sites', 'siteusers']);
+const STATIC_PAGES = new Set(['notifications', 'profile', 'configeditor', 'idtags', 'users', 'sites', 'siteusers', 'admin']);
 
 function refreshCurrentPage(force = false) {
   if (!force && STATIC_PAGES.has(currentPage)) return;
@@ -6205,6 +6205,7 @@ async function renderAdmin() {
       <button class="tab ${currentAdminTab === 'info' ? 'active' : ''}" data-onclick="switchAdminTab('info')">${t('admin.tabInfo')}</button>
       <button class="tab ${currentAdminTab === 'cleanup' ? 'active' : ''}" data-onclick="switchAdminTab('cleanup')">${t('admin.tabCleanup')}</button>
       <button class="tab ${currentAdminTab === 'console' ? 'active' : ''}" data-onclick="switchAdminTab('console')">${t('admin.tabConsole')}</button>
+      <button class="tab ${currentAdminTab === 'compare' ? 'active' : ''}" data-onclick="switchAdminTab('compare')">${t('admin.tabCompare')}</button>
     </div>
     <div id="adminTabContent"></div>`;
   document.getElementById('pageContent').innerHTML = html;
@@ -6212,6 +6213,7 @@ async function renderAdmin() {
   if (currentAdminTab === 'info') await renderAdminTabInfo();
   if (currentAdminTab === 'cleanup') await renderAdminTabCleanup();
   if (currentAdminTab === 'console') await renderAdminTabConsole();
+  if (currentAdminTab === 'compare') await renderAdminTabCompare();
 }
 
 function switchAdminTab(tab) {
@@ -6223,6 +6225,7 @@ function switchAdminTab(tab) {
   if (tab === 'info') renderAdminTabInfo();
   if (tab === 'cleanup') renderAdminTabCleanup();
   if (tab === 'console') renderAdminTabConsole();
+  if (tab === 'compare') renderAdminTabCompare();
 }
 
 async function renderAdminTabInfo() {
@@ -6444,7 +6447,7 @@ async function renderAdminTabConsole() {
   }
 
   const cpOptions = _consoleChargepoints.map(cp =>
-    `<option value="${cp.id}">${escapeHtml(cp.name || cp.identity)} (${escapeHtml(cp.identity)}) — OCPP ${escapeHtml(cp.ocpp_version || '1.6')}</option>`
+    `<option value="${cp.id}">${escapeHtml(cp.cpname || cp.identity)} (${escapeHtml(cp.identity)}) — OCPP ${escapeHtml(cp.ocpp_version || '1.6')}</option>`
   ).join('');
 
   contentEl.innerHTML = `
@@ -6523,6 +6526,120 @@ function clearConsoleHistory() {
   _consoleHistory = [];
   document.getElementById('consoleHistoryBody').innerHTML = renderConsoleHistoryHtml();
   document.getElementById('consoleHistoryClearWrap').innerHTML = '';
+}
+
+// ── Onglet Comparaison des paramètres OCPP ──
+let _compareChargepoints = [];
+let _compareSelectedIds = [];
+
+async function renderAdminTabCompare() {
+  const contentEl = document.getElementById('adminTabContent');
+  try {
+    _compareChargepoints = await api('GET', '/chargepoints');
+  } catch (err) {
+    contentEl.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  _compareSelectedIds = _compareSelectedIds.filter(id => _compareChargepoints.some(cp => cp.id === id));
+  contentEl.innerHTML = `
+    <div class="card">
+      <div class="card-header"><h3>${t('admin.compareTitle')}</h3></div>
+      <div style="padding:12px 16px">
+        <p class="text-muted">${t('admin.compareHint')}</p>
+        <div id="compareCpList" class="compare-cp-list"></div>
+        <button class="btn btn-primary btn-sm" id="compareRunBtn" data-onclick="withBtn(this, runOcppCompare)" disabled>${t('admin.compareRunBtn')}</button>
+      </div>
+    </div>
+    <div id="compareResult"></div>`;
+  renderCompareCpList();
+}
+
+function selectedCompareVersion() {
+  if (_compareSelectedIds.length === 0) return null;
+  const cp = _compareChargepoints.find(c => c.id === _compareSelectedIds[0]);
+  return cp?.ocpp_version || '1.6';
+}
+
+function renderCompareCpList() {
+  const listEl = document.getElementById('compareCpList');
+  if (!listEl) return;
+  const version = selectedCompareVersion();
+  listEl.innerHTML = _compareChargepoints.map(cp => {
+    const cpVersion = cp.ocpp_version || '1.6';
+    const checked = _compareSelectedIds.includes(cp.id);
+    const disabled = !checked && (_compareSelectedIds.length >= 4 || (version && cpVersion !== version));
+    return `
+      <label class="compare-cp-item${disabled ? ' disabled' : ''}">
+        <input type="checkbox" value="${cp.id}" ${checked ? 'checked' : ''} ${disabled ? 'disabled' : ''} data-onchange="toggleCompareSelection(${cp.id})">
+        <span>${escapeHtml(cp.cpname || cp.identity)} (${escapeHtml(cp.identity)})</span>
+        ${cp.vendor || cp.model ? `<span class="text-muted"> — ${escapeHtml([cp.vendor, cp.model].filter(Boolean).join(' '))}</span>` : ''}
+        <span class="badge ${cpVersion === '2.0.1' ? 'badge-purple' : 'badge-blue'} badge-xs">${cpVersion}</span>
+      </label>`;
+  }).join('');
+  const btn = document.getElementById('compareRunBtn');
+  if (btn) btn.disabled = _compareSelectedIds.length < 2;
+}
+
+function toggleCompareSelection(id) {
+  const idx = _compareSelectedIds.indexOf(id);
+  if (idx >= 0) _compareSelectedIds.splice(idx, 1);
+  else if (_compareSelectedIds.length < 4) _compareSelectedIds.push(id);
+  document.getElementById('compareResult').innerHTML = '';
+  renderCompareCpList();
+}
+
+async function runOcppCompare() {
+  const data = await api('GET', `/admin/chargepoints/compare?ids=${_compareSelectedIds.join(',')}`);
+  document.getElementById('compareResult').innerHTML = renderCompareResultHtml(data);
+}
+
+function renderCompareResultHtml(data) {
+  const cps = data.chargepoints;
+  const overrides = [];
+  const bodyRows = data.rows.map(row => {
+    const label = data.version === '2.0.1'
+      ? `<code>${escapeHtml(row.component)}.${escapeHtml(row.variable)}</code>${row.attribute && row.attribute !== 'Actual' ? ` <span class="td-meta">(${escapeHtml(row.attribute)})</span>` : ''}${row.instance ? ` <span class="td-meta">[${escapeHtml(row.instance)}]</span>` : ''}`
+      : `<code>${escapeHtml(row.key)}</code>`;
+    const cells = cps.map(cp => {
+      const v = row.values[cp.id];
+      if (!v) return `<td class="text-muted">—</td>`;
+      if (v.is_override) {
+        overrides.push({ cpName: cp.name || cp.identity, label, value: v.value });
+      }
+      return `<td>${escapeHtml(v.value ?? '')}${v.is_override ? ` <span class="badge badge-blue badge-xs" title="${t('chargepoint.cpConfOverrideHint')}">🔒</span>` : ''}</td>`;
+    }).join('');
+    const rowClass = row.valuesDiffer ? 'row-diff' : (row.missing ? 'row-missing' : '');
+    return `<tr class="${rowClass}"><td>${label}</td>${cells}</tr>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-header"><h3>${t('admin.compareResultTitle')}</h3></div>
+      <div style="padding:0 16px;display:flex;gap:16px;flex-wrap:wrap">
+        <span class="compare-legend"><span class="compare-legend-swatch compare-legend-diff"></span>${t('admin.compareLegendDiff')}</span>
+        <span class="compare-legend"><span class="compare-legend-swatch compare-legend-missing"></span>${t('admin.compareLegendMissing')}</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>${t('admin.compareColParam')}</th>
+              ${cps.map(cp => `<th>${escapeHtml(cp.name || cp.identity)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>${bodyRows}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>${t('admin.compareOverridesTitle')}</h3></div>
+      <div style="padding:12px 16px">
+        ${overrides.length === 0 ? `<p class="text-muted">${t('admin.compareNoOverrides')}</p>` : `
+        <ul class="compare-overrides-list">
+          ${overrides.map(o => `<li><strong>${escapeHtml(o.cpName)}</strong> — ${o.label} = <code>${escapeHtml(o.value ?? '')}</code></li>`).join('')}
+        </ul>`}
+      </div>
+    </div>`;
 }
 
 // ══════════════════════════════════════
