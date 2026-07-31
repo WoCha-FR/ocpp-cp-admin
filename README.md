@@ -119,6 +119,14 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - `/healthz` endpoint for monitoring
 - `/metrics` endpoint in Prometheus text format (optional bearer token protection)
 
+### System Administration
+- System information: app version, uptime, Node.js memory usage, SQLite database size, connected charge points, per-table record counts
+- Downloadable SQLite database backup (WAL-safe, no service interruption)
+- Historical data cleanup with a date filter: meter values (transaction curves, transactions themselves are kept), OCPP messages, ID tag events, error events, notification log, expired reservations — plus a database VACUUM
+- Raw OCPP console: send any command with arbitrary JSON parameters to a connected charge point, with an in-session history
+- Comparison of OCPP parameters between charge points of the same OCPP version, with discrepancies highlighted and forced (override) values flagged
+- Restricted to administrators only
+
 ---
 
 ## Architecture
@@ -810,6 +818,7 @@ Full access to all features:
 - Approval of pending charge points
 - View all transactions and OCPP messages
 - Global CSV export
+- Exclusive access to the System Administration page (system info/backup, data cleanup, raw OCPP console, OCPP parameter comparison)
 - Can also be a user on one or more sites
 
 ### Manager (`manager`)

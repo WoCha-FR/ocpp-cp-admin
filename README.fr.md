@@ -120,6 +120,14 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Point d'accès `/healthz` pour le monitoring
 - Point d'accès `/metrics` au format Prometheus (protection optionnelle par bearer token)
 
+### Administration système
+- Informations système : version de l'application, uptime, mémoire Node.js, taille de la base SQLite, bornes connectées, compteurs d'enregistrements par table
+- Sauvegarde de la base SQLite téléchargeable (sûre en WAL, sans interruption de service)
+- Nettoyage des données historiques avec filtre par date : courbes de mesures (les transactions elles-mêmes sont conservées), messages OCPP, événements ID tags, événements d'erreur, journal des notifications, réservations expirées — ainsi qu'un VACUUM de la base
+- Console OCPP brute : envoi de n'importe quelle commande avec des paramètres JSON libres à une borne connectée, avec un historique en session
+- Comparaison des paramètres OCPP entre bornes de même version OCPP, avec mise en évidence des écarts et des valeurs forcées (overrides)
+- Réservée aux administrateurs
+
 ---
 
 ## Architecture
@@ -805,6 +813,7 @@ Accès complet à toutes les fonctionnalités :
 - Approbation des bornes en attente
 - Visualisation de toutes les transactions et messages OCPP
 - Export CSV global
+- Accès exclusif à la page Administration système (infos système/sauvegarde, nettoyage des données, console OCPP brute, comparaison des paramètres OCPP)
 - Peut également être utilisateur sur un ou plusieurs sites
 
 ### Manager (`manager`)

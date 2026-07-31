@@ -30,7 +30,6 @@
     "wss": {
       "enabled": false,
       "wssPort": 9001,
-      "strictClientCert": false,
       "ocppWsUrl": "wss://ws.cpadmin.local:9001",
       "rsa": {
         "certFile": "certs/rsa-server.crt",
@@ -40,6 +39,7 @@
         "certFile": "certs/ecdsa-server.crt",
         "keyFile": "certs/ecdsa-server.key"
       },
+      "strictClientCert": false,
       "caFile": ""
     }
   },

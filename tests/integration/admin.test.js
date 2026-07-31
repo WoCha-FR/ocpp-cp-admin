@@ -1,19 +1,14 @@
 'use strict';
 
 const request = require('supertest');
-const express = require('express');
-const session = require('express-session');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const bcrypt = require('bcryptjs');
-const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy;
 
-const configMock = require('./helpers/config-mock');
+const configMock = require('../helpers/config-mock');
 
-jest.mock('../src/config', () => ({
+jest.mock('../../src/config', () => ({
   getConfig: () => configMock,
   getConfigDir: () => '/tmp',
   castEnvValue: jest.fn(),
@@ -23,7 +18,7 @@ jest.mock('../src/config', () => ({
   CONFIG_FIELDS: [],
 }));
 
-jest.mock('../src/logger', () => ({
+jest.mock('../../src/logger', () => ({
   scope: () => ({ info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() }),
 }));
 
@@ -34,339 +29,34 @@ jest.mock('better-sqlite3', () => {
   };
 });
 
-const db = require('../src/database');
-
-const CSRF_COOKIE = 'XSRF-TOKEN';
-const CSRF_HEADER = 'x-xsrf-token';
-const CSRF_SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
-
-function readCsrfCookie(setCookieHeaders) {
-  const cookies = (setCookieHeaders || []).join('; ');
-  const match = cookies.match(/XSRF-TOKEN=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : null;
-}
+const db = require('../../src/database');
+const { createTestApp } = require('../helpers/app-factory');
 
 async function loginAs(agent, email, password) {
   const meRes = await agent.get('/api/auth/me');
-  const csrf = readCsrfCookie(meRes.headers['set-cookie']);
-  await agent
-    .post('/api/auth/login')
-    .set('x-xsrf-token', csrf)
-    .send({ useremail: email, password });
+  const cookies = (meRes.headers['set-cookie'] || []).join('; ');
+  const match = cookies.match(/XSRF-TOKEN=([^;]+)/);
+  const csrf = match ? decodeURIComponent(match[1]) : null;
+  await agent.post('/api/auth/login').set('x-xsrf-token', csrf).send({ useremail: email, password });
   return csrf;
 }
 
-// ── database.js — getSystemStats() ──
-describe('database — getSystemStats()', () => {
-  beforeAll(() => {
-    db.getDb();
-  });
-
-  afterAll(() => {
-    db.closeDb();
-  });
-
-  it('retourne des compteurs à 0 pour une base vide et une taille de BDD numérique', () => {
-    const stats = db.getSystemStats();
-    expect(stats.counts).toMatchObject({
-      transactions: 0,
-      ocpp_messages: 0,
-      id_tags_events: 0,
-      error_events: 0,
-      reservations: 0,
-      notification_log: 0,
-    });
-    expect(typeof stats.dbSizeBytes).toBe('number');
-    expect(stats.dbSizeBytes).toBeGreaterThanOrEqual(0);
-    expect(stats.connectedDb).toBe(0);
-  });
-
-  it('compte correctement les bornes marquées connectées en base', () => {
-    db.createChargepoint('CP-STATS-1', 'CP1', 'pass');
-    db.createChargepoint('CP-STATS-2', 'CP2', 'pass');
-    db.upsertChargepoint('CP-STATS-1', { connected: 1 });
-
-    const stats = db.getSystemStats();
-    expect(stats.counts.chargepoints).toBeGreaterThanOrEqual(2);
-    expect(stats.connectedDb).toBeGreaterThanOrEqual(1);
-  });
-});
-
-// ── database.js — nettoyage des données (onglet 2) ──
-describe('database — nettoyage des données', () => {
-  let testDb;
-  let cpId;
-
-  beforeEach(() => {
-    testDb = db.getDb();
-    const cp = db.createChargepoint('CP-CLEANUP', 'CP Cleanup', 'pass');
-    cpId = cp.id;
-  });
-
-  afterEach(() => {
-    db.closeDb();
-  });
-
-  function insertTransaction(transactionId, { status, stopTime }) {
-    testDb
-      .prepare(
-        `INSERT INTO transactions (transaction_id, chargepoint_id, connector_id, status, start_time, stop_time)
-         VALUES (?, ?, 1, ?, '2024-01-01T00:00:00Z', ?)`
-      )
-      .run(transactionId, cpId, status, stopTime || null);
-  }
-
-  describe('estimateTableSize()', () => {
-    it('rejette un nom de table hors whitelist', () => {
-      expect(() => db.estimateTableSize('users')).toThrow('ERR_INVALID_TABLE');
-    });
-
-    it('retourne 0 pour une table vide et croît avec du contenu texte', () => {
-      expect(db.estimateTableSize('transactions_values')).toBe(0);
-      insertTransaction('TX-SIZE', { status: 'Completed', stopTime: '2024-06-01T00:00:00Z' });
-      db.upsertTransactionValues('TX-SIZE', { energieEntry: 'x'.repeat(500) });
-      expect(db.estimateTableSize('transactions_values')).toBeGreaterThanOrEqual(500);
-    });
-  });
-
-  describe('getCleanupStats()', () => {
-    it('retourne count + sizeBytes pour chaque table nettoyable', () => {
-      const stats = db.getCleanupStats();
-      const tables = stats.map((s) => s.table);
-      expect(tables).toEqual([
-        'transactions_values',
-        'ocpp_messages',
-        'id_tags_events',
-        'error_events',
-        'notification_log',
-        'reservations',
-      ]);
-      stats.forEach((s) => {
-        expect(s.count).toBe(0);
-        expect(s.sizeBytes).toBe(0);
-      });
-    });
-  });
-
-  describe('deleteTransactionValuesBefore()', () => {
-    it('ne supprime que les transactions_values des transactions terminées antérieures à la date, jamais la transaction elle-même', () => {
-      insertTransaction('TX-OLD', { status: 'Completed', stopTime: '2020-01-01T00:00:00Z' });
-      insertTransaction('TX-RECENT', { status: 'Completed', stopTime: '2030-01-01T00:00:00Z' });
-      insertTransaction('TX-ACTIVE', { status: 'Active', stopTime: null });
-      db.upsertTransactionValues('TX-OLD', { energieEntry: '1' });
-      db.upsertTransactionValues('TX-RECENT', { energieEntry: '1' });
-      db.upsertTransactionValues('TX-ACTIVE', { energieEntry: '1' });
-
-      const deleted = db.deleteTransactionValuesBefore('2024-01-01');
-
-      expect(deleted).toBe(1);
-      expect(db.getTransactionValues('TX-OLD')).toBeUndefined();
-      expect(db.getTransactionValues('TX-RECENT')).toBeDefined();
-      expect(db.getTransactionValues('TX-ACTIVE')).toBeDefined();
-      // Les transactions elles-mêmes ne sont jamais supprimées
-      expect(testDb.prepare('SELECT COUNT(*) AS n FROM transactions').get().n).toBe(3);
-    });
-  });
-
-  describe('deleteIdTagEventsBefore()', () => {
-    it('ne supprime que les événements antérieurs à la date', () => {
-      testDb
-        .prepare(
-          `INSERT INTO id_tags_events (chargepoint_id, id_tag, status, timestamp) VALUES (?, 'TAG1', 'Accepted', ?)`
-        )
-        .run(cpId, '2020-01-01T00:00:00Z');
-      testDb
-        .prepare(
-          `INSERT INTO id_tags_events (chargepoint_id, id_tag, status, timestamp) VALUES (?, 'TAG2', 'Accepted', ?)`
-        )
-        .run(cpId, '2030-01-01T00:00:00Z');
-
-      const deleted = db.deleteIdTagEventsBefore('2024-01-01');
-      expect(deleted).toBe(1);
-      expect(testDb.prepare('SELECT COUNT(*) AS n FROM id_tags_events').get().n).toBe(1);
-    });
-  });
-
-  describe('deleteErrorEventsBefore()', () => {
-    it('ne supprime que les événements antérieurs à la date', () => {
-      testDb
-        .prepare(
-          `INSERT INTO error_events (chargepoint_id, event_type, created_at) VALUES (?, 'status_error', ?)`
-        )
-        .run(cpId, '2020-01-01T00:00:00Z');
-      testDb
-        .prepare(
-          `INSERT INTO error_events (chargepoint_id, event_type, created_at) VALUES (?, 'status_error', ?)`
-        )
-        .run(cpId, '2030-01-01T00:00:00Z');
-
-      const deleted = db.deleteErrorEventsBefore('2024-01-01');
-      expect(deleted).toBe(1);
-      expect(testDb.prepare('SELECT COUNT(*) AS n FROM error_events').get().n).toBe(1);
-    });
-  });
-
-  describe('deleteExpiredReservations()', () => {
-    function insertReservation(reservationId, status, expiryDate) {
-      testDb
-        .prepare(
-          `INSERT INTO reservations (chargepoint_id, connector_id, reservation_id, id_tag, expiry_date, status)
-           VALUES (?, 1, ?, 'TAG1', ?, ?)`
-        )
-        .run(cpId, reservationId, expiryDate, status);
-    }
-
-    it('sans date : supprime toutes les réservations terminées quel que soit leur âge', () => {
-      insertReservation(1, 'Fulfilled', '2020-01-01T00:00:00Z');
-      insertReservation(2, 'Cancelled', '2030-01-01T00:00:00Z');
-      insertReservation(3, 'Pending', '2030-01-01T00:00:00Z');
-
-      const deleted = db.deleteExpiredReservations();
-      expect(deleted).toBe(2);
-      expect(testDb.prepare('SELECT COUNT(*) AS n FROM reservations').get().n).toBe(1);
-    });
-
-    it('avec date : ne supprime que les réservations terminées antérieures à la date', () => {
-      insertReservation(1, 'Fulfilled', '2020-01-01T00:00:00Z');
-      insertReservation(2, 'Expired', '2030-01-01T00:00:00Z');
-
-      const deleted = db.deleteExpiredReservations('2024-01-01');
-      expect(deleted).toBe(1);
-      expect(testDb.prepare('SELECT COUNT(*) AS n FROM reservations').get().n).toBe(1);
-    });
-  });
-
-  describe('deleteNotificationLogBefore()', () => {
-    it('supprime les entrées de tous les utilisateurs antérieures à la date (à la différence de clearNotificationLog scopé)', () => {
-      const otherUser = testDb
-        .prepare(
-          "INSERT INTO users (useremail, password, role, shortname) VALUES ('other@test.com', 'x', 'user', 'Other')"
-        )
-        .run().lastInsertRowid;
-      testDb
-        .prepare(
-          `INSERT INTO notification_log (user_id, event_type, channel, created_at) VALUES (?, 'evt', 'web', ?)`
-        )
-        .run(otherUser, '2020-01-01T00:00:00Z');
-      testDb
-        .prepare(
-          `INSERT INTO notification_log (user_id, event_type, channel, created_at) VALUES (?, 'evt', 'web', ?)`
-        )
-        .run(otherUser, '2030-01-01T00:00:00Z');
-
-      const deleted = db.deleteNotificationLogBefore('2024-01-01');
-      expect(deleted).toBe(1);
-      expect(testDb.prepare('SELECT COUNT(*) AS n FROM notification_log').get().n).toBe(1);
-    });
-  });
-
-  describe('clearOcppMessages() avec before', () => {
-    it('ne supprime que les messages antérieurs à la date quand before est fourni', () => {
-      testDb
-        .prepare(
-          `INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, timestamp) VALUES (?, 'system', 'EVENT', ?)`
-        )
-        .run(cpId, '2020-01-01T00:00:00Z');
-      testDb
-        .prepare(
-          `INSERT INTO ocpp_messages (chargepoint_id, origin, message_type, timestamp) VALUES (?, 'system', 'EVENT', ?)`
-        )
-        .run(cpId, '2030-01-01T00:00:00Z');
-
-      const deleted = db.clearOcppMessages(null, '2024-01-01');
-      expect(deleted).toBe(1);
-      expect(testDb.prepare('SELECT COUNT(*) AS n FROM ocpp_messages').get().n).toBe(1);
-    });
-  });
-
-  describe('vacuumDatabase()', () => {
-    it("s'exécute sans erreur", () => {
-      expect(() => db.vacuumDatabase()).not.toThrow();
-    });
-  });
-});
-
-// ── GET /api/admin/info ──
-function createApp() {
-  const testDb = db.getDb();
-
-  const hash = bcrypt.hashSync('Admin!123', 4);
-  testDb
-    .prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)')
-    .run('admin@test.com', hash, 'admin', 'Admin');
-  testDb
-    .prepare('INSERT INTO users (useremail, password, role, shortname) VALUES (?,?,?,?)')
-    .run('user@test.com', hash, 'user', 'User');
-
-  const testPassport = new passport.Passport();
-  testPassport.use(
-    new LocalStrategy(
-      { usernameField: 'useremail', passwordField: 'password' },
-      (email, pwd, done) => {
-        const user = testDb.prepare('SELECT * FROM users WHERE useremail = ?').get(email);
-        if (!user || !bcrypt.compareSync(pwd, user.password)) return done(null, false);
-        return done(null, { id: user.id, useremail: user.useremail, role: user.role });
-      }
-    )
-  );
-  testPassport.serializeUser((u, done) => done(null, u.id));
-  testPassport.deserializeUser((id, done) => {
-    const u = testDb.prepare('SELECT * FROM users WHERE id = ?').get(id);
-    done(null, u ? { id: u.id, useremail: u.useremail, role: u.role } : false);
-  });
-
-  const app = express();
-  app.use(express.json());
-  app.use(session({ secret: 'test-secret!!', resave: false, saveUninitialized: false }));
-  app.use(testPassport.initialize());
-  app.use(testPassport.session());
-
-  app.use((req, res, next) => {
-    const header = req.headers.cookie || '';
-    let token = null;
-    for (const part of header.split(';')) {
-      const eq = part.indexOf('=');
-      if (eq !== -1 && part.slice(0, eq).trim() === CSRF_COOKIE) {
-        token = decodeURIComponent(part.slice(eq + 1).trim());
-        break;
-      }
-    }
-    if (!token) {
-      token = crypto.randomBytes(32).toString('hex');
-      res.cookie(CSRF_COOKIE, token, { httpOnly: false, sameSite: 'lax', path: '/' });
-    }
-    if (!CSRF_SAFE_METHODS.has(req.method) && req.headers[CSRF_HEADER] !== token) {
-      return res.status(403).json({ error: 'csrf_invalid' });
-    }
-    next();
-  });
-
-  function requireRole(...roles) {
-    return (req, res, next) => {
-      if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
-      if (!roles.includes(req.user.role))
-        return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
-      next();
-    };
-  }
-
-  app.get('/api/auth/me', (req, res) => {
+function requireRole(...roles) {
+  return (req, res, next) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
-    res.json(req.user);
-  });
+    if (!roles.includes(req.user.role)) return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
+    next();
+  };
+}
 
-  app.post('/api/auth/login', (req, res, next) => {
-    testPassport.authenticate('local', (err, user) => {
-      if (err) return next(err);
-      if (!user) return res.status(401).json({ error: 'ERR_INVALID_AUTH' });
-      req.logIn(user, (loginErr) => {
-        if (loginErr) return next(loginErr);
-        res.json(user);
-      });
-    })(req, res, next);
-  });
+// Le scaffold auth/session/CSRF vient de createTestApp() (tests/helpers/app-factory.js) et opère
+// sur sa propre base :memory: isolée (utilisateurs admin@test.com / user@test.com uniquement).
+// Les routes admin ci-dessous, elles, appellent le vrai src/database.js (singleton mocké en mémoire
+// via jest.mock('better-sqlite3') ci-dessus) : la donnée métier (bornes, transactions...) est donc
+// posée séparément via db.* dans chaque test.
+function mountAdminRoutes(app) {
+  const APP_VERSION = require('../../package.json').version;
 
-  const APP_VERSION = require('../package.json').version;
   app.get('/api/admin/info', requireRole('admin'), (req, res) => {
     const stats = db.getSystemStats();
     res.json({
@@ -501,7 +191,11 @@ function createApp() {
 
     res.json({ version, chargepoints, rows });
   });
+}
 
+function createApp() {
+  const { app } = createTestApp();
+  mountAdminRoutes(app);
   return app;
 }
 
@@ -523,7 +217,7 @@ describe('GET /api/admin/info', () => {
   it('retourne 403 pour un utilisateur non-admin', async () => {
     const app = createApp();
     const agent = request.agent(app);
-    await loginAs(agent, 'user@test.com', 'Admin!123');
+    await loginAs(agent, 'user@test.com', 'User!1234');
     const res = await agent.get('/api/admin/info');
     expect(res.status).toBe(403);
   });
@@ -561,7 +255,7 @@ describe('GET /api/admin/db/backup', () => {
   it('retourne 403 pour un utilisateur non-admin', async () => {
     const app = createApp();
     const agent = request.agent(app);
-    await loginAs(agent, 'user@test.com', 'Admin!123');
+    await loginAs(agent, 'user@test.com', 'User!1234');
     const res = await agent.get('/api/admin/db/backup');
     expect(res.status).toBe(403);
   });
@@ -593,7 +287,7 @@ describe('Endpoints admin — nettoyage des données', () => {
     expect(anon.status).toBe(401);
 
     const userAgent = request.agent(app);
-    await loginAs(userAgent, 'user@test.com', 'Admin!123');
+    await loginAs(userAgent, 'user@test.com', 'User!1234');
     const forbidden = await userAgent.get('/api/admin/cleanup/stats');
     expect(forbidden.status).toBe(403);
 
@@ -657,7 +351,7 @@ describe('Endpoints admin — nettoyage des données', () => {
   it('POST /api/admin/db/vacuum retourne 200 pour un admin et 403 sinon', async () => {
     const app = createApp();
     const userAgent = request.agent(app);
-    const userCsrf = await loginAs(userAgent, 'user@test.com', 'Admin!123');
+    const userCsrf = await loginAs(userAgent, 'user@test.com', 'User!1234');
     const forbidden = await userAgent.post('/api/admin/db/vacuum').set('x-xsrf-token', userCsrf);
     expect(forbidden.status).toBe(403);
 
@@ -687,7 +381,7 @@ describe('GET /api/admin/chargepoints/compare', () => {
   it('retourne 403 pour un utilisateur non-admin', async () => {
     const app = createApp();
     const agent = request.agent(app);
-    await loginAs(agent, 'user@test.com', 'Admin!123');
+    await loginAs(agent, 'user@test.com', 'User!1234');
     const res = await agent.get('/api/admin/chargepoints/compare?ids=1,2');
     expect(res.status).toBe(403);
   });

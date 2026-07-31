@@ -9,6 +9,7 @@ config/config.json
 config/config.dev.json
 config/*.db
 config/*.db-*
+config/certs/*
 Dockerfile
 docker/
 logs/
