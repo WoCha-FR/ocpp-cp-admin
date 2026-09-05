@@ -717,10 +717,11 @@ router.put(
 router.get('/chargepoints', requireManager, (req, res) => {
   let cps = db.getAllChargepoints();
   cps = filterBySite(req, cps);
-  // Ajouter les connecteurs pour chaque CP
+  // Ajouter les connecteurs pour chaque CP (une seule requête groupée, pas de N+1)
+  const connectorsByCp = db.getConnectorsByChargepoints(cps.map((cp) => cp.id));
   cps = cps.map((cp) => ({
     ...cp,
-    connectors: db.getConnectorsByChargepoint(cp.id),
+    connectors: connectorsByCp.get(cp.id) || [],
     online: getConnectedClients().has(cp.identity),
   }));
   res.json(cps);

@@ -654,6 +654,26 @@ function getConnectorsByChargepoint(chargepointId) {
     .all(chargepointId);
 }
 
+function getConnectorsByChargepoints(chargepointIds) {
+  if (!chargepointIds.length) return new Map();
+  const placeholders = chargepointIds.map(() => '?').join(',');
+  const rows = db
+    .prepare(
+      `SELECT c.*, e.evse_name
+       FROM connectors c
+       LEFT JOIN evses e ON e.chargepoint_id = c.chargepoint_id AND e.evse_id = c.evse_id
+       WHERE c.chargepoint_id IN (${placeholders}) AND c.connector_id > 0
+       ORDER BY c.evse_id, c.connector_id`
+    )
+    .all(...chargepointIds);
+  const byChargepoint = new Map();
+  for (const row of rows) {
+    if (!byChargepoint.has(row.chargepoint_id)) byChargepoint.set(row.chargepoint_id, []);
+    byChargepoint.get(row.chargepoint_id).push(row);
+  }
+  return byChargepoint;
+}
+
 function updateConnectorFields(connectorId, data) {
   const existing = db.prepare('SELECT * FROM connectors WHERE id = ?').get(connectorId);
   if (!existing) throw new Error('ERR_CONNECTOR_NOT_FOUND');
@@ -2708,6 +2728,7 @@ module.exports = {
   upsertConnector,
   getConnectorById,
   getConnectorsByChargepoint,
+  getConnectorsByChargepoints,
   getConnectorByChargepointAndId,
   getAllConnectorsGrouped,
   updateConnectorFields,

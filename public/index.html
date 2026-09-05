@@ -931,7 +931,7 @@ const STATIC_PAGES = new Set(['notifications', 'profile', 'configeditor', 'idtag
 function refreshCurrentPage(force = false) {
   if (!force && STATIC_PAGES.has(currentPage)) return;
   if (currentPage === 'chargepointdetail' && currentDetailCpId) {
-    showChargepointDetail(currentDetailCpId, currentDetailTab);
+    showChargepointDetail(currentDetailCpId, currentDetailTab, false);
   } else if (currentPage === 'transactions') {
     renderTransactions(true);
   } else if (currentPage === 'mytransactions') {
@@ -977,6 +977,15 @@ document.addEventListener('DOMContentLoaded', () => {
   if (content) _tableObserver.observe(content, { childList: true, subtree: true });
 });
 
+function renderPageLoading() {
+  document.getElementById('pageContent').innerHTML = `
+    <div class="page-loading">
+      <span class="spinner">⏳</span>
+      <span>${t('common.loading', { defaultValue: 'Chargement…' })}</span>
+    </div>
+  `;
+}
+
 function navigate(page, silent = false) {
   closeSidebar();
   // Bloquer l'accès aux pages admin
@@ -1021,7 +1030,10 @@ function navigate(page, silent = false) {
   // Les utilisateurs simples ont leur propre dashboard
   const dashboardRenderer = canManage() ? renderDashboard : renderUserDashboard;
   const renderers = { dashboard: dashboardRenderer, chargepoints: renderChargepoints, sites: renderSites, siteusers: renderSiteUsers, transactions: renderTransactions, connectors: renderConnectors, mycharge: renderUserDashboard, mytransactions: renderMyTransactions, idtags: renderIdTags, users: renderUsers, notifications: renderNotifications, profile: renderProfile, transactiondetail: refreshTransactionDetail, configeditor: renderConfigEditor, errorevents: renderErrorEvents, admin: renderAdmin };
-  if (renderers[page]) renderers[page]();
+  if (renderers[page]) {
+    if (!silent) renderPageLoading();
+    renderers[page]();
+  }
 }
 
 // ══════════════════════════════════════
@@ -1033,8 +1045,10 @@ async function renderDashboard() {
   const myRenderSeq = ++__dashboardRenderSeq;
   document.getElementById('topbarActions').innerHTML = '';
   try {
-    const stats = await api('GET', '/dashboard');
-    const txResponse = await api('GET', '/transactions?status=Active');
+    const [stats, txResponse] = await Promise.all([
+      api('GET', '/dashboard'),
+      api('GET', '/transactions?status=Active'),
+    ]);
     const transactions = txResponse.data ?? [];
 
     if (currentPage !== 'dashboard' || myRenderSeq !== __dashboardRenderSeq) return;
@@ -1286,15 +1300,16 @@ async function renderChargepoints(keepState = false) {
     : '';
 
   try {
-    const chargepoints = await api('GET', '/chargepoints');
+    const [chargepoints, sites, pending] = await Promise.all([
+      api('GET', '/chargepoints'),
+      api('GET', '/sites'),
+      adminManage() ? api('GET', '/chargepoints/pending').catch(() => []) : Promise.resolve([]),
+    ]);
     cpListCache = chargepoints;
-    const sites = await api('GET', '/sites');
     let pendingHtml = '';
     if (adminManage()) {
-      try {
-        const pending = await api('GET', '/chargepoints/pending');
-        if (pending.length > 0) {
-          pendingHtml = `
+      if (pending.length > 0) {
+        pendingHtml = `
             <div class="card" style="border-left: 4px solid var(--warning); margin-bottom: 16px;">
               <div class="card-header">
                 <h3>⏳ ${t('chargepoint.cpPending', { count: pending.length })}</h3>
@@ -1318,8 +1333,7 @@ async function renderChargepoints(keepState = false) {
               </table>
             </div>
           `;
-        }
-      } catch (e) { /* pending endpoint peut ne pas exister */ }
+      }
     }
 
     // Extraire les valeurs uniques pour les filtres
@@ -1608,7 +1622,7 @@ async function rejectPendingChargepoint(identity) {
 // ══════════════════════════════════════
 let currentDetailTab = 'infos';
 
-async function showChargepointDetail(id, tab) {
+async function showChargepointDetail(id, tab, showLoading = true) {
   currentPage = 'chargepointdetail';
   if (currentDetailCpId !== id) {
     cpLogsFilters = { date_from: _today(), date_to: _today() };
@@ -1619,6 +1633,7 @@ async function showChargepointDetail(id, tab) {
   document.querySelectorAll('.sidebar-nav a').forEach(a => {
     a.classList.toggle('active', a.dataset.page === 'chargepoints');
   });
+  if (showLoading) renderPageLoading();
   try {
     const cp = await api('GET', `/chargepoints/${id}`);
     currentDetailCpIdentity = cp.identity;
@@ -1671,7 +1686,7 @@ async function showChargepointDetail(id, tab) {
 
 function switchDetailTab(cpId, tab) {
   currentDetailTab = tab;
-  showChargepointDetail(cpId, tab);
+  showChargepointDetail(cpId, tab, false);
 }
 
 // ── Onglet Informations ────────────────────────────────────────────
@@ -1903,7 +1918,7 @@ async function saveConnector(connectorId) {
     await api('PUT', `/connectors/${connectorId}`, { connector_name, connector_power, connector_type });
     toast(t('connectors.cUpdated'), 'success');
     closeModal();
-    if (currentDetailCpId) showChargepointDetail(currentDetailCpId, 'connecteurs');
+    if (currentDetailCpId) showChargepointDetail(currentDetailCpId, 'connecteurs', false);
   } catch (err) {
     toast(`${t('common.error')}: ${err.message}`, 'error');
   }
@@ -4222,11 +4237,6 @@ async function renderTransactions(keepState = false) {
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-primary" data-onclick="exportTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
-    const [sites, chargepoints] = await Promise.all([
-      api('GET', '/sites'),
-      api('GET', '/chargepoints')
-    ]);
-
     const queryParams = new URLSearchParams();
     if (txFilters.site_id) queryParams.set('site_id', txFilters.site_id);
     if (txFilters.chargepoint_id) queryParams.set('chargepoint_id', txFilters.chargepoint_id);
@@ -4234,7 +4244,13 @@ async function renderTransactions(keepState = false) {
     if (txFilters.from) queryParams.set('from', txFilters.from);
     if (txFilters.to) queryParams.set('to', txFilters.to);
     queryParams.set('limit', txFilters.limit || '50');
-    const { data: transactions, total: txTotal, stats: txStats } = await api('GET', '/transactions?' + queryParams.toString());
+
+    const [sites, chargepoints, txResult] = await Promise.all([
+      api('GET', '/sites'),
+      api('GET', '/chargepoints'),
+      api('GET', '/transactions?' + queryParams.toString()),
+    ]);
+    const { data: transactions, total: txTotal, stats: txStats } = txResult;
 
     // Filtrer les bornes selon le site sélectionné
     const filteredCps = txFilters.site_id
