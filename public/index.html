@@ -5584,6 +5584,7 @@ async function renderConfigEditor() {
 
 function switchConfigTab(tab) {
   currentConfigTab = tab;
+  document.getElementById('topbarActions').innerHTML = '';
   document.querySelectorAll('#pageContent .tab').forEach(el => {
     el.classList.toggle('active', el.dataset.onclick === `switchConfigTab('${tab}')`);
   });
