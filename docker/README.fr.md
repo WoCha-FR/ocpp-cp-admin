@@ -79,6 +79,7 @@ docker compose -f docker/docker-compose.https.yml up -d
 **Prérequis :**
 - Le port 80 doit être accessible publiquement pour le challenge ACME HTTP
 - `CPADMIN_WEBUI_HTTPS_ENABLED=true` et `CPADMIN_OCPP_WSS_ENABLED=true` sont déjà définis dans le compose — aucune modification manuelle de `config.json` n'est nécessaire
+- `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem` est également déjà défini : l'application embarque le certificat racine Let's Encrypt (`ISRG Root X1`), donc le téléchargement de dépannage du certificat WSS depuis la fiche borne fonctionne dès le départ (voir [Root CA — dépannage du certificat serveur WSS](../README.fr.md#root-ca--dépannage-du-certificat-serveur-wss))
 
 ---
 
@@ -163,6 +164,7 @@ docker compose -f docker/docker-compose.tls.yml up -d
 **Prérequis :**
 - `CPADMIN_OCPP_WSS_ENABLED=true` est déjà défini dans le compose — aucune modification manuelle de `config.json` n'est nécessaire
 - Les cert-dumpers alimentent automatiquement `./data/config/certs/` avec `rsa-server.crt`, `rsa-server.key`, `ecdsa-server.crt`, `ecdsa-server.key` — aucune manipulation manuelle de certificats n'est nécessaire
+- `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem` est également déjà défini : l'application embarque le certificat racine Let's Encrypt (`ISRG Root X1`), donc le téléchargement de dépannage du certificat WSS depuis la fiche borne fonctionne dès le départ (voir [Root CA — dépannage du certificat serveur WSS](../README.fr.md#root-ca--dépannage-du-certificat-serveur-wss))
 
 **Security Profile 3 — authentification par certificat client :**
 
@@ -315,6 +317,9 @@ docker compose -f docker/docker-compose.tls-ext.yml up -d
 | FTP `USERS=ocpp\|changeme` | Identifiants FTP | Oui |
 | FTP `ADDRESS=ftp.cpadmin.local` | Adresse externe pour le mode passif FTP | Oui |
 
+**Prérequis :**
+- `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem` est déjà défini dans le compose : l'application embarque le certificat racine Let's Encrypt (`ISRG Root X1`), donc le téléchargement de dépannage du certificat WSS depuis la fiche borne fonctionne dès le départ (voir [Root CA — dépannage du certificat serveur WSS](../README.fr.md#root-ca--dépannage-du-certificat-serveur-wss))
+
 **Security Profile 3 — authentification par certificat client :** voir la section `docker-compose.tls.yml` ci-dessus, le service `cert-init` fonctionne de manière identique.
 
 ---
@@ -333,7 +338,7 @@ Tous les composes utilisent des **bind mounts** sous un dossier `./data/`, relat
 
 ```
 ./data/
-├── config/            # config.json + certificats (certs/)
+├── config/            # config.json + certificats (certs/, pré-alimenté avec isrg-root-x1.pem)
 ├── logs/              # fichiers de logs applicatifs
 ├── ftp/               # fichiers de diagnostics FTP (sous-dossier ocpp/)
 ├── public-img/        # images statiques personnalisées (optionnel, décommenter dans le compose)
@@ -358,6 +363,7 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_TRUST_PROXY` | `webui.trustProxy` | `true` (requis derrière un reverse proxy) |
 | `CPADMIN_OCPP_WS_URL` | `ocpp.ocppWsUrl` | `ws://ws.example.com` |
 | `CPADMIN_OCPP_WSS_URL` | `ocpp.wss.ocppWsUrl` | `wss://ws.example.com:9001` |
+| `CPADMIN_OCPP_WSS_ROOT_CA_FILE` | `ocpp.wss.rootCaFile` | `certs/isrg-root-x1.pem` — déjà défini dans les compose Let's Encrypt, voir ci-dessous |
 | `CPADMIN_DIAGNOSTICS_URL` | `ocpp.diagnosticsLocation` | `ftp://ftp.example.com` |
 | `CPADMIN_SESSION_SECRET` | `webui.sessionSecret` | |
 

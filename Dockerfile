@@ -39,9 +39,10 @@ COPY --chown=app:app scripts ./scripts
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # Keep a copy of initial content to seed empty mounted volumes at startup.
-RUN mkdir -p /opt/defaults/config /opt/defaults/config/legal /opt/defaults/public-img \
+RUN mkdir -p /opt/defaults/config /opt/defaults/config/legal /opt/defaults/config/certs /opt/defaults/public-img \
     && cp /app/config/config.sample.json /opt/defaults/config/config.sample.json \
     && cp /app/config/legal/*.sample.md /opt/defaults/config/legal/ \
+    && cp /app/config/certs/isrg-root-x1.pem /opt/defaults/config/certs/isrg-root-x1.pem \
     && cp -a /app/public/img/. /opt/defaults/public-img/ \
     && mkdir -p /app/logs /app/public/img /app/locales-custom \
     && chown -R app:app /opt/defaults /app/logs /app/public/img /app/locales-custom \

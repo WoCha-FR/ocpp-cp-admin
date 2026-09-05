@@ -241,6 +241,7 @@
     "cpImsi": "IMSI - Identifiant abonné",
     "cpWss": "Connexion sécurisée (WSS)",
     "cpEndpoint": "Point de terminaison",
+    "cpDownloadRootCa": "Télécharger le certificat racine (dépannage connexion)",
     "cpSupportedFunctions": "Fonctions supportées",
     "cpFeatTrigger": "Déclencher un message",
     "cpFeatFirmware": "Gestion des mises à jour et des fichiers de diagnostic",

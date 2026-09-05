@@ -10,6 +10,7 @@ config/config.dev.json
 config/*.db
 config/*.db-*
 config/certs/*
+!config/certs/isrg-root-x1.pem
 Dockerfile
 docker/
 logs/

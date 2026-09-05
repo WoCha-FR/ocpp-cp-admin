@@ -34,7 +34,8 @@
       "ocppWsUrl": "wss://localhost:9100",
       "rsa": { "certFile": "", "keyFile": "" },
       "ecdsa": { "certFile": "", "keyFile": "" },
-      "caFile": ""
+      "caFile": "",
+      "rootCaFile": ""
     }
   },
   "notifs": {

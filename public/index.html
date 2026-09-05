@@ -1754,6 +1754,7 @@ async function renderDetailTabBorne(cp) {
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpImsi')}</span><span class="detail-value">${cp.imsi ? escapeHtml(cp.imsi) : '-'}</span></div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpWss')}</span><span class="detail-value">${cp.connected_wss ? `<span class="badge badge-green">${t('common.yes')}</span>` : `<span class="badge badge-red">${t('common.no')}</span>`}</span></div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpEndpoint')}</span><span class="detail-value">${cp.endpoint_address ? escapeHtml(cp.endpoint_address) : '-'}</span></div>
+          ${canManage() ? `<div class="detail-row"><button class="btn btn-secondary btn-sm" data-onclick="downloadWssRootCa()">🔒 ${t('chargepoint.cpDownloadRootCa')}</button></div>` : ''}
         </div>
         <div class="detail-section">
           <div class="detail-section-title">🔌 ${t('connectors.cCounter')}</div>
@@ -1772,6 +1773,10 @@ async function renderDetailTabBorne(cp) {
       </div>
     </div>
   `;
+}
+
+function downloadWssRootCa() {
+  window.location.href = '/api/wss-root-ca';
 }
 
 async function sendCommand(event, cpId, method, params) {

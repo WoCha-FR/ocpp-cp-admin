@@ -33,6 +33,7 @@ const ENV_OVERRIDES = [
   { env: 'CPADMIN_TRUST_PROXY', path: ['webui', 'trustProxy'] },
   { env: 'CPADMIN_OCPP_WS_URL', path: ['ocpp', 'ocppWsUrl'] },
   { env: 'CPADMIN_OCPP_WSS_URL', path: ['ocpp', 'wss', 'ocppWsUrl'] },
+  { env: 'CPADMIN_OCPP_WSS_ROOT_CA_FILE', path: ['ocpp', 'wss', 'rootCaFile'] },
   { env: 'CPADMIN_DIAGNOSTICS_URL', path: ['ocpp', 'diagnosticsLocation'] },
   // ── Secrets ──
   { env: 'CPADMIN_SESSION_SECRET', path: ['webui', 'sessionSecret'], type: 'string' },
@@ -328,6 +329,13 @@ const CONFIG_FIELDS = [
     sensitive: false,
   },
   { key: 'ocpp.wss.caFile', section: 'ocpp', type: 'string', required: false, sensitive: false },
+  {
+    key: 'ocpp.wss.rootCaFile',
+    section: 'ocpp',
+    type: 'string',
+    required: false,
+    sensitive: false,
+  },
   // ── Notifications ──
   {
     key: 'notifs.authRejectThreshold',

@@ -25,6 +25,7 @@ const notifications = require('./notifications');
 const {
   getConfig,
   getConfigFilePath,
+  getConfigDir,
   ENV_OVERRIDES,
   CONFIG_FIELDS,
   deepGet,
@@ -358,6 +359,19 @@ router.get('/ocppsettings', requireManager, (req, res) => {
   res.json({
     diagnosticsLocation: config.ocpp?.diagnosticsLocation || '',
   });
+});
+
+// Téléchargement du certificat racine WSS (dépannage validation borne) — ressource globale
+router.get('/wss-root-ca', requireManager, (req, res) => {
+  const rootCaFile = getConfig().ocpp?.wss?.rootCaFile;
+  if (!rootCaFile) {
+    return res.status(404).json({ error: 'ERR_ROOT_CA_NOT_CONFIGURED' });
+  }
+  const rootCaPath = path.resolve(getConfigDir(), rootCaFile);
+  if (!fs.existsSync(rootCaPath)) {
+    return res.status(404).json({ error: 'ERR_ROOT_CA_NOT_CONFIGURED' });
+  }
+  res.download(rootCaPath, 'ocpp-wss-root-ca.crt');
 });
 
 // ══════════════════════════════════════

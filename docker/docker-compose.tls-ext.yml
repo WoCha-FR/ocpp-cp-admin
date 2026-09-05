@@ -64,6 +64,9 @@ services:
       # ── Activation des fonctionnalités ──────────────────────
       # TLS OCPP géré par l'app (TCP passthrough Traefik)
       - CPADMIN_OCPP_WSS_ENABLED=true
+      # Certificat racine ISRG Root X1 fourni avec l'image (Let's Encrypt) — active le
+      # téléchargement du root CA (fiche borne) et son injection dans la chaîne WSS servie
+      - CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem
       # UI en HTTP interne — HTTPS terminé par Traefik, ne pas activer ici
       # - CPADMIN_WEBUI_HTTPS_ENABLED=true
 

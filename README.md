@@ -333,6 +333,7 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | `CPADMIN_TRUST_PROXY` | `webui.trustProxy` | `true` (required behind a reverse proxy) |
 | `CPADMIN_OCPP_WS_URL` | `ocpp.ocppWsUrl` | `ws://ws.example.com` |
 | `CPADMIN_OCPP_WSS_URL` | `ocpp.wss.ocppWsUrl` | `wss://ws.example.com:9001` |
+| `CPADMIN_OCPP_WSS_ROOT_CA_FILE` | `ocpp.wss.rootCaFile` | `certs/isrg-root-x1.pem` (see [Root CA — WSS server certificate troubleshooting](#root-ca--wss-server-certificate-troubleshooting)) |
 | `CPADMIN_DIAGNOSTICS_URL` | `ocpp.diagnosticsLocation` | `ftp://ftp.example.com` |
 | `CPADMIN_SESSION_SECRET` | `webui.sessionSecret` | |
 
@@ -494,7 +495,8 @@ Required fields are validated before saving. The application restarts automatica
     "ocppWsUrl": "wss://ws.cpadmin.local:9001",
     "rsa": { "certFile": "...", "keyFile": "..." },
     "ecdsa": { "certFile": "...", "keyFile": "..." },
-    "caFile": ""
+    "caFile": "",
+    "rootCaFile": ""
   }
 }
 ```
@@ -514,7 +516,8 @@ Required fields are validated before saving. The application restarts automatica
 | `wss.enabled` | Enable WebSocket Secure (TLS) |
 | `wss.strictClientCert` | Require a valid client certificate |
 | `wss.rsa` / `ecdsa` | Server certificates for WSS (dual algorithm supported, paths relative to `config/` folder) |
-| `wss.caFile` | Certificate authority for client certificate validation (path relative to `config/` folder) |
+| `wss.caFile` | Certificate authority for client certificate validation (path relative to `config/` folder) — unrelated to `rootCaFile` below, used only for incoming client certificates (mTLS, Security Profile 3) |
+| `wss.rootCaFile` | Root certificate to troubleshoot charge point connection failures — see [Root CA — WSS server certificate troubleshooting](#root-ca--wss-server-certificate-troubleshooting) |
 
 ### Notifications
 
@@ -722,10 +725,30 @@ ln -sf /etc/letsencrypt/live/ws-cpadmin-ecdsa/privkey.pem   config/certs/ecdsa-s
     "strictClientCert": false,
     "rsa":   { "certFile": "certs/rsa-server.crt",  "keyFile": "certs/rsa-server.key" },
     "ecdsa": { "certFile": "certs/ecdsa-server.crt", "keyFile": "certs/ecdsa-server.key" },
-    "caFile": ""
+    "caFile": "",
+    "rootCaFile": ""
   }
 }
 ```
+
+#### Root CA — WSS server certificate troubleshooting
+
+Some charge points validate the WSS server certificate against their own trust store. If the certificate configured above (`rsa`/`ecdsa` `certFile`) is not recognized by the charge point — a self-signed certificate never provisioned on the charge point, or an outdated root CA on old firmware — the connection fails. `ocpp.wss.rootCaFile` addresses this: it lets a site manager download the root certificate from the charge point's detail page for manual import on the device, and is also appended automatically to the certificate chain served during the WSS handshake for charge points whose TLS stack needs to see the full chain explicitly.
+
+This is unrelated to `ocpp.wss.caFile`, which only validates **incoming client certificates** (mTLS, Security Profile 3).
+
+Which file to point `rootCaFile` to depends on the **type of certificate** used for `rsa`/`ecdsa`, not on the installation mode (Docker or standalone) or environment (dev/prod):
+
+- **Self-signed certificate** (generated with `openssl req -x509 ...` above): the server certificate is already its own root — `rootCaFile` simply points to the same file (e.g. `certs/rsa-server.crt`). If both RSA and ECDSA are self-signed simultaneously, each is an independent root; this download mechanism only covers one algorithm at a time.
+- **Certificate from a CA** (Let's Encrypt or any other public/private provider): the `fullchain.pem`/`certFile` supplied by the CA usually does not include the root (Let's Encrypt's convention, notably) — fetch the root certificate separately from the provider and place it at `config/certs/root-ca.crt`. Example with Let's Encrypt (`ISRG Root X1`, valid until 2035):
+  ```bash
+  curl -o config/certs/root-ca.crt https://letsencrypt.org/certs/isrgrootx1.pem
+  ```
+  (check the exact URL on https://letsencrypt.org/certificates/ at the time of writing). For another provider, refer to its documentation to obtain its root certificate.
+  > **Docker + Let's Encrypt**: the `ISRG Root X1` certificate ships with the app at `config/certs/isrg-root-x1.pem` — no `curl` needed. The three Let's Encrypt-based compose files (`docker-compose.https.yml`, `docker-compose.tls.yml`, `docker-compose.tls-ext.yml`) already set `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem`, so this is enabled automatically. Standalone installations can point to the same vendored file manually (see below) instead of fetching it.
+- `config.json`: `"rootCaFile": "certs/root-ca.crt"` (third-party CA), `"certs/isrg-root-x1.pem"` (vendored Let's Encrypt root, see above), or `"certs/rsa-server.crt"` (self-signed).
+
+This is a **troubleshooting fallback**: with Let's Encrypt, most modern charge points already trust `ISRG Root X1` natively (in public root stores since ~2016) — the download is only useful for old/fixed firmware or private-CA/self-signed deployments.
 
 #### Security Profile 3 — Client Certificate Authentication
 

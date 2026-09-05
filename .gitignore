@@ -14,6 +14,7 @@ config/*.db-wal
 config/backups
 # Certificats SSL dans le dossier config
 config/certs/*
+!config/certs/isrg-root-x1.pem
 # Pages légales personnalisées
 config/legal/*.md
 !config/legal/*.sample.md

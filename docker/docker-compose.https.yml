@@ -115,6 +115,9 @@ services:
       # ── Activation des fonctionnalités ──────────────────────
       - CPADMIN_WEBUI_HTTPS_ENABLED=true
       - CPADMIN_OCPP_WSS_ENABLED=true
+      # Certificat racine ISRG Root X1 fourni avec l'image (Let's Encrypt) — active le
+      # téléchargement du root CA (fiche borne) et son injection dans la chaîne WSS servie
+      - CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem
 
       # ── Comportement OCPP ───────────────────────────────────
       # - CPADMIN_OCPP_V16_ENABLED=true

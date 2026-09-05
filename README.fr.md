@@ -328,6 +328,7 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_TRUST_PROXY` | `webui.trustProxy` | `true` (requis derrière un reverse proxy) |
 | `CPADMIN_OCPP_WS_URL` | `ocpp.ocppWsUrl` | `ws://ws.example.com` |
 | `CPADMIN_OCPP_WSS_URL` | `ocpp.wss.ocppWsUrl` | `wss://ws.example.com:9001` |
+| `CPADMIN_OCPP_WSS_ROOT_CA_FILE` | `ocpp.wss.rootCaFile` | `certs/isrg-root-x1.pem` (voir [Root CA — dépannage du certificat serveur WSS](#root-ca--dépannage-du-certificat-serveur-wss)) |
 | `CPADMIN_DIAGNOSTICS_URL` | `ocpp.diagnosticsLocation` | `ftp://ftp.example.com` |
 | `CPADMIN_SESSION_SECRET` | `webui.sessionSecret` | |
 
@@ -489,7 +490,8 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
     "ocppWsUrl": "wss://ws.cpadmin.local:9001",
     "rsa": { "certFile": "...", "keyFile": "..." },
     "ecdsa": { "certFile": "...", "keyFile": "..." },
-    "caFile": ""
+    "caFile": "",
+    "rootCaFile": ""
   }
 }
 ```
@@ -509,7 +511,8 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 | `wss.enabled` | Activer le WebSocket Secure (TLS) |
 | `wss.strictClientCert` | Exiger un certificat client valide |
 | `wss.rsa` / `ecdsa` | Certificats serveur pour WSS (double algorithme supporté, chemins relatifs au dossier `config/`) |
-| `wss.caFile` | Autorité de certification pour la validation des certificats clients (chemin relatif au dossier `config/`) |
+| `wss.caFile` | Autorité de certification pour la validation des certificats clients (chemin relatif au dossier `config/`) — sans rapport avec `rootCaFile` ci-dessous, utilisé uniquement pour les certificats clients entrants (mTLS, Security Profile 3) |
+| `wss.rootCaFile` | Certificat racine pour dépanner les échecs de connexion des bornes — voir [Root CA — dépannage du certificat serveur WSS](#root-ca--dépannage-du-certificat-serveur-wss) |
 
 ### Notifications
 
@@ -717,10 +720,30 @@ Extrait `config.json` :
     "strictClientCert": false,
     "rsa":   { "certFile": "certs/rsa-server.crt",  "keyFile": "certs/rsa-server.key" },
     "ecdsa": { "certFile": "certs/ecdsa-server.crt", "keyFile": "certs/ecdsa-server.key" },
-    "caFile": ""
+    "caFile": "",
+    "rootCaFile": ""
   }
 }
 ```
+
+#### Root CA — dépannage du certificat serveur WSS
+
+Certaines bornes valident le certificat serveur WSS par rapport à leur propre magasin de confiance. Si le certificat configuré ci-dessus (`rsa`/`ecdsa` `certFile`) n'est pas reconnu par la borne — certificat auto-signé jamais provisionné côté borne, ou root CA obsolète dans un firmware ancien — la connexion échoue. `ocpp.wss.rootCaFile` répond à ce cas : il permet à un gestionnaire de site de télécharger le certificat racine depuis la fiche borne pour l'importer manuellement sur l'appareil, et il est aussi ajouté automatiquement à la chaîne de certificats servie pendant le handshake WSS, pour les bornes dont la pile TLS a besoin de recevoir la chaîne complète explicitement.
+
+Ceci est sans rapport avec `ocpp.wss.caFile`, qui valide uniquement les **certificats clients entrants** (mTLS, Security Profile 3).
+
+Le choix du fichier à renseigner dans `rootCaFile` dépend du **type de certificat** utilisé pour `rsa`/`ecdsa`, pas du mode d'installation (Docker ou standalone) ni de l'environnement (dev/prod) :
+
+- **Certificat auto-signé** (généré via `openssl req -x509 ...` ci-dessus) : le certificat serveur est déjà sa propre racine — `rootCaFile` pointe directement vers le même fichier (ex. `certs/rsa-server.crt`). Si RSA et ECDSA sont tous deux auto-signés simultanément, chacun est une racine indépendante ; ce mécanisme de téléchargement ne couvre qu'un seul algorithme à la fois.
+- **Certificat issu d'une CA** (Let's Encrypt ou tout autre fournisseur public/privé) : le `fullchain.pem`/`certFile` fourni par la CA n'inclut généralement pas la racine (convention Let's Encrypt notamment) — il faut récupérer le certificat racine séparément auprès du fournisseur et le placer dans `config/certs/root-ca.crt`. Exemple avec Let's Encrypt (`ISRG Root X1`, stable jusqu'en 2035) :
+  ```bash
+  curl -o config/certs/root-ca.crt https://letsencrypt.org/certs/isrgrootx1.pem
+  ```
+  (vérifier l'URL exacte sur https://letsencrypt.org/certificates/ au moment de la lecture). Pour un autre fournisseur, se référer à sa documentation pour obtenir son certificat racine.
+  > **Docker + Let's Encrypt** : le certificat `ISRG Root X1` est livré avec l'application dans `config/certs/isrg-root-x1.pem` — aucun `curl` nécessaire. Les trois docker-compose basés sur Let's Encrypt (`docker-compose.https.yml`, `docker-compose.tls.yml`, `docker-compose.tls-ext.yml`) définissent déjà `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem`, donc c'est activé automatiquement. Les installations standalone peuvent pointer manuellement vers ce même fichier vendored (voir ci-dessous) plutôt que de le télécharger.
+- `config.json` : `"rootCaFile": "certs/root-ca.crt"` (CA tierce), `"certs/isrg-root-x1.pem"` (racine Let's Encrypt fournie, voir ci-dessus), ou `"certs/rsa-server.crt"` (auto-signé).
+
+C'est un **recours de dépannage** : avec Let's Encrypt, la plupart des bornes modernes font déjà confiance à `ISRG Root X1` nativement (racine dans les magasins publics depuis ~2016) — le téléchargement ne sert qu'aux bornes anciennes/firmware figé ou aux déploiements en CA privée/auto-signée.
 
 #### Profil de sécurité 3 — Authentification par certificat client
 

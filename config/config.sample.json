@@ -40,6 +40,7 @@
         "keyFile": "certs/ecdsa-server.key"
       },
       "strictClientCert": false,
+      "rootCaFile": "",
       "caFile": ""
     }
   },

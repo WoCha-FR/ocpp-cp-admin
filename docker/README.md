@@ -79,6 +79,7 @@ docker compose -f docker/docker-compose.https.yml up -d
 **Prerequisites:**
 - Port 80 must be publicly reachable for the ACME HTTP challenge
 - `CPADMIN_WEBUI_HTTPS_ENABLED=true` and `CPADMIN_OCPP_WSS_ENABLED=true` are already set in the compose file — no manual `config.json` changes needed
+- `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem` is also already set: the app ships with the Let's Encrypt root certificate (`ISRG Root X1`), so charge point WSS certificate troubleshooting downloads work out of the box (see [Root CA — WSS server certificate troubleshooting](../README.md#root-ca--wss-server-certificate-troubleshooting))
 
 ---
 
@@ -163,6 +164,7 @@ docker compose -f docker/docker-compose.tls.yml up -d
 **Prerequisites:**
 - `CPADMIN_OCPP_WSS_ENABLED=true` is already set in the compose file — no manual `config.json` changes needed
 - The cert-dumpers automatically populate `./data/config/certs/` with `rsa-server.crt`, `rsa-server.key`, `ecdsa-server.crt`, `ecdsa-server.key` — no manual certificate handling required
+- `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem` is also already set: the app ships with the Let's Encrypt root certificate (`ISRG Root X1`), so charge point WSS certificate troubleshooting downloads work out of the box (see [Root CA — WSS server certificate troubleshooting](../README.md#root-ca--wss-server-certificate-troubleshooting))
 
 **Security Profile 3 — client certificate authentication:**
 
@@ -313,6 +315,9 @@ docker compose -f docker/docker-compose.tls-ext.yml up -d
 | FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
 | FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
 
+**Prerequisites:**
+- `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem` is already set in the compose file: the app ships with the Let's Encrypt root certificate (`ISRG Root X1`), so charge point WSS certificate troubleshooting downloads work out of the box (see [Root CA — WSS server certificate troubleshooting](../README.md#root-ca--wss-server-certificate-troubleshooting))
+
 **Security Profile 3 — client certificate authentication:** see `docker-compose.tls.yml` section above, the `cert-init` service works identically.
 
 ---
@@ -331,7 +336,7 @@ All compose files use **bind mounts** under a `./data/` directory, relative to t
 
 ```
 ./data/
-├── config/            # config.json + certificates (certs/)
+├── config/            # config.json + certificates (certs/, pre-seeded with isrg-root-x1.pem)
 ├── logs/              # application log files
 ├── ftp/               # FTP diagnostics files (ocpp/ subfolder)
 ├── public-img/        # custom static images (optional, uncomment in compose)
@@ -356,6 +361,7 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | `CPADMIN_TRUST_PROXY` | `webui.trustProxy` | `true` (required behind a reverse proxy) |
 | `CPADMIN_OCPP_WS_URL` | `ocpp.ocppWsUrl` | `ws://ws.example.com` |
 | `CPADMIN_OCPP_WSS_URL` | `ocpp.wss.ocppWsUrl` | `wss://ws.example.com:9001` |
+| `CPADMIN_OCPP_WSS_ROOT_CA_FILE` | `ocpp.wss.rootCaFile` | `certs/isrg-root-x1.pem` — already set in the Let's Encrypt compose files, see below |
 | `CPADMIN_DIAGNOSTICS_URL` | `ocpp.diagnosticsLocation` | `ftp://ftp.example.com` |
 | `CPADMIN_SESSION_SECRET` | `webui.sessionSecret` | |
 

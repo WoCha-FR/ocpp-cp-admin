@@ -464,6 +464,15 @@ function buildWsSslOptions() {
       logOCPP.warn(`WSS: CA file not found (ignored): ${caPath}`);
     }
   }
+  if (config.ocpp.wss.rootCaFile) {
+    const rootCaPath = path.resolve(getConfigDir(), config.ocpp.wss.rootCaFile);
+    if (fs.existsSync(rootCaPath)) {
+      const rootCaBuf = fs.readFileSync(rootCaPath);
+      options.cert = options.cert.map((c) => Buffer.concat([c, Buffer.from('\n'), rootCaBuf]));
+    } else {
+      logOCPP.warn(`WSS: root CA file not found (ignored): ${rootCaPath}`);
+    }
+  }
   return options;
 }
 
@@ -537,6 +546,10 @@ if (wsSslEnabled) {
   if (config.ocpp.wss.caFile) {
     const caPath = path.resolve(getConfigDir(), config.ocpp.wss.caFile);
     if (fs.existsSync(caPath)) watchedCertPaths.add(caPath);
+  }
+  if (config.ocpp.wss.rootCaFile) {
+    const rootCaPath = path.resolve(getConfigDir(), config.ocpp.wss.rootCaFile);
+    if (fs.existsSync(rootCaPath)) watchedCertPaths.add(rootCaPath);
   }
   logOCPP.debug(`WSS: RSA & ECDSA certificates loaded (strictClientCert=${ocppStrictClientCert})`);
   if (ocppStrictClientCert) {
