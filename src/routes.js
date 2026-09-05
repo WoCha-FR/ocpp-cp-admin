@@ -2220,9 +2220,19 @@ router.get(
   (req, res) => {
     const transactionId = req.params.transactionId;
     const values = db.getTransactionValues(transactionId);
+    const tx = db.getTransactionByTransactionId(transactionId);
+
+    const energie = values && values.energie ? JSON.parse(values.energie) : [];
+    if (tx) {
+      const startUnix = Math.floor(new Date(tx.start_time).getTime() / 1000);
+      if (energie.length === 0 || energie[0].x > startUnix) {
+        energie.unshift({ x: startUnix, offer: null, power: null, energy: 0 });
+      }
+    }
+
     if (!values)
       return res.json({
-        energie: [],
+        energie,
         courant: [],
         soc: [],
         temperature: [],
@@ -2230,7 +2240,7 @@ router.get(
         frequence: [],
       });
     res.json({
-      energie: values.energie ? JSON.parse(values.energie) : [],
+      energie,
       courant: values.courant ? JSON.parse(values.courant) : [],
       soc: values.soc ? JSON.parse(values.soc) : [],
       temperature: values.temperature ? JSON.parse(values.temperature) : [],
