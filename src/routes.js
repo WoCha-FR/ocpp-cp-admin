@@ -836,13 +836,21 @@ router.post(
   }
 );
 
+// Téléchargement du certificat client mTLS (accessible au gestionnaire du site,
+// comme le root CA WSS : il en a besoin pour déployer le certificat sur la borne)
 router.get(
   '/chargepoints/:id/client-cert/download',
-  requireRole('admin'),
+  requireManager,
   ...validateSchema(schema.IdParam),
   (req, res) => {
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
     const pem = certAuthority.getCombinedClientCertPem(cp.identity);
     if (!pem) return res.status(404).json({ error: 'ERR_CLIENT_CERT_NOT_FOUND' });
     res.setHeader('Content-Disposition', `attachment; filename="${cp.identity}-client.pem"`);

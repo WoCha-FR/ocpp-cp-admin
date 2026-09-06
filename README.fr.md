@@ -818,7 +818,7 @@ Alternative à la CA/certificat manuel ci-dessus : l'application peut jouer le r
 **Fonctionnement :**
 1. Au premier certificat généré, une CA locale auto-signée est créée dans `ocpp.wss.clientCa.certFile`/`keyFile` (défaut : `certs/clients/ca.crt`/`ca.key`) si elle n'existe pas déjà.
 2. Un certificat client est généré automatiquement à la création d'une borne (`POST /chargepoints`) ou à l'acceptation d'une borne en attente — stocké dans `config/certs/clients/cp-<identity>/{cert.pem,key.pem}`.
-3. Depuis la fiche borne (rôle admin uniquement — contrairement au root CA serveur, ce certificat porte une clé privée sensible), un bouton permet de **télécharger** le certificat (PEM combiné cert+clé) ou de le **régénérer** (ex. renouvellement, suspicion de compromission).
+3. Depuis la fiche borne, un bouton permet au gestionnaire du site de la borne (ou à l'admin) de **télécharger** le certificat (PEM combiné cert+clé) — même niveau d'accès que le root CA serveur, puisque le gestionnaire en a besoin pour le déployer sur la borne. **Générer ou régénérer** le certificat reste réservé à l'admin, car cela émet une nouvelle clé privée.
 4. La durée de validité par défaut est `ocpp.wss.clientCa.certValidityDays` (5 ans).
 
 **Pour que le serveur WSS fasse confiance aux certificats ainsi émis**, pointez `ocpp.wss.caFile` vers le même fichier que `ocpp.wss.clientCa.certFile` (ou copiez-le), puis redémarrez l'application — `caFile` reste le seul mécanisme de confiance mTLS, la CA de génération n'est pas injectée automatiquement dans la chaîne de validation.

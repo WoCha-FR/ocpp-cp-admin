@@ -57,6 +57,7 @@ function createApp() {
   );
   const managerId = db.prepare("SELECT id FROM users WHERE useremail = 'manager@test.com'").get().id;
   const siteA = db.prepare("INSERT INTO sites (sname) VALUES ('Site A')").run().lastInsertRowid;
+  const siteB = db.prepare("INSERT INTO sites (sname) VALUES ('Site B')").run().lastInsertRowid;
   db.prepare('INSERT INTO user_sites (user_id, site_id, role) VALUES (?, ?, ?)').run(managerId, siteA, 'manager');
 
   function loadUser(row) {
@@ -100,6 +101,19 @@ function createApp() {
     next();
   }
 
+  function requireManager(req, res, next) {
+    if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
+    if (req.user.role === 'admin') return next();
+    const hasManagedSite = (req.user.sites || []).some((s) => s.role === 'manager');
+    if (!hasManagedSite) return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
+    next();
+  }
+
+  function getUserManagedSiteIds(req) {
+    if (req.user.role === 'admin') return null;
+    return (req.user.sites || []).filter((s) => s.role === 'manager').map((s) => s.site_id);
+  }
+
   app.get('/api/auth/me', (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
     res.json(req.user);
@@ -116,7 +130,8 @@ function createApp() {
     })(req, res, next);
   });
 
-  // Mirrors src/routes.js: POST/GET /chargepoints/:id/client-cert(/download) — admin uniquement
+  // Mirrors src/routes.js: POST /chargepoints/:id/client-cert — admin uniquement (génère une
+  // nouvelle clé privée). GET .../download — gestionnaire du site (ou admin), comme le root CA WSS.
   app.post('/api/chargepoints/:id/client-cert', requireRoleAdmin, async (req, res) => {
     const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
@@ -132,9 +147,15 @@ function createApp() {
     }
   });
 
-  app.get('/api/chargepoints/:id/client-cert/download', requireRoleAdmin, (req, res) => {
+  app.get('/api/chargepoints/:id/client-cert/download', requireManager, (req, res) => {
     const cp = db.prepare('SELECT * FROM chargepoints WHERE id = ?').get(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
     const pem = certAuthority.getCombinedClientCertPem(cp.identity);
     if (!pem) return res.status(404).json({ error: 'ERR_CLIENT_CERT_NOT_FOUND' });
     res.setHeader('Content-Disposition', `attachment; filename="${cp.identity}-client.pem"`);
@@ -142,7 +163,7 @@ function createApp() {
     res.send(pem);
   });
 
-  return { app, db };
+  return { app, db, siteA, siteB };
 }
 
 async function loginAs(agent, useremail, password) {
@@ -165,15 +186,15 @@ const opensslAvailable = (() => {
 const itIfOpenssl = opensslAvailable ? it : it.skip;
 
 describe('POST /api/chargepoints/:id/client-cert', () => {
-  let app, db, cpId;
+  let app, db, cpId, siteA, siteB;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpadmin-client-cert-'));
     certAuthority._resetOpensslCache();
-    ({ app, db } = createApp());
+    ({ app, db, siteA, siteB } = createApp());
     cpId = db
-      .prepare("INSERT INTO chargepoints (identity, cpstatus, initialized) VALUES ('CP-CERT-TEST', 'Available', 1)")
-      .run().lastInsertRowid;
+      .prepare("INSERT INTO chargepoints (identity, cpstatus, initialized, site_id) VALUES ('CP-CERT-TEST', 'Available', 1, ?)")
+      .run(siteA).lastInsertRowid;
   });
 
   afterEach(() => {
@@ -220,18 +241,39 @@ describe('POST /api/chargepoints/:id/client-cert', () => {
     expect(dlRes.text).toContain('-----BEGIN PRIVATE KEY-----');
   });
 
+  itIfOpenssl('permet le téléchargement à un manager du site de la borne', async () => {
+    const adminAgent = request.agent(app);
+    const adminCsrf = await loginAs(adminAgent, 'admin@test.com', 'Admin!123');
+    await adminAgent.post(`/api/chargepoints/${cpId}/client-cert`).set(CSRF_HEADER, adminCsrf);
+
+    const agent = request.agent(app);
+    await loginAs(agent, 'manager@test.com', 'Manager!123');
+    const dlRes = await agent.get(`/api/chargepoints/${cpId}/client-cert/download`);
+    expect(dlRes.status).toBe(200);
+    expect(dlRes.headers['content-disposition']).toMatch(/CP-CERT-TEST-client\.pem/);
+  });
+
+  itIfOpenssl("refuse le téléchargement à un manager d'un autre site", async () => {
+    const adminAgent = request.agent(app);
+    const adminCsrf = await loginAs(adminAgent, 'admin@test.com', 'Admin!123');
+    await adminAgent.post(`/api/chargepoints/${cpId}/client-cert`).set(CSRF_HEADER, adminCsrf);
+    const otherCpId = db
+      .prepare("INSERT INTO chargepoints (identity, cpstatus, initialized, site_id) VALUES ('CP-OTHER-SITE', 'Available', 1, ?)")
+      .run(siteB).lastInsertRowid;
+    await adminAgent.post(`/api/chargepoints/${otherCpId}/client-cert`).set(CSRF_HEADER, adminCsrf);
+
+    const agent = request.agent(app);
+    await loginAs(agent, 'manager@test.com', 'Manager!123');
+    const res = await agent.get(`/api/chargepoints/${otherCpId}/client-cert/download`);
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('ERR_SITE_NOT_MANAGED');
+  });
+
   it("retourne 404 au téléchargement si aucun certificat n'a été généré", async () => {
     const agent = request.agent(app);
     await loginAs(agent, 'admin@test.com', 'Admin!123');
     const res = await agent.get(`/api/chargepoints/${cpId}/client-cert/download`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('ERR_CLIENT_CERT_NOT_FOUND');
-  });
-
-  it('retourne 403 pour un manager au téléchargement (réservé admin)', async () => {
-    const agent = request.agent(app);
-    const csrf = await loginAs(agent, 'manager@test.com', 'Manager!123');
-    const res = await agent.get(`/api/chargepoints/${cpId}/client-cert/download`).set(CSRF_HEADER, csrf);
-    expect(res.status).toBe(403);
   });
 });

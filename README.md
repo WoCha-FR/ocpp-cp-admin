@@ -823,7 +823,7 @@ Alternative to the manual CA/certificate above: the app can act as a local CA an
 **How it works:**
 1. On the first certificate generated, a self-signed local CA is created at `ocpp.wss.clientCa.certFile`/`keyFile` (default: `certs/clients/ca.crt`/`ca.key`) if it doesn't already exist.
 2. A client certificate is automatically generated when a charge point is created (`POST /chargepoints`) or when a pending charge point is accepted — stored under `config/certs/clients/cp-<identity>/{cert.pem,key.pem}`.
-3. From the charge point detail page (admin role only — unlike the server root CA, this certificate carries a sensitive private key), a button lets you **download** the certificate (combined cert+key PEM) or **regenerate** it (e.g. renewal, suspected compromise).
+3. From the charge point detail page, a button lets a manager of the charge point's site (or an admin) **download** the certificate (combined cert+key PEM) — same access level as the server root CA, since the manager needs it to deploy onto the charge point. **Generating or regenerating** the certificate remains admin-only, as it issues a new private key.
 4. Default validity period is `ocpp.wss.clientCa.certValidityDays` (5 years).
 
 **For the WSS server to trust certificates issued this way**, point `ocpp.wss.caFile` at the same file as `ocpp.wss.clientCa.certFile` (or copy it), then restart the app — `caFile` remains the single mTLS trust mechanism; the issuing CA is not automatically wired into the validation chain.
