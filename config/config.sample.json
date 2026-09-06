@@ -19,12 +19,13 @@
   "ocpp": {
     "host": "0.0.0.0",
     "wsPort": 9000,
-    "v16":  { "enabled": true },
-    "v201": { "enabled": false },
+    "v16": { "enabled": true },
+    "v201": { "enabled": false, "enforceSecurityProfile": false },
     "strictMode": true,
     "callTimeoutSeconds": 45,
     "autoAddUnknownChargepoints": false,
     "pendingUnknownChargepoints": false,
+    "trustProxyProto": false,
     "ocppWsUrl": "ws://ws.cpadmin.local:9000",
     "diagnosticsLocation": "ftp://ftp.cpadmin.local/diagnostics",
     "wss": {
@@ -41,7 +42,12 @@
       },
       "strictClientCert": false,
       "rootCaFile": "",
-      "caFile": ""
+      "caFile": "",
+      "clientCa": {
+        "certFile": "certs/clients/ca.crt",
+        "keyFile": "certs/clients/ca.key",
+        "certValidityDays": 1825
+      }
     }
   },
   "notifs": {

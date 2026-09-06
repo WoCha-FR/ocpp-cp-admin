@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const { getConfig } = require('./config');
 const db = require('./database');
 const notifications = require('./notifications');
+const { verifyClientCertMatchesIdentity } = require('./certAuthority');
 const logger = require('./logger').scope('OCPP');
 
 // ── État partagé ──
@@ -228,14 +229,17 @@ function createOCPPServerBase(options = {}) {
     let cp = db.getChargepointByIdentity(handshake.identity);
     const providedPassword = handshake.password ? handshake.password.toString('utf8') : null;
 
+    let hasClientCert = false;
+    let clientCertVerified = false;
     if (isWSS) {
-      let hasClientCert = false;
       try {
-        const peerCert =
-          handshake.request &&
-          handshake.request.socket &&
-          handshake.request.socket.getPeerCertificate();
+        const socket = handshake.request && handshake.request.socket;
+        const peerCert = socket && socket.getPeerCertificate();
         hasClientCert = peerCert && peerCert.subject && Object.keys(peerCert.subject).length > 0;
+        clientCertVerified =
+          hasClientCert &&
+          socket.authorized === true &&
+          verifyClientCertMatchesIdentity(peerCert, handshake.identity);
         // eslint-disable-next-line no-unused-vars
       } catch (e) {
         // Pas de certificat client disponible
@@ -247,6 +251,27 @@ function createOCPPServerBase(options = {}) {
         logger.info(`WSS connection with Basic Auth: ${handshake.identity}`);
       } else {
         logger.debug(`WSS connection without authentication: ${handshake.identity}`);
+      }
+    }
+
+    // ── Enforcement des profils de sécurité OCPP 2.0.1 (WS+Auth, WSS+Auth, WSS+mTLS) ──
+    // Root cause d'un ancien bug où des bornes 2.0.1 se connectaient en WS nu sans
+    // authentification, un mode non reconnu par le spec 2.0.1 (comportement firmware
+    // indéfini). Opt-in via ocpp.v201.enforceSecurityProfile — n'affecte pas l'OCPP 1.6.
+    const is201Attempt = protocols.includes('ocpp2.0.1') && !!handshake.protocols?.has('ocpp2.0.1');
+    if (is201Attempt && config.ocpp.v201?.enforceSecurityProfile) {
+      const validProfile = (isWSS && hasClientCert && clientCertVerified) || !!providedPassword;
+      if (!validProfile) {
+        const reason = hasClientCert && !clientCertVerified ? 'mtls_invalid' : 'wss_no_auth';
+        logger.warn(
+          `Connection refused: ${handshake.identity} does not meet an approved OCPP 2.0.1 security profile`
+        );
+        if (checkRefusedNotifCooldown(handshake.identity, reason)) {
+          notifications
+            .emit('chargepoint_refused', { identity: handshake.identity, reason })
+            .catch(() => {});
+        }
+        return reject(401, 'OCPP 2.0.1 security profile not met');
       }
     }
 

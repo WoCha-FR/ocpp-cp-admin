@@ -858,3 +858,134 @@ describe('ocpp-common — remoteStartTransaction', () => {
     });
   });
 });
+
+// ── Enforcement des profils de sécurité OCPP 2.0.1 ──
+describe('ocpp-common — enforcement des profils de sécurité OCPP 2.0.1', () => {
+  const PROTOCOLS = ['ocpp2.0.1', 'ocpp1.6'];
+
+  function makeSocket({ hasCert = false, cn = null, authorized = true } = {}) {
+    return {
+      getPeerCertificate: () => (hasCert ? { subject: { CN: cn } } : {}),
+      authorized,
+    };
+  }
+
+  beforeEach(() => {
+    configMock.ocpp.v201 = { enforceSecurityProfile: true };
+    mockDb.getChargepointByIdentity.mockReturnValue({ authorized: true, password: null });
+  });
+
+  afterEach(() => {
+    delete configMock.ocpp.v201;
+  });
+
+  it('laisse passer OCPP 1.6 sans authentification même avec enforcement activé', () => {
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP16-NOAUTH',
+      remoteAddress: '127.0.0.1',
+      protocols: new Set(['ocpp1.6']),
+    });
+    expect(reject).not.toHaveBeenCalled();
+    expect(accept).toHaveBeenCalled();
+  });
+
+  it('laisse passer une tentative 2.0.1 sans authentification quand enforcement est désactivé', () => {
+    configMock.ocpp.v201.enforceSecurityProfile = false;
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP201-NOENFORCE',
+      remoteAddress: '127.0.0.1',
+      protocols: new Set(['ocpp2.0.1']),
+    });
+    expect(reject).not.toHaveBeenCalled();
+    expect(accept).toHaveBeenCalled();
+  });
+
+  it('rejette une tentative 2.0.1 en WS nu sans authentification (wss_no_auth)', () => {
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP201-WSNOAUTH',
+      remoteAddress: '127.0.0.1',
+      protocols: new Set(['ocpp2.0.1']),
+    });
+    expect(reject).toHaveBeenCalledWith(401, 'OCPP 2.0.1 security profile not met');
+    expect(accept).not.toHaveBeenCalled();
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'chargepoint_refused',
+      expect.objectContaining({ identity: 'CP201-WSNOAUTH', reason: 'wss_no_auth' })
+    );
+  });
+
+  it('accepte une tentative 2.0.1 en WS+Basic Auth (profil 1)', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ authorized: true, password: 'hash' });
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP201-WSAUTH',
+      remoteAddress: '127.0.0.1',
+      protocols: new Set(['ocpp2.0.1']),
+      password: Buffer.from('secret'),
+    });
+    expect(reject).not.toHaveBeenCalled();
+    expect(accept).toHaveBeenCalled();
+  });
+
+  it('accepte une tentative 2.0.1 en WSS+mTLS avec CN == identity (profil 3)', () => {
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS, isWSS: true });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP201-MTLS-OK',
+      remoteAddress: '127.0.0.1',
+      protocols: new Set(['ocpp2.0.1']),
+      request: { socket: makeSocket({ hasCert: true, cn: 'CP201-MTLS-OK', authorized: true }) },
+    });
+    expect(reject).not.toHaveBeenCalled();
+    expect(accept).toHaveBeenCalled();
+  });
+
+  it('rejette WSS+mTLS quand le CN ne correspond pas à l\'identité (mtls_invalid)', () => {
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS, isWSS: true });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP201-MTLS-BADCN',
+      remoteAddress: '127.0.0.1',
+      protocols: new Set(['ocpp2.0.1']),
+      request: { socket: makeSocket({ hasCert: true, cn: 'SOME-OTHER-CP', authorized: true }) },
+    });
+    expect(reject).toHaveBeenCalledWith(401, 'OCPP 2.0.1 security profile not met');
+    expect(accept).not.toHaveBeenCalled();
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'chargepoint_refused',
+      expect.objectContaining({ identity: 'CP201-MTLS-BADCN', reason: 'mtls_invalid' })
+    );
+  });
+
+  it('rejette WSS+mTLS quand le certificat client n\'est pas validé par la chaîne TLS (mtls_invalid)', () => {
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS, isWSS: true });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP201-MTLS-UNAUTH',
+      remoteAddress: '127.0.0.1',
+      protocols: new Set(['ocpp2.0.1']),
+      request: {
+        socket: makeSocket({ hasCert: true, cn: 'CP201-MTLS-UNAUTH', authorized: false }),
+      },
+    });
+    expect(reject).toHaveBeenCalledWith(401, 'OCPP 2.0.1 security profile not met');
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'chargepoint_refused',
+      expect.objectContaining({ identity: 'CP201-MTLS-UNAUTH', reason: 'mtls_invalid' })
+    );
+  });
+});

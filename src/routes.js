@@ -20,6 +20,7 @@ const {
   pendingChargepoints,
 } = require('./ocpp-common');
 const { OCPP16_STANDARD_KEYS } = require('./ocpp-server-16');
+const certAuthority = require('./certAuthority');
 const schema = require('./validationSchema');
 const notifications = require('./notifications');
 const {
@@ -765,6 +766,9 @@ router.post(
       const cp = db.createChargepoint(identity, identity, pending.password, 0, data.site_id);
       pendingChargepoints.delete(identity);
       broadcast('chargepoint_update', cp, cp.site_id ?? null);
+      certAuthority
+        .generateClientCertificate(identity)
+        .catch((e) => logger.warn(`Client cert generation failed for ${identity}: ${e.message}`));
       res.json(cp);
     } catch (e) {
       errorResponse(res, 400, e.message);
@@ -785,21 +789,67 @@ router.delete(
   }
 );
 
-router.get('/chargepoints/:id', requireManager, ...validateSchema(schema.IdParam), (req, res) => {
-  const cp = db.getChargepointById(Number(req.params.id));
-  if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
-  // Vérifier que le manager gère ce site
-  if (req.user.role !== 'admin') {
-    const managedIds = getUserManagedSiteIds(req);
-    if (managedIds !== null && !managedIds.includes(cp.site_id)) {
-      return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+router.get(
+  '/chargepoints/:id',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    // Vérifier que le manager gère ce site
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+    cp.connectors = db.getConnectorsByChargepoint(cp.id);
+    cp.evses = db.getEvsesByChargepoint(cp.id);
+    cp.online = getConnectedClients().has(cp.identity);
+    cp.hasClientCert = certAuthority.hasClientCert(cp.identity);
+    cp.clientCertExpiresAt = cp.hasClientCert
+      ? await certAuthority.getClientCertExpiry(cp.identity)
+      : null;
+    res.json(cp);
+  }
+);
+
+// Génération / régénération du certificat client mTLS d'une borne (admin uniquement :
+// contrairement au root CA serveur, ce certificat porte une clé privée sensible)
+router.post(
+  '/chargepoints/:id/client-cert',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  async (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    try {
+      await certAuthority.generateClientCertificate(cp.identity);
+      const clientCertExpiresAt = await certAuthority.getClientCertExpiry(cp.identity);
+      res.json({ hasClientCert: true, clientCertExpiresAt });
+    } catch (e) {
+      if (e.message === 'ERR_OPENSSL_UNAVAILABLE') {
+        return res.status(503).json({ error: 'ERR_OPENSSL_UNAVAILABLE' });
+      }
+      errorResponse(res, 500, e.message);
     }
   }
-  cp.connectors = db.getConnectorsByChargepoint(cp.id);
-  cp.evses = db.getEvsesByChargepoint(cp.id);
-  cp.online = getConnectedClients().has(cp.identity);
-  res.json(cp);
-});
+);
+
+router.get(
+  '/chargepoints/:id/client-cert/download',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    const pem = certAuthority.getCombinedClientCertPem(cp.identity);
+    if (!pem) return res.status(404).json({ error: 'ERR_CLIENT_CERT_NOT_FOUND' });
+    res.setHeader('Content-Disposition', `attachment; filename="${cp.identity}-client.pem"`);
+    res.setHeader('Content-Type', 'application/x-pem-file');
+    res.send(pem);
+  }
+);
 
 router.put(
   '/chargepoints/:id',
@@ -859,6 +909,11 @@ router.post('/chargepoints', requireRole('admin'), checkSchema(schema.ChargePoin
       data.mode,
       data.site_id
     );
+    certAuthority
+      .generateClientCertificate(data.identity)
+      .catch((e) =>
+        logger.warn(`Client cert generation failed for ${data.identity}: ${e.message}`)
+      );
     res.status(201).json(cp);
   } catch (e) {
     errorResponse(res, 400, e.message);

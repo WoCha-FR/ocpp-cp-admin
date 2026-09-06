@@ -1755,6 +1755,17 @@ async function renderDetailTabBorne(cp) {
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpWss')}</span><span class="detail-value">${cp.connected_wss ? `<span class="badge badge-green">${t('common.yes')}</span>` : `<span class="badge badge-red">${t('common.no')}</span>`}</span></div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpEndpoint')}</span><span class="detail-value">${cp.endpoint_address ? escapeHtml(cp.endpoint_address) : '-'}</span></div>
           ${canManage() ? `<div class="detail-row"><button class="btn btn-secondary btn-sm" data-onclick="downloadWssRootCa()">🔒 ${t('chargepoint.cpDownloadRootCa')}</button></div>` : ''}
+          ${adminManage() ? `
+          <div class="detail-row">
+            ${cp.hasClientCert ? `
+              <button class="btn btn-secondary btn-sm" data-onclick="downloadClientCert(${cp.id})">🔑 ${t('chargepoint.cpClientCertDownload')}</button>
+              <button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => generateClientCert(${cp.id}, true))">♻️ ${t('chargepoint.cpClientCertRegenerate')}</button>
+            ` : `
+              <button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => generateClientCert(${cp.id}, false))">🔑 ${t('chargepoint.cpClientCertGenerate')}</button>
+            `}
+          </div>
+          ${cp.hasClientCert && cp.clientCertExpiresAt ? `<div class="detail-row"><span class="text-muted">${t('chargepoint.cpClientCertExpiresAt', { date: formatDateShort(cp.clientCertExpiresAt) })}</span></div>` : ''}
+          ` : ''}
         </div>
         <div class="detail-section">
           <div class="detail-section-title">🔌 ${t('connectors.cCounter')}</div>
@@ -1777,6 +1788,16 @@ async function renderDetailTabBorne(cp) {
 
 function downloadWssRootCa() {
   window.location.href = '/api/wss-root-ca';
+}
+
+function downloadClientCert(cpId) {
+  window.location.href = `/api/chargepoints/${cpId}/client-cert/download`;
+}
+
+async function generateClientCert(cpId, isRegenerate) {
+  await api('POST', `/chargepoints/${cpId}/client-cert`);
+  toast(t(isRegenerate ? 'chargepoint.cpClientCertRegenerated' : 'chargepoint.cpClientCertGenerated'), 'success');
+  await showChargepointDetail(cpId, 'infos', false);
 }
 
 async function sendCommand(event, cpId, method, params) {

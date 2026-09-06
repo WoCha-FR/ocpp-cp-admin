@@ -111,6 +111,8 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Rate limiting sur les API et l'authentification
 - En-têtes de sécurité HTTP (Helmet)
 - Journalisation structurée avec rotation des fichiers
+- Génération automatique de certificats clients mTLS par borne (CA locale intégrée)
+- Enforcement optionnel des profils de sécurité OCPP 2.0.1 (WS/WSS+Auth, WSS+mTLS)
 
 ### Application web progressive (PWA)
 - Installable sur desktop et mobile (Web App Manifest)
@@ -358,6 +360,8 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (désactiver le support OCPP 1.6) |
 | `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (activer le support OCPP 2.0.1 — en cours de développement) |
+| `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (voir [Enforcement des profils de sécurité OCPP 2.0.1](#enforcement-des-profils-de-sécurité-ocpp-201)) |
+| `CPADMIN_OCPP_TRUST_PROXY_PROTO` | `ocpp.trustProxyProto` | `true` (derrière un reverse proxy type Traefik) |
 
 ### Configuration mail
 
@@ -479,10 +483,11 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
   "callTimeoutSeconds": 45,
   "autoAddUnknownChargepoints": false,
   "pendingUnknownChargepoints": true,
+  "trustProxyProto": false,
   "ocppWsUrl": "ws://ws.cpadmin.local:9000",
   "diagnosticsLocation": "ftp://example.com/diagnostics",
   "v16":  { "enabled": true },
-  "v201": { "enabled": false },
+  "v201": { "enabled": false, "enforceSecurityProfile": false },
   "wss": {
     "enabled": false,
     "wssPort": 9001,
@@ -491,7 +496,12 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
     "rsa": { "certFile": "...", "keyFile": "..." },
     "ecdsa": { "certFile": "...", "keyFile": "..." },
     "caFile": "",
-    "rootCaFile": ""
+    "rootCaFile": "",
+    "clientCa": {
+      "certFile": "certs/clients/ca.crt",
+      "keyFile": "certs/clients/ca.key",
+      "certValidityDays": 1825
+    }
   }
 }
 ```
@@ -504,15 +514,18 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 | `callTimeoutSeconds` | Délai d'attente en secondes pour la réponse à un appel OCPP |
 | `autoAddUnknownChargepoints` | Ajouter automatiquement les bornes inconnues qui se connectent |
 | `pendingUnknownChargepoints` | Mettre les bornes inconnues en attente d'approbation admin |
+| `trustProxyProto` | Faire confiance à l'en-tête `X-Forwarded-Proto` pour reconnaître une connexion WSS terminée en amont par un reverse proxy (ex. Traefik) qui transmet ensuite en WS clair à l'application — utilisé pour la journalisation/classification de la connexion, voir [Enforcement des profils de sécurité OCPP 2.0.1](#enforcement-des-profils-de-sécurité-ocpp-201) |
 | `ocppWsUrl` | URL WebSocket OCPP à communiquer (pour la configuration des bornes) |
 | `diagnosticsLocation` | URL de destination pour l'upload des diagnostics |
 | `v16.enabled` | Activer le support OCPP 1.6 (défaut : `true`) — mettre à `false` pour désactiver ; un warning est loggué et toutes les connexions sont rejetées si les deux versions sont désactivées |
 | `v201.enabled` | Activer le support OCPP 2.0.1 (défaut : `false`) — **en cours de développement**, pas encore pleinement fonctionnel |
+| `v201.enforceSecurityProfile` | Rejeter les connexions OCPP 2.0.1 qui ne respectent aucun des 3 profils de sécurité reconnus par le spec (défaut : `false`) — voir [Enforcement des profils de sécurité OCPP 2.0.1](#enforcement-des-profils-de-sécurité-ocpp-201) |
 | `wss.enabled` | Activer le WebSocket Secure (TLS) |
 | `wss.strictClientCert` | Exiger un certificat client valide |
 | `wss.rsa` / `ecdsa` | Certificats serveur pour WSS (double algorithme supporté, chemins relatifs au dossier `config/`) |
 | `wss.caFile` | Autorité de certification pour la validation des certificats clients (chemin relatif au dossier `config/`) — sans rapport avec `rootCaFile` ci-dessous, utilisé uniquement pour les certificats clients entrants (mTLS, Security Profile 3) |
 | `wss.rootCaFile` | Certificat racine pour dépanner les échecs de connexion des bornes — voir [Root CA — dépannage du certificat serveur WSS](#root-ca--dépannage-du-certificat-serveur-wss) |
+| `wss.clientCa` | CA locale utilisée pour émettre automatiquement un certificat client par borne (`certFile`/`keyFile`, auto-initialisée au premier certificat généré) et durée de validité par défaut des certificats émis (`certValidityDays`) — voir [Génération automatique de certificats clients](#génération-automatique-de-certificats-clients) |
 
 ### Notifications
 
@@ -747,7 +760,11 @@ C'est un **recours de dépannage** : avec Let's Encrypt, la plupart des bornes m
 
 #### Profil de sécurité 3 — Authentification par certificat client
 
-Le serveur vérifie que le certificat client est signé par une CA de confiance. Un **certificat unique partagé par toutes les bornes** est suffisant — le CN n'est pas comparé à l'identité de la borne.
+Le serveur vérifie que le certificat client est signé par une CA de confiance (`wss.caFile`). Par défaut, un **certificat unique partagé par toutes les bornes** est suffisant — le CN n'est pas comparé à l'identité de la borne, sauf si [`ocpp.v201.enforceSecurityProfile`](#enforcement-des-profils-de-sécurité-ocpp-201) est activé (auquel cas la correspondance CN == identité est exigée pour le mode mTLS, ce qui suppose un certificat par borne — voir ci-dessous).
+
+Deux façons d'obtenir des certificats clients :
+- **Manuelle** (ci-dessous) : une CA et un certificat unique gérés à la main, à installer sur toutes les bornes.
+- **Génération automatique par borne** (voir [Génération automatique de certificats clients](#génération-automatique-de-certificats-clients)) : l'application joue le rôle de CA locale et émet un certificat par borne avec `CN` = identité de la borne, prérequis pour l'enforcement du profil de sécurité 2.0.1.
 
 **1. Créer une CA locale :**
 
@@ -791,6 +808,33 @@ cat config/certs/client.crt config/certs/client.key > config/certs/client.pem
 Installez `client.pem` (contient le certificat et la clé privée) sur chaque borne.
 
 > **Mode mixte** (`strictClientCert: false` avec `caFile` renseigné) : le serveur demande un certificat mais accepte également l'authentification par mot de passe (Profil 2). Les certificats présentés sont validés contre la CA.
+
+#### Génération automatique de certificats clients
+
+Alternative à la CA/certificat manuel ci-dessus : l'application peut jouer le rôle de CA locale et émettre automatiquement un certificat client **par borne**, avec `CN` = identité exacte de la borne. Aucune dépendance ajoutée — utilise le binaire `openssl` du système (`child_process.execFile`, jamais `exec`, pour éviter toute injection shell).
+
+**Prérequis :** `openssl` doit être disponible sur le PATH du serveur. Sa disponibilité est vérifiée à la demande ; si absent (cas courant sous Windows sans outils de développement installés), la génération échoue proprement (`ERR_OPENSSL_UNAVAILABLE`) sans affecter le reste de l'application.
+
+**Fonctionnement :**
+1. Au premier certificat généré, une CA locale auto-signée est créée dans `ocpp.wss.clientCa.certFile`/`keyFile` (défaut : `certs/clients/ca.crt`/`ca.key`) si elle n'existe pas déjà.
+2. Un certificat client est généré automatiquement à la création d'une borne (`POST /chargepoints`) ou à l'acceptation d'une borne en attente — stocké dans `config/certs/clients/cp-<identity>/{cert.pem,key.pem}`.
+3. Depuis la fiche borne (rôle admin uniquement — contrairement au root CA serveur, ce certificat porte une clé privée sensible), un bouton permet de **télécharger** le certificat (PEM combiné cert+clé) ou de le **régénérer** (ex. renouvellement, suspicion de compromission).
+4. La durée de validité par défaut est `ocpp.wss.clientCa.certValidityDays` (5 ans).
+
+**Pour que le serveur WSS fasse confiance aux certificats ainsi émis**, pointez `ocpp.wss.caFile` vers le même fichier que `ocpp.wss.clientCa.certFile` (ou copiez-le), puis redémarrez l'application — `caFile` reste le seul mécanisme de confiance mTLS, la CA de génération n'est pas injectée automatiquement dans la chaîne de validation.
+
+```json
+"wss": {
+  "caFile": "certs/clients/ca.crt",
+  "clientCa": {
+    "certFile": "certs/clients/ca.crt",
+    "keyFile": "certs/clients/ca.key",
+    "certValidityDays": 1825
+  }
+}
+```
+
+Cette génération par borne (CN == identité) est un **prérequis** pour l'enforcement du profil de sécurité OCPP 2.0.1 en mode mTLS — voir [Enforcement des profils de sécurité OCPP 2.0.1](#enforcement-des-profils-de-sécurité-ocpp-201).
 
 ---
 
@@ -933,6 +977,24 @@ Les bornes doivent être enregistrées et autorisées dans l'application pour po
 - **Rejetées** (comportement par défaut)
 - **Ajoutées automatiquement** (`autoAddUnknownChargepoints: true`)
 - **Mises en attente** d'approbation (`pendingUnknownChargepoints: true`)
+
+#### Enforcement des profils de sécurité OCPP 2.0.1
+
+> Concerne **uniquement OCPP 2.0.1** — l'OCPP 1.6 n'est pas affecté par ce flag.
+
+Par défaut, une borne 2.0.1 peut se connecter en WS nu sans aucune authentification — un mode que le spec OCPP 2.0.1 ne reconnaît pas comme valide, ce qui peut provoquer un comportement firmware indéfini côté borne (ex. rejet de commandes `TriggerMessage`). `ocpp.v201.enforceSecurityProfile: true` restreint les connexions 2.0.1 aux 3 profils de sécurité approuvés par le spec :
+
+| Profil accepté | Condition vérifiée |
+|---|---|
+| WS + Basic Auth | Mot de passe fourni dans le handshake (WS ou WSS) |
+| WSS + Basic Auth | Mot de passe fourni dans le handshake (WS ou WSS) |
+| WSS + mTLS | Certificat client validé par la chaîne TLS (`socket.authorized === true`) **et** `CN` du certificat == identité de la borne |
+
+Toute tentative de connexion 2.0.1 qui ne correspond à aucun de ces profils est rejetée (`401`), avec une notification admin automatique (raison `wss_no_auth` si aucune authentification n'est présentée, `mtls_invalid` si un certificat client est présenté mais invalide ou l'identité ne correspond pas).
+
+**Prérequis pour le mode mTLS** : chaque borne doit posséder un certificat client dont le `CN` correspond exactement à son identité — voir [Génération automatique de certificats clients](#génération-automatique-de-certificats-clients). Un certificat unique partagé par toutes les bornes (CN générique) ne satisfait pas cette condition sous enforcement.
+
+**Reverse proxy (Traefik, etc.)** : `ocpp.trustProxyProto` permet de reconnaître, via l'en-tête `X-Forwarded-Proto`, qu'une connexion arrivant en WS clair sur l'application a en réalité été sécurisée par TLS en amont — utile pour une classification/journalisation correcte. **Le mode WSS+mTLS reste toutefois impossible derrière un reverse proxy qui termine le TLS** (le certificat client n'est pas transmis à l'application) : seuls les profils Basic Auth restent utilisables dans ce cas, quelle que soit la valeur de `trustProxyProto`.
 
 ### Heartbeat et surveillance des connexions
 

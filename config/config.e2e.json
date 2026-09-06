@@ -20,7 +20,7 @@
     "host": "0.0.0.0",
     "wsPort": 9099,
     "v16": { "enabled": true },
-    "v201": { "enabled": false },
+    "v201": { "enabled": false, "enforceSecurityProfile": false },
     "strictMode": false,
     "callTimeoutSeconds": 45,
     "autoAddUnknownChargepoints": false,
