@@ -254,24 +254,30 @@ function createOCPPServerBase(options = {}) {
       }
     }
 
-    // ── Enforcement des profils de sécurité OCPP 2.0.1 (WS+Auth, WSS+Auth, WSS+mTLS) ──
+    // ── Enforcement des profils de sécurité OCPP (WS+Auth, WSS+Auth, WSS+mTLS) ──
     // Root cause d'un ancien bug où des bornes 2.0.1 se connectaient en WS nu sans
     // authentification, un mode non reconnu par le spec 2.0.1 (comportement firmware
-    // indéfini). Opt-in via ocpp.v201.enforceSecurityProfile — n'affecte pas l'OCPP 1.6.
+    // indéfini). Opt-in indépendamment par version : ocpp.v201.enforceSecurityProfile /
+    // ocpp.v16.enforceSecurityProfile.
     const is201Attempt = protocols.includes('ocpp2.0.1') && !!handshake.protocols?.has('ocpp2.0.1');
-    if (is201Attempt && config.ocpp.v201?.enforceSecurityProfile) {
+    const is16Attempt = protocols.includes('ocpp1.6') && !!handshake.protocols?.has('ocpp1.6');
+    const attemptedVersion = is201Attempt ? '2.0.1' : is16Attempt ? '1.6' : null;
+    const enforceForVersion =
+      (is201Attempt && config.ocpp.v201?.enforceSecurityProfile) ||
+      (is16Attempt && config.ocpp.v16?.enforceSecurityProfile);
+    if (enforceForVersion) {
       const validProfile = (isWSS && hasClientCert && clientCertVerified) || !!providedPassword;
       if (!validProfile) {
         const reason = hasClientCert && !clientCertVerified ? 'mtls_invalid' : 'wss_no_auth';
         logger.warn(
-          `Connection refused: ${handshake.identity} does not meet an approved OCPP 2.0.1 security profile`
+          `Connection refused: ${handshake.identity} does not meet an approved OCPP ${attemptedVersion} security profile`
         );
         if (checkRefusedNotifCooldown(handshake.identity, reason)) {
           notifications
             .emit('chargepoint_refused', { identity: handshake.identity, reason })
             .catch(() => {});
         }
-        return reject(401, 'OCPP 2.0.1 security profile not met');
+        return reject(401, `OCPP ${attemptedVersion} security profile not met`);
       }
     }
 

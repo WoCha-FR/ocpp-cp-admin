@@ -95,6 +95,10 @@ const ENV_OVERRIDES = [
   { env: 'CPADMIN_OCPP_AUTO_ADD', path: ['ocpp', 'autoAddUnknownChargepoints'] },
   { env: 'CPADMIN_OCPP_PENDING_UNKNOWN', path: ['ocpp', 'pendingUnknownChargepoints'] },
   { env: 'CPADMIN_OCPP_V16_ENABLED', path: ['ocpp', 'v16', 'enabled'] },
+  {
+    env: 'CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE',
+    path: ['ocpp', 'v16', 'enforceSecurityProfile'],
+  },
   { env: 'CPADMIN_OCPP_V201_ENABLED', path: ['ocpp', 'v201', 'enabled'] },
   {
     env: 'CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE',
@@ -366,6 +370,13 @@ const CONFIG_FIELDS = [
     key: 'ocpp.wss.clientCa.certValidityDays',
     section: 'ocpp',
     type: 'number',
+    required: false,
+    sensitive: false,
+  },
+  {
+    key: 'ocpp.v16.enforceSecurityProfile',
+    section: 'ocpp',
+    type: 'boolean',
     required: false,
     sensitive: false,
   },

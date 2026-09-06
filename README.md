@@ -111,7 +111,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - HTTP security headers (Helmet)
 - Structured logging with file rotation
 - Automatic per-charge-point mTLS client certificate generation (built-in local CA)
-- Optional OCPP 2.0.1 security profile enforcement (WS/WSS+Auth, WSS+mTLS)
+- Optional OCPP security profile enforcement, per version (1.6 / 2.0.1) — WS/WSS+Auth, WSS+mTLS
 
 ### Progressive Web Application (PWA)
 - Installable on desktop and mobile (Web App Manifest)
@@ -364,8 +364,9 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (disable OCPP 1.6 support) |
+| `CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE` | `ocpp.v16.enforceSecurityProfile` | `true` (see [OCPP security profile enforcement](#ocpp-security-profile-enforcement)) |
 | `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (enable OCPP 2.0.1 support — in development) |
-| `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (see [OCPP 2.0.1 security profile enforcement](#ocpp-201-security-profile-enforcement)) |
+| `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (see [OCPP security profile enforcement](#ocpp-security-profile-enforcement)) |
 | `CPADMIN_OCPP_TRUST_PROXY_PROTO` | `ocpp.trustProxyProto` | `true` (behind a Traefik-like reverse proxy) |
 
 ### Mail Configuration
@@ -491,7 +492,7 @@ Required fields are validated before saving. The application restarts automatica
   "trustProxyProto": false,
   "ocppWsUrl": "ws://ws.cpadmin.local:9000",
   "diagnosticsLocation": "ftp://example.com/diagnostics",
-  "v16":  { "enabled": true },
+  "v16":  { "enabled": true, "enforceSecurityProfile": false },
   "v201": { "enabled": false, "enforceSecurityProfile": false },
   "wss": {
     "enabled": false,
@@ -519,12 +520,13 @@ Required fields are validated before saving. The application restarts automatica
 | `callTimeoutSeconds` | Timeout in seconds waiting for a response to an OCPP call |
 | `autoAddUnknownChargepoints` | Automatically add unknown charge points that connect |
 | `pendingUnknownChargepoints` | Put unknown charge points pending admin approval |
-| `trustProxyProto` | Trust the `X-Forwarded-Proto` header to recognize a WSS connection terminated upstream by a reverse proxy (e.g. Traefik) that then forwards to the app as plain WS — used for connection logging/classification, see [OCPP 2.0.1 security profile enforcement](#ocpp-201-security-profile-enforcement) |
+| `trustProxyProto` | Trust the `X-Forwarded-Proto` header to recognize a WSS connection terminated upstream by a reverse proxy (e.g. Traefik) that then forwards to the app as plain WS — used for connection logging/classification, see [OCPP security profile enforcement](#ocpp-security-profile-enforcement) |
 | `ocppWsUrl` | OCPP WebSocket URL to communicate (for charge point configuration) |
 | `diagnosticsLocation` | Destination URL for diagnostics upload |
 | `v16.enabled` | Enable OCPP 1.6 support (default: `true`) — set to `false` to disable; a warning is logged and all connections are rejected if both versions are disabled |
+| `v16.enforceSecurityProfile` | Reject OCPP 1.6 connections that meet none of the 3 security profiles recognized by the spec (default: `false`) — see [OCPP security profile enforcement](#ocpp-security-profile-enforcement) |
 | `v201.enabled` | Enable OCPP 2.0.1 support (default: `false`) — **in development**, not yet fully functional |
-| `v201.enforceSecurityProfile` | Reject OCPP 2.0.1 connections that meet none of the 3 security profiles recognized by the spec (default: `false`) — see [OCPP 2.0.1 security profile enforcement](#ocpp-201-security-profile-enforcement) |
+| `v201.enforceSecurityProfile` | Reject OCPP 2.0.1 connections that meet none of the 3 security profiles recognized by the spec (default: `false`) — see [OCPP security profile enforcement](#ocpp-security-profile-enforcement) |
 | `wss.enabled` | Enable WebSocket Secure (TLS) |
 | `wss.strictClientCert` | Require a valid client certificate |
 | `wss.rsa` / `ecdsa` | Server certificates for WSS (dual algorithm supported, paths relative to `config/` folder) |
@@ -765,52 +767,10 @@ This is a **troubleshooting fallback**: with Let's Encrypt, most modern charge p
 
 #### Security Profile 3 — Client Certificate Authentication
 
-The server validates that the client certificate is signed by a trusted CA (`wss.caFile`). By default, a **single certificate shared by all charge points** is sufficient — the CN is not matched against the charge point identity, unless [`ocpp.v201.enforceSecurityProfile`](#ocpp-201-security-profile-enforcement) is enabled (in which case CN == identity matching is required for the mTLS mode, which implies a per-charge-point certificate — see below).
+The server validates that the client certificate is signed by a trusted CA (`wss.caFile`). Two ways to obtain client certificates:
 
-Two ways to obtain client certificates:
-- **Manual** (below): a CA and a single certificate managed by hand, installed on all charge points.
-- **Automatic per-charge-point generation** (see [Automatic client certificate generation](#automatic-client-certificate-generation)): the app acts as a local CA and issues one certificate per charge point with `CN` = the charge point's identity, a prerequisite for OCPP 2.0.1 security profile enforcement.
-
-**1. Create a local CA:**
-
-```bash
-openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
-  -keyout config/certs/ca.key \
-  -out    config/certs/ca.crt \
-  -subj   "/CN=OCPP-CA"
-```
-
-**2. Issue a single client certificate (installed on all charge points):**
-
-```bash
-# Key + CSR
-openssl req -newkey rsa:2048 -nodes \
-  -keyout config/certs/client.key \
-  -out    config/certs/client.csr \
-  -subj   "/CN=ocpp-client"
-
-# Sign with the CA
-openssl x509 -req -days 365 -sha256 \
-  -in     config/certs/client.csr \
-  -CA     config/certs/ca.crt \
-  -CAkey  config/certs/ca.key \
-  -CAcreateserial \
-  -out    config/certs/client.crt
-
-# Combine certificate and key into a single PEM file
-cat config/certs/client.crt config/certs/client.key > config/certs/client.pem
-```
-
-**3. Enable strict client certificate validation:**
-
-```json
-"wss": {
-  "strictClientCert": true,
-  "caFile": "certs/ca.crt"
-}
-```
-
-Install `client.pem` (contains both certificate and private key) on each charge point.
+- **Automatic per-charge-point generation** (recommended — see [Automatic client certificate generation](#automatic-client-certificate-generation)): the app acts as a local CA and issues one certificate per charge point with `CN` = the charge point's identity. Required if you plan to enable [OCPP security profile enforcement](#ocpp-security-profile-enforcement), since it needs CN == identity matching to verify mTLS.
+- **Manual, generic certificate**: create your own CA with `openssl` and issue a **single certificate shared by all charge points** (generic `CN`, not tied to any charge point identity), then set `strictClientCert: true` and `caFile` to that CA's certificate. This is a valid lighter-weight option for basic mTLS (Profile 3) without per-charge-point identity binding — but **it cannot satisfy security profile enforcement**, which requires `CN` to exactly match each charge point's identity.
 
 > **Mixed mode** (`strictClientCert: false` with `caFile` set): the server requests a certificate but still accepts password authentication (Profile 2). Certificates that are presented are validated against the CA.
 
@@ -839,7 +799,7 @@ Alternative to the manual CA/certificate above: the app can act as a local CA an
 }
 ```
 
-This per-charge-point generation (CN == identity) is a **prerequisite** for OCPP 2.0.1 security profile enforcement in mTLS mode — see [OCPP 2.0.1 security profile enforcement](#ocpp-201-security-profile-enforcement).
+This per-charge-point generation (CN == identity) is a **prerequisite** for OCPP security profile enforcement in mTLS mode, on either version — see [OCPP security profile enforcement](#ocpp-security-profile-enforcement).
 
 ---
 
@@ -983,11 +943,11 @@ Charge points must be registered and authorized in the application to connect. U
 - **Automatically added** (`autoAddUnknownChargepoints: true`)
 - **Put pending** approval (`pendingUnknownChargepoints: true`)
 
-#### OCPP 2.0.1 security profile enforcement
+#### OCPP security profile enforcement
 
-> Applies **only to OCPP 2.0.1** — OCPP 1.6 is not affected by this flag.
+> Opt-in **independently per OCPP version**, via `ocpp.v16.enforceSecurityProfile` and `ocpp.v201.enforceSecurityProfile` — enabling one does not affect the other, so a mixed 1.6/2.0.1 fleet can be migrated one version at a time.
 
-By default, a 2.0.1 charge point can connect over plain WS with no authentication at all — a mode the OCPP 2.0.1 spec does not recognize as valid, which can cause undefined firmware behavior on the charge point side (e.g. rejecting `TriggerMessage` commands). `ocpp.v201.enforceSecurityProfile: true` restricts 2.0.1 connections to the 3 security profiles approved by the spec:
+By default, a charge point can connect over plain WS with no authentication at all — a mode neither the OCPP 1.6 nor the 2.0.1 security whitepaper recognizes as valid, which can cause undefined firmware behavior on the charge point side (e.g. rejecting `TriggerMessage` commands). Setting `enforceSecurityProfile: true` on a version restricts its connections to the 3 security profiles approved by the spec:
 
 | Accepted profile | Condition checked |
 |---|---|
@@ -995,7 +955,7 @@ By default, a 2.0.1 charge point can connect over plain WS with no authenticatio
 | WSS + Basic Auth | Password provided in the handshake (WS or WSS) |
 | WSS + mTLS | Client certificate validated by the TLS chain (`socket.authorized === true`) **and** certificate `CN` == charge point identity |
 
-Any 2.0.1 connection attempt matching none of these profiles is rejected (`401`), with an automatic admin notification (reason `wss_no_auth` when no authentication is presented at all, `mtls_invalid` when a client certificate is presented but is invalid or the identity doesn't match).
+Any connection attempt on an enforced version matching none of these profiles is rejected (`401`), with an automatic admin notification (reason `wss_no_auth` when no authentication is presented at all, `mtls_invalid` when a client certificate is presented but is invalid or the identity doesn't match).
 
 **Prerequisite for mTLS mode**: each charge point must have a client certificate whose `CN` exactly matches its identity — see [Automatic client certificate generation](#automatic-client-certificate-generation). A single certificate shared by all charge points (generic CN) does not satisfy this condition under enforcement.
 

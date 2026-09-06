@@ -112,7 +112,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - En-têtes de sécurité HTTP (Helmet)
 - Journalisation structurée avec rotation des fichiers
 - Génération automatique de certificats clients mTLS par borne (CA locale intégrée)
-- Enforcement optionnel des profils de sécurité OCPP 2.0.1 (WS/WSS+Auth, WSS+mTLS)
+- Enforcement optionnel des profils de sécurité OCPP, par version (1.6 / 2.0.1) — WS/WSS+Auth, WSS+mTLS
 
 ### Application web progressive (PWA)
 - Installable sur desktop et mobile (Web App Manifest)
@@ -359,8 +359,9 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (enregistrer automatiquement les bornes inconnues) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (désactiver le support OCPP 1.6) |
+| `CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE` | `ocpp.v16.enforceSecurityProfile` | `true` (voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp)) |
 | `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (activer le support OCPP 2.0.1 — en cours de développement) |
-| `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (voir [Enforcement des profils de sécurité OCPP 2.0.1](#enforcement-des-profils-de-sécurité-ocpp-201)) |
+| `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp)) |
 | `CPADMIN_OCPP_TRUST_PROXY_PROTO` | `ocpp.trustProxyProto` | `true` (derrière un reverse proxy type Traefik) |
 
 ### Configuration mail
@@ -486,7 +487,7 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
   "trustProxyProto": false,
   "ocppWsUrl": "ws://ws.cpadmin.local:9000",
   "diagnosticsLocation": "ftp://example.com/diagnostics",
-  "v16":  { "enabled": true },
+  "v16":  { "enabled": true, "enforceSecurityProfile": false },
   "v201": { "enabled": false, "enforceSecurityProfile": false },
   "wss": {
     "enabled": false,
@@ -514,12 +515,13 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 | `callTimeoutSeconds` | Délai d'attente en secondes pour la réponse à un appel OCPP |
 | `autoAddUnknownChargepoints` | Ajouter automatiquement les bornes inconnues qui se connectent |
 | `pendingUnknownChargepoints` | Mettre les bornes inconnues en attente d'approbation admin |
-| `trustProxyProto` | Faire confiance à l'en-tête `X-Forwarded-Proto` pour reconnaître une connexion WSS terminée en amont par un reverse proxy (ex. Traefik) qui transmet ensuite en WS clair à l'application — utilisé pour la journalisation/classification de la connexion, voir [Enforcement des profils de sécurité OCPP 2.0.1](#enforcement-des-profils-de-sécurité-ocpp-201) |
+| `trustProxyProto` | Faire confiance à l'en-tête `X-Forwarded-Proto` pour reconnaître une connexion WSS terminée en amont par un reverse proxy (ex. Traefik) qui transmet ensuite en WS clair à l'application — utilisé pour la journalisation/classification de la connexion, voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp) |
 | `ocppWsUrl` | URL WebSocket OCPP à communiquer (pour la configuration des bornes) |
 | `diagnosticsLocation` | URL de destination pour l'upload des diagnostics |
 | `v16.enabled` | Activer le support OCPP 1.6 (défaut : `true`) — mettre à `false` pour désactiver ; un warning est loggué et toutes les connexions sont rejetées si les deux versions sont désactivées |
+| `v16.enforceSecurityProfile` | Rejeter les connexions OCPP 1.6 qui ne respectent aucun des 3 profils de sécurité reconnus par le spec (défaut : `false`) — voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp) |
 | `v201.enabled` | Activer le support OCPP 2.0.1 (défaut : `false`) — **en cours de développement**, pas encore pleinement fonctionnel |
-| `v201.enforceSecurityProfile` | Rejeter les connexions OCPP 2.0.1 qui ne respectent aucun des 3 profils de sécurité reconnus par le spec (défaut : `false`) — voir [Enforcement des profils de sécurité OCPP 2.0.1](#enforcement-des-profils-de-sécurité-ocpp-201) |
+| `v201.enforceSecurityProfile` | Rejeter les connexions OCPP 2.0.1 qui ne respectent aucun des 3 profils de sécurité reconnus par le spec (défaut : `false`) — voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp) |
 | `wss.enabled` | Activer le WebSocket Secure (TLS) |
 | `wss.strictClientCert` | Exiger un certificat client valide |
 | `wss.rsa` / `ecdsa` | Certificats serveur pour WSS (double algorithme supporté, chemins relatifs au dossier `config/`) |
@@ -760,52 +762,10 @@ C'est un **recours de dépannage** : avec Let's Encrypt, la plupart des bornes m
 
 #### Profil de sécurité 3 — Authentification par certificat client
 
-Le serveur vérifie que le certificat client est signé par une CA de confiance (`wss.caFile`). Par défaut, un **certificat unique partagé par toutes les bornes** est suffisant — le CN n'est pas comparé à l'identité de la borne, sauf si [`ocpp.v201.enforceSecurityProfile`](#enforcement-des-profils-de-sécurité-ocpp-201) est activé (auquel cas la correspondance CN == identité est exigée pour le mode mTLS, ce qui suppose un certificat par borne — voir ci-dessous).
+Le serveur vérifie que le certificat client est signé par une CA de confiance (`wss.caFile`). Deux façons d'obtenir des certificats clients :
 
-Deux façons d'obtenir des certificats clients :
-- **Manuelle** (ci-dessous) : une CA et un certificat unique gérés à la main, à installer sur toutes les bornes.
-- **Génération automatique par borne** (voir [Génération automatique de certificats clients](#génération-automatique-de-certificats-clients)) : l'application joue le rôle de CA locale et émet un certificat par borne avec `CN` = identité de la borne, prérequis pour l'enforcement du profil de sécurité 2.0.1.
-
-**1. Créer une CA locale :**
-
-```bash
-openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
-  -keyout config/certs/ca.key \
-  -out    config/certs/ca.crt \
-  -subj   "/CN=OCPP-CA"
-```
-
-**2. Émettre un certificat client unique (à installer sur toutes les bornes) :**
-
-```bash
-# Clé + CSR
-openssl req -newkey rsa:2048 -nodes \
-  -keyout config/certs/client.key \
-  -out    config/certs/client.csr \
-  -subj   "/CN=ocpp-client"
-
-# Signer avec la CA
-openssl x509 -req -days 365 -sha256 \
-  -in     config/certs/client.csr \
-  -CA     config/certs/ca.crt \
-  -CAkey  config/certs/ca.key \
-  -CAcreateserial \
-  -out    config/certs/client.crt
-
-# Combiner le certificat et la clé dans un seul fichier PEM
-cat config/certs/client.crt config/certs/client.key > config/certs/client.pem
-```
-
-**3. Activer la validation stricte du certificat client :**
-
-```json
-"wss": {
-  "strictClientCert": true,
-  "caFile": "certs/ca.crt"
-}
-```
-
-Installez `client.pem` (contient le certificat et la clé privée) sur chaque borne.
+- **Génération automatique par borne** (recommandée — voir [Génération automatique de certificats clients](#génération-automatique-de-certificats-clients)) : l'application joue le rôle de CA locale et émet un certificat par borne avec `CN` = identité de la borne. Nécessaire si vous prévoyez d'activer l'[enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp), qui exige la correspondance CN == identité pour valider le mTLS.
+- **Certificat manuel générique** : créez votre propre CA avec `openssl` et émettez un **certificat unique partagé par toutes les bornes** (CN générique, non lié à une identité de borne précise), puis réglez `strictClientCert: true` et `caFile` sur le certificat de cette CA. C'est une option légère valable pour du mTLS basique (Profil 3) sans binding par borne — mais **elle ne peut pas satisfaire l'enforcement des profils de sécurité**, qui exige que le `CN` corresponde exactement à l'identité de chaque borne.
 
 > **Mode mixte** (`strictClientCert: false` avec `caFile` renseigné) : le serveur demande un certificat mais accepte également l'authentification par mot de passe (Profil 2). Les certificats présentés sont validés contre la CA.
 
@@ -834,7 +794,7 @@ Alternative à la CA/certificat manuel ci-dessus : l'application peut jouer le r
 }
 ```
 
-Cette génération par borne (CN == identité) est un **prérequis** pour l'enforcement du profil de sécurité OCPP 2.0.1 en mode mTLS — voir [Enforcement des profils de sécurité OCPP 2.0.1](#enforcement-des-profils-de-sécurité-ocpp-201).
+Cette génération par borne (CN == identité) est un **prérequis** pour l'enforcement des profils de sécurité OCPP en mode mTLS, quelle que soit la version — voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp).
 
 ---
 
@@ -978,11 +938,11 @@ Les bornes doivent être enregistrées et autorisées dans l'application pour po
 - **Ajoutées automatiquement** (`autoAddUnknownChargepoints: true`)
 - **Mises en attente** d'approbation (`pendingUnknownChargepoints: true`)
 
-#### Enforcement des profils de sécurité OCPP 2.0.1
+#### Enforcement des profils de sécurité OCPP
 
-> Concerne **uniquement OCPP 2.0.1** — l'OCPP 1.6 n'est pas affecté par ce flag.
+> Opt-in **indépendamment par version OCPP**, via `ocpp.v16.enforceSecurityProfile` et `ocpp.v201.enforceSecurityProfile` — activer l'un n'affecte pas l'autre, ce qui permet de migrer un parc mixte 1.6/2.0.1 version par version.
 
-Par défaut, une borne 2.0.1 peut se connecter en WS nu sans aucune authentification — un mode que le spec OCPP 2.0.1 ne reconnaît pas comme valide, ce qui peut provoquer un comportement firmware indéfini côté borne (ex. rejet de commandes `TriggerMessage`). `ocpp.v201.enforceSecurityProfile: true` restreint les connexions 2.0.1 aux 3 profils de sécurité approuvés par le spec :
+Par défaut, une borne peut se connecter en WS nu sans aucune authentification — un mode que ni le security whitepaper OCPP 1.6 ni le spec OCPP 2.0.1 ne reconnaissent comme valide, ce qui peut provoquer un comportement firmware indéfini côté borne (ex. rejet de commandes `TriggerMessage`). Activer `enforceSecurityProfile: true` sur une version restreint ses connexions aux 3 profils de sécurité approuvés par le spec :
 
 | Profil accepté | Condition vérifiée |
 |---|---|
@@ -990,7 +950,7 @@ Par défaut, une borne 2.0.1 peut se connecter en WS nu sans aucune authentifica
 | WSS + Basic Auth | Mot de passe fourni dans le handshake (WS ou WSS) |
 | WSS + mTLS | Certificat client validé par la chaîne TLS (`socket.authorized === true`) **et** `CN` du certificat == identité de la borne |
 
-Toute tentative de connexion 2.0.1 qui ne correspond à aucun de ces profils est rejetée (`401`), avec une notification admin automatique (raison `wss_no_auth` si aucune authentification n'est présentée, `mtls_invalid` si un certificat client est présenté mais invalide ou l'identité ne correspond pas).
+Toute tentative de connexion sur une version soumise à l'enforcement qui ne correspond à aucun de ces profils est rejetée (`401`), avec une notification admin automatique (raison `wss_no_auth` si aucune authentification n'est présentée, `mtls_invalid` si un certificat client est présenté mais invalide ou l'identité ne correspond pas).
 
 **Prérequis pour le mode mTLS** : chaque borne doit posséder un certificat client dont le `CN` correspond exactement à son identité — voir [Génération automatique de certificats clients](#génération-automatique-de-certificats-clients). Un certificat unique partagé par toutes les bornes (CN générique) ne satisfait pas cette condition sous enforcement.
 

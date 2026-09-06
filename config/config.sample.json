@@ -19,7 +19,7 @@
   "ocpp": {
     "host": "0.0.0.0",
     "wsPort": 9000,
-    "v16": { "enabled": true },
+    "v16": { "enabled": true, "enforceSecurityProfile": false },
     "v201": { "enabled": false, "enforceSecurityProfile": false },
     "strictMode": true,
     "callTimeoutSeconds": 45,
