@@ -23,8 +23,9 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Create non-root user first so we can copy files directly with target ownership.
+# openssl is required at runtime to generate/manage the client certificate authority (mTLS).
 RUN addgroup -S app && adduser -S app -G app \
-    && apk add --no-cache su-exec
+    && apk add --no-cache su-exec openssl
 
 COPY --chown=app:app package*.json ./
 COPY --chown=app:app --from=builder /app/node_modules ./node_modules
