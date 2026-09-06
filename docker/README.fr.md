@@ -185,6 +185,8 @@ Déposer ensuite `./data/config/certs/client.pem` (contient certificat + clé pr
 
 > `cert-init` est idempotent : les fichiers déjà présents ne sont jamais écrasés. Pour renouveler le certificat client, supprimer `client.pem` et relancer la stack.
 
+> **Certificat générique, sans binding par identité :** le certificat généré par `cert-init` a un `CN` générique (`ocpp-client`), partagé par toutes les bornes — il ne satisfait **pas** l'[enforcement des profils de sécurité OCPP](../README.fr.md#enforcement-des-profils-de-sécurité-ocpp) (`ocpp.v16.enforceSecurityProfile` / `ocpp.v201.enforceSecurityProfile`), qui exige que le `CN` corresponde exactement à l'identité de chaque borne. Si vous prévoyez d'activer l'enforcement, utilisez plutôt la [génération automatique de certificats par borne](../README.fr.md#génération-automatique-de-certificats-clients) de l'application, et pointez `caFile` vers `ocpp.wss.clientCa.certFile` (défaut `certs/clients/ca.crt`) plutôt que vers le `ca.crt` de `cert-init`.
+
 ---
 
 ---
