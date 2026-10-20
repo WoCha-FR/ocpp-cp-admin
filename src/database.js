@@ -488,8 +488,14 @@ function updateChargepoint(id, data) {
   return getChargepointById(id);
 }
 
+// evses et error_events référencent chargepoints(id) sans ON DELETE CASCADE : on les
+// supprime explicitement (plutôt que de reconstruire les tables SQLite par migration).
 function deleteChargepoint(id) {
-  db.prepare('DELETE FROM chargepoints WHERE id = ?').run(id);
+  db.transaction(() => {
+    db.prepare('DELETE FROM evses WHERE chargepoint_id = ?').run(id);
+    db.prepare('DELETE FROM error_events WHERE chargepoint_id = ?').run(id);
+    db.prepare('DELETE FROM chargepoints WHERE id = ?').run(id);
+  })();
 }
 
 function assignChargepointToSite(chargepointId, siteId) {

@@ -383,6 +383,35 @@ describe('database — Charging Profiles CRUD', () => {
   });
 });
 
+// ── deleteChargepoint — tables sans ON DELETE CASCADE ──
+describe('database — deleteChargepoint avec evses et error_events', () => {
+  it('supprime la borne ainsi que ses evses et error_events (sans FOREIGN KEY constraint failed)', () => {
+    const rawDb = db.getDb();
+    const cpId = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('CP-DEL-FK-TEST', '2.0.1')")
+      .run().lastInsertRowid;
+    const otherId = rawDb
+      .prepare("INSERT INTO chargepoints (identity, ocpp_version) VALUES ('CP-DEL-FK-OTHER', '1.6')")
+      .run().lastInsertRowid;
+    rawDb.prepare('INSERT INTO evses (chargepoint_id, evse_id) VALUES (?, 1)').run(cpId);
+    rawDb
+      .prepare("INSERT INTO error_events (chargepoint_id, event_type) VALUES (?, 'StatusNotification')")
+      .run(cpId);
+    rawDb
+      .prepare("INSERT INTO error_events (chargepoint_id, event_type) VALUES (?, 'StatusNotification')")
+      .run(otherId);
+
+    expect(() => db.deleteChargepoint(cpId)).not.toThrow();
+
+    expect(db.getChargepointById(cpId)).toBeUndefined();
+    expect(rawDb.prepare('SELECT COUNT(*) AS n FROM evses WHERE chargepoint_id = ?').get(cpId).n).toBe(0);
+    expect(rawDb.prepare('SELECT COUNT(*) AS n FROM error_events WHERE chargepoint_id = ?').get(cpId).n).toBe(0);
+    // Les événements des autres bornes sont conservés
+    expect(rawDb.prepare('SELECT COUNT(*) AS n FROM error_events WHERE chargepoint_id = ?').get(otherId).n).toBe(1);
+    db.deleteChargepoint(otherId);
+  });
+});
+
 // ── Reservations ──
 describe('database — Reservations CRUD', () => {
   let cpId, userId;
