@@ -18,6 +18,7 @@ const passport = require('./auth');
 const {
   createOCPPServerBase,
   setBroadcast,
+  createTlsClientErrorHandler,
   startHeartbeatWatchdog,
   stopHeartbeatWatchdog,
   startReservationCleanupWatchdog,
@@ -633,6 +634,7 @@ async function start() {
     ocppWssServer = createOCPPServerBase({ protocols: ocppProtocols, isWSS: true });
     ocppHttpsServer = https.createServer(wsSslOptions);
     ocppHttpsServer.on('upgrade', ocppWssServer.handleUpgrade);
+    ocppHttpsServer.on('tlsClientError', createTlsClientErrorHandler(logOCPP));
     await new Promise((resolve, reject) => {
       ocppHttpsServer.once('error', reject);
       ocppHttpsServer.listen(OCPP_WSS_PORT, OCPP_HOST, () => {

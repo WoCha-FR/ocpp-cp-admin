@@ -885,8 +885,22 @@ async function remoteStartTransaction(identity, connectorId, idToken) {
   return callClient(identity, 'RemoteStartTransaction', { connectorId, idTag: idToken });
 }
 
+// ── Handshake TLS refusé (WSS) : sans ce handler, l'échec est silencieux ──
+// Typiquement : la borne ne fait pas confiance au certificat serveur, ou le serveur
+// refuse son certificat client. Nécessaire pour diagnostiquer une borne qui ne se connecte pas.
+function createTlsClientErrorHandler(log) {
+  return (err, socket) => {
+    const remote = socket?.remoteAddress
+      ? `${socket.remoteAddress}:${socket.remotePort}`
+      : 'unknown';
+    const reason = err.code ? `${err.code} - ${err.message}` : err.message;
+    log.warn(`WSS TLS handshake failed from ${remote}: ${reason}`);
+  };
+}
+
 module.exports = {
   createOCPPServerBase,
+  createTlsClientErrorHandler,
   setBroadcast,
   broadcast,
   getConnectedClients,

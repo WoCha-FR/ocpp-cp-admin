@@ -801,6 +801,28 @@ describe('ocpp-common — remoteStopTransaction', () => {
 });
 
 // ── remoteStartTransaction ──
+describe('ocpp-common — createTlsClientErrorHandler', () => {
+  it('logge un warn avec l\'adresse distante, le code et le message', () => {
+    const log = { warn: jest.fn() };
+    const handler = ocppCommon.createTlsClientErrorHandler(log);
+    const err = Object.assign(new Error('tlsv1 alert unknown ca'), {
+      code: 'ERR_SSL_TLSV1_ALERT_UNKNOWN_CA',
+    });
+    handler(err, { remoteAddress: '10.42.10.50', remotePort: 51234 });
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(
+      'WSS TLS handshake failed from 10.42.10.50:51234: ERR_SSL_TLSV1_ALERT_UNKNOWN_CA - tlsv1 alert unknown ca'
+    );
+  });
+
+  it('supporte une erreur sans code et un socket sans adresse', () => {
+    const log = { warn: jest.fn() };
+    const handler = ocppCommon.createTlsClientErrorHandler(log);
+    handler(new Error('socket hang up'), {});
+    expect(log.warn).toHaveBeenCalledWith('WSS TLS handshake failed from unknown: socket hang up');
+  });
+});
+
 describe('ocpp-common — remoteStartTransaction', () => {
   beforeEach(() => {
     jest.clearAllMocks();
