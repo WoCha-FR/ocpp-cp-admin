@@ -823,6 +823,112 @@ describe('ocpp-common — createTlsClientErrorHandler', () => {
   });
 });
 
+// ── mTLS vérifié : le mot de passe Basic Auth n'est ni exigé ni contrôlé ──
+describe('ocpp-common — mTLS vérifié et mot de passe', () => {
+  const PROTOCOLS = ['ocpp2.0.1', 'ocpp1.6'];
+
+  const mtlsSocket = (cn, authorized = true) => ({
+    getPeerCertificate: () => ({ subject: { CN: cn } }),
+    authorized,
+  });
+
+  // IP distincte par connexion : le rate limit par IP est partagé entre les tests du fichier
+  let ipCounter = 0;
+  function connect({
+    identity,
+    dbPassword,
+    sentPassword,
+    socket,
+    protocol = 'ocpp1.6',
+    isWSS = true,
+  }) {
+    mockDb.getChargepointByIdentity.mockReturnValue({ authorized: true, password: dbPassword });
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS, isWSS });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity,
+      remoteAddress: `10.30.0.${++ipCounter}`,
+      protocols: new Set([protocol]),
+      password: sentPassword ? Buffer.from(sentPassword) : undefined,
+      request: { socket },
+    });
+    return { accept, reject };
+  }
+
+  beforeEach(() => {
+    configMock.ocpp.v16 = { enforceSecurityProfile: true };
+    configMock.ocpp.v201 = { enforceSecurityProfile: true };
+  });
+
+  afterEach(() => {
+    delete configMock.ocpp.v16;
+    delete configMock.ocpp.v201;
+  });
+
+  it.each([
+    ['sans mot de passe envoyé ni en BDD', null, undefined],
+    ["mot de passe envoyé alors qu'aucun n'est en BDD", null, 'stale-pass'],
+    ['mot de passe en BDD mais non envoyé (borne passée au profil 3)', 'hash', undefined],
+    ["mot de passe envoyé erroné alors qu'un est en BDD", 'hash', 'wrong-pass'],
+  ])('accepte un certificat vérifié %s', (_label, dbPassword, sentPassword) => {
+    const { accept, reject } = connect({
+      identity: 'CP16-MTLS-PW',
+      dbPassword,
+      sentPassword,
+      socket: mtlsSocket('CP16-MTLS-PW'),
+    });
+    expect(reject).not.toHaveBeenCalled();
+    expect(accept).toHaveBeenCalledWith(expect.objectContaining({ identity: 'CP16-MTLS-PW' }));
+  });
+
+  it('accepte aussi en OCPP 2.0.1 avec mot de passe résiduel', () => {
+    const { accept, reject } = connect({
+      identity: 'CP201-MTLS-PW',
+      dbPassword: null,
+      sentPassword: 'stale-pass',
+      socket: mtlsSocket('CP201-MTLS-PW'),
+      protocol: 'ocpp2.0.1',
+    });
+    expect(reject).not.toHaveBeenCalled();
+    expect(accept).toHaveBeenCalled();
+  });
+
+  it("continue de contrôler le mot de passe si le certificat n'est pas vérifié (profil 2)", () => {
+    const { accept, reject } = connect({
+      identity: 'CP16-NOVERIF',
+      dbPassword: null,
+      sentPassword: 'stale-pass',
+      socket: mtlsSocket('CP16-NOVERIF', false),
+    });
+    expect(reject).toHaveBeenCalledWith(401, 'Password not expected');
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it("continue de contrôler le mot de passe si le CN ne correspond pas à l'identity", () => {
+    const { accept, reject } = connect({
+      identity: 'CP16-CNMISMATCH',
+      dbPassword: 'hash',
+      sentPassword: undefined,
+      socket: mtlsSocket('SOME-OTHER-CP'),
+    });
+    expect(reject).toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it('exige toujours le mot de passe en WS (sans TLS) quand un mot de passe existe en BDD', () => {
+    const { accept, reject } = connect({
+      identity: 'CP16-WS-PW',
+      dbPassword: 'hash',
+      sentPassword: undefined,
+      socket: undefined,
+      isWSS: false,
+    });
+    expect(reject).toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
+  });
+});
+
 describe('ocpp-common — diagnostic des refus de profil de sécurité', () => {
   const certSocket = (peer, extra = {}) => ({
     getPeerCertificate: () => peer,

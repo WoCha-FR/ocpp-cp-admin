@@ -362,6 +362,21 @@ function createOCPPServerBase(options = {}) {
     }
 
     const dbPassword = cp.password || null;
+
+    // WSS + certificat client vérifié (CA reconnue, CN == identity) : le certificat est
+    // l'identifiant de la borne (Security Profile 3, pas de Basic Auth). Un mot de passe
+    // résiduel envoyé par la borne ou conservé en BDD ne doit donc ni la faire refuser
+    // ni être exigé (ex. borne passée du profil 2 au profil 3). Seuls les faits sont logués.
+    if (isWSS && clientCertVerified) {
+      if (providedPassword || dbPassword) {
+        logger.info(
+          `mTLS client certificate verified for ${handshake.identity}: Basic Auth password check skipped ` +
+            `(password_sent=${!!providedPassword}, password_in_db=${!!dbPassword})`
+        );
+      }
+      return accept({ identity: handshake.identity, remoteAddress: clientIp });
+    }
+
     if (!providedPassword && dbPassword) {
       logger.warn(`Connection refused: ${handshake.identity} password required but missing`);
       if (checkRefusedNotifCooldown(handshake.identity, 'password_required')) {

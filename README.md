@@ -958,6 +958,8 @@ By default, a charge point can connect over plain WS with no authentication at a
 
 Any connection attempt on an enforced version matching none of these profiles is rejected (`401`), with an automatic admin notification (reason `wss_no_auth` when no authentication is presented at all, `mtls_invalid` when a client certificate is presented but is invalid or the identity doesn't match).
 
+**Password and mTLS**: when a client certificate is verified (trusted CA and `CN` == identity), the Basic Auth password is neither required nor checked — the certificate is the credential (Security Profile 3), whether or not enforcement is enabled. A password still sent by the charge point (e.g. kept in its memory after a profile upgrade) or still stored for it on the server does not cause a refusal; it is only logged. Without a verified certificate, the password checks apply as before.
+
 **Prerequisite for mTLS mode**: each charge point must have a client certificate whose `CN` exactly matches its identity — see [Automatic client certificate generation](#automatic-client-certificate-generation). A single certificate shared by all charge points (generic CN) does not satisfy this condition under enforcement.
 
 **Reverse proxy (Traefik, etc.)**: `ocpp.trustProxyProto` lets the app recognize, via the `X-Forwarded-Proto` header, that a connection arriving as plain WS on the app was actually secured by TLS upstream — useful for correct connection logging/classification. **WSS+mTLS remains impossible behind a TLS-terminating reverse proxy**, however (the client certificate is never forwarded to the app): only the Basic Auth profiles remain usable in that case, regardless of `trustProxyProto`.
