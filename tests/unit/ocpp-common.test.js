@@ -1062,6 +1062,61 @@ describe('ocpp-common — diagnostic des refus de profil de sécurité', () => {
     expect(causes).toHaveLength(1);
     expect(causes[0]).toMatch(/CN "CP-H" does not match the connection identity "CP-A"/);
   });
+
+  describe('describeAcceptedAuth', () => {
+    const accepted = (over) =>
+      ocppCommon.describeAcceptedAuth({
+        isWSS: true,
+        cert: { present: false },
+        hasPassword: false,
+        caFileConfigured: true,
+        identity: 'CP-A',
+        ...over,
+      });
+
+    it('WS ou WSS avec mot de passe et sans certificat : info basic_auth', () => {
+      expect(accepted({ hasPassword: true })).toEqual({
+        level: 'info',
+        message: 'auth_method=basic_auth',
+      });
+      expect(accepted({ isWSS: false, hasPassword: true }).level).toBe('info');
+    });
+
+    it('sans mot de passe ni certificat (enforcement désactivé) : info auth_method=none', () => {
+      const r = accepted({});
+      expect(r.level).toBe('info');
+      expect(r.message).toMatch(/auth_method=none .*enforcement disabled/);
+    });
+
+    it('certificat présenté mais non vérifié, accepté par mot de passe : warn avec les causes', () => {
+      const r = accepted({
+        hasPassword: true,
+        cert: {
+          present: true,
+          tlsAuthorized: false,
+          tlsAuthorizationError: 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+          cnMatchesIdentity: true,
+        },
+      });
+      expect(r.level).toBe('warn');
+      expect(r.message).toMatch(/auth_method=basic_auth/);
+      expect(r.message).toMatch(/client certificate presented but NOT verified \(mTLS not used\)/);
+      expect(r.message).toMatch(/UNABLE_TO_GET_ISSUER_CERT_LOCALLY/);
+    });
+
+    it('certificat non vérifié et aucun mot de passe : warn auth_method=none', () => {
+      const r = accepted({
+        cert: { present: true, tlsAuthorized: true, subjectCN: 'CP-H', cnMatchesIdentity: false },
+      });
+      expect(r.level).toBe('warn');
+      expect(r.message).toMatch(/auth_method=none/);
+      expect(r.message).toMatch(/CN "CP-H" does not match/);
+    });
+
+    it('WS (sans TLS) n\'émet jamais d\'avertissement de certificat', () => {
+      expect(accepted({ isWSS: false, cert: { present: true } }).level).toBe('info');
+    });
+  });
 });
 
 describe('ocpp-common — remoteStartTransaction', () => {

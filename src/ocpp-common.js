@@ -384,6 +384,9 @@ function createOCPPServerBase(options = {}) {
             `(password_sent=${!!providedPassword}, password_in_db=${!!dbPassword})`
         );
       }
+      logger.info(
+        `Connection accepted for ${handshake.identity}: auth_method=mtls (client certificate verified, CN == identity)`
+      );
       return accept({ identity: handshake.identity, remoteAddress: clientIp });
     }
 
@@ -424,6 +427,14 @@ function createOCPPServerBase(options = {}) {
       return reject(401, 'Invalid password');
     }
 
+    const outcome = describeAcceptedAuth({
+      isWSS,
+      cert: describeClientCert(tlsSocket, handshake.identity),
+      hasPassword: !!providedPassword,
+      caFileConfigured: !!config.ocpp.wss?.caFile,
+      identity: handshake.identity,
+    });
+    logger[outcome.level](`Connection accepted for ${handshake.identity}: ${outcome.message}`);
     accept({ identity: handshake.identity, remoteAddress: clientIp });
   });
 
@@ -1018,6 +1029,29 @@ function formatTlsSession(socket) {
 }
 
 // Causes lisibles du refus (une ou plusieurs), à partir de ce que le serveur a constaté
+// Comment une connexion non vérifiée par certificat a été acceptée (jamais en mTLS vérifié,
+// traité à part) : mot de passe, ou aucune authentification si l'enforcement est désactivé.
+// Un certificat client présenté mais non vérifié est signalé en warn avec ses causes.
+function describeAcceptedAuth({ isWSS, cert, hasPassword, caFileConfigured, identity }) {
+  const method = hasPassword
+    ? 'auth_method=basic_auth'
+    : 'auth_method=none (no authentication, security profile enforcement disabled for this version)';
+  if (!isWSS || !cert.present) return { level: 'info', message: method };
+  const causes = explainSecurityProfileRefusal({
+    isWSS,
+    cert,
+    hasPassword,
+    caFileConfigured,
+    identity,
+  });
+  return {
+    level: 'warn',
+    message:
+      `${method} — client certificate presented but NOT verified (mTLS not used): ` +
+      `${causes.join(' | ') || 'unknown'}`,
+  };
+}
+
 function explainSecurityProfileRefusal({ isWSS, cert, hasPassword, caFileConfigured, identity }) {
   const causes = [];
   if (!isWSS) {
@@ -1070,6 +1104,7 @@ module.exports = {
   createTlsClientErrorHandler,
   describeClientCert,
   describeClientCertChain,
+  describeAcceptedAuth,
   formatClientCertChain,
   explainSecurityProfileRefusal,
   setBroadcast,
