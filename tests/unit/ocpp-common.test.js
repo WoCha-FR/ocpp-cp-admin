@@ -823,6 +823,89 @@ describe('ocpp-common — createTlsClientErrorHandler', () => {
   });
 });
 
+describe('ocpp-common — diagnostic des refus de profil de sécurité', () => {
+  const certSocket = (peer, extra = {}) => ({
+    getPeerCertificate: () => peer,
+    authorized: true,
+    ...extra,
+  });
+  const goodPeer = {
+    subject: { CN: 'CP-A' },
+    issuer: { CN: 'OCPP-CP-Admin Local CA' },
+    serialNumber: '01',
+    fingerprint256: 'AA:BB',
+    valid_from: 'Jan  1 00:00:00 2026 GMT',
+    valid_to: 'Jan  1 00:00:00 2031 GMT',
+  };
+
+  it('describeClientCert : aucun certificat présenté', () => {
+    expect(ocppCommon.describeClientCert(certSocket({}), 'CP-A')).toEqual({ present: false });
+    expect(ocppCommon.describeClientCert(null, 'CP-A')).toEqual({ present: false });
+  });
+
+  it('describeClientCert : certificat valide et CN conforme', () => {
+    const d = ocppCommon.describeClientCert(certSocket(goodPeer), 'CP-A');
+    expect(d).toMatchObject({
+      present: true,
+      subjectCN: 'CP-A',
+      issuerCN: 'OCPP-CP-Admin Local CA',
+      tlsAuthorized: true,
+      tlsAuthorizationError: null,
+      cnMatchesIdentity: true,
+    });
+  });
+
+  it('describeClientCert : remonte authorizationError et CN différent', () => {
+    const d = ocppCommon.describeClientCert(
+      certSocket(goodPeer, { authorized: false, authorizationError: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' }),
+      'CP-B'
+    );
+    expect(d.tlsAuthorized).toBe(false);
+    expect(d.tlsAuthorizationError).toBe('UNABLE_TO_VERIFY_LEAF_SIGNATURE');
+    expect(d.cnMatchesIdentity).toBe(false);
+  });
+
+  const explain = (over) =>
+    ocppCommon.explainSecurityProfileRefusal({
+      isWSS: true,
+      cert: { present: false },
+      hasPassword: false,
+      caFileConfigured: true,
+      identity: 'CP-A',
+      ...over,
+    });
+
+  it('explain : WS nu sans mot de passe', () => {
+    expect(explain({ isWSS: false }).join(' ')).toMatch(/plain WS connection without Basic Auth/);
+  });
+
+  it('explain : WSS sans certificat ni mot de passe', () => {
+    expect(explain({}).join(' ')).toMatch(/no client certificate received/);
+  });
+
+  it('explain : certificat non approuvé et caFile vide → indique la config à corriger', () => {
+    const causes = explain({
+      cert: {
+        present: true,
+        tlsAuthorized: false,
+        tlsAuthorizationError: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+        cnMatchesIdentity: true,
+      },
+      caFileConfigured: false,
+    }).join(' ');
+    expect(causes).toMatch(/not trusted by the server TLS layer \(UNABLE_TO_VERIFY_LEAF_SIGNATURE\)/);
+    expect(causes).toMatch(/ocpp\.wss\.caFile is EMPTY/);
+  });
+
+  it('explain : certificat approuvé mais CN différent de l\'identity', () => {
+    const causes = explain({
+      cert: { present: true, tlsAuthorized: true, subjectCN: 'CP-H', cnMatchesIdentity: false },
+    });
+    expect(causes).toHaveLength(1);
+    expect(causes[0]).toMatch(/CN "CP-H" does not match the connection identity "CP-A"/);
+  });
+});
+
 describe('ocpp-common — remoteStartTransaction', () => {
   beforeEach(() => {
     jest.clearAllMocks();

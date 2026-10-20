@@ -231,9 +231,11 @@ function createOCPPServerBase(options = {}) {
 
     let hasClientCert = false;
     let clientCertVerified = false;
+    let tlsSocket = null;
     if (isWSS) {
       try {
         const socket = handshake.request && handshake.request.socket;
+        tlsSocket = socket;
         const peerCert = socket && socket.getPeerCertificate();
         hasClientCert = peerCert && peerCert.subject && Object.keys(peerCert.subject).length > 0;
         clientCertVerified =
@@ -244,6 +246,11 @@ function createOCPPServerBase(options = {}) {
       } catch (e) {
         // Pas de certificat client disponible
       }
+
+      logger.debug(
+        `WSS TLS details for ${handshake.identity}: remote=${clientIp}, ${formatTlsSession(tlsSocket)}, ` +
+          `password_sent=${!!providedPassword}, ${formatClientCert(describeClientCert(tlsSocket, handshake.identity))}`
+      );
 
       if (hasClientCert) {
         logger.info(`WSS connection with client certificate: ${handshake.identity}`);
@@ -269,8 +276,19 @@ function createOCPPServerBase(options = {}) {
       const validProfile = (isWSS && hasClientCert && clientCertVerified) || !!providedPassword;
       if (!validProfile) {
         const reason = hasClientCert && !clientCertVerified ? 'mtls_invalid' : 'wss_no_auth';
+        const cert = describeClientCert(tlsSocket, handshake.identity);
+        const causes = explainSecurityProfileRefusal({
+          isWSS,
+          cert,
+          hasPassword: !!providedPassword,
+          caFileConfigured: !!config.ocpp.wss?.caFile,
+          identity: handshake.identity,
+        });
         logger.warn(
-          `Connection refused: ${handshake.identity} does not meet an approved OCPP ${attemptedVersion} security profile`
+          `Connection refused: ${handshake.identity} does not meet an approved OCPP ${attemptedVersion} security profile ` +
+            `[reason=${reason}] causes: ${causes.join(' | ') || 'unknown'}; transport=${isWSS ? 'WSS' : 'WS'}, ` +
+            `remote=${clientIp}, password_sent=${!!providedPassword}, ` +
+            `ca_file_configured=${!!config.ocpp.wss?.caFile}, ${formatTlsSession(tlsSocket)}, ${formatClientCert(cert)}`
         );
         if (checkRefusedNotifCooldown(handshake.identity, reason)) {
           notifications
@@ -885,6 +903,80 @@ async function remoteStartTransaction(identity, connectorId, idToken) {
   return callClient(identity, 'RemoteStartTransaction', { connectorId, idTag: idToken });
 }
 
+// ── Diagnostic d'un refus de profil de sécurité : le plus verbeux possible ──
+// Résumé du certificat client présenté par la borne (null si aucun) pour les logs.
+function describeClientCert(socket, identity) {
+  let peer;
+  try {
+    peer = socket && socket.getPeerCertificate ? socket.getPeerCertificate() : null;
+  } catch {
+    peer = null;
+  }
+  if (!peer || !peer.subject || Object.keys(peer.subject).length === 0) return { present: false };
+  return {
+    present: true,
+    subjectCN: peer.subject.CN ?? null,
+    issuerCN: peer.issuer?.CN ?? null,
+    serial: peer.serialNumber ?? null,
+    fingerprint256: peer.fingerprint256 ?? null,
+    validFrom: peer.valid_from ?? null,
+    validTo: peer.valid_to ?? null,
+    tlsAuthorized: socket.authorized === true,
+    tlsAuthorizationError: socket.authorizationError ? String(socket.authorizationError) : null,
+    cnMatchesIdentity: verifyClientCertMatchesIdentity(peer, identity),
+  };
+}
+
+function formatClientCert(cert) {
+  if (!cert.present) return 'client_cert=none';
+  return (
+    `client_cert={subject_CN=${cert.subjectCN}, issuer_CN=${cert.issuerCN}, serial=${cert.serial}, ` +
+    `valid=${cert.validFrom} -> ${cert.validTo}, sha256=${cert.fingerprint256}, ` +
+    `tls_authorized=${cert.tlsAuthorized}, tls_authorization_error=${cert.tlsAuthorizationError}, ` +
+    `cn_matches_identity=${cert.cnMatchesIdentity}}`
+  );
+}
+
+function formatTlsSession(socket) {
+  if (!socket || !socket.getProtocol) return 'tls=n/a';
+  return `tls=${socket.getProtocol() || 'n/a'} cipher=${socket.getCipher?.()?.name || 'n/a'}`;
+}
+
+// Causes lisibles du refus (une ou plusieurs), à partir de ce que le serveur a constaté
+function explainSecurityProfileRefusal({ isWSS, cert, hasPassword, caFileConfigured, identity }) {
+  const causes = [];
+  if (!isWSS) {
+    if (!hasPassword) {
+      causes.push('plain WS connection without Basic Auth password (WS requires a password)');
+    }
+    return causes;
+  }
+  if (!cert.present) {
+    if (!hasPassword) {
+      causes.push(
+        'no client certificate received during the TLS handshake and no Basic Auth password'
+      );
+    }
+    return causes;
+  }
+  if (!cert.tlsAuthorized) {
+    causes.push(
+      `client certificate not trusted by the server TLS layer (${cert.tlsAuthorizationError || 'no verification error reported'})`
+    );
+    if (!caFileConfigured) {
+      causes.push(
+        'ocpp.wss.caFile is EMPTY: only the default public CAs are trusted, so a certificate signed by the local client CA cannot be verified — set ocpp.wss.caFile to certs/clients/ca.crt and restart'
+      );
+    }
+  }
+  if (!cert.cnMatchesIdentity) {
+    causes.push(
+      `certificate CN "${cert.subjectCN}" does not match the connection identity "${identity}"`
+    );
+  }
+  return causes;
+}
+
 // ── Handshake TLS refusé (WSS) : sans ce handler, l'échec est silencieux ──
 // Typiquement : la borne ne fait pas confiance au certificat serveur, ou le serveur
 // refuse son certificat client. Nécessaire pour diagnostiquer une borne qui ne se connecte pas.
@@ -901,6 +993,8 @@ function createTlsClientErrorHandler(log) {
 module.exports = {
   createOCPPServerBase,
   createTlsClientErrorHandler,
+  describeClientCert,
+  explainSecurityProfileRefusal,
   setBroadcast,
   broadcast,
   getConnectedClients,
