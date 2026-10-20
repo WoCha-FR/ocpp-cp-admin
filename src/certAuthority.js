@@ -203,7 +203,30 @@ function verifyClientCertMatchesIdentity(peerCert, identity) {
   return peerCert.subject.CN === identity;
 }
 
+// ── Double sécurité : enforcement actif mais aucune CA pour vérifier les certificats clients ──
+// Sans ocpp.wss.caFile, Node ne fait confiance qu'aux CA publiques par défaut : un certificat
+// signé par la CA locale n'est jamais « authorized » et toute connexion mTLS est refusée.
+// Retourne le message d'avertissement à logger au démarrage, ou null s'il n'y a rien à signaler.
+function getClientCaConfigWarning() {
+  const config = getConfig();
+  const enforced = [
+    config.ocpp?.v16?.enforceSecurityProfile && '1.6',
+    config.ocpp?.v201?.enforceSecurityProfile && '2.0.1',
+  ].filter(Boolean);
+  if (enforced.length === 0 || config.ocpp?.wss?.caFile) return null;
+
+  const { certFile } = clientCaConfig();
+  const { certPath } = clientCaPaths();
+  const base =
+    `OCPP security profile enforcement is enabled (OCPP ${enforced.join(', ')}) but ocpp.wss.caFile is empty: ` +
+    'client certificates (mTLS) cannot be verified and every mTLS connection will be refused';
+  return fs.existsSync(certPath)
+    ? `${base}. The local client CA was found — set ocpp.wss.caFile to "${certFile}" and restart`
+    : `${base}. Only Basic Auth connections will be accepted; set ocpp.wss.caFile to your client CA file to allow mTLS`;
+}
+
 module.exports = {
+  getClientCaConfigWarning,
   isOpensslAvailable,
   ensureLocalCaInitialized,
   generateClientCertificate,

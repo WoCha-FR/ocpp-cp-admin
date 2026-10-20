@@ -28,6 +28,7 @@ const {
   pendingChargepoints,
 } = require('./ocpp-common');
 
+const certAuthority = require('./certAuthority');
 const { buildServerChain } = require('./wssRootCa');
 const routes = require('./routes');
 const notifications = require('./notifications');
@@ -561,6 +562,8 @@ if (wsSslEnabled) {
     if (fs.existsSync(rootCaPath)) watchedCertPaths.add(rootCaPath);
   }
   logOCPP.debug(`WSS: RSA & ECDSA certificates loaded (strictClientCert=${ocppStrictClientCert})`);
+  const clientCaWarning = certAuthority.getClientCaConfigWarning();
+  if (clientCaWarning) logOCPP.warn(`WSS: ${clientCaWarning}`);
   if (ocppStrictClientCert) {
     logOCPP.info(
       'WSS strict client certificate validation enabled (OCPP Security Profile 3 strict)'

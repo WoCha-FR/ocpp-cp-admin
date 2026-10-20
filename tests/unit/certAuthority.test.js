@@ -32,6 +32,41 @@ afterEach(() => {
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
+describe('certAuthority — getClientCaConfigWarning', () => {
+  it('ne signale rien sans enforcement', () => {
+    expect(certAuthority.getClientCaConfigWarning()).toBeNull();
+  });
+
+  it('ne signale rien si caFile est renseigné', () => {
+    configMock.ocpp.v16 = { enforceSecurityProfile: true };
+    configMock.ocpp.wss.caFile = 'certs/clients/ca.crt';
+    expect(certAuthority.getClientCaConfigWarning()).toBeNull();
+  });
+
+  it('signale caFile vide avec enforcement 1.6 et indique la CA locale trouvée', () => {
+    configMock.ocpp.v16 = { enforceSecurityProfile: true };
+    fs.mkdirSync(path.join(tmpDir, 'certs/clients'), { recursive: true });
+    fs.writeFileSync(path.join(tmpDir, 'certs/clients/ca.crt'), 'x');
+    const warning = certAuthority.getClientCaConfigWarning();
+    expect(warning).toMatch(/OCPP 1\.6\)/);
+    expect(warning).toMatch(/ocpp\.wss\.caFile is empty/);
+    expect(warning).toMatch(/local client CA was found — set ocpp\.wss\.caFile to "certs\/clients\/ca\.crt"/);
+  });
+
+  it('signale caFile vide avec enforcement 2.0.1 et sans CA locale (Basic Auth seulement)', () => {
+    configMock.ocpp.v201 = { enforceSecurityProfile: true };
+    const warning = certAuthority.getClientCaConfigWarning();
+    expect(warning).toMatch(/OCPP 2\.0\.1\)/);
+    expect(warning).toMatch(/Only Basic Auth connections will be accepted/);
+  });
+
+  it('mentionne les deux versions quand les deux flags sont actifs', () => {
+    configMock.ocpp.v16 = { enforceSecurityProfile: true };
+    configMock.ocpp.v201 = { enforceSecurityProfile: true };
+    expect(certAuthority.getClientCaConfigWarning()).toMatch(/OCPP 1\.6, 2\.0\.1\)/);
+  });
+});
+
 describe('certAuthority — isOpensslAvailable', () => {
   it('détecte la disponibilité et met le résultat en cache', async () => {
     const first = await certAuthority.isOpensslAvailable();
