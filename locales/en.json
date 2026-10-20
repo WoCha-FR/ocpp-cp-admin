@@ -799,7 +799,7 @@
       "body": "The chargepoint {{identity}} was refused when connecting to the server.",
       "info": "Reason: {{reason}}",
       "reasons": {
-        "wss_no_auth":         "No valid authentication method provided (password or client certificate) — required OCPP 2.0.1 security profile not met",
+        "wss_no_auth":         "No valid authentication method provided (password or client certificate) — required OCPP security profile not met",
         "mtls_invalid":        "Invalid or unverified mTLS client certificate (untrusted certificate or identity mismatch)",
         "not_authorized":      "Charge point not authorized",
         "unknown":             "Unknown charge point",

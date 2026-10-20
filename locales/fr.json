@@ -799,7 +799,7 @@
       "body": "La borne {{identity}} a été refusée lors de sa connexion au serveur.",
       "info": "Raison : {{reason}}",
       "reasons": {
-        "wss_no_auth":         "Aucune méthode d'authentification valide fournie (mot de passe ou certificat client) — profil de sécurité OCPP 2.0.1 requis non respecté",
+        "wss_no_auth":         "Aucune méthode d'authentification valide fournie (mot de passe ou certificat client) — profil de sécurité OCPP requis non respecté",
         "mtls_invalid":        "Certificat client mTLS invalide ou non vérifié (certificat non approuvé ou identité ne correspondant pas)",
         "not_authorized":      "Borne non autorisée",
         "unknown":             "Borne inconnue",
