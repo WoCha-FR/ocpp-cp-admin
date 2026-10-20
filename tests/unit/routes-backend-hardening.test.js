@@ -14,6 +14,12 @@ describe('Backend hardening regressions', () => {
     expect(src).not.toMatch(/keyGenerator:\s*\(req\)\s*=>\s*req\.body\?\.useremail/);
   });
 
+  it('keeps an explicit null password in PUT /chargepoints/:id (matchedData drops it)', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const putRoute = src.slice(src.indexOf("'/chargepoints/:id',\n  requireRole('admin'),\n  ...validateSchema(schema.IdParam, schema.ChargePoint)"));
+    expect(putRoute).toMatch(/if \(req\.body\.password === null\) data\.password = null;/);
+  });
+
   it('unsubscribes push endpoint only for current user', () => {
     const routes = fs.readFileSync(routesPath, 'utf8');
     const db = fs.readFileSync(dbPath, 'utf8');

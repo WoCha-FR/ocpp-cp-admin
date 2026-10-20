@@ -1,6 +1,6 @@
 'use strict';
 
-const { checkSchema, validationResult } = require('express-validator');
+const { checkSchema, validationResult, matchedData } = require('express-validator');
 const schema = require('../../src/validationSchema');
 
 async function runSchema(schemaObj, body, params = {}, query = {}) {
@@ -136,6 +136,21 @@ describe('validationSchema — ChargePoint', () => {
       name: '<script>alert(1)</script>',
     });
     expect(result.isEmpty()).toBe(false);
+  });
+
+  it('accepts password null (suppression du mot de passe) mais matchedData l\'écarte', async () => {
+    const req = {
+      body: { identity: 'VALIDCP01', mode: 1, site_id: 1, name: 'Station A', password: null },
+      params: {},
+      query: {},
+      headers: {},
+    };
+    for (const fn of checkSchema(schema.ChargePoint)) {
+      await new Promise((resolve) => fn(req, {}, resolve));
+    }
+    expect(validationResult(req).isEmpty()).toBe(true);
+    // Raison d'être de `if (req.body.password === null)` dans PUT /chargepoints/:id
+    expect(matchedData(req)).not.toHaveProperty('password');
   });
 });
 

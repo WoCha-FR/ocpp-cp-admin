@@ -869,6 +869,9 @@ router.put(
       return res.status(400).json({ error: result.array().map((e) => e.msg) });
     }
     const data = matchedData(req);
+    // matchedData écarte les champs optionnels à null : on conserve explicitement la
+    // demande de suppression du mot de passe (null) pour la distinguer d'un champ absent
+    if (req.body.password === null) data.password = null;
     try {
       // Récupérer l'état avant mise à jour pour détecter un changement d'autorisation
       const before = db.getChargepointById(Number(req.params.id));
