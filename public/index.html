@@ -1758,6 +1758,7 @@ async function renderDetailTabBorne(cp) {
           ${canManage() && cp.hasClientCert ? `
           <div class="detail-row">
             <button class="btn btn-secondary btn-sm" data-onclick="downloadClientCert(${cp.id})">🔑 ${t('chargepoint.cpClientCertDownload')}</button>
+            <button class="btn btn-secondary btn-sm" data-onclick="downloadClientCert(${cp.id}, true)" title="${t('chargepoint.cpClientCertDownloadWithRootHint')}">🔑 ${t('chargepoint.cpClientCertDownloadWithRoot')}</button>
             ${adminManage() ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => generateClientCert(${cp.id}, true))">♻️ ${t('chargepoint.cpClientCertRegenerate')}</button>` : ''}
           </div>
           ${cp.clientCertExpiresAt ? `<div class="detail-row"><span class="text-muted">${t('chargepoint.cpClientCertExpiresAt', { date: formatDateShort(cp.clientCertExpiresAt) })}</span></div>` : ''}
@@ -1791,8 +1792,8 @@ function downloadWssRootCa() {
   window.location.href = '/api/wss-root-ca';
 }
 
-function downloadClientCert(cpId) {
-  window.location.href = `/api/chargepoints/${cpId}/client-cert/download`;
+function downloadClientCert(cpId, withRoot = false) {
+  window.location.href = `/api/chargepoints/${cpId}/client-cert/download${withRoot ? '?withRoot=1' : ''}`;
 }
 
 async function generateClientCert(cpId, isRegenerate) {

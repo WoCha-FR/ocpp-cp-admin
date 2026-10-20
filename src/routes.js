@@ -21,12 +21,12 @@ const {
 } = require('./ocpp-common');
 const { OCPP16_STANDARD_KEYS } = require('./ocpp-server-16');
 const certAuthority = require('./certAuthority');
+const { getWssRootCaBundle } = require('./wssRootCa');
 const schema = require('./validationSchema');
 const notifications = require('./notifications');
 const {
   getConfig,
   getConfigFilePath,
-  getConfigDir,
   ENV_OVERRIDES,
   CONFIG_FIELDS,
   deepGet,
@@ -363,16 +363,15 @@ router.get('/ocppsettings', requireManager, (req, res) => {
 });
 
 // Téléchargement du certificat racine WSS (dépannage validation borne) — ressource globale
+// Bundle PEM : rootCaFile + certificats serveur RSA/ECDSA auto-signés (une borne reçoit l'une ou l'autre chaîne)
 router.get('/wss-root-ca', requireManager, (req, res) => {
-  const rootCaFile = getConfig().ocpp?.wss?.rootCaFile;
-  if (!rootCaFile) {
+  const bundle = getWssRootCaBundle();
+  if (!bundle) {
     return res.status(404).json({ error: 'ERR_ROOT_CA_NOT_CONFIGURED' });
   }
-  const rootCaPath = path.resolve(getConfigDir(), rootCaFile);
-  if (!fs.existsSync(rootCaPath)) {
-    return res.status(404).json({ error: 'ERR_ROOT_CA_NOT_CONFIGURED' });
-  }
-  res.download(rootCaPath, 'ocpp-wss-root-ca.crt');
+  res.setHeader('Content-Disposition', 'attachment; filename="ocpp-wss-root-ca.crt"');
+  res.setHeader('Content-Type', 'application/x-pem-file');
+  res.send(bundle);
 });
 
 // ══════════════════════════════════════
@@ -851,7 +850,13 @@ router.get(
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
       }
     }
-    const pem = certAuthority.getCombinedClientCertPem(cp.identity);
+    // ?withRoot=1 : ajoute la/les racine(s) serveur au PEM (firmware à emplacement de fichier unique)
+    let rootBundle = null;
+    if (req.query.withRoot === '1') {
+      rootBundle = getWssRootCaBundle();
+      if (!rootBundle) return res.status(404).json({ error: 'ERR_ROOT_CA_NOT_CONFIGURED' });
+    }
+    const pem = certAuthority.getCombinedClientCertPem(cp.identity, rootBundle);
     if (!pem) return res.status(404).json({ error: 'ERR_CLIENT_CERT_NOT_FOUND' });
     res.setHeader('Content-Disposition', `attachment; filename="${cp.identity}-client.pem"`);
     res.setHeader('Content-Type', 'application/x-pem-file');

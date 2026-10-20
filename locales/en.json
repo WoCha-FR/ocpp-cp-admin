@@ -245,6 +245,8 @@
     "cpClientCertGenerate": "Generate a client certificate (mTLS)",
     "cpClientCertRegenerate": "Regenerate client certificate",
     "cpClientCertDownload": "Download client certificate",
+    "cpClientCertDownloadWithRoot": "Download with server root",
+    "cpClientCertDownloadWithRootHint": "For charge points that accept a single file only: the client certificate is followed by the server root certificate(s)",
     "cpClientCertExpiresAt": "Client certificate valid until {{date}}",
     "cpClientCertGenerated": "Client certificate generated",
     "cpClientCertRegenerated": "Client certificate regenerated",

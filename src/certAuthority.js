@@ -184,12 +184,15 @@ async function generateClientCertificate(identity) {
 }
 
 // ── PEM combiné (cert + clé) pour le téléchargement ──
-function getCombinedClientCertPem(identity) {
+// rootBundle (optionnel) : racine(s) serveur ajoutée(s) à la suite, pour les firmwares qui
+// n'ont qu'un seul fichier à installer (le PEM client remplacerait sinon la racine serveur).
+function getCombinedClientCertPem(identity, rootBundle = null) {
   const { certPath, keyPath } = getClientCertPaths(identity);
   if (!fs.existsSync(certPath) || !fs.existsSync(keyPath)) return null;
   const cert = fs.readFileSync(certPath, 'utf8').trim();
   const key = fs.readFileSync(keyPath, 'utf8').trim();
-  return `${cert}\n${key}\n`;
+  const roots = rootBundle ? `${rootBundle.trim()}\n` : '';
+  return `${cert}\n${key}\n${roots}`;
 }
 
 // ── Vérification CN == identity pour une connexion mTLS ──

@@ -109,6 +109,16 @@ describe('certAuthority — génération de certificats (openssl requis)', () =>
     expect(pem).toContain('-----BEGIN PRIVATE KEY-----');
   });
 
+  itIfOpenssl('getCombinedClientCertPem ajoute le bundle de racines serveur après la clé', async () => {
+    await certAuthority.generateClientCertificate('CP-TEST-ROOT');
+    const bundle = '-----BEGIN CERTIFICATE-----\nROOT1\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nROOT2\n-----END CERTIFICATE-----\n';
+
+    const withRoots = certAuthority.getCombinedClientCertPem('CP-TEST-ROOT', bundle);
+    expect(withRoots.endsWith(bundle)).toBe(true);
+    expect(withRoots.indexOf('PRIVATE KEY')).toBeLessThan(withRoots.indexOf('ROOT1'));
+    expect(certAuthority.getCombinedClientCertPem('CP-TEST-ROOT')).not.toContain('ROOT1');
+  });
+
   itIfOpenssl('régénérer un certificat existant remplace la clé/cert précédents', async () => {
     await certAuthority.generateClientCertificate('CP-TEST-003');
     const { certPath } = certAuthority.getClientCertPaths('CP-TEST-003');

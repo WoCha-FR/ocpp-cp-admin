@@ -28,6 +28,7 @@ const {
   pendingChargepoints,
 } = require('./ocpp-common');
 
+const { buildServerChain } = require('./wssRootCa');
 const routes = require('./routes');
 const notifications = require('./notifications');
 const { getMetricsText } = require('./metrics');
@@ -468,8 +469,15 @@ function buildWsSslOptions() {
   if (config.ocpp.wss.rootCaFile) {
     const rootCaPath = path.resolve(getConfigDir(), config.ocpp.wss.rootCaFile);
     if (fs.existsSync(rootCaPath)) {
-      const rootCaBuf = fs.readFileSync(rootCaPath);
-      options.cert = options.cert.map((c) => Buffer.concat([c, Buffer.from('\n'), rootCaBuf]));
+      // Racine ajoutée à chaque chaîne seulement si elle n'y figure pas déjà et si elle ne
+      // correspond pas au certificat auto-signé de l'autre paire (RSA / ECDSA)
+      const certs = options.cert;
+      options.cert = certs.map((c, i) =>
+        buildServerChain(
+          c,
+          certs.filter((_, j) => j !== i)
+        )
+      );
     } else {
       logOCPP.warn(`WSS: root CA file not found (ignored): ${rootCaPath}`);
     }
