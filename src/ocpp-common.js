@@ -253,6 +253,16 @@ function createOCPPServerBase(options = {}) {
       );
 
       if (hasClientCert) {
+        const chain = describeClientCertChain(tlsSocket);
+        logger.debug(
+          `WSS client certificate chain for ${handshake.identity}: ${formatClientCertChain(chain)}`
+        );
+        const pems = chain.map((c) => c.pem).filter(Boolean);
+        if (pems.length > 0) {
+          logger.debug(
+            `WSS client certificate chain PEM for ${handshake.identity}:\n${pems.join('\n')}`
+          );
+        }
         logger.info(`WSS connection with client certificate: ${handshake.identity}`);
       } else if (providedPassword) {
         logger.info(`WSS connection with Basic Auth: ${handshake.identity}`);
@@ -942,6 +952,56 @@ function describeClientCert(socket, identity) {
   };
 }
 
+const toPem = (der) =>
+  `-----BEGIN CERTIFICATE-----\n${der
+    .toString('base64')
+    .match(/.{1,64}/g)
+    .join('\n')}\n-----END CERTIFICATE-----`;
+
+// Chaîne de certificats effectivement envoyée par la borne (feuille puis émetteurs que Node a
+// pu relier), avec le PEM de chacun : permet de récupérer la CA d'un fabricant dans les logs.
+// Un client n'envoie qu'une seule chaîne (une seule identité) ; si seul la feuille est
+// présente, la CA émettrice n'a pas été envoyée par la borne.
+function describeClientCertChain(socket) {
+  let cert;
+  try {
+    cert = socket && socket.getPeerCertificate ? socket.getPeerCertificate(true) : null;
+  } catch {
+    return [];
+  }
+  const chain = [];
+  const seen = new Set();
+  while (cert && cert.subject && Object.keys(cert.subject).length > 0 && chain.length < 10) {
+    const key = cert.fingerprint256 || cert.serialNumber || String(chain.length);
+    if (seen.has(key)) break;
+    seen.add(key);
+    chain.push({
+      subjectCN: cert.subject.CN ?? null,
+      issuerCN: cert.issuer?.CN ?? null,
+      serial: cert.serialNumber ?? null,
+      fingerprint256: cert.fingerprint256 ?? null,
+      selfSigned: cert.issuerCertificate === cert,
+      pem: cert.raw ? toPem(cert.raw) : null,
+    });
+    if (cert.issuerCertificate === cert) break;
+    cert = cert.issuerCertificate;
+  }
+  return chain;
+}
+
+function formatClientCertChain(chain) {
+  if (chain.length === 0) return 'client_chain=none';
+  const items = chain.map(
+    (c, i) =>
+      `${i + 1}:{subject_CN=${c.subjectCN}, issuer_CN=${c.issuerCN}, serial=${c.serial}, sha256=${c.fingerprint256}${c.selfSigned ? ', self_signed=true' : ''}}`
+  );
+  const note =
+    chain.length === 1 && !chain[0].selfSigned
+      ? ` — only the leaf was presented: the issuing CA "${chain[0].issuerCN}" was not sent by the charge point`
+      : '';
+  return `client_chain(${chain.length})=[${items.join(' | ')}]${note}`;
+}
+
 function formatClientCert(cert) {
   if (!cert.present) return 'client_cert=none';
   return (
@@ -1009,6 +1069,8 @@ module.exports = {
   createOCPPServerBase,
   createTlsClientErrorHandler,
   describeClientCert,
+  describeClientCertChain,
+  formatClientCertChain,
   explainSecurityProfileRefusal,
   setBroadcast,
   broadcast,

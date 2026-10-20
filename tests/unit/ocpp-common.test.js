@@ -971,6 +971,58 @@ describe('ocpp-common — diagnostic des refus de profil de sécurité', () => {
     expect(d.cnMatchesIdentity).toBe(false);
   });
 
+  describe('chaîne de certificats client', () => {
+    const makeCert = (cn, issuerCn, raw) => ({
+      subject: { CN: cn },
+      issuer: { CN: issuerCn },
+      serialNumber: `SER-${cn}`,
+      fingerprint256: `FP-${cn}`,
+      raw: Buffer.from(raw),
+    });
+    const chainSocket = (leaf) => ({ getPeerCertificate: () => leaf });
+
+    it('renvoie la feuille seule quand la borne n\'envoie pas la CA', () => {
+      const chain = ocppCommon.describeClientCertChain(
+        chainSocket(makeCert('CP-A', 'Autel CA', 'leaf-der'))
+      );
+      expect(chain).toHaveLength(1);
+      expect(chain[0]).toMatchObject({ subjectCN: 'CP-A', issuerCN: 'Autel CA', selfSigned: false });
+      expect(chain[0].pem).toMatch(/^-----BEGIN CERTIFICATE-----\n.+\n-----END CERTIFICATE-----$/s);
+      expect(ocppCommon.formatClientCertChain(chain)).toMatch(
+        /only the leaf was presented: the issuing CA "Autel CA" was not sent/
+      );
+    });
+
+    it('suit les émetteurs jusqu\'à la racine auto-signée', () => {
+      const root = makeCert('Root', 'Root', 'root-der');
+      root.issuerCertificate = root;
+      const inter = makeCert('Inter', 'Root', 'inter-der');
+      inter.issuerCertificate = root;
+      const leaf = makeCert('CP-A', 'Inter', 'leaf-der');
+      leaf.issuerCertificate = inter;
+      const chain = ocppCommon.describeClientCertChain(chainSocket(leaf));
+      expect(chain.map((c) => c.subjectCN)).toEqual(['CP-A', 'Inter', 'Root']);
+      expect(chain[2].selfSigned).toBe(true);
+      const text = ocppCommon.formatClientCertChain(chain);
+      expect(text).toMatch(/client_chain\(3\)=/);
+      expect(text).not.toMatch(/only the leaf/);
+    });
+
+    it('ne boucle pas sur une chaîne circulaire', () => {
+      const a = makeCert('A', 'B', 'a-der');
+      const b = makeCert('B', 'A', 'b-der');
+      a.issuerCertificate = b;
+      b.issuerCertificate = a;
+      expect(ocppCommon.describeClientCertChain(chainSocket(a))).toHaveLength(2);
+    });
+
+    it('renvoie une liste vide sans certificat ou sans socket', () => {
+      expect(ocppCommon.describeClientCertChain(chainSocket({}))).toEqual([]);
+      expect(ocppCommon.describeClientCertChain(null)).toEqual([]);
+      expect(ocppCommon.formatClientCertChain([])).toBe('client_chain=none');
+    });
+  });
+
   const explain = (over) =>
     ocppCommon.explainSecurityProfileRefusal({
       isWSS: true,
