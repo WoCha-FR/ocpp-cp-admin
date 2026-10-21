@@ -1063,6 +1063,35 @@ describe('ocpp-common — diagnostic des refus de profil de sécurité', () => {
     expect(causes[0]).toMatch(/CN "CP-H" does not match the connection identity "CP-A"/);
   });
 
+  describe('describePasswordAttempt', () => {
+    const hs = (protocols) => ({ protocols: new Set(protocols) });
+
+    it('décrit longueur, forme et protocoles sans jamais révéler la valeur', () => {
+      const text = ocppCommon.describePasswordAttempt(hs(['ocpp2.0.1', 'ocpp1.6']), 'jeremie88', false);
+      expect(text).toBe(
+        'transport=WS, password_length=9, password_shape=alphanumeric, offered_protocols=ocpp2.0.1,ocpp1.6'
+      );
+      expect(text).not.toMatch(/jeremie88/);
+    });
+
+    it('reconnaît une forme hexadécimale, des caractères spéciaux et du non-ASCII', () => {
+      expect(ocppCommon.describePasswordAttempt(hs([]), 'a1b2c3d4', true)).toMatch(/password_shape=hex/);
+      expect(ocppCommon.describePasswordAttempt(hs([]), 'pa$$word!', true)).toMatch(
+        /password_shape=contains-special-characters/
+      );
+      expect(ocppCommon.describePasswordAttempt(hs([]), 'cafépass', true)).toMatch(
+        /password_shape=non-ascii/
+      );
+    });
+
+    it('gère l\'absence de mot de passe et de protocoles', () => {
+      expect(ocppCommon.describePasswordAttempt({}, null, true)).toBe(
+        'transport=WSS, password_length=0, password_shape=none, offered_protocols=n/a'
+      );
+      expect(ocppCommon.describePasswordAttempt(hs([]), null, true)).toMatch(/offered_protocols=none/);
+    });
+  });
+
   describe('describeAcceptedAuth', () => {
     const accepted = (over) =>
       ocppCommon.describeAcceptedAuth({

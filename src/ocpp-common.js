@@ -391,7 +391,9 @@ function createOCPPServerBase(options = {}) {
     }
 
     if (!providedPassword && dbPassword) {
-      logger.warn(`Connection refused: ${handshake.identity} password required but missing`);
+      logger.warn(
+        `Connection refused: ${handshake.identity} password required but missing (${describePasswordAttempt(handshake, providedPassword, isWSS)})`
+      );
       if (checkRefusedNotifCooldown(handshake.identity, 'password_required')) {
         notifications
           .emit('chargepoint_refused', {
@@ -403,7 +405,9 @@ function createOCPPServerBase(options = {}) {
       return reject(401, 'Password required');
     }
     if (providedPassword && !dbPassword) {
-      logger.warn(`Connection refused: ${handshake.identity} password provided but not expected`);
+      logger.warn(
+        `Connection refused: ${handshake.identity} password provided but not expected (${describePasswordAttempt(handshake, providedPassword, isWSS)})`
+      );
       if (checkRefusedNotifCooldown(handshake.identity, 'password_unexpected')) {
         notifications
           .emit('chargepoint_refused', {
@@ -415,7 +419,9 @@ function createOCPPServerBase(options = {}) {
       return reject(401, 'Password not expected');
     }
     if (providedPassword && dbPassword && !bcrypt.compareSync(providedPassword, dbPassword)) {
-      logger.warn(`Connection refused: ${handshake.identity} invalid password`);
+      logger.warn(
+        `Connection refused: ${handshake.identity} invalid password (${describePasswordAttempt(handshake, providedPassword, isWSS)})`
+      );
       if (checkRefusedNotifCooldown(handshake.identity, 'invalid_password')) {
         notifications
           .emit('chargepoint_refused', {
@@ -963,6 +969,24 @@ function describeClientCert(socket, identity) {
   };
 }
 
+// Résumé non sensible d'une tentative de connexion avec mot de passe (jamais la valeur) :
+// aide à voir si la borne envoie autre chose que ce qui est enregistré (longueur, jeu de
+// caractères, forme hexadécimale) et quels sous-protocoles OCPP elle propose.
+function describePasswordAttempt(handshake, password, isWSS) {
+  let shape = 'none';
+  if (password) {
+    if (/[^ -~]/.test(password)) shape = 'non-ascii';
+    else if (/^[0-9a-f]+$/i.test(password) && password.length % 2 === 0) shape = 'hex';
+    else if (/^[a-z0-9]+$/i.test(password)) shape = 'alphanumeric';
+    else shape = 'contains-special-characters';
+  }
+  const protocols = handshake && handshake.protocols ? [...handshake.protocols].join(',') : 'n/a';
+  return (
+    `transport=${isWSS ? 'WSS' : 'WS'}, password_length=${password ? password.length : 0}, ` +
+    `password_shape=${shape}, offered_protocols=${protocols || 'none'}`
+  );
+}
+
 const toPem = (der) =>
   `-----BEGIN CERTIFICATE-----\n${der
     .toString('base64')
@@ -1105,6 +1129,7 @@ module.exports = {
   describeClientCert,
   describeClientCertChain,
   describeAcceptedAuth,
+  describePasswordAttempt,
   formatClientCertChain,
   explainSecurityProfileRefusal,
   setBroadcast,
