@@ -858,7 +858,11 @@ router.get(
     }
     const pem = certAuthority.getCombinedClientCertPem(cp.identity, rootBundle);
     if (!pem) return res.status(404).json({ error: 'ERR_CLIENT_CERT_NOT_FOUND' });
-    res.setHeader('Content-Disposition', `attachment; filename="${cp.identity}-client.pem"`);
+    // Nom distinct selon que la racine serveur est incluse ou non, pour ne pas confondre les deux fichiers
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${cp.identity}-client${rootBundle ? '-with-root' : ''}.pem"`
+    );
     res.setHeader('Content-Type', 'application/x-pem-file');
     res.send(pem);
   }

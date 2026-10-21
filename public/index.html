@@ -1295,9 +1295,11 @@ let cpListCache = [];
 async function renderChargepoints(keepState = false) {
   if (!keepState) cpListFilters = { site_id: '', mode: '', cpstatus: '', online: '' };
   const isAdmin = currentUser.role === 'admin';
-  document.getElementById('topbarActions').innerHTML = isAdmin
-    ? `<button class="btn btn-primary" data-onclick="showCreateChargepointModal()">+ ${t('chargepoint.cpBtnAdd')}</button>`
-    : '';
+  // La racine WSS est une ressource globale : téléchargeable sans qu'aucune borne n'existe encore
+  document.getElementById('topbarActions').innerHTML =
+    (canManage() ? `<button class="btn btn-secondary" title="${escapeAttr(t('chargepoint.cpDownloadRootCa'))}" data-onclick="downloadWssRootCa()">🔒 ${t('chargepoint.cpBtnRootCa')}</button>` : '') +
+    ' ' +
+    (isAdmin ? `<button class="btn btn-primary" data-onclick="showCreateChargepointModal()">+ ${t('chargepoint.cpBtnAdd')}</button>` : '');
 
   try {
     const [chargepoints, sites, pending] = await Promise.all([
@@ -1754,20 +1756,6 @@ async function renderDetailTabBorne(cp) {
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpImsi')}</span><span class="detail-value">${cp.imsi ? escapeHtml(cp.imsi) : '-'}</span></div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpWss')}</span><span class="detail-value">${cp.connected_wss ? `<span class="badge badge-green">${t('common.yes')}</span>` : `<span class="badge badge-red">${t('common.no')}</span>`}</span></div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpEndpoint')}</span><span class="detail-value">${cp.endpoint_address ? escapeHtml(cp.endpoint_address) : '-'}</span></div>
-          ${canManage() ? `<div class="detail-row"><button class="btn btn-secondary btn-sm" data-onclick="downloadWssRootCa()">🔒 ${t('chargepoint.cpDownloadRootCa')}</button></div>` : ''}
-          ${canManage() && cp.hasClientCert ? `
-          <div class="detail-row">
-            <button class="btn btn-secondary btn-sm" data-onclick="downloadClientCert(${cp.id})">🔑 ${t('chargepoint.cpClientCertDownload')}</button>
-            <button class="btn btn-secondary btn-sm" data-onclick="downloadClientCert(${cp.id}, true)" title="${t('chargepoint.cpClientCertDownloadWithRootHint')}">🔑 ${t('chargepoint.cpClientCertDownloadWithRoot')}</button>
-            ${adminManage() ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => generateClientCert(${cp.id}, true))">♻️ ${t('chargepoint.cpClientCertRegenerate')}</button>` : ''}
-          </div>
-          ${cp.clientCertExpiresAt ? `<div class="detail-row"><span class="text-muted">${t('chargepoint.cpClientCertExpiresAt', { date: formatDateShort(cp.clientCertExpiresAt) })}</span></div>` : ''}
-          ` : ''}
-          ${adminManage() && !cp.hasClientCert ? `
-          <div class="detail-row">
-            <button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => generateClientCert(${cp.id}, false))">🔑 ${t('chargepoint.cpClientCertGenerate')}</button>
-          </div>
-          ` : ''}
         </div>
         <div class="detail-section">
           <div class="detail-section-title">🔌 ${t('connectors.cCounter')}</div>
@@ -1775,6 +1763,19 @@ async function renderDetailTabBorne(cp) {
           <div class="detail-row"><span class="detail-label">${t('filters.type')}</span><span class="detail-value">${cp.meter_type ? escapeHtml(cp.meter_type) : '-'}</span></div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpConfValue')}</span><span class="detail-value">${cp.meter_value != null ? (cp.meter_value / 1000).toFixed(2) + ' kWh' : '-'}</span></div>
         </div>
+        ${canManage() ? `
+        <div class="detail-section">
+          <div class="detail-section-title">🔐 ${t('chargepoint.cpCertificates')}</div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpCertRootLabel')}</span><span class="detail-value"><button class="btn-icon" title="${t('chargepoint.cpDownloadRootCa')}" aria-label="${t('chargepoint.cpDownloadRootCa')}" data-onclick="downloadWssRootCa()">⬇️</button></span></div>
+          ${cp.hasClientCert ? `
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpCertClientLabel')}</span><span class="detail-value"><button class="btn-icon" title="${t('chargepoint.cpClientCertDownload')}" aria-label="${t('chargepoint.cpClientCertDownload')}" data-onclick="downloadClientCert(${cp.id})">⬇️</button></span></div>
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpCertClientWithRootLabel')}</span><span class="detail-value"><button class="btn-icon" title="${t('chargepoint.cpClientCertDownloadWithRootHint')}" aria-label="${t('chargepoint.cpClientCertDownloadWithRoot')}" data-onclick="downloadClientCert(${cp.id}, true)">⬇️</button></span></div>
+          ${cp.clientCertExpiresAt ? `<div class="detail-row"><span class="detail-label">${t('chargepoint.cpCertClientExpiry')}</span><span class="detail-value">${formatDateShort(cp.clientCertExpiresAt)}</span></div>` : ''}
+          ${adminManage() ? `<div class="detail-row"><span class="detail-label">${t('chargepoint.cpClientCertRegenerate')}</span><span class="detail-value"><button class="btn-icon" title="${t('chargepoint.cpClientCertRegenerate')}" aria-label="${t('chargepoint.cpClientCertRegenerate')}" data-onclick="withBtn(this, () => generateClientCert(${cp.id}, true))">♻️</button></span></div>` : ''}
+          ` : adminManage() ? `
+          <div class="detail-row"><span class="detail-label">${t('chargepoint.cpClientCertGenerate')}</span><span class="detail-value"><button class="btn-icon" title="${t('chargepoint.cpClientCertGenerate')}" aria-label="${t('chargepoint.cpClientCertGenerate')}" data-onclick="withBtn(this, () => generateClientCert(${cp.id}, false))">🔑</button></span></div>
+          ` : ''}
+        </div>` : ''}
         <div class="detail-section">
           <div class="detail-section-title">⚙️ ${t('chargepoint.cpSupportedFunctions')}</div>
           <div class="detail-row"><span class="detail-label">${t('chargepoint.cpFeatTrigger')}</span><span class="detail-value">${cp.feat_trigger  ? `<span class="badge badge-green">${t('common.yes')}</span>` : `<span class="badge badge-red">${t('common.no')}</span>`}</span></div>

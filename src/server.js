@@ -509,10 +509,13 @@ function reloadCerts() {
         `Failed to hot-reload TLS certificates: permission denied on "${err.path}". ` +
           `The app user cannot read the file. Fix with: chmod o+r "${err.path}" ` +
           `or add a post-renewal hook to your certificate manager to fix permissions. ` +
-          `Server keeps running with existing certificates.`,
+          `Server keeps running with existing certificates.`
       );
     } else {
-      logger.error('Failed to hot-reload TLS certificates (server keeps running with existing certificates):', err);
+      logger.error(
+        'Failed to hot-reload TLS certificates (server keeps running with existing certificates):',
+        err
+      );
     }
   }
 }

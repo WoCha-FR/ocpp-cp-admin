@@ -28,6 +28,14 @@ test.describe('Bornes de recharge', () => {
     expect(hasTable || hasEmptyMsg).toBeTruthy();
   });
 
+  test('le bouton de téléchargement de la racine WSS est disponible dans la barre du haut', async ({ loggedInPage: page }) => {
+    await page.locator('#navChargePoints').click();
+    await page.locator('#cpFilterSite').waitFor({ timeout: 10000 });
+
+    // Ressource globale : accessible même si aucune borne n'existe
+    await expect(page.locator('#topbarActions [data-onclick="downloadWssRootCa()"]')).toBeVisible();
+  });
+
   test('le bouton réinitialiser les filtres est présent', async ({ loggedInPage: page }) => {
     await page.locator('#navChargePoints').click();
     await page.locator('#cpFilterSite').waitFor({ timeout: 10000 });
