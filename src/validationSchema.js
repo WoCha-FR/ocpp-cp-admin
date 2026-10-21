@@ -95,7 +95,8 @@ const ChargePoint = {
     in: ['body'],
     optional: { options: { nullable: true } },
     matches: { options: /^[a-zA-Z0-9]*$/ },
-    isLength: { options: { min: 8, max: 16 } },
+    // 8-40 : plage couvrant les deux versions (minimum OCPP 1.6 = 8, maximum OCPP 2.0.1 = 40) ; OCPP 2.0.1 impose 16 minimum (A00.FR.205), indiqué en aide dans l'UI
+    isLength: { options: { min: 8, max: 40 } },
     trim: true,
     errorMessage: 'VALIDATION_CHARGEPOINT_PASSWORD',
   },

@@ -138,6 +138,22 @@ describe('validationSchema — ChargePoint', () => {
     expect(result.isEmpty()).toBe(false);
   });
 
+  it.each([['8 caractères', 'abcd1234'], ['16 caractères', 'abcd1234efgh5678'], ['40 caractères', 'a'.repeat(40)]])(
+    'accepts a chargepoint password of %s',
+    async (_label, password) => {
+      const result = await runSchema(schema.ChargePoint, { identity: 'VALIDCP01', mode: 1, site_id: 1, name: 'Station A', password });
+      expect(result.isEmpty()).toBe(true);
+    }
+  );
+
+  it.each([['7 caractères', 'abcd123'], ['41 caractères', 'a'.repeat(41)], ['caractères spéciaux', 'abcd1234!efgh5678']])(
+    'rejects a chargepoint password of %s',
+    async (_label, password) => {
+      const result = await runSchema(schema.ChargePoint, { identity: 'VALIDCP01', mode: 1, site_id: 1, name: 'Station A', password });
+      expect(result.array().map((e) => e.msg)).toContain('VALIDATION_CHARGEPOINT_PASSWORD');
+    }
+  );
+
   it('accepts password null (suppression du mot de passe) mais matchedData l\'écarte', async () => {
     const req = {
       body: { identity: 'VALIDCP01', mode: 1, site_id: 1, name: 'Station A', password: null },
