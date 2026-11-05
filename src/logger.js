@@ -118,13 +118,15 @@ if (consoleEnabled) {
 logger.scope = (scopeName) => logger.child({ scope: scopeName });
 
 // ── Modifier le niveau de log à chaud (après chargement config par ex.) ──
+// 'trace' (config) correspond au niveau winston 'silly', le plus bas (sous debug).
 logger.setLevel = (level) => {
   logger.info(`Log level changed to '${level}'`, { scope: 'CPADM' });
-  logger.level = level;
+  const winstonLevel = level === 'trace' ? 'silly' : level;
+  logger.level = winstonLevel;
   logger.transports.forEach((t) => {
     // Ne pas changer le niveau du transport error-only
     if (t.filename && t.filename.startsWith('error-')) return;
-    t.level = level;
+    t.level = winstonLevel;
   });
 };
 

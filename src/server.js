@@ -569,9 +569,14 @@ if (wsSslEnabled) {
     logOCPP.info(
       'WSS strict client certificate validation enabled (OCPP Security Profile 3 strict)'
     );
-  } else {
+  } else if (config.ocpp.wss.caFile) {
     logOCPP.info(
       'WSS mixed mode enabled: Profile 2 (Basic Auth) and Profile 3 (client cert) accepted'
+    );
+  } else {
+    logOCPP.info(
+      'WSS mixed mode enabled: Profile 2 (Basic Auth) accepted; Profile 3 (client cert) ' +
+        'only verifiable with public CAs because ocpp.wss.caFile is empty'
     );
   }
 }

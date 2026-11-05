@@ -440,7 +440,7 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 
 | Paramètre | Type | Défaut | Description |
 |---|---|---|---|
-| `loglevel` | string | `"error"` | Niveau de log : `error`, `warn`, `info`, `debug` |
+| `loglevel` | string | `"error"` | Niveau de log : `error`, `warn`, `info`, `debug`, `trace` (`trace` ajoute le PEM complet des certificats clients, très verbeux) |
 | `language` | string | `"fr"` | Langue par défaut de l'application (tout code locale du dossier `locales/`, ex. `fr`, `en`) |
 | `dbname` | string | `"cpadmin.db"` | Nom du fichier de base de données SQLite |
 | `cpoName` | string | `"CP Admin"` | Nom de l'organisation (affiché dans l'interface) |
@@ -951,7 +951,7 @@ Par défaut, une borne peut se connecter en WS nu sans aucune authentification �
 | WSS + Basic Auth | Mot de passe fourni dans le handshake (WS ou WSS) |
 | WSS + mTLS | Certificat client validé par la chaîne TLS (`socket.authorized === true`) **et** `CN` du certificat == identité de la borne |
 
-Toute tentative de connexion sur une version soumise à l'enforcement qui ne correspond à aucun de ces profils est rejetée (`401`), avec une notification admin automatique (raison `wss_no_auth` si aucune authentification n'est présentée, `mtls_invalid` si un certificat client est présenté mais invalide ou l'identité ne correspond pas).
+Toute tentative de connexion sur une version soumise à l'enforcement qui ne correspond à aucun de ces profils est rejetée (`401`), avec une notification admin automatique (raison `wss_no_auth` si aucune authentification n'est présentée en WSS, `ws_no_auth` si une connexion WS en clair n'envoie pas de mot de passe, `mtls_invalid` si un certificat client est présenté mais invalide ou l'identité ne correspond pas).
 
 **Mot de passe et mTLS** : quand un certificat client est vérifié (CA reconnue et `CN` == identité), le mot de passe Basic Auth n'est ni exigé ni contrôlé — le certificat est l'identifiant (Security Profile 3), que l'enforcement soit activé ou non. Un mot de passe encore envoyé par la borne (par exemple gardé en mémoire après un changement de profil) ou encore enregistré pour elle côté serveur ne provoque pas de refus ; il est seulement logué. Sans certificat vérifié, les contrôles de mot de passe s'appliquent comme avant.
 

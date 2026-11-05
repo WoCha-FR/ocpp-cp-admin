@@ -216,7 +216,7 @@ const CONFIG_FIELDS = [
     key: 'loglevel',
     section: 'general',
     type: 'select',
-    choices: ['error', 'warn', 'info', 'debug'],
+    choices: ['error', 'warn', 'info', 'debug', 'trace'],
     required: false,
     sensitive: false,
   },

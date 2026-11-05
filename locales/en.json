@@ -805,6 +805,7 @@
       "info": "Reason: {{reason}}",
       "reasons": {
         "wss_no_auth":         "No valid authentication method provided (password or client certificate) — required OCPP security profile not met",
+        "ws_no_auth":          "Plain WS connection without a password — required OCPP security profile not met (WS requires a password)",
         "mtls_invalid":        "Invalid or unverified mTLS client certificate (untrusted certificate or identity mismatch)",
         "not_authorized":      "Charge point not authorized",
         "unknown":             "Unknown charge point",

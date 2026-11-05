@@ -445,7 +445,7 @@ Required fields are validated before saving. The application restarts automatica
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `loglevel` | string | `"error"` | Log level: `error`, `warn`, `info`, `debug` |
+| `loglevel` | string | `"error"` | Log level: `error`, `warn`, `info`, `debug`, `trace` (`trace` adds the full PEM of client certificates, very verbose) |
 | `language` | string | `"fr"` | Default application language (any locale code from `locales/` folder, e.g. `fr`, `en`) |
 | `dbname` | string | `"cpadmin.db"` | SQLite database file name |
 | `cpoName` | string | `"CP Admin"` | Organization name (displayed in the interface) |
@@ -956,7 +956,7 @@ By default, a charge point can connect over plain WS with no authentication at a
 | WSS + Basic Auth | Password provided in the handshake (WS or WSS) |
 | WSS + mTLS | Client certificate validated by the TLS chain (`socket.authorized === true`) **and** certificate `CN` == charge point identity |
 
-Any connection attempt on an enforced version matching none of these profiles is rejected (`401`), with an automatic admin notification (reason `wss_no_auth` when no authentication is presented at all, `mtls_invalid` when a client certificate is presented but is invalid or the identity doesn't match).
+Any connection attempt on an enforced version matching none of these profiles is rejected (`401`), with an automatic admin notification (reason `wss_no_auth` when no authentication is presented over WSS, `ws_no_auth` when a plain WS connection sends no password, `mtls_invalid` when a client certificate is presented but is invalid or the identity doesn't match).
 
 **Password and mTLS**: when a client certificate is verified (trusted CA and `CN` == identity), the Basic Auth password is neither required nor checked — the certificate is the credential (Security Profile 3), whether or not enforcement is enabled. A password still sent by the charge point (e.g. kept in its memory after a profile upgrade) or still stored for it on the server does not cause a refusal; it is only logged. Without a verified certificate, the password checks apply as before.
 

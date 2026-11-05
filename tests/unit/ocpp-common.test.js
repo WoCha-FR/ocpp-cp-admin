@@ -26,6 +26,7 @@ jest.mock('../../src/logger', () => ({
     warn: jest.fn(),
     error: jest.fn(),
     debug: jest.fn(),
+    silly: jest.fn(),
   }),
 }));
 
@@ -1253,7 +1254,7 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 2.0.1', () 
     expect(accept).toHaveBeenCalled();
   });
 
-  it('rejette une tentative 2.0.1 en WS nu sans authentification (wss_no_auth)', () => {
+  it('rejette une tentative 2.0.1 en WS nu sans authentification (ws_no_auth)', () => {
     const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
     const accept = jest.fn();
     const reject = jest.fn();
@@ -1266,7 +1267,7 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 2.0.1', () 
     expect(accept).not.toHaveBeenCalled();
     expect(mockNotifications.emit).toHaveBeenCalledWith(
       'chargepoint_refused',
-      expect.objectContaining({ identity: 'CP201-WSNOAUTH', reason: 'wss_no_auth' })
+      expect.objectContaining({ identity: 'CP201-WSNOAUTH', reason: 'ws_no_auth' })
     );
   });
 
@@ -1297,6 +1298,24 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 2.0.1', () 
     });
     expect(reject).not.toHaveBeenCalled();
     expect(accept).toHaveBeenCalled();
+  });
+
+  it('rejette une tentative 2.0.1 en WSS sans certificat ni mot de passe (wss_no_auth)', () => {
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS, isWSS: true });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP201-WSSNOAUTH',
+      remoteAddress: '127.0.0.1',
+      protocols: new Set(['ocpp2.0.1']),
+      request: { socket: makeSocket({ hasCert: false }) },
+    });
+    expect(reject).toHaveBeenCalledWith(401, 'OCPP 2.0.1 security profile not met');
+    expect(accept).not.toHaveBeenCalled();
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'chargepoint_refused',
+      expect.objectContaining({ identity: 'CP201-WSSNOAUTH', reason: 'wss_no_auth' })
+    );
   });
 
   it('rejette WSS+mTLS quand le CN ne correspond pas à l\'identité (mtls_invalid)', () => {
@@ -1384,7 +1403,7 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 1.6', () =>
     expect(accept).toHaveBeenCalled();
   });
 
-  it('rejette une tentative 1.6 en WS nu sans authentification (wss_no_auth)', () => {
+  it('rejette une tentative 1.6 en WS nu sans authentification (ws_no_auth)', () => {
     const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
     const accept = jest.fn();
     const reject = jest.fn();
@@ -1397,7 +1416,7 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 1.6', () =>
     expect(accept).not.toHaveBeenCalled();
     expect(mockNotifications.emit).toHaveBeenCalledWith(
       'chargepoint_refused',
-      expect.objectContaining({ identity: 'CP16-WSNOAUTH', reason: 'wss_no_auth' })
+      expect.objectContaining({ identity: 'CP16-WSNOAUTH', reason: 'ws_no_auth' })
     );
   });
 
@@ -1428,6 +1447,24 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 1.6', () =>
     });
     expect(reject).not.toHaveBeenCalled();
     expect(accept).toHaveBeenCalled();
+  });
+
+  it('rejette une tentative 1.6 en WSS sans certificat ni mot de passe (wss_no_auth)', () => {
+    const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS, isWSS: true });
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, {
+      identity: 'CP16-WSSNOAUTH',
+      remoteAddress: '10.10.10.10',
+      protocols: new Set(['ocpp1.6']),
+      request: { socket: makeSocket({ hasCert: false }) },
+    });
+    expect(reject).toHaveBeenCalledWith(401, 'OCPP 1.6 security profile not met');
+    expect(accept).not.toHaveBeenCalled();
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'chargepoint_refused',
+      expect.objectContaining({ identity: 'CP16-WSSNOAUTH', reason: 'wss_no_auth' })
+    );
   });
 
   it('rejette WSS+mTLS quand le CN ne correspond pas à l\'identité (mtls_invalid)', () => {

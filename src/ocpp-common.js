@@ -259,7 +259,8 @@ function createOCPPServerBase(options = {}) {
         );
         const pems = chain.map((c) => c.pem).filter(Boolean);
         if (pems.length > 0) {
-          logger.debug(
+          // Niveau trace (silly) : ~120 lignes par tentative, trop verbeux pour debug
+          logger.silly(
             `WSS client certificate chain PEM for ${handshake.identity}:\n${pems.join('\n')}`
           );
         }
@@ -285,7 +286,13 @@ function createOCPPServerBase(options = {}) {
     if (enforceForVersion) {
       const validProfile = (isWSS && hasClientCert && clientCertVerified) || !!providedPassword;
       if (!validProfile) {
-        const reason = hasClientCert && !clientCertVerified ? 'mtls_invalid' : 'wss_no_auth';
+        // ws_no_auth : WS clair sans mot de passe ; wss_no_auth : WSS sans mot de passe ni certificat
+        const reason =
+          hasClientCert && !clientCertVerified
+            ? 'mtls_invalid'
+            : isWSS
+              ? 'wss_no_auth'
+              : 'ws_no_auth';
         const cert = describeClientCert(tlsSocket, handshake.identity);
         const causes = explainSecurityProfileRefusal({
           isWSS,

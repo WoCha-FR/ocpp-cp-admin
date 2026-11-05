@@ -805,6 +805,7 @@
       "info": "Raison : {{reason}}",
       "reasons": {
         "wss_no_auth":         "Aucune méthode d'authentification valide fournie (mot de passe ou certificat client) — profil de sécurité OCPP requis non respecté",
+        "ws_no_auth":          "Connexion WS en clair sans mot de passe — profil de sécurité OCPP requis non respecté (WS impose un mot de passe)",
         "mtls_invalid":        "Certificat client mTLS invalide ou non vérifié (certificat non approuvé ou identité ne correspondant pas)",
         "not_authorized":      "Borne non autorisée",
         "unknown":             "Borne inconnue",
