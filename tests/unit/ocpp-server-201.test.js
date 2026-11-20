@@ -321,6 +321,28 @@ describe('ocpp-server-201 — Authorize', () => {
     expect(mockTrackRepeatedAuthReject).toHaveBeenCalledWith('BAD', 'CP001', expect.any(Object));
   });
 
+  it('includes cacheExpiryDateTime in idTokenInfo when tag has expiry_date', () => {
+    mockDb.authorizeIdTag.mockReturnValue({
+      status: 'Accepted',
+      tag: { expiry_date: '2030-01-01T00:00:00Z' },
+    });
+    const result = client._handlers['Authorize']({
+      idToken: { idToken: 'TAG_EXP', type: 'ISO14443' },
+    });
+    expect(result.idTokenInfo).toEqual({
+      status: 'Accepted',
+      cacheExpiryDateTime: '2030-01-01T00:00:00Z',
+    });
+  });
+
+  it('omits cacheExpiryDateTime when tag has no expiry_date', () => {
+    mockDb.authorizeIdTag.mockReturnValue({ status: 'Accepted', tag: { expiry_date: null } });
+    const result = client._handlers['Authorize']({
+      idToken: { idToken: 'TAG_NOEXP', type: 'ISO14443' },
+    });
+    expect(result.idTokenInfo).toEqual({ status: 'Accepted' });
+  });
+
   it('always accepts in mode 3 (free charging)', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 3, site_id: 1 });
     mockDb.authorizeIdTag.mockReturnValue({ status: 'Invalid' });
@@ -613,6 +635,26 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
     });
     expect(result.idTokenInfo.status).toBe('Accepted');
     expect(mockDb.createTransaction).toHaveBeenCalled();
+  });
+
+  it('includes cacheExpiryDateTime in idTokenInfo when tag has expiry_date', () => {
+    mockDb.authorizeIdTag.mockReturnValue({
+      status: 'Accepted',
+      tag: { expiry_date: '2030-01-01T00:00:00Z' },
+    });
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-EXP' },
+      idToken: { idToken: 'TAG_EXP', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo).toEqual({
+      status: 'Accepted',
+      cacheExpiryDateTime: '2030-01-01T00:00:00Z',
+    });
   });
 
   it('maps triggerReason Authorized → start_source rfid', () => {

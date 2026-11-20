@@ -70,6 +70,15 @@ function sanitizeText(value, maxLen) {
   return normalized.slice(0, maxLen);
 }
 
+// idTokenInfo avec cacheExpiryDateTime quand le tag en base a une date d'expiration
+// (équivalent 2.0.1 de idTagInfo.expiryDate en 1.6 — `expiryDate` n'existe pas dans IdTokenInfoType)
+function buildIdTokenInfo(status, tag) {
+  return {
+    status,
+    ...(tag && tag.expiry_date ? { cacheExpiryDateTime: tag.expiry_date } : {}),
+  };
+}
+
 function parseSampledValues(sampledValues = []) {
   let powerW = null,
     energyWh = null,
@@ -697,7 +706,7 @@ function register201Handlers(client, loggedHandle) {
       );
       trackRepeatedAuthReject(idTag, identity, cp);
     }
-    return { idTokenInfo: { status: authResult.status } };
+    return { idTokenInfo: buildIdTokenInfo(authResult.status, authResult.tag) };
   });
 
   // ── TransactionEvent ──
@@ -725,6 +734,7 @@ function register201Handlers(client, loggedHandle) {
 
       let authStatus = 'Accepted';
       let authReason = null;
+      let authTag = null;
       if (cp && cp.mode === 1 && startSource === 'rfid') {
         const AUTO_TAG_PREFIXES = ['WEB-', 'ADMIN', 'MGR-'];
         if (AUTO_TAG_PREFIXES.some((p) => idTag.startsWith(p))) {
@@ -734,6 +744,7 @@ function register201Handlers(client, loggedHandle) {
           const authResult = db.authorizeIdTag(idTag, cp.site_id, idToken?.type || null);
           authStatus = authResult.status;
           authReason = authResult.reason;
+          authTag = authResult.tag;
         }
       }
       if (authStatus !== 'Accepted') {
@@ -753,7 +764,7 @@ function register201Handlers(client, loggedHandle) {
           );
           trackRepeatedAuthReject(idTag, identity, cp);
         }
-        return { idTokenInfo: { status: authStatus } };
+        return { idTokenInfo: buildIdTokenInfo(authStatus, authTag) };
       }
 
       if (cp) {
@@ -866,7 +877,7 @@ function register201Handlers(client, loggedHandle) {
         }
       }
 
-      return { idTokenInfo: { status: 'Accepted' } };
+      return { idTokenInfo: buildIdTokenInfo('Accepted', authTag) };
     }
 
     // ── Updated ──
