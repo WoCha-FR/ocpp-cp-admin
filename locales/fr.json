@@ -699,7 +699,7 @@
     "countIdTagEvents": "Événements ID Tags",
     "countReservations": "Réservations",
     "countNotificationLog": "Journal des notifications",
-    "backupTitle": "Sauvegarde de la base de données",
+    "backupTitle": "Sauvegarde (base de données + certificats)",
     "backupButton": "Télécharger la sauvegarde",
     "tabCleanup": "Nettoyage des données",
     "cleanupTitle": "Nettoyage des données",

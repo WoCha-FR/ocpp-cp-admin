@@ -30,6 +30,7 @@ jest.mock('better-sqlite3', () => {
 });
 
 const db = require('../../src/database');
+const { createBackupArchive } = require('../../src/backupArchive');
 const { createTestApp } = require('../helpers/app-factory');
 
 async function loginAs(agent, email, password) {
@@ -37,7 +38,10 @@ async function loginAs(agent, email, password) {
   const cookies = (meRes.headers['set-cookie'] || []).join('; ');
   const match = cookies.match(/XSRF-TOKEN=([^;]+)/);
   const csrf = match ? decodeURIComponent(match[1]) : null;
-  await agent.post('/api/auth/login').set('x-xsrf-token', csrf).send({ useremail: email, password });
+  await agent
+    .post('/api/auth/login')
+    .set('x-xsrf-token', csrf)
+    .send({ useremail: email, password });
   return csrf;
 }
 
@@ -70,15 +74,27 @@ function mountAdminRoutes(app) {
   });
 
   app.get('/api/admin/db/backup', requireRole('admin'), async (req, res) => {
-    const tempPath = path.join(os.tmpdir(), `cpadmin-backup-test-${crypto.randomUUID()}.sqlite`);
+    const id = crypto.randomUUID();
+    const sqlitePath = path.join(os.tmpdir(), `cpadmin-backup-test-${id}.sqlite`);
+    const zipPath = path.join(os.tmpdir(), `cpadmin-backup-test-${id}.zip`);
+    const cleanup = () => {
+      fs.unlink(sqlitePath, () => {});
+      fs.unlink(zipPath, () => {});
+    };
     try {
-      await db.backupDatabase(tempPath);
+      await db.backupDatabase(sqlitePath);
+      await createBackupArchive({
+        sqlitePath,
+        dbEntryName: 'cpadmin.db',
+        outPath: zipPath,
+        config: configMock,
+        configDir: os.tmpdir(),
+      });
     } catch {
+      cleanup();
       return res.status(500).json({ error: 'ERR_BACKUP_FAILED' });
     }
-    res.download(tempPath, 'cpadmin-backup-test.sqlite', () => {
-      fs.unlink(tempPath, () => {});
-    });
+    res.download(zipPath, 'cpadmin-backup-test.zip', cleanup);
   });
 
   const BEFORE_DATE_RE = /^\d{4}-\d{2}-\d{2}(?: \d{2}:\d{2}:\d{2})?$/;
@@ -260,14 +276,23 @@ describe('GET /api/admin/db/backup', () => {
     expect(res.status).toBe(403);
   });
 
-  it('retourne un fichier SQLite téléchargeable pour un admin', async () => {
+  it('retourne une archive ZIP téléchargeable pour un admin', async () => {
     const app = createApp();
     const agent = request.agent(app);
     await loginAs(agent, 'admin@test.com', 'Admin!123');
-    const res = await agent.get('/api/admin/db/backup');
+    const res = await agent
+      .get('/api/admin/db/backup')
+      .buffer(true)
+      .parse((r, cb) => {
+        const chunks = [];
+        r.on('data', (c) => chunks.push(c));
+        r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
     expect(res.status).toBe(200);
-    expect(res.headers['content-disposition']).toMatch(/attachment/);
+    expect(res.headers['content-disposition']).toMatch(/attachment; filename="?[^"]+\.zip"?$/);
     expect(res.body.length).toBeGreaterThan(0);
+    // Signature ZIP (local file header)
+    expect(res.body.subarray(0, 4).toString('hex')).toBe('504b0304');
   });
 });
 

@@ -124,7 +124,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 
 ### Administration système
 - Informations système : version de l'application, uptime, mémoire Node.js, taille de la base SQLite, bornes connectées, compteurs d'enregistrements par table
-- Sauvegarde de la base SQLite téléchargeable (sûre en WAL, sans interruption de service)
+- Archive de sauvegarde (ZIP) téléchargeable : base SQLite (sûre en WAL, sans interruption de service) + certificats critiques (CA cliente locale, certificats par borne, CA mTLS manuelle)
 - Nettoyage des données historiques avec filtre par date : courbes de mesures (les transactions elles-mêmes sont conservées), messages OCPP, événements ID tags, événements d'erreur, journal des notifications, réservations expirées — ainsi qu'un VACUUM de la base
 - Console OCPP brute : envoi de n'importe quelle commande avec des paramètres JSON libres à une borne connectée, avec un historique en session
 - Comparaison des paramètres OCPP entre bornes de même version OCPP, avec mise en évidence des écarts et des valeurs forcées (overrides)
@@ -1152,7 +1152,16 @@ Les migrations sont exécutées automatiquement au démarrage depuis le dossier 
 
 ### Sauvegarde
 
-Un script de sauvegarde est fourni dans `scripts/backup.js`. Il utilise l'API de sauvegarde en ligne de `better-sqlite3`, compatible WAL et sans interruption de service.
+Un script de sauvegarde est fourni dans `scripts/backup.js`. Il utilise l'API de sauvegarde en ligne de `better-sqlite3`, compatible WAL et sans interruption de service. La même archive est téléchargeable depuis la page Administration système (admin uniquement).
+
+Chaque sauvegarde est une **archive ZIP** contenant :
+
+- la base SQLite ;
+- la **CA cliente locale** (`certs/clients/ca.crt`, `ca.key`, `ca.srl`) et les **certificats clients par borne** (`certs/clients/cp-<identity>/`) ;
+- la **CA mTLS manuelle** définie dans `ocpp.wss.caFile` (et sa clé privée si elle est trouvée à côté — un avertissement est émis sinon) ;
+- un `MANIFEST.txt` listant le contenu inclus et les éventuels avertissements.
+
+Ces certificats ne sont pas régénérables sans réémettre et redéployer un certificat sur chaque borne. Les certificats serveur (Let's Encrypt / Traefik), le certificat HTTPS de l'interface web et la racine publique ne sont **pas** inclus. L'archive contient des clés privées : la stocker de façon sécurisée.
 
 ```bash
 # Sauvegarde avec les paramètres par défaut (7 sauvegardes conservées dans config/backups/)
@@ -1165,15 +1174,16 @@ node scripts/backup.js --backup-dir /mnt/nas/backups --keep 30
 node scripts/backup.js --db-path /data/cpadmin.db --backup-dir /backups
 ```
 
-Les fichiers de sauvegarde sont nommés `cpadmin_YYYY-MM-DD_HH-MM-SS.db`. Les sauvegardes excédant la limite `--keep` sont supprimées automatiquement.
+Les fichiers de sauvegarde sont nommés `cpadmin_YYYY-MM-DD_HH-MM-SS.zip`. Les sauvegardes excédant la limite `--keep` sont supprimées automatiquement (les anciennes sauvegardes `.db` des versions précédentes sont aussi rotées).
 
 **Procédure de restauration :**
 
 1. Arrêter l'application.
-2. Copier la sauvegarde souhaitée sur le fichier de base de données :
+2. Dézipper la sauvegarde souhaitée dans le dossier de config (les entrées sont relatives à celui-ci ; celles sous `external/` viennent de l'extérieur, voir `MANIFEST.txt`) :
    ```bash
-   cp config/backups/cpadmin_YYYY-MM-DD_HH-MM-SS.db config/cpadmin.db
+   unzip -o config/backups/cpadmin_YYYY-MM-DD_HH-MM-SS.zip -d config
    ```
+   (pour une ancienne sauvegarde `.db` : `cp config/backups/cpadmin_….db config/cpadmin.db`)
 3. Supprimer les fichiers WAL s'ils existent :
    ```bash
    rm -f config/cpadmin.db-shm config/cpadmin.db-wal

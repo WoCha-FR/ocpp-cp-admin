@@ -123,7 +123,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 
 ### System Administration
 - System information: app version, uptime, Node.js memory usage, SQLite database size, connected charge points, per-table record counts
-- Downloadable SQLite database backup (WAL-safe, no service interruption)
+- Downloadable backup archive (ZIP): SQLite database (WAL-safe, no service interruption) + critical certificates (local client CA, per-charge-point certificates, manual mTLS CA)
 - Historical data cleanup with a date filter: meter values (transaction curves, transactions themselves are kept), OCPP messages, ID tag events, error events, notification log, expired reservations — plus a database VACUUM
 - Raw OCPP console: send any command with arbitrary JSON parameters to a connected charge point, with an in-session history
 - Comparison of OCPP parameters between charge points of the same OCPP version, with discrepancies highlighted and forced (override) values flagged
@@ -1157,7 +1157,16 @@ Migrations are automatically executed on startup from the `migrations/` folder. 
 
 ### Backup
 
-A backup script is provided in `scripts/backup.js`. It uses the `better-sqlite3` online backup API, which is safe even while the application is running (WAL mode compatible).
+A backup script is provided in `scripts/backup.js`. It uses the `better-sqlite3` online backup API, which is safe even while the application is running (WAL mode compatible). The same archive can be downloaded from the System Administration page (admin only).
+
+Each backup is a **ZIP archive** containing:
+
+- the SQLite database;
+- the **local client CA** (`certs/clients/ca.crt`, `ca.key`, `ca.srl`) and the **per-charge-point client certificates** (`certs/clients/cp-<identity>/`);
+- the **manual mTLS CA** set in `ocpp.wss.caFile` (and its private key when found next to it — a warning is raised otherwise);
+- a `MANIFEST.txt` listing what was included and any warning.
+
+These certificates cannot be regenerated without re-issuing and redeploying a certificate on every charge point. Server certificates (Let's Encrypt / Traefik), the web UI HTTPS certificate and the public root CA are **not** included. The archive contains private keys: store it securely.
 
 ```bash
 # Backup with default settings (7 backups kept in config/backups/)
@@ -1170,15 +1179,16 @@ node scripts/backup.js --backup-dir /mnt/nas/backups --keep 30
 node scripts/backup.js --db-path /data/cpadmin.db --backup-dir /backups
 ```
 
-Backup files are named `cpadmin_YYYY-MM-DD_HH-MM-SS.db`. Old backups beyond the `--keep` limit are automatically deleted.
+Backup files are named `cpadmin_YYYY-MM-DD_HH-MM-SS.zip`. Old backups beyond the `--keep` limit are automatically deleted (legacy `.db` backups from earlier versions are rotated too).
 
 **Restore procedure:**
 
 1. Stop the application.
-2. Copy the desired backup over the database file:
+2. Unzip the desired backup into the config directory (entries are relative to it; entries under `external/` come from outside that directory, see `MANIFEST.txt`):
    ```bash
-   cp config/backups/cpadmin_YYYY-MM-DD_HH-MM-SS.db config/cpadmin.db
+   unzip -o config/backups/cpadmin_YYYY-MM-DD_HH-MM-SS.zip -d config
    ```
+   (for a legacy `.db` backup: `cp config/backups/cpadmin_….db config/cpadmin.db`)
 3. Remove WAL files if present:
    ```bash
    rm -f config/cpadmin.db-shm config/cpadmin.db-wal

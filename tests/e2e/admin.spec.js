@@ -64,7 +64,7 @@ test.describe('Page Administration système', () => {
     const downloadPromise = page.waitForEvent('download');
     await page.locator('[data-onclick="downloadDbBackup()"]').click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/^cpadmin-backup-\d{4}-\d{2}-\d{2}\.sqlite$/);
+    expect(download.suggestedFilename()).toMatch(/^cpadmin-backup-\d{4}-\d{2}-\d{2}\.zip$/);
   });
 
   test('nettoyage des données : annulation puis confirmation avec succès', async ({ loggedInPage: page }) => {

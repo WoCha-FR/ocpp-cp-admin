@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/backup.js — SQLite online backup using better-sqlite3 backup API
+ * scripts/backup.js — SQLite online backup (better-sqlite3 backup API) + critical certificates, as a ZIP
  *
  * Usage:
  *   node scripts/backup.js [options]
@@ -33,20 +33,31 @@
  *     environment:
  *       - NODE_ENV=production
  *
+ * Each archive (cpadmin_YYYY-MM-DD_HH-MM-SS.zip) contains the database, the local client CA,
+ * the per-charge-point client certificates, the manual mTLS CA (ocpp.wss.caFile) when present,
+ * and a MANIFEST.txt listing what was included plus any warning.
+ * Same format as the admin page download (GET /api/admin/db/backup).
+ *
  * Restore procedure:
  *   1. Stop the application.
- *   2. Copy the desired backup file over the database:
- *        cp backups/cpadmin_YYYY-MM-DD_HH-MM-SS.db data/config/cpadmin.db
+ *   2. Unzip the desired archive into the config directory (entries are relative to it):
+ *        unzip -o backups/cpadmin_YYYY-MM-DD_HH-MM-SS.zip -d data/config
+ *      (entries under external/ come from outside the config directory — see MANIFEST.txt)
  *   3. Remove WAL files if present:
  *        rm -f data/config/cpadmin.db-shm data/config/cpadmin.db-wal
  *   4. Restart the application.
+ *
+ * Legacy raw backups (cpadmin_*.db, from older versions) are still rotated; to restore one,
+ * copy it over the database file as before.
  */
 
 'use strict';
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const Database = require('better-sqlite3');
+const { createBackupArchive } = require('../src/backupArchive');
 
 // ── CLI args ────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -70,16 +81,19 @@ function resolveFromConfig() {
     if (fs.existsSync(devFile)) configFile = devFile;
   }
   let dbname = 'cpadmin.db';
+  let cfg = {};
   try {
-    const cfg = JSON.parse(fs.readFileSync(configFile, 'utf-8'));
-    if (cfg.general?.dbname) dbname = cfg.general.dbname;
+    cfg = JSON.parse(fs.readFileSync(configFile, 'utf-8'));
+    if (cfg.dbname) dbname = cfg.dbname;
   } catch {
-    console.warn(`[backup] Could not read config: ${configFile} — using default dbname.`);
+    console.warn(
+      `[backup] Could not read config: ${configFile} — using default dbname, no certificates.`
+    );
   }
-  return { dbPath: path.resolve(configDir, dbname), configDir };
+  return { dbPath: path.resolve(configDir, dbname), dbname, configDir, cfg };
 }
 
-const { dbPath: defaultDbPath, configDir } = resolveFromConfig();
+const { dbPath: defaultDbPath, dbname, configDir, cfg } = resolveFromConfig();
 
 const dbPath = args['db-path'] ? path.resolve(args['db-path']) : defaultDbPath;
 const backupDir = args['backup-dir']
@@ -96,29 +110,42 @@ async function runBackup() {
 
   fs.mkdirSync(backupDir, { recursive: true });
 
-  const timestamp = new Date()
-    .toISOString()
-    .replace('T', '_')
-    .replace(/:/g, '-')
-    .slice(0, 19);
-  const backupName = `cpadmin_${timestamp}.db`;
+  const timestamp = new Date().toISOString().replace('T', '_').replace(/:/g, '-').slice(0, 19);
+  const backupName = `cpadmin_${timestamp}.zip`;
   const backupPath = path.join(backupDir, backupName);
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpadmin-backup-'));
+  const sqlitePath = path.join(tmpDir, 'db.sqlite');
 
   console.log(`[backup] Source     : ${dbPath}`);
   console.log(`[backup] Destination: ${backupPath}`);
 
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
   try {
-    await db.backup(backupPath);
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      await db.backup(sqlitePath);
+    } finally {
+      db.close();
+    }
+    // Les chemins de certificats viennent de la config ; les chemins relatifs sont résolus
+    // depuis le dossier de config (comme dans l'application).
+    const { files, warnings } = await createBackupArchive({
+      sqlitePath,
+      dbEntryName: dbname,
+      outPath: backupPath,
+      config: cfg,
+      configDir,
+    });
+    console.log(`[backup] Certificates: ${files.length} file(s)`);
+    for (const w of warnings) console.warn(`[backup] WARNING   : ${w}`);
   } finally {
-    db.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 
   const stat = fs.statSync(backupPath);
   console.log(`[backup] Done       : ${(stat.size / 1024).toFixed(1)} KB`);
 
   // ── Rotate old backups ───────────────────────────────────────────────────
-  const pattern = /^cpadmin_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.db$/;
+  const pattern = /^cpadmin_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.(zip|db)$/;
   const existing = fs
     .readdirSync(backupDir)
     .filter((f) => pattern.test(f))
@@ -130,7 +157,9 @@ async function runBackup() {
     console.log(`[backup] Removed    : ${f}`);
   }
 
-  console.log(`[backup] Retained   : ${Math.min(existing.length, keepCount)} backup(s) in ${backupDir}`);
+  console.log(
+    `[backup] Retained   : ${Math.min(existing.length, keepCount)} backup(s) in ${backupDir}`
+  );
 }
 
 runBackup().catch((err) => {

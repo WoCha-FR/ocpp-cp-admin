@@ -21,11 +21,13 @@ const {
 } = require('./ocpp-common');
 const { OCPP16_STANDARD_KEYS } = require('./ocpp-server-16');
 const certAuthority = require('./certAuthority');
+const { createBackupArchive } = require('./backupArchive');
 const { getWssRootCaBundle } = require('./wssRootCa');
 const schema = require('./validationSchema');
 const notifications = require('./notifications');
 const {
   getConfig,
+  getConfigDir,
   getConfigFilePath,
   ENV_OVERRIDES,
   CONFIG_FIELDS,
@@ -3284,17 +3286,33 @@ router.get('/admin/info', requireRole('admin'), (req, res) => {
   });
 });
 
+// Archive ZIP : base SQLite + certificats critiques (CA locale, certs par borne, CA mTLS) + MANIFEST.txt
 router.get('/admin/db/backup', requireRole('admin'), async (req, res) => {
   const dateStamp = new Date().toISOString().slice(0, 10);
-  const tempPath = path.join(os.tmpdir(), `cpadmin-backup-${crypto.randomUUID()}.sqlite`);
+  const id = crypto.randomUUID();
+  const sqlitePath = path.join(os.tmpdir(), `cpadmin-backup-${id}.sqlite`);
+  const zipPath = path.join(os.tmpdir(), `cpadmin-backup-${id}.zip`);
+  const cleanup = () => {
+    fs.unlink(sqlitePath, () => {});
+    fs.unlink(zipPath, () => {});
+  };
   try {
-    await db.backupDatabase(tempPath);
-  } catch {
+    await db.backupDatabase(sqlitePath);
+    const config = getConfig();
+    const { warnings } = await createBackupArchive({
+      sqlitePath,
+      dbEntryName: config.dbname || 'cpadmin.db',
+      outPath: zipPath,
+      config,
+      configDir: getConfigDir(),
+    });
+    for (const w of warnings) logger.warn(`Backup: ${w}`);
+  } catch (e) {
+    logger.error(`Backup failed: ${e.message}`);
+    cleanup();
     return res.status(500).json({ error: 'ERR_BACKUP_FAILED' });
   }
-  res.download(tempPath, `cpadmin-backup-${dateStamp}.sqlite`, () => {
-    fs.unlink(tempPath, () => {});
-  });
+  res.download(zipPath, `cpadmin-backup-${dateStamp}.zip`, cleanup);
 });
 
 // ── Nettoyage des données ──
