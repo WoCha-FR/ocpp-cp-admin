@@ -30,6 +30,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
   - [HTTPS — Web Interface](#https--web-interface)
   - [WSS — OCPP Server](#wss--ocpp-server-security-profile-2--3)
 - [Getting Started](#getting-started)
+- [Energy Tariffs](#energy-tariffs)
 - [Roles and Permissions](#roles-and-permissions)
 - [OCPP 1.6 Protocol](#ocpp-16-protocol)
   - [Supported Operations](#supported-operations)
@@ -66,7 +67,8 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Active and completed transaction tracking
 - Real-time data: energy (Wh), power (W), current (A per phase), state of charge (SOC %), temperature (°C), voltage (V per phase), frequency (Hz)
 - Transaction history with filters
-- CSV export of transactions
+- CSV export of transactions (including cost columns when a tariff is configured)
+- Per-site energy tariffs (time slots and weekdays) with the cost of each session frozen at closing — see [Energy Tariffs](#energy-tariffs)
 - Personal dashboard for users
 
 ### Error Event History
@@ -834,6 +836,50 @@ A default administrator account is created on first startup if the database is e
 
 ---
 
+## Energy Tariffs
+
+Each site can have its own **price per kWh grid**. It is used to estimate the share of charging in the overall electricity bill, and to give people charging a company vehicle at home a supporting document for their expense claims.
+
+### Configuring a tariff
+
+On the **Sites** page, the **Tariff** button (managers of the site and administrators) opens the grid editor:
+
+| Field | Description |
+|---|---|
+| Currency | 3-letter ISO code (`EUR`, `CHF`…), default `EUR` |
+| Time zone | IANA time zone of the site (`Europe/Paris`…), default `Europe/Paris`. Slots are evaluated in this time zone, daylight saving time included |
+| Default price | Price per kWh applied to hours **not covered** by a slot. **Left empty, no cost is computed for the site.** Required as soon as there is at least one slot |
+| Slots | Label (e.g. `Peak`, `Off-peak`), days of the week (Mon → Sun), start time, end time (`24:00` allowed as an end), price per kWh |
+
+Rules:
+
+- A slot with an end time earlier than its start time spans midnight (e.g. `22:00 → 06:00`). It **belongs entirely to the day it starts on**: a Friday `22:00 → 06:00` slot covers Friday 22:00 to Saturday 06:00.
+- Slots must not overlap, including the part spilling over the next day. For instance, a Friday `22:00 → 06:00` slot and a Saturday `00:00 → 24:00` slot overlap; use `06:00 → 24:00` for the Saturday instead.
+- Example — weekday off-peak plus a weekend rate:
+
+  | Label | Days | Slot | Price |
+  |---|---|---|---|
+  | Off-peak | Mon–Fri | `22:00 → 06:00` | 0.15 |
+  | Weekend | Sat–Sun | `06:00 → 24:00` | 0.10 |
+  | *(default)* | all other hours | | 0.25 |
+
+### How the cost is computed
+
+- The cost is computed **when the session is closed** (all closing paths: StopTransaction, orphan sessions, server restart recovery) and then **frozen** on the transaction (`cost`, `cost_currency`, `cost_details`).
+- The energy is split across slots using the **MeterValues** received during the session (piecewise-linear cumulated energy curve). If the charge point sent none, the energy is **spread proportionally to the duration** (the calculation method is shown in the session detail).
+- Changing the grid afterwards **never changes past sessions**, and sessions closed before a tariff existed are **not back-filled**: the cost of a session is meant to stay a reliable supporting document.
+- A calculation failure never prevents a session from being closed (the session simply has no cost).
+
+### Where costs appear
+
+- **Transactions** (managers/admins) and **My transactions** (users): *Cost* column and a cost KPI card (totals are grouped by currency, different currencies are never added together).
+- **Session detail**: cost breakdown per slot (time span, kWh, price, amount), calculation method and time zone.
+- **CSV exports** (global/site export and personal export): four extra columns — `Cost`, `Currency`, `Average price (/kWh)` and `Tariff breakdown` (e.g. `Peak 6.20 kWh × 0.2500 = 1.55 | Off-peak 12.00 kWh × 0.1500 = 1.80`). They are empty for sessions without a cost. Each user only sees the cost of their own sessions.
+
+> Access to a session's detail (`GET /api/transactions/:id`) is restricted to administrators, managers of the site of the charge point and the owner of the RFID badge used.
+
+---
+
 ## Roles and Permissions
 
 The application uses three hierarchical role levels:
@@ -846,6 +892,7 @@ Full access to all features:
 - Approval of pending charge points
 - View all transactions and OCPP messages
 - Global CSV export
+- Energy tariffs of every site
 - Exclusive access to the System Administration page (system info/backup, data cleanup, raw OCPP console, OCPP parameter comparison)
 - Can also be a user on one or more sites
 
@@ -857,6 +904,7 @@ Management restricted to authorized sites:
 - Remote start / stop charging
 - View transactions on assigned sites
 - CSV export for assigned sites
+- Configure the energy tariff (price per kWh) of assigned sites
 - Can also be a user on one or more sites
 
 ### User (`user`)
@@ -865,7 +913,7 @@ Limited access for charging:
 - View available connectors on authorized sites
 - Start and stop own charging sessions
 - View personal transaction history
-- Export own transactions to CSV
+- Export own transactions to CSV (with the cost of own sessions when the site has a tariff)
 - Manage notification preferences
 
 ---
@@ -875,7 +923,10 @@ Limited access for charging:
 | Method | Endpoint | Access | Description |
 |---|---|---|---|
 | `GET` | `/api/error-events` | manager+ | Paginated error event log. Query params: `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
-| `GET` | `/api/transactions/:id/values` | auth | Real-time metering series for a transaction: `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
+| `GET` | `/api/sites/:siteId/tariff` | manager of the site / admin | Tariff of a site: `currency`, `timezone`, `default_price_per_kwh` and `periods[]` (`label`, `days` as ISO weekdays `1`–`7`, `start_time`, `end_time`, `price_per_kwh`) |
+| `PUT` | `/api/sites/:siteId/tariff` | manager of the site / admin | Atomically replaces the tariff of a site (same body as the `GET` response). `400` with `ERR_TARIFF_*` codes when invalid (format, overlap, missing default price…) |
+| `GET` | `/api/transactions/:id` | admin / site manager / badge owner | Session detail, including the frozen `cost`, `cost_currency` and `cost_details` |
+| `GET` | `/api/transactions/:id/values` | admin / site manager / badge owner | Real-time metering series for a transaction: `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
 | `GET` | `/api/metrics` | optional token | Prometheus-format metrics |
 | `GET` | `/healthz` | public | Health check |
 
@@ -1220,13 +1271,14 @@ backup:
 
 | Table | Description |
 |---|---|
-| `sites` | Charging sites |
+| `sites` | Charging sites (with the tariff settings `currency`, `timezone`, `default_price_per_kwh`) |
+| `site_tariff_periods` | Tariff slots of a site (label, days, start/end time, price per kWh) |
 | `users` | User accounts |
 | `user_sites` | User ↔ site association (with role) |
 | `chargepoints` | Registered charge points |
 | `connectors` | Charge point connectors |
 | `chargepoint_config` | Charge point configuration |
-| `transactions` | Charging sessions |
+| `transactions` | Charging sessions (with the frozen cost: `cost`, `cost_currency`, `cost_details`) |
 | `transactions_values` | Real-time metering data |
 | `ocpp_messages` | OCPP message log |
 | `users_password_resets` | Password reset tokens |

@@ -1160,6 +1160,59 @@ function changeDashboardPeriod(days) {
   loadDashboardPeriodData(days);
 }
 
+// ── Coûts (tarification) ──
+function formatCost(amount, currency, maxDigits = 2) {
+  if (amount == null) return '-';
+  try {
+    return new Intl.NumberFormat(getLocaleConfig().dateFns, {
+      style: 'currency', currency: currency || 'EUR', minimumFractionDigits: 2, maximumFractionDigits: maxDigits,
+    }).format(amount);
+  } catch {
+    return escapeHtml(`${Number(amount).toFixed(2)} ${currency || ''}`.trim());
+  }
+}
+
+// Totaux par devise (jamais d'addition de devises différentes)
+function formatCostTotals(costByCurrency) {
+  if (!costByCurrency || costByCurrency.length === 0) return '-';
+  return costByCurrency.map(c => formatCost(c.total, c.currency)).join(' + ');
+}
+
+function formatTxCost(tx) {
+  return tx.cost != null ? formatCost(tx.cost, tx.cost_currency) : '-';
+}
+
+function renderTxCostDetails(tx) {
+  if (tx.cost == null) return '';
+  let d = null;
+  try { d = tx.cost_details ? JSON.parse(tx.cost_details) : null; } catch { d = null; }
+  const segments = d && Array.isArray(d.segments) ? d.segments : [];
+  const methodLabel = d && d.method === 'meter' ? t('transac.costMethodMeter') : t('transac.costMethodProrata');
+  const timeOpts = { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', ...(d && d.timezone ? { timeZone: d.timezone } : {}) };
+  const fmtTime = (iso) => {
+    try { return new Date(iso).toLocaleString(getLocaleConfig().dateFns, timeOpts); } catch { return escapeHtml(iso); }
+  };
+  return `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header"><h3>💶 ${t('transac.costDetails')} — ${formatTxCost(tx)}</h3></div>
+      ${segments.length === 0 ? '' : `
+      <table>
+        <thead><tr><th>${t('transac.costTranche')}</th><th>${t('transac.costPeriod')}</th><th>${t('transac.costKwh')}</th><th>${t('transac.costPrice')}</th><th>${t('transac.costAmount')}</th></tr></thead>
+        <tbody>
+          ${segments.map(s => `
+            <tr>
+              <td>${s.label ? escapeHtml(s.label) : t('transac.costDefaultRate')}</td>
+              <td class="td-date">${fmtTime(s.from)} → ${fmtTime(s.to)}</td>
+              <td>${Number(s.kwh).toFixed(2)} kWh</td>
+              <td>${formatCost(s.price, tx.cost_currency, 4)}</td>
+              <td>${formatCost(s.amount, tx.cost_currency)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`}
+      <p class="text-muted" style="margin-top:8px;">${t('transac.costMethod')} : ${methodLabel}${d && d.timezone ? ` · ${t('transac.costTimezone')} : ${escapeHtml(d.timezone)}` : ''}</p>
+    </div>`;
+}
+
 function formatEnergyAuto(kwh) {
   if (kwh >= 1000) return { value: (kwh / 1000).toFixed(1), unit: 'MWh' };
   return { value: kwh.toFixed(1), unit: 'kWh' };
@@ -4307,6 +4360,10 @@ async function renderTransactions(keepState = false) {
           <div class="stat-label">${t('transac.totalDuration')}</div>
           <div class="stat-value">${totalHours}</div>
         </div>
+        ${(txStats.costByCurrency || []).length ? `<div class="stat-card">
+          <div class="stat-label">${t('transac.totalCost')}</div>
+          <div class="stat-value" style="color:var(--success)">${formatCostTotals(txStats.costByCurrency)}</div>
+        </div>` : ''}
       </div>
       <div class="card card-filters">
         <div class="card-header"><h3>🔍 ${t('filters.filter')}${activeFilterCount ? ` (${t('filters.nbfilter', { count: activeFilterCount })})` : ''}</h3></div>
@@ -4358,7 +4415,7 @@ async function renderTransactions(keepState = false) {
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: txTotal })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
         <table>
-          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
+          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.cost')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
@@ -4371,6 +4428,7 @@ async function renderTransactions(keepState = false) {
                 <td class="td-date">${formatDateShort(tx.start_time)}</td>
                 <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
                 <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
+                <td>${formatTxCost(tx)}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
                 <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
               </tr>
@@ -4529,6 +4587,12 @@ async function renderMyTransactions(keepState = false) {
         ${avgEnergyCompare}
         <div class="kpi-total">${t('dashboard.kpiGlobalAvg')} : ${(kpiStats.allTime.avgEnergy || 0).toFixed(1)} kWh</div>
       </div>
+      ${(kpiStats.allTime.costByCurrency || []).length ? `
+      <div class="kpi-card">
+        <div class="kpi-label">${hasDateFilter ? t('transac.kpiCostFiltered') : t('transac.kpiCostMonth')}</div>
+        <div class="kpi-value" style="color:var(--success)">${formatCostTotals(main.costByCurrency)}</div>
+        <div class="kpi-total">${t('dashboard.kpiTotal')} : ${formatCostTotals(kpiStats.allTime.costByCurrency)}</div>
+      </div>` : ''}
     </div>
     <div class="card card-filters">
       <div class="card-header"><h3>🔍 ${t('filters.filter')}${myActiveFilterCount ? ` (${t('filters.nbfilter', { count: myActiveFilterCount })})` : ''}</h3></div>
@@ -4565,7 +4629,7 @@ async function renderMyTransactions(keepState = false) {
       <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: myTxTotal })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
-        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
+        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.cost')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
         <tbody>
         ${transactions.map(tx => {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
@@ -4579,6 +4643,7 @@ async function renderMyTransactions(keepState = false) {
               <td class="td-date">${formatDateShort(tx.start_time)}</td>
               <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
               <td>${energy}</td>
+              <td>${formatTxCost(tx)}</td>
               <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
               <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'mytransactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
             </tr>`;
@@ -4734,6 +4799,7 @@ function renderTransactionDetail(tx, data) {
         </div>
       </div>
     </div>
+    ${renderTxCostDetails(tx)}
     ${hasChartData ? `
     <div class="chart-grid" style="grid-template-columns: 1fr;">
       <div class="chart-card">
@@ -6848,9 +6914,9 @@ async function renderSites() {
     <div class="card">
       <div class="card-header"><h3>${t('navigation.sites')} (${sites.length})</h3></div>
       <table>
-        <thead><tr><th>${t('sites.siteName')}</th><th>${t('sites.siteAdress')}</th><th>${t('common.chargepoint_other')}</th><th>${t('common.createdAt')}</th><th>${t('sites.siteUsers')}</th><th>${t('common.actions')}</th></tr></thead>
+        <thead><tr><th>${t('sites.siteName')}</th><th>${t('sites.siteAdress')}</th><th>${t('common.chargepoint_other')}</th><th>${t('common.createdAt')}</th><th>${t('tariff.button')}</th><th>${t('sites.siteUsers')}</th><th>${t('common.actions')}</th></tr></thead>
         <tbody>
-          ${sites.length === 0 ? `<tr><td colspan="6" class="text-muted">${t('sites.siteNoData')}</td></tr>` : sites.map(s => {
+          ${sites.length === 0 ? `<tr><td colspan="7" class="text-muted">${t('sites.siteNoData')}</td></tr>` : sites.map(s => {
       const cpCount = chargepoints.filter(cp => cp.site_id === s.id).length;
       const isManagedSite = isAdmin || (currentUser.sites || []).some(us => us.site_id === s.id && us.role === 'manager');
       return `
@@ -6859,6 +6925,10 @@ async function renderSites() {
               <td>${s.address ? escapeHtml(s.address) : '-'}</td>
               <td>${cpCount}</td>
               <td class="td-date">${formatDateShort(s.created_at)}</td>
+              <td>
+                ${s.default_price_per_kwh != null ? `<span class="td-meta">${t('tariff.summaryDefault', { price: formatCost(s.default_price_per_kwh, s.currency, 4) })}</span>` : `<span class="text-muted">${t('tariff.notConfigured')}</span>`}
+                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => showSiteTariffModal(${s.id}, '${escapeAttr(s.sname)}'))">💶 ${t('tariff.button')}</button>` : ''}
+              </td>
               <td>
                 ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, '${escapeAttr(s.sname)}')">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>
@@ -6928,6 +6998,146 @@ async function deleteSite(id, name) {
     renderSites();
     checkSitePrompt();
   } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Tarification du kWh d'un site (managers du site + admin) ──
+let tariffEditor = { siteId: null, siteName: '', periods: [] };
+
+function tariffTimezones() {
+  let zones = [];
+  try { zones = Intl.supportedValuesOf('timeZone'); } catch { zones = ['Europe/Paris', 'Europe/Brussels', 'Europe/Zurich', 'America/Montreal']; }
+  return zones.includes('UTC') ? zones : ['UTC', ...zones];
+}
+
+async function showSiteTariffModal(siteId, siteName) {
+  const tf = await api('GET', `/sites/${siteId}/tariff`);
+  tariffEditor = {
+    siteId,
+    siteName,
+    periods: tf.periods.map(p => ({
+      label: p.label || '',
+      days: String(p.days).split(',').map(Number),
+      start_time: p.start_time,
+      end_time: p.end_time,
+      price: String(p.price_per_kwh),
+    })),
+  };
+  openModal(`
+  <div class="tariff-modal">
+    <h3>${t('tariff.title', { site: escapeHtml(siteName) })}</h3>
+    <div class="tariff-global">
+      <div class="form-group">
+        <label for="tariffCurrency">${t('tariff.currency')}</label>
+        <input type="text" id="tariffCurrency" maxlength="3" value="${escapeAttr(tf.currency)}" autocomplete="off" />
+        <small class="text-muted">${t('tariff.currencyHelp')}</small>
+      </div>
+      <div class="form-group">
+        <label for="tariffTimezone">${t('tariff.timezone')}</label>
+        <input type="text" id="tariffTimezone" list="tariffTimezones" value="${escapeAttr(tf.timezone)}" autocomplete="off" />
+        <datalist id="tariffTimezones">${tariffTimezones().map(z => `<option value="${escapeAttr(z)}"></option>`).join('')}</datalist>
+      </div>
+      <div class="form-group">
+        <label for="tariffDefaultPrice">${t('tariff.defaultPrice')}</label>
+        <input type="number" id="tariffDefaultPrice" min="0" step="any" value="${tf.default_price_per_kwh != null ? escapeAttr(tf.default_price_per_kwh) : ''}" />
+      </div>
+    </div>
+    <small class="text-muted">${t('tariff.defaultPriceHelp')}</small>
+    <h4 class="tariff-periods-title">${t('tariff.periods')}</h4>
+    <small class="text-muted">${t('tariff.periodsHelp')}</small>
+    <div id="tariffPeriods"></div>
+    <button type="button" class="btn btn-outline btn-sm" data-onclick="tariffAddPeriod()">+ ${t('tariff.addPeriod')}</button>
+    <p class="text-muted tariff-freeze-note">${t('tariff.freezeNote')}</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, saveSiteTariff)">${t('common.save')}</button>
+    </div>
+  </div>
+`);
+  renderTariffPeriods();
+}
+
+function renderTariffPeriods() {
+  const box = document.getElementById('tariffPeriods');
+  if (!box) return;
+  if (tariffEditor.periods.length === 0) {
+    box.innerHTML = `<p class="text-muted">${t('tariff.noPeriods')}</p>`;
+    return;
+  }
+  box.innerHTML = tariffEditor.periods.map((p, i) => `
+    <div class="tariff-period" data-idx="${i}">
+      <div class="tariff-period-fields">
+        <div class="form-group"><label>${t('tariff.label')}</label>
+          <input type="text" class="tp-label" maxlength="50" placeholder="${escapeAttr(t('tariff.labelPlaceholder'))}" value="${escapeAttr(p.label)}" /></div>
+        <div class="form-group"><label>${t('tariff.start')}</label>
+          <input type="text" class="tp-start" maxlength="5" placeholder="HH:MM" inputmode="numeric" value="${escapeAttr(p.start_time)}" /></div>
+        <div class="form-group"><label>${t('tariff.end')}</label>
+          <input type="text" class="tp-end" maxlength="5" placeholder="HH:MM" inputmode="numeric" value="${escapeAttr(p.end_time)}" /></div>
+        <div class="form-group"><label>${t('tariff.price')}</label>
+          <input type="number" class="tp-price" min="0" step="any" value="${escapeAttr(p.price)}" /></div>
+      </div>
+      <div class="tariff-period-days">
+        <span class="tariff-days-label">${t('tariff.days')}</span>
+        ${[1, 2, 3, 4, 5, 6, 7].map(d => `<label class="tariff-day"><input type="checkbox" class="tp-day" value="${d}" ${p.days.includes(d) ? 'checked' : ''} /> ${t('tariff.day' + d)}</label>`).join('')}
+        <button type="button" class="btn btn-outline btn-sm" data-onclick="tariffSetDays(${i}, 'all')">${t('tariff.daysAll')}</button>
+        <button type="button" class="btn btn-outline btn-sm" data-onclick="tariffSetDays(${i}, 'week')">${t('tariff.daysWeek')}</button>
+        <button type="button" class="btn btn-outline btn-sm" data-onclick="tariffSetDays(${i}, 'weekend')">${t('tariff.daysWeekend')}</button>
+        <button type="button" class="btn btn-danger btn-sm tariff-remove" data-onclick="tariffRemovePeriod(${i})">${t('tariff.removePeriod')}</button>
+      </div>
+    </div>`).join('');
+}
+
+// Recopie les champs du formulaire dans le brouillon avant tout re-rendu
+function tariffSyncDraft() {
+  document.querySelectorAll('#tariffPeriods .tariff-period').forEach(row => {
+    const p = tariffEditor.periods[Number(row.dataset.idx)];
+    if (!p) return;
+    p.label = row.querySelector('.tp-label').value;
+    p.start_time = row.querySelector('.tp-start').value;
+    p.end_time = row.querySelector('.tp-end').value;
+    p.price = row.querySelector('.tp-price').value;
+    p.days = [...row.querySelectorAll('.tp-day:checked')].map(c => Number(c.value));
+  });
+}
+
+function tariffAddPeriod() {
+  tariffSyncDraft();
+  tariffEditor.periods.push({ label: '', days: [1, 2, 3, 4, 5, 6, 7], start_time: '', end_time: '', price: '' });
+  renderTariffPeriods();
+}
+
+function tariffRemovePeriod(idx) {
+  tariffSyncDraft();
+  tariffEditor.periods.splice(idx, 1);
+  renderTariffPeriods();
+}
+
+function tariffSetDays(idx, preset) {
+  tariffSyncDraft();
+  const p = tariffEditor.periods[idx];
+  if (!p) return;
+  p.days = preset === 'week' ? [1, 2, 3, 4, 5] : preset === 'weekend' ? [6, 7] : [1, 2, 3, 4, 5, 6, 7];
+  renderTariffPeriods();
+}
+
+async function saveSiteTariff() {
+  tariffSyncDraft();
+  const defaultPrice = document.getElementById('tariffDefaultPrice').value.trim();
+  const body = {
+    currency: document.getElementById('tariffCurrency').value,
+    timezone: document.getElementById('tariffTimezone').value,
+    default_price_per_kwh: defaultPrice === '' ? null : defaultPrice,
+    periods: tariffEditor.periods.map(p => ({
+      label: p.label,
+      days: p.days,
+      start_time: p.start_time.trim(),
+      end_time: p.end_time.trim(),
+      price_per_kwh: p.price.trim(),
+    })),
+  };
+  await api('PUT', `/sites/${tariffEditor.siteId}/tariff`, body);
+  closeModal();
+  toast(t('tariff.saved'), 'success');
+  renderSites();
 }
 
 // ── Gestion des utilisateurs d'un site (manager) ──

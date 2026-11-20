@@ -5,8 +5,23 @@ CREATE TABLE IF NOT EXISTS sites (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sname TEXT(75) UNIQUE NOT NULL,
   address TEXT,
+  currency TEXT DEFAULT 'EUR',
+  timezone TEXT DEFAULT 'Europe/Paris',
+  default_price_per_kwh REAL,
   created_at TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS site_tariff_periods (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id INTEGER NOT NULL,
+  label TEXT,
+  days TEXT NOT NULL DEFAULT '1,2,3,4,5,6,7',
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  price_per_kwh REAL NOT NULL,
+  FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_site_tariff_periods_site ON site_tariff_periods(site_id);
 
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -214,6 +229,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   status TEXT DEFAULT 'Active',
   power INTEGER,
   energy INTEGER,
+  cost REAL,
+  cost_currency TEXT,
+  cost_details TEXT,
   FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE
 );
 

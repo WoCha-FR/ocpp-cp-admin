@@ -382,6 +382,23 @@
     .modal h3 { margin-bottom: 16px; }
     .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; flex-wrap: wrap; }
 
+    /* ── Tarification (modale tarif d'un site) ── */
+    .tariff-modal { min-width: min(760px, 80vw); }
+    .tariff-global { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 4px; }
+    .tariff-periods-title { margin: 16px 0 4px; }
+    .tariff-period { border: 1px solid var(--border-color); border-radius: var(--radius); padding: 10px 12px; margin: 10px 0; }
+    .tariff-period-fields { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 8px; }
+    .tariff-period-fields .form-group { margin-bottom: 8px; }
+    .tariff-period-days { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+    .tariff-days-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+    .tariff-day { display: inline-flex; align-items: center; gap: 3px; font-size: 13px; cursor: pointer; }
+    .tariff-remove { margin-left: auto; }
+    .tariff-freeze-note { margin-top: 12px; font-size: 12px; }
+    @media (max-width: 640px) {
+      .tariff-modal { min-width: 0; }
+      .tariff-period-fields { grid-template-columns: 1fr 1fr; }
+    }
+
     /* ── Confirm Dialog ── */
     .confirm-dialog { text-align: center; max-width: 400px; }
     .confirm-icon { font-size: 40px; margin-bottom: 12px; }

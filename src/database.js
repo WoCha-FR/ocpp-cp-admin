@@ -3,6 +3,8 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const { getConfig, getConfigDir } = require('./config');
 const { runMigrations, initNewDatabase } = require('./migrator');
+const tariff = require('./tariff');
+const logger = require('./logger').scope('SQLDB');
 
 const config = getConfig();
 const DB_PATH = path.resolve(getConfigDir(), config.dbname);
@@ -58,6 +60,105 @@ function updateSite(id, name, address) {
 
 function deleteSite(id) {
   db.prepare('DELETE FROM sites WHERE id = ?').run(id);
+}
+
+// ── Tarification du site ──
+function getSiteTariff(siteId) {
+  const site = db
+    .prepare('SELECT id, currency, timezone, default_price_per_kwh FROM sites WHERE id = ?')
+    .get(siteId);
+  if (!site) return null;
+  const periods = db
+    .prepare(
+      `SELECT id, label, days, start_time, end_time, price_per_kwh
+       FROM site_tariff_periods WHERE site_id = ? ORDER BY start_time, id`
+    )
+    .all(siteId);
+  return {
+    site_id: site.id,
+    currency: site.currency || 'EUR',
+    timezone: site.timezone || 'Europe/Paris',
+    default_price_per_kwh: site.default_price_per_kwh ?? null,
+    periods,
+  };
+}
+
+/** Remplace atomiquement la grille de tarifs d'un site (la validation est faite par l'appelant). */
+function replaceSiteTariff(siteId, { currency, timezone, default_price_per_kwh, periods = [] }) {
+  db.transaction(() => {
+    db.prepare(
+      'UPDATE sites SET currency = ?, timezone = ?, default_price_per_kwh = ? WHERE id = ?'
+    ).run(currency, timezone, default_price_per_kwh ?? null, siteId);
+    db.prepare('DELETE FROM site_tariff_periods WHERE site_id = ?').run(siteId);
+    const insert = db.prepare(
+      `INSERT INTO site_tariff_periods (site_id, label, days, start_time, end_time, price_per_kwh)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    );
+    for (const p of periods) {
+      const days = tariff.parseDays(p.days) || tariff.ALL_DAYS;
+      insert.run(
+        siteId,
+        p.label ? String(p.label).trim() || null : null,
+        days.join(','),
+        p.start_time,
+        p.end_time,
+        p.price_per_kwh
+      );
+    }
+  })();
+  return getSiteTariff(siteId);
+}
+
+/**
+ * Calcule et fige le coût d'une session clôturée (cost, cost_currency, cost_details).
+ * Ne lève jamais : un échec de calcul ne doit pas empêcher la clôture de la transaction.
+ * @returns {{cost: number, currency: string}|null} null si pas de tarif ou échec
+ */
+function finalizeTransactionCost(transactionId) {
+  try {
+    const tx = db
+      .prepare(
+        `SELECT t.transaction_id, t.start_time, t.stop_time, t.meter_start, t.meter_stop, cp.site_id
+         FROM transactions t JOIN chargepoints cp ON cp.id = t.chargepoint_id
+         WHERE t.transaction_id = ? ORDER BY t.id DESC`
+      )
+      .get(String(transactionId));
+    if (!tx || !tx.site_id || !tx.start_time || !tx.stop_time) return null;
+    if (tx.meter_start === null || tx.meter_stop === null) return null;
+
+    const siteTariff = getSiteTariff(tx.site_id);
+    if (!siteTariff || siteTariff.default_price_per_kwh === null) return null;
+
+    const values = db
+      .prepare('SELECT energie FROM transactions_values WHERE transaction_id = ?')
+      .get(tx.transaction_id);
+    let points = [];
+    if (values && values.energie) {
+      try {
+        points = JSON.parse(values.energie);
+      } catch {
+        points = [];
+      }
+    }
+
+    const result = tariff.computeSessionCost({
+      startTime: tx.start_time,
+      stopTime: tx.stop_time,
+      totalKwh: Math.max(0, tx.meter_stop - tx.meter_start) / 1000,
+      points,
+      tariff: siteTariff,
+    });
+    if (!result) return null;
+
+    db.prepare(
+      `UPDATE transactions SET cost = ?, cost_currency = ?, cost_details = ?
+       WHERE transaction_id = ?`
+    ).run(result.cost, result.currency, JSON.stringify(result.details), tx.transaction_id);
+    return { cost: result.cost, currency: result.currency };
+  } catch (err) {
+    logger.error(`Tariff computation failed for transaction ${transactionId}: ${err.message}`);
+    return null;
+  }
 }
 
 // ── Users ──
@@ -790,11 +891,15 @@ function createTransaction(
 
 function stopTransaction(transactionId, meterStop, stopTime, reason) {
   transactionId = String(transactionId);
-  db.prepare(
-    `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed',
+  const info = db
+    .prepare(
+      `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed',
     charging_state = NULL
     WHERE transaction_id = ? AND status = 'Active'`
-  ).run(meterStop, stopTime, reason || 'Local', transactionId);
+    )
+    .run(meterStop, stopTime, reason || 'Local', transactionId);
+  // Coût figé uniquement à la vraie clôture (un StopTransaction en double ne recalcule pas)
+  if (info.changes > 0) finalizeTransactionCost(transactionId);
   return db
     .prepare('SELECT * FROM transactions WHERE transaction_id = ? ORDER BY id DESC')
     .get(transactionId);
@@ -1062,11 +1167,25 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
     LEFT JOIN id_tags it ON it.id = ${ID_TAG_SUBQUERY}` + whereClause;
 
   const countResult = db.prepare(countQuery).get(...params);
+  const costByCurrency = db
+    .prepare(
+      `SELECT t.cost_currency AS currency, ROUND(SUM(t.cost), 2) AS total
+    FROM transactions t
+    JOIN chargepoints cp ON t.chargepoint_id = cp.id
+    LEFT JOIN id_tags it ON it.id = ${ID_TAG_SUBQUERY}` +
+        whereClause +
+        ' AND t.cost IS NOT NULL GROUP BY t.cost_currency ORDER BY t.cost_currency'
+    )
+    .all(...params);
 
   const rows = db
     .prepare(TRANSACTIONS_BASE_QUERY + whereClause + ' ORDER BY t.id DESC LIMIT ? OFFSET ?')
     .all(...params, filters.limit, filters.offset ?? 0)
-    .map((row) => ({ ...row }));
+    .map((row) => {
+      // Le détail du coût n'est servi que par GET /transactions/:id
+      delete row.cost_details;
+      return row;
+    });
 
   return {
     data: rows,
@@ -1075,6 +1194,7 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
       totalEnergy: countResult.totalEnergy,
       activeCount: countResult.activeCount,
       totalMinutes: countResult.totalMinutes,
+      costByCurrency,
     },
   };
 }
@@ -1748,22 +1868,32 @@ function getUserTransactionStats(userId, filters = {}) {
     ${idTagJoin}
     WHERE it.user_id = ? AND t.status = 'Completed'${extraWhere}`;
 
+  // Coût figé des sessions, par devise (on n'additionne jamais des devises différentes)
+  const buildCostQuery = (extraWhere) => `
+    SELECT t.cost_currency AS currency, ROUND(SUM(t.cost), 2) AS total
+    FROM transactions t
+    JOIN chargepoints cp ON t.chargepoint_id = cp.id
+    ${idTagJoin}
+    WHERE it.user_id = ? AND t.status = 'Completed' AND t.cost IS NOT NULL${extraWhere}
+    GROUP BY t.cost_currency ORDER BY t.cost_currency`;
+  const withCost = (stats, extraWhere, params = [userId]) => ({
+    ...stats,
+    costByCurrency: db.prepare(buildCostQuery(extraWhere)).all(...params),
+  });
+
   // Mois en cours
-  const currentMonth = db
-    .prepare(buildQuery(` AND t.start_time >= date('now', 'start of month')`))
-    .get(userId);
+  const currentMonthWhere = ` AND t.start_time >= date('now', 'start of month')`;
+  const currentMonth = withCost(
+    db.prepare(buildQuery(currentMonthWhere)).get(userId),
+    currentMonthWhere
+  );
 
   // Mois précédent
-  const prevMonth = db
-    .prepare(
-      buildQuery(
-        ` AND t.start_time >= date('now', 'start of month', '-1 month') AND t.start_time < date('now', 'start of month')`
-      )
-    )
-    .get(userId);
+  const prevMonthWhere = ` AND t.start_time >= date('now', 'start of month', '-1 month') AND t.start_time < date('now', 'start of month')`;
+  const prevMonth = withCost(db.prepare(buildQuery(prevMonthWhere)).get(userId), prevMonthWhere);
 
   // All-time
-  const allTime = db.prepare(buildQuery('')).get(userId);
+  const allTime = withCost(db.prepare(buildQuery('')).get(userId), '');
 
   // Si des filtres de dates sont actifs, calculer les stats filtrées
   let filtered = null;
@@ -1778,7 +1908,11 @@ function getUserTransactionStats(userId, filters = {}) {
       filterWhere += ' AND date(t.start_time) <= ?';
       filterParams.push(filters.to);
     }
-    filtered = db.prepare(buildQuery(filterWhere)).get(...filterParams);
+    filtered = withCost(
+      db.prepare(buildQuery(filterWhere)).get(...filterParams),
+      filterWhere,
+      filterParams
+    );
   }
 
   return { currentMonth, prevMonth, allTime, filtered };
@@ -2517,6 +2651,10 @@ function resetStateOnStartup() {
        SET connected = 0, connected_wss = 0, endpoint_address = NULL, cpstatus = NULL`
     )
     .run();
+  const activeIds = db
+    .prepare(`SELECT transaction_id FROM transactions WHERE status = 'Active'`)
+    .all()
+    .map((r) => r.transaction_id);
   const txResult = db
     .prepare(
       `UPDATE transactions
@@ -2534,6 +2672,7 @@ function resetStateOnStartup() {
        WHERE status = 'Active'`
     )
     .run();
+  for (const id of activeIds) finalizeTransactionCost(id);
   const cnResult = db
     .prepare(
       `UPDATE connectors
@@ -2693,6 +2832,9 @@ module.exports = {
   vacuumDatabase,
   getAllSites,
   getSiteById,
+  getSiteTariff,
+  replaceSiteTariff,
+  finalizeTransactionCost,
   createSite,
   updateSite,
   deleteSite,

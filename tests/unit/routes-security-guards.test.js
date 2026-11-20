@@ -37,5 +37,28 @@ describe('Backend access control guards', () => {
     expect(src).toMatch(/!existing\.site_id \|\| !managedSiteIds\.includes\(existing\.site_id\)/);
     expect(src).toMatch(/ERR_SITE_NOT_MANAGED/);
   });
-});
 
+  it('protects GET/PUT /sites/:siteId/tariff with requireManager and managed-site check', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    expect(src).toMatch(/router\.get\(\s*'\/sites\/:siteId\/tariff',\s*requireManager/);
+    expect(src).toMatch(/router\.put\(\s*'\/sites\/:siteId\/tariff',\s*requireManager/);
+    const helper = src.slice(src.indexOf('function assertSiteManaged'));
+    expect(helper).toMatch(/const managedIds = getUserManagedSiteIds\(req\)/);
+    expect(helper).toMatch(/!managedIds\.includes\(siteId\)/);
+    expect(helper).toMatch(/ERR_SITE_NOT_MANAGED/);
+    // la route PUT valide la grille avant de l'enregistrer
+    expect(src).toMatch(/tariff\.validateTariff\(input\)/);
+  });
+
+  it('restricts GET /transactions/:transactionId (+ /values) to admin, site manager or tag owner', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const helper = src.slice(src.indexOf('function canViewTransaction'));
+    expect(helper).toMatch(/req\.user\.role === 'admin'/);
+    expect(helper).toMatch(/tx\.tag_user_id === req\.user\.id/);
+    expect(helper).toMatch(/managedIds\.includes\(cp\.site_id\)/);
+    const detail = src.slice(src.indexOf("'/transactions/:transactionId',"));
+    expect(detail.slice(0, 500)).toMatch(/canViewTransaction\(req, tx\)/);
+    const values = src.slice(src.indexOf("'/transactions/:transactionId/values'"));
+    expect(values.slice(0, 600)).toMatch(/canViewTransaction\(req, access\)/);
+  });
+});

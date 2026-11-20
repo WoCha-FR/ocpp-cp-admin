@@ -2085,3 +2085,153 @@ describe('database — updateChargepoint password handling', () => {
     expect(updated.password).toBe(before.password);
   });
 });
+
+// ── Tarification du kWh par site ──
+describe('database — tarification (coût figé à la clôture)', () => {
+  let siteId;
+  let cpId;
+  const START = '2026-01-12T20:00:00Z'; // lundi 21:00 à Paris
+  const STOP = '2026-01-12T22:00:00Z'; // lundi 23:00 à Paris
+
+  const grid = (hp = 0.25, hc = 0.15) => ({
+    currency: 'EUR',
+    timezone: 'Europe/Paris',
+    default_price_per_kwh: 0.3,
+    periods: [
+      {
+        label: 'HP',
+        days: '1,2,3,4,5,6,7',
+        start_time: '06:00',
+        end_time: '22:00',
+        price_per_kwh: hp,
+      },
+      {
+        label: 'HC',
+        days: '1,2,3,4,5,6,7',
+        start_time: '22:00',
+        end_time: '06:00',
+        price_per_kwh: hc,
+      },
+    ],
+  });
+
+  beforeAll(() => {
+    siteId = db.createSite('Tariff Site', null).id;
+    cpId = db.createChargepoint('CP-TARIFF-1', 'Tariff CP', null, 1, siteId).id;
+  });
+
+  it('a des valeurs par défaut (EUR, Europe/Paris, pas de prix)', () => {
+    const t = db.getSiteTariff(siteId);
+    expect(t).toMatchObject({
+      site_id: siteId,
+      currency: 'EUR',
+      timezone: 'Europe/Paris',
+      default_price_per_kwh: null,
+      periods: [],
+    });
+    expect(db.getSiteTariff(999999)).toBeNull();
+  });
+
+  it("ne calcule aucun coût tant que le site n'a pas de prix", () => {
+    const tx = db.createTransaction(cpId, 1, 'TAG-T0', 0, START, 'rfid');
+    const stopped = db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    expect(stopped.status).toBe('Completed');
+    expect(stopped.cost).toBeNull();
+    expect(stopped.cost_details).toBeNull();
+  });
+
+  it('replaceSiteTariff remplace la grille de façon atomique', () => {
+    db.replaceSiteTariff(siteId, grid());
+    let t = db.getSiteTariff(siteId);
+    expect(t.default_price_per_kwh).toBe(0.3);
+    expect(t.periods).toHaveLength(2);
+
+    t = db.replaceSiteTariff(siteId, {
+      currency: 'EUR',
+      timezone: 'Europe/Paris',
+      default_price_per_kwh: 0.2,
+      periods: [],
+    });
+    expect(t.periods).toEqual([]);
+    expect(t.default_price_per_kwh).toBe(0.2);
+    db.replaceSiteTariff(siteId, grid());
+  });
+
+  it('fige le coût et le détail à la clôture', () => {
+    const tx = db.createTransaction(cpId, 1, 'TAG-T1', 0, START, 'rfid');
+    const stopped = db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    expect(stopped.cost).toBe(2);
+    expect(stopped.cost_currency).toBe('EUR');
+    const details = JSON.parse(stopped.cost_details);
+    expect(details.method).toBe('prorata');
+    expect(details.timezone).toBe('Europe/Paris');
+    expect(details.segments.map((s) => s.label)).toEqual(['HP', 'HC']);
+  });
+
+  it('utilise les MeterValues enregistrés pour découper le coût', () => {
+    const tx = db.createTransaction(cpId, 1, 'TAG-T2', 0, START, 'rfid');
+    db.upsertTransactionValues(tx.transaction_id, {
+      energieEntry: { x: Date.parse(START) / 1000 + 1800, power: 18000, energy: 9000 },
+    });
+    const stopped = db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    expect(stopped.cost).toBe(2.43);
+    expect(JSON.parse(stopped.cost_details).method).toBe('meter');
+  });
+
+  it("modifier la grille ensuite ne change pas le coût d'une session clôturée", () => {
+    const tx = db.createTransaction(cpId, 1, 'TAG-T3', 0, START, 'rfid');
+    db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    db.replaceSiteTariff(siteId, grid(1, 1));
+    expect(db.getTransactionByTransactionId(tx.transaction_id).cost).toBe(2);
+    // un StopTransaction en double ne recalcule pas non plus
+    db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    expect(db.getTransactionByTransactionId(tx.transaction_id).cost).toBe(2);
+    db.replaceSiteTariff(siteId, grid());
+  });
+
+  it('ne bloque pas la clôture si le calcul échoue', () => {
+    // table des tranches absente → exception interne attrapée, la clôture aboutit quand même
+    db.getDb().exec('ALTER TABLE site_tariff_periods RENAME TO site_tariff_periods_bak');
+    let stopped;
+    try {
+      const tx = db.createTransaction(cpId, 1, 'TAG-T5', 0, START, 'rfid');
+      stopped = db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    } finally {
+      db.getDb().exec('ALTER TABLE site_tariff_periods_bak RENAME TO site_tariff_periods');
+    }
+    expect(stopped.status).toBe('Completed');
+    expect(stopped.cost).toBeNull();
+  });
+
+  it('resetStateOnStartup fige aussi le coût des sessions orphelines', () => {
+    const tx = db.createTransaction(cpId, 1, 'TAG-T6', 0, START, 'rfid');
+    db.updateTransactionPowerEnergy(tx.transaction_id, null, 10000);
+    db.resetStateOnStartup();
+    const after = db.getTransactionByTransactionId(tx.transaction_id);
+    expect(after.status).toBe('Completed');
+    expect(after.meter_stop).toBe(10000);
+    expect(after.cost).not.toBeNull();
+    expect(after.cost_currency).toBe('EUR');
+  });
+
+  it('expose costByCurrency dans les stats paginées', () => {
+    const res = db.getTransactions({ limit: 50, offset: 0, site_id: siteId });
+    expect(res.stats.costByCurrency).toEqual([
+      expect.objectContaining({ currency: 'EUR', total: expect.any(Number) }),
+    ]);
+    expect(res.stats.costByCurrency[0].total).toBeGreaterThan(0);
+    const row = res.data.find((r) => r.cost !== null);
+    expect(row.cost_currency).toBe('EUR');
+  });
+
+  it('supprime les tranches avec le site (ON DELETE CASCADE)', () => {
+    const site = db.createSite('Tariff Cascade', null);
+    db.replaceSiteTariff(site.id, grid());
+    db.deleteSite(site.id);
+    const n = db
+      .getDb()
+      .prepare('SELECT COUNT(*) AS n FROM site_tariff_periods WHERE site_id = ?')
+      .get(site.id).n;
+    expect(n).toBe(0);
+  });
+});

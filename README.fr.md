@@ -30,6 +30,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
   - [HTTPS — Interface Web](#https--interface-web)
   - [WSS — Serveur OCPP](#wss--serveur-ocpp-profils-de-sécurité-2--3)
 - [Démarrage](#démarrage)
+- [Tarification de l'énergie](#tarification-de-lénergie)
 - [Rôles et permissions](#rôles-et-permissions)
 - [Protocole OCPP 1.6](#protocole-ocpp-16)
   - [Opérations supportées](#opérations-supportées)
@@ -67,7 +68,8 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Suivi des transactions actives et terminées
 - Données temps réel : énergie (Wh), puissance (W), courant (A par phase), état de charge (SOC %), température (°C), tension (V par phase), fréquence (Hz)
 - Historique des transactions avec filtres
-- Export CSV des transactions
+- Export CSV des transactions (avec les colonnes de coût lorsqu'un tarif est configuré)
+- Tarification du kWh par site (tranches horaires et jours de la semaine), coût de chaque session figé à la clôture — voir [Tarification de l'énergie](#tarification-de-lénergie)
 - Tableau de bord personnel pour les utilisateurs
 
 ### Historique des événements d'erreur
@@ -829,6 +831,50 @@ Un compte administrateur par défaut est créé au premier démarrage si la base
 
 ---
 
+## Tarification de l'énergie
+
+Chaque site peut disposer de sa propre **grille de prix du kWh**. Elle sert à estimer la part des recharges dans la facture globale d'électricité, et à fournir un justificatif de note de frais aux personnes qui rechargent un véhicule professionnel à domicile.
+
+### Configurer un tarif
+
+Sur la page **Sites**, le bouton **Tarif** (managers du site et administrateurs) ouvre l'éditeur de grille :
+
+| Champ | Description |
+|---|---|
+| Devise | Code ISO à 3 lettres (`EUR`, `CHF`…), `EUR` par défaut |
+| Fuseau horaire | Fuseau IANA du site (`Europe/Paris`…), `Europe/Paris` par défaut. Les tranches sont évaluées dans ce fuseau, changements d'heure inclus |
+| Prix par défaut | Prix du kWh appliqué aux heures **non couvertes** par une tranche. **Laissé vide, aucun coût n'est calculé pour le site.** Obligatoire dès qu'il y a au moins une tranche |
+| Tranches | Libellé (ex. `HP`, `HC`), jours de la semaine (lun → dim), heure de début, heure de fin (`24:00` autorisé en fin), prix du kWh |
+
+Règles :
+
+- Une tranche dont l'heure de fin est antérieure à l'heure de début passe minuit (ex. `22:00 → 06:00`). Elle **appartient entièrement au jour où elle commence** : une tranche `22:00 → 06:00` du vendredi couvre le vendredi 22:00 jusqu'au samedi 06:00.
+- Les tranches ne doivent pas se chevaucher, y compris sur la partie qui déborde sur le lendemain. Par exemple, une tranche `22:00 → 06:00` du vendredi et une tranche `00:00 → 24:00` du samedi se chevauchent ; utilisez plutôt `06:00 → 24:00` pour le samedi.
+- Exemple — heures creuses en semaine et tarif week-end :
+
+  | Libellé | Jours | Tranche | Prix |
+  |---|---|---|---|
+  | HC | lun–ven | `22:00 → 06:00` | 0,15 |
+  | Week-end | sam–dim | `06:00 → 24:00` | 0,10 |
+  | *(défaut)* | toutes les autres heures | | 0,25 |
+
+### Calcul du coût
+
+- Le coût est calculé **à la clôture de la session** (tous les chemins de clôture : StopTransaction, sessions orphelines, récupération au redémarrage du serveur) puis **figé** sur la transaction (`cost`, `cost_currency`, `cost_details`).
+- L'énergie est répartie entre les tranches à partir des **MeterValues** reçus pendant la session (courbe d'énergie cumulée linéaire par morceaux). Si la borne n'en a envoyé aucun, l'énergie est **répartie au prorata de la durée** (la méthode utilisée est indiquée dans le détail de la session).
+- Modifier la grille ensuite **ne change jamais les sessions passées**, et les sessions clôturées avant l'existence d'un tarif ne sont **pas recalculées** : le coût d'une session doit rester un justificatif fiable.
+- Un échec du calcul n'empêche jamais la clôture d'une session (elle n'a simplement pas de coût).
+
+### Où trouver les coûts
+
+- **Transactions** (managers/admins) et **Mes transactions** (utilisateurs) : colonne *Coût* et carte KPI de coût (les totaux sont regroupés par devise, des devises différentes ne sont jamais additionnées).
+- **Détail d'une session** : détail du coût par tranche (période, kWh, prix, montant), méthode de calcul et fuseau horaire.
+- **Exports CSV** (export global/par site et export personnel) : quatre colonnes supplémentaires — `Coût`, `Devise`, `Prix moyen (/kWh)` et `Détail tarifaire` (ex. `HP 6.20 kWh × 0.2500 = 1.55 | HC 12.00 kWh × 0.1500 = 1.80`). Elles sont vides pour les sessions sans coût. Chaque utilisateur ne voit que le coût de ses propres sessions.
+
+> L'accès au détail d'une session (`GET /api/transactions/:id`) est réservé aux administrateurs, aux managers du site de la borne et au propriétaire du badge RFID utilisé.
+
+---
+
 ## Rôles et permissions
 
 L'application repose sur trois niveaux de rôles hiérarchiques :
@@ -841,6 +887,7 @@ Accès complet à toutes les fonctionnalités :
 - Approbation des bornes en attente
 - Visualisation de toutes les transactions et messages OCPP
 - Export CSV global
+- Tarifs de l'énergie de tous les sites
 - Accès exclusif à la page Administration système (infos système/sauvegarde, nettoyage des données, console OCPP brute, comparaison des paramètres OCPP)
 - Peut également être utilisateur sur un ou plusieurs sites
 
@@ -852,6 +899,7 @@ Gestion restreinte aux sites autorisés :
 - Démarrage / arrêt de charge à distance
 - Visualisation des transactions de ses sites
 - Export CSV de ses sites
+- Configuration du tarif de l'énergie (prix du kWh) de ses sites
 - Peut également être utilisateur sur un ou plusieurs sites
 
 ### Utilisateur (`user`)
@@ -860,7 +908,7 @@ Accès limité à la recharge :
 - Voir les connecteurs disponibles sur ses sites autorisés
 - Démarrer et arrêter ses propres sessions de charge
 - Consulter son historique de transactions
-- Exporter ses transactions en CSV
+- Exporter ses transactions en CSV (avec le coût de ses sessions lorsque le site a un tarif)
 - Gérer ses préférences de notifications
 
 ---
@@ -870,7 +918,10 @@ Accès limité à la recharge :
 | Méthode | Endpoint | Accès | Description |
 |---|---|---|---|
 | `GET` | `/api/error-events` | manager+ | Journal paginé des événements d'erreur. Paramètres : `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
-| `GET` | `/api/transactions/:id/values` | auth | Séries de comptage d'une transaction : `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
+| `GET` | `/api/sites/:siteId/tariff` | manager du site / admin | Tarif d'un site : `currency`, `timezone`, `default_price_per_kwh` et `periods[]` (`label`, `days` en jours ISO `1`–`7`, `start_time`, `end_time`, `price_per_kwh`) |
+| `PUT` | `/api/sites/:siteId/tariff` | manager du site / admin | Remplace atomiquement le tarif d'un site (même corps que la réponse du `GET`). `400` avec des codes `ERR_TARIFF_*` si invalide (format, chevauchement, prix par défaut manquant…) |
+| `GET` | `/api/transactions/:id` | admin / manager du site / propriétaire du badge | Détail d'une session, avec le coût figé `cost`, `cost_currency` et `cost_details` |
+| `GET` | `/api/transactions/:id/values` | admin / manager du site / propriétaire du badge | Séries de comptage d'une transaction : `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
 | `GET` | `/api/metrics` | token optionnel | Métriques au format Prometheus |
 | `GET` | `/healthz` | public | Vérification de santé |
 
@@ -1215,13 +1266,14 @@ backup:
 
 | Table | Description |
 |---|---|
-| `sites` | Sites de recharge |
+| `sites` | Sites de recharge (avec les réglages de tarif `currency`, `timezone`, `default_price_per_kwh`) |
+| `site_tariff_periods` | Tranches tarifaires d'un site (libellé, jours, heures de début/fin, prix du kWh) |
 | `users` | Comptes utilisateurs |
 | `user_sites` | Association utilisateurs ↔ sites (avec rôle) |
 | `chargepoints` | Bornes de recharge enregistrées |
 | `connectors` | Connecteurs des bornes |
 | `chargepoint_config` | Configuration des bornes |
-| `transactions` | Sessions de charge |
+| `transactions` | Sessions de charge (avec le coût figé : `cost`, `cost_currency`, `cost_details`) |
 | `transactions_values` | Données de comptage temps réel |
 | `ocpp_messages` | Journal des messages OCPP |
 | `users_password_resets` | Jetons de réinitialisation de mot de passe |

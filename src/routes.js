@@ -35,6 +35,8 @@ const {
   deepSet,
 } = require('./config');
 const { trad, SUPPORTED_LANGUAGES, i18next } = require('./i18n');
+const tariff = require('./tariff');
+const { buildTransactionsCsv } = require('./transactionsCsv');
 const logger = require('./logger').scope('AUTH');
 
 const router = express.Router();
@@ -434,6 +436,53 @@ router.delete('/sites/:id', requireRole('admin'), ...validateSchema(schema.IdPar
   db.deleteSite(Number(req.params.id));
   res.json({ ok: true });
 });
+
+// ── Tarification du kWh d'un site (managers du site + admin) ──
+function assertSiteManaged(req, res, siteId) {
+  if (req.user.role !== 'admin') {
+    const managedIds = getUserManagedSiteIds(req);
+    if (managedIds !== null && !managedIds.includes(siteId)) {
+      res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      return false;
+    }
+  }
+  if (!db.getSiteById(siteId)) {
+    res.status(404).json({ error: 'ERR_SITE_NOT_FOUND' });
+    return false;
+  }
+  return true;
+}
+
+router.get(
+  '/sites/:siteId/tariff',
+  requireManager,
+  ...validateSchema(schema.SiteIdParam),
+  (req, res) => {
+    const siteId = Number(req.params.siteId);
+    if (!assertSiteManaged(req, res, siteId)) return;
+    res.json(db.getSiteTariff(siteId));
+  }
+);
+
+router.put(
+  '/sites/:siteId/tariff',
+  requireManager,
+  ...validateSchema(schema.SiteIdParam),
+  (req, res) => {
+    const siteId = Number(req.params.siteId);
+    if (!assertSiteManaged(req, res, siteId)) return;
+    const input = tariff.normalizeTariffInput(req.body);
+    if (!input) return res.status(400).json({ error: ['VALIDATION_TARIFF_BODY'] });
+    const { valid, errors } = tariff.validateTariff(input);
+    if (!valid) {
+      return res.status(400).json({
+        error: [...new Set(errors.map((e) => e.code))],
+        details: errors,
+      });
+    }
+    res.json(db.replaceSiteTariff(siteId, input));
+  }
+);
 
 // ── Utilisateurs d'un site (pour les managers) ──
 router.get(
@@ -2198,7 +2247,7 @@ router.get(
         return res.json({
           data: [],
           total: 0,
-          stats: { totalEnergy: 0, activeCount: 0, totalMinutes: 0 },
+          stats: { totalEnergy: 0, activeCount: 0, totalMinutes: 0, costByCurrency: [] },
         });
       }
     }
@@ -2230,56 +2279,10 @@ router.get(
     }
 
     const transactions = db.getTransactions(filters);
-    const lng = req.user.langue || 'fr';
-    const headers = [
-      trad('csvExportTitle.transaction_id', { lng }),
-      trad('csvExportTitle.chargepoint', { lng }),
-      trad('csvExportTitle.site', { lng }),
-      trad('csvExportTitle.connector', { lng }),
-      trad('csvExportTitle.tag', { lng }),
-      trad('csvExportTitle.user', { lng }),
-      trad('csvExportTitle.source', { lng }),
-      trad('csvExportTitle.start', { lng }),
-      trad('csvExportTitle.end', { lng }),
-      trad('csvExportTitle.meter_start', { lng }),
-      trad('csvExportTitle.meter_stop', { lng }),
-      trad('csvExportTitle.energy', { lng }),
-      trad('csvExportTitle.duration', { lng }),
-      trad('csvExportTitle.status', { lng }),
-      trad('csvExportTitle.stop_reason', { lng }),
-    ];
-    const csvRows = [headers.join(';')];
-    for (const t of transactions) {
-      const energy =
-        t.meter_stop != null && t.meter_start != null
-          ? ((t.meter_stop - t.meter_start) / 1000).toFixed(2)
-          : '';
-      let duration = '';
-      if (t.start_time && t.stop_time) {
-        const diffMs = new Date(t.stop_time) - new Date(t.start_time);
-        duration = (diffMs / 60000).toFixed(1);
-      }
-      const row = [
-        t.transaction_id,
-        t.chargepoint_identity || '',
-        t.site_name || '',
-        t.connector_id,
-        t.id_tag || '',
-        t.tag_username || '',
-        t.start_source || '',
-        t.start_time || '',
-        t.stop_time || '',
-        t.meter_start != null ? t.meter_start : '',
-        t.meter_stop != null ? t.meter_stop : '',
-        energy,
-        duration,
-        t.status || '',
-        t.stop_reason || '',
-      ].map((v) => `"${String(v).replace(/"/g, '""').replace(/;/g, ',')}"`);
-      csvRows.push(row.join(';'));
-    }
-
-    const csv = '\uFEFF' + csvRows.join('\r\n');
+    const csv = buildTransactionsCsv(transactions, {
+      withUser: true,
+      lng: req.user.langue || 'fr',
+    });
     const filename = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -2290,6 +2293,15 @@ router.get(
 // ══════════════════════════════════════
 //  TRANSACTION DETAIL (métadonnées)
 // ══════════════════════════════════════
+// Admin, manager du site de la borne, ou propriétaire du tag de la transaction
+function canViewTransaction(req, tx) {
+  if (req.user.role === 'admin') return true;
+  if (tx.tag_user_id != null && tx.tag_user_id === req.user.id) return true;
+  const cp = db.getChargepointById(tx.chargepoint_id);
+  const managedIds = getUserManagedSiteIds(req);
+  return !!(cp && cp.site_id && managedIds && managedIds.includes(cp.site_id));
+}
+
 router.get(
   '/transactions/:transactionId',
   requireAuth,
@@ -2297,6 +2309,7 @@ router.get(
   (req, res) => {
     const tx = db.getTransactionFull(req.params.transactionId);
     if (!tx) return res.status(404).json({ error: 'Not found' });
+    if (!canViewTransaction(req, tx)) return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
     res.json(tx);
   }
 );
@@ -2310,6 +2323,10 @@ router.get(
   ...validateSchema(schema.TransactionIdParam),
   (req, res) => {
     const transactionId = req.params.transactionId;
+    const access = db.getTransactionFull(transactionId);
+    if (access && !canViewTransaction(req, access)) {
+      return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
+    }
     const values = db.getTransactionValues(transactionId);
     const tx = db.getTransactionByTransactionId(transactionId);
 
@@ -2908,55 +2925,10 @@ router.get(
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
     const transactions = db.getUserTransactions(req.user.id, filters);
-
-    const lng = req.user.langue || 'fr';
-    const headers = [
-      trad('csvExportTitle.transaction_id', { lng }),
-      trad('csvExportTitle.chargepoint', { lng }),
-      trad('csvExportTitle.site', { lng }),
-      trad('csvExportTitle.connector', { lng }),
-      trad('csvExportTitle.tag', { lng }),
-      trad('csvExportTitle.source', { lng }),
-      trad('csvExportTitle.start', { lng }),
-      trad('csvExportTitle.end', { lng }),
-      trad('csvExportTitle.meter_start', { lng }),
-      trad('csvExportTitle.meter_stop', { lng }),
-      trad('csvExportTitle.energy', { lng }),
-      trad('csvExportTitle.duration', { lng }),
-      trad('csvExportTitle.status', { lng }),
-      trad('csvExportTitle.stop_reason', { lng }),
-    ];
-    const csvRows = [headers.join(';')];
-    for (const t of transactions) {
-      const energy =
-        t.meter_stop != null && t.meter_start != null
-          ? ((t.meter_stop - t.meter_start) / 1000).toFixed(2)
-          : '';
-      let duration = '';
-      if (t.start_time && t.stop_time) {
-        const diffMs = new Date(t.stop_time) - new Date(t.start_time);
-        duration = (diffMs / 60000).toFixed(1);
-      }
-      const row = [
-        t.transaction_id,
-        t.chargepoint_identity || '',
-        t.site_name || '',
-        t.connector_id,
-        t.id_tag || '',
-        t.start_source || '',
-        t.start_time || '',
-        t.stop_time || '',
-        t.meter_start != null ? t.meter_start : '',
-        t.meter_stop != null ? t.meter_stop : '',
-        energy,
-        duration,
-        t.status || '',
-        t.stop_reason || '',
-      ].map((v) => `"${String(v).replace(/"/g, '""').replace(/;/g, ',')}"`);
-      csvRows.push(row.join(';'));
-    }
-
-    const csv = '\uFEFF' + csvRows.join('\r\n');
+    const csv = buildTransactionsCsv(transactions, {
+      withUser: false,
+      lng: req.user.langue || 'fr',
+    });
     const filename = `mes-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
