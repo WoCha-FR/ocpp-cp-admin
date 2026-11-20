@@ -1982,6 +1982,31 @@ describe('ocpp-server-201 — LogStatusNotification', () => {
   });
 });
 
+// ── Messages non exploités (réponses stub conformes au schéma) ──
+describe('ocpp-server-201 — messages non exploités', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 5 });
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it.each([
+    ['NotifyChargingLimit', {}],
+    ['ClearedChargingLimit', {}],
+    ['ReportChargingProfiles', {}],
+    ['NotifyEVChargingNeeds', { status: 'Rejected' }],
+    ['NotifyEVChargingSchedule', { status: 'Rejected' }],
+    ['SignCertificate', { status: 'Rejected' }],
+    ['GetCertificateStatus', { status: 'Failed' }],
+    ['Get15118EVCertificate', { status: 'Failed', exiResponse: '' }],
+  ])('%s répond %j au lieu de NotImplemented', (action, expected) => {
+    expect(client._handlers[action]).toBeDefined();
+    expect(client._handlers[action]({})).toEqual(expected);
+  });
+});
+
 // ── SecurityEventNotification ──
 describe('ocpp-server-201 — SecurityEventNotification', () => {
   let client;

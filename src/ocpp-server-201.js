@@ -1351,6 +1351,24 @@ function register201Handlers(client, loggedHandle) {
     return {};
   });
 
+  // ── Messages non exploités par le CSMS : réponse conforme au schéma plutôt que CALLERROR ──
+  // Smart charging : informatifs (le CSMS ne pilote pas ces flux), acquittement simple
+  for (const action of [
+    'NotifyChargingLimit',
+    'ClearedChargingLimit',
+    'ReportChargingProfiles',
+  ]) {
+    loggedHandle(action, () => ({}));
+  }
+
+  // ISO 15118 / Plug&Charge et renouvellement de certificat par OCPP : non supportés
+  // (la CA est gérée à la main) → refus explicite
+  loggedHandle('NotifyEVChargingNeeds', () => ({ status: 'Rejected' }));
+  loggedHandle('NotifyEVChargingSchedule', () => ({ status: 'Rejected' }));
+  loggedHandle('SignCertificate', () => ({ status: 'Rejected' }));
+  loggedHandle('GetCertificateStatus', () => ({ status: 'Failed' }));
+  loggedHandle('Get15118EVCertificate', () => ({ status: 'Failed', exiResponse: '' }));
+
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {
     let cancelled = false;
