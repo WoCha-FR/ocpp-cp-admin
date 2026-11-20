@@ -233,6 +233,73 @@ async function callClient201(identity, method, params) {
   return result;
 }
 
+// ── Réconciliation des transactions actives via GetTransactionStatus ──
+// Après (re)connexion, une transaction « Active » en base peut ne plus exister côté borne
+// (coupure de courant, TransactionEvent Ended jamais reçu). On interroge la borne et on ne clôture
+// que si elle confirme explicitement : transaction terminée ET aucun message en attente.
+const TX_RECONCILE_DELAY_MS = 30000;
+const TX_RECONCILE_RETRY_MS = 60000;
+
+async function reconcileActiveTransactions(identity, isCancelled = () => false, attempt = 0) {
+  const cp = db.getChargepointByIdentity(identity);
+  if (!cp || !cp.connected) return;
+
+  const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' }) || [];
+  let hasQueuedMessages = false;
+
+  for (const tx of activeTxs) {
+    if (isCancelled()) return;
+
+    let status;
+    try {
+      status = await callClient201(identity, 'GetTransactionStatus', {
+        transactionId: tx.transaction_id,
+      });
+    } catch (e) {
+      if (isDisconnectionError(e)) return;
+      // Message optionnel : une borne qui ne le supporte pas ne le supportera pour aucune transaction
+      logger.info(
+        `[TxReconcile201] ${identity}: GetTransactionStatus non pris en charge (${e.message})`
+      );
+      return;
+    }
+
+    // La transaction a pu être clôturée par la borne pendant l'attente de la réponse
+    const current = db.getTransactionByTransactionId(tx.transaction_id);
+    if (!current || current.status !== 'Active') continue;
+
+    if (status?.messagesInQueue) {
+      hasQueuedMessages = true; // TransactionEvent en attente d'envoi : laisser la borne les vider
+      continue;
+    }
+    if (status?.ongoingIndicator !== false) continue; // en cours, ou réponse non concluante
+
+    // Dernier état connu : meter_start + énergie cumulée par les MeterValues
+    const meterStop =
+      current.meter_start != null && current.energy > 0
+        ? current.meter_start + current.energy
+        : (current.meter_start ?? 0);
+    db.stopTransaction(current.transaction_id, meterStop, new Date().toISOString(), 'Other');
+    broadcast(
+      'transaction_stop',
+      { identity, transactionId: current.transaction_id, meterStop, reason: 'Other' },
+      cp.site_id ?? null
+    );
+    logger.warn(
+      `[TxReconcile201] ${identity}: tx ${current.transaction_id} terminée côté borne ` +
+        `(GetTransactionStatus) mais jamais clôturée en base — fermée`
+    );
+  }
+
+  if (hasQueuedMessages && attempt < 1) {
+    const timer = setTimeout(
+      () => reconcileActiveTransactions(identity, isCancelled, attempt + 1).catch(() => {}),
+      TX_RECONCILE_RETRY_MS
+    );
+    timer.unref();
+  }
+}
+
 // ── Handlers entrants (borne → CSMS) OCPP 2.0.1 ──
 function register201Handlers(client, loggedHandle) {
   const identity = client.identity;
@@ -1353,11 +1420,7 @@ function register201Handlers(client, loggedHandle) {
 
   // ── Messages non exploités par le CSMS : réponse conforme au schéma plutôt que CALLERROR ──
   // Smart charging : informatifs (le CSMS ne pilote pas ces flux), acquittement simple
-  for (const action of [
-    'NotifyChargingLimit',
-    'ClearedChargingLimit',
-    'ReportChargingProfiles',
-  ]) {
+  for (const action of ['NotifyChargingLimit', 'ClearedChargingLimit', 'ReportChargingProfiles']) {
     loggedHandle(action, () => ({}));
   }
 
@@ -1368,6 +1431,22 @@ function register201Handlers(client, loggedHandle) {
   loggedHandle('SignCertificate', () => ({ status: 'Rejected' }));
   loggedHandle('GetCertificateStatus', () => ({ status: 'Failed' }));
   loggedHandle('Get15118EVCertificate', () => ({ status: 'Failed', exiResponse: '' }));
+
+  // Après connexion : vérifier auprès de la borne que les transactions « Active » existent encore
+  if (cpRecord) {
+    let reconcileCancelled = false;
+    const reconcileTimer = setTimeout(() => {
+      reconcileActiveTransactions(identity, () => reconcileCancelled).catch((e) =>
+        logger.warn(`[TxReconcile201] ${identity}: ${e.message}`)
+      );
+    }, TX_RECONCILE_DELAY_MS);
+    reconcileTimer.unref();
+
+    client.once('close', () => {
+      clearTimeout(reconcileTimer);
+      reconcileCancelled = true;
+    });
+  }
 
   // Après reconnexion sans BootNotification : demander à la borne de renvoyer son état
   if (cpRecord && cpRecord.initialized) {

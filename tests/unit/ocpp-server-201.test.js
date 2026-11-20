@@ -2300,3 +2300,111 @@ describe('ocpp-server-201 — NotifyEvent', () => {
     expect(mockDb.insertErrorEvent).not.toHaveBeenCalled();
   });
 });
+
+// ── Réconciliation des transactions via GetTransactionStatus ──
+describe('ocpp-server-201 — TxReconcile GetTransactionStatus', () => {
+  const ACTIVE_TX = { transaction_id: 'TX-1', status: 'Active', meter_start: 1000, energy: 500 };
+  let client;
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    client = makeClient('CP001');
+    mockConnectedClients.set('CP001', client);
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, connected: 1, site_id: 7 });
+    mockDb.getTransactions.mockReturnValue([ACTIVE_TX]);
+    mockDb.getTransactionByTransactionId.mockReturnValue(ACTIVE_TX);
+  });
+
+  afterEach(() => {
+    jest.clearAllTimers();
+    jest.useRealTimers();
+    mockDb.getTransactions.mockReturnValue([]);
+    mockDb.getTransactionByTransactionId.mockReset();
+  });
+
+  const run = async (ms = 30001) => {
+    register201Handlers(client, makeLoggedHandle(client));
+    await jest.advanceTimersByTimeAsync(ms);
+  };
+
+  it('ferme la transaction quand la borne confirme : terminée et aucun message en attente', async () => {
+    client.call.mockResolvedValue({ ongoingIndicator: false, messagesInQueue: false });
+    await run();
+
+    expect(client.call).toHaveBeenCalledWith('GetTransactionStatus', { transactionId: 'TX-1' });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-1', 1500, expect.any(String), 'Other');
+    expect(mockBroadcast).toHaveBeenCalledWith(
+      'transaction_stop',
+      expect.objectContaining({ identity: 'CP001', transactionId: 'TX-1', meterStop: 1500 }),
+      7
+    );
+  });
+
+  it('ne ferme pas la transaction si elle est toujours en cours côté borne', async () => {
+    client.call.mockResolvedValue({ ongoingIndicator: true, messagesInQueue: false });
+    await run();
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+  });
+
+  it('ne ferme pas si ongoingIndicator est absent (réponse non concluante)', async () => {
+    client.call.mockResolvedValue({ messagesInQueue: false });
+    await run();
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+  });
+
+  it('ne ferme pas si des messages sont en attente, puis re-vérifie une fois après 60s', async () => {
+    client.call.mockResolvedValue({ ongoingIndicator: false, messagesInQueue: true });
+    await run(30001 + 60001);
+
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+    const calls = client.call.mock.calls.filter(([m]) => m === 'GetTransactionStatus');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('ne ferme pas si la transaction a été clôturée pendant l\'attente de la réponse', async () => {
+    client.call.mockResolvedValue({ ongoingIndicator: false, messagesInQueue: false });
+    mockDb.getTransactionByTransactionId.mockReturnValue({ ...ACTIVE_TX, status: 'Completed' });
+    await run();
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+  });
+
+  it('utilise meter_start quand aucune énergie n\'a été cumulée', async () => {
+    const tx = { ...ACTIVE_TX, energy: null };
+    mockDb.getTransactions.mockReturnValue([tx]);
+    mockDb.getTransactionByTransactionId.mockReturnValue(tx);
+    client.call.mockResolvedValue({ ongoingIndicator: false, messagesInQueue: false });
+    await run();
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-1', 1000, expect.any(String), 'Other');
+  });
+
+  it('abandonne sans erreur si la borne ne supporte pas GetTransactionStatus', async () => {
+    client.call.mockRejectedValue(new Error('NotImplemented'));
+    await run();
+    expect(client.call).toHaveBeenCalledTimes(1);
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+  });
+
+  it('n\'interroge pas la borne s\'il n\'y a aucune transaction active', async () => {
+    mockDb.getTransactions.mockReturnValue([]);
+    await run();
+    expect(client.call).not.toHaveBeenCalledWith('GetTransactionStatus', expect.anything());
+  });
+
+  it('n\'interroge pas la borne si elle est inconnue (cpRecord null)', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue(null);
+    await run();
+    expect(client.call).not.toHaveBeenCalledWith('GetTransactionStatus', expect.anything());
+  });
+
+  it('annule la vérification si la borne se déconnecte avant 30s', async () => {
+    const closeCallbacks = [];
+    client.once = jest.fn((event, cb) => { if (event === 'close') closeCallbacks.push(cb); });
+    client.call.mockResolvedValue({ ongoingIndicator: false, messagesInQueue: false });
+
+    register201Handlers(client, makeLoggedHandle(client));
+    closeCallbacks.forEach((cb) => cb());
+    await jest.advanceTimersByTimeAsync(30001);
+
+    expect(client.call).not.toHaveBeenCalledWith('GetTransactionStatus', expect.anything());
+  });
+});
