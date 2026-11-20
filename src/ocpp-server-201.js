@@ -266,7 +266,7 @@ function register201Handlers(client, loggedHandle) {
         // Step 1/4 — ClearCache
         if (isSuperseded()) return;
         try {
-          logger.debug(`[InitSeq201] ${identity} step 1/4 — ClearCache`);
+          logger.debug(`[InitSeq201] ${identity} step 1/5 — ClearCache`);
           await callClient201(identity, 'ClearCache', {});
         } catch (e) {
           logger.warn(`[InitSeq201] ${identity} ClearCache: ${e.message}`);
@@ -281,11 +281,11 @@ function register201Handlers(client, loggedHandle) {
         try {
           const existingProfiles = db.getChargingProfiles(cpSnap.id);
           if (existingProfiles.length === 0) {
-            logger.debug(`[InitSeq201] ${identity} step 2/4 — ClearChargingProfile`);
+            logger.debug(`[InitSeq201] ${identity} step 2/5 — ClearChargingProfile`);
             await callClient201(identity, 'ClearChargingProfile', {});
           } else {
             logger.debug(
-              `[InitSeq201] ${identity} step 2/4 — skipped (${existingProfiles.length} profil(s) géré(s))`
+              `[InitSeq201] ${identity} step 2/5 — skipped (${existingProfiles.length} profil(s) géré(s))`
             );
           }
         } catch (e) {
