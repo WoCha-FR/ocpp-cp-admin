@@ -406,6 +406,29 @@ const StartCharge = {
   },
 };
 
+// Démarrage depuis le site web par un utilisateur : badge choisi parmi ses badges valides
+// (obligatoire quand il en a plusieurs — voir GET /user/start-charge/id-tags)
+const UserStartCharge = {
+  ...StartCharge,
+  id_tag: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isString: true,
+    isLength: { options: { min: 1, max: 36 } },
+    trim: true,
+    errorMessage: 'VALIDATION_ID_TAG',
+  },
+};
+
+const UserStartChargeIdTagsQuery = {
+  chargepoint_id: {
+    in: ['query'],
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_CHARGEPOINT_ID',
+  },
+};
+
 const StopCharge = {
   chargepoint_id: {
     in: ['body'],
@@ -1150,6 +1173,8 @@ module.exports = {
   UserSitesAssignment,
   SiteUserPatch,
   StartCharge,
+  UserStartCharge,
+  UserStartChargeIdTagsQuery,
   StopCharge,
   TransactionsQuery,
   ReimbursementQuery,

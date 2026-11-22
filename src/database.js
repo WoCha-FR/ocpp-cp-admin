@@ -2181,6 +2181,46 @@ function authorizeIdTag(idTag, siteId, tokenType) {
   return { status: 'Accepted', reason: null, tag };
 }
 
+// Badges d'un utilisateur utilisables pour démarrer une recharge depuis le site web sur une borne
+// du site siteId. Mêmes contrôles qu'un badge présenté sur la borne (actif, expiration, site,
+// autorisation sur le site) : un démarrage à distance en attente n'est pas recontrôlé à la
+// réception du StartTransaction / TransactionEvent, c'est donc ici que le badge doit être valide.
+// ignoreUserSite : un admin démarre sans être autorisé sur le site (même règle que la route).
+// Retourne { candidates, usable, rejected } — candidates = nombre de badges de l'utilisateur
+// pour ce site (0 → badge web automatique), usable = badges valides, rejected = les autres.
+const USER_SITE_REASONS = new Set(['user_not_authorized', 'user_not_linked']);
+
+function getUserStartIdTags(userId, siteId, { ignoreUserSite = false } = {}) {
+  const tags = db
+    .prepare(
+      'SELECT * FROM id_tags WHERE user_id = ? AND (site_id IS NULL OR site_id = ?) ORDER BY id_tag'
+    )
+    .all(userId, siteId ?? null);
+  const usable = [];
+  const rejected = [];
+  for (const t of tags) {
+    const auth = authorizeIdTag(t.id_tag, siteId ?? null);
+    // Même id_tag enregistré aussi pour ce site (autre ligne prioritaire) : c'est cette autre
+    // ligne qui serait retenue à la réception de la transaction, pas celle de l'utilisateur.
+    if (!auth.tag || auth.tag.id !== t.id) {
+      rejected.push({ id_tag: t.id_tag, status: 'Invalid', reason: 'shadowed_tag' });
+      continue;
+    }
+    const ok = auth.status === 'Accepted' || (ignoreUserSite && USER_SITE_REASONS.has(auth.reason));
+    if (ok) {
+      usable.push({
+        id_tag: t.id_tag,
+        description: t.description,
+        category: t.category,
+        site_id: t.site_id,
+      });
+    } else {
+      rejected.push({ id_tag: t.id_tag, status: auth.status, reason: auth.reason });
+    }
+  }
+  return { candidates: tags.length, usable, rejected };
+}
+
 // ── Id Tags Events ──
 function addIdTagEvent(chargepointId, connectorId, idTag, status, reason, source) {
   db.prepare(
@@ -3135,6 +3175,7 @@ module.exports = {
   updateIdTag,
   deleteIdTag,
   authorizeIdTag,
+  getUserStartIdTags,
   addIdTagEvent,
   getIdTagEvents,
   getIdTagEventById,

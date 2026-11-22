@@ -1066,6 +1066,12 @@ Les démarrages depuis l'interface utilisent le badge de l'utilisateur ou un **b
 - un `Authorize` de ce badge, venant de cette borne, est accepté — utile pour les bornes dont la clé `AuthorizeRemoteTxRequests` / `AuthorizeRemoteStart` est en lecture seule ;
 - seul ce badge échappe au contrôle d'autorisation : un autre badge présenté sur le connecteur entre-temps est toujours contrôlé.
 
+Le badge d'un démarrage à distance n'étant pas recontrôlé à l'arrivée de la transaction, un démarrage depuis le **tableau de bord utilisateur** n'utilise qu'un badge de l'utilisateur valide sur le site de la borne (actif, non expiré, utilisateur autorisé sur le site — les mêmes contrôles qu'une carte RFID) :
+
+- plusieurs badges valides (ex. professionnel et personnel) : la confirmation demande lequel utiliser (`GET /api/user/start-charge/id-tags`, puis `id_tag` dans `POST /api/user/start-charge` ; sans choix, l'API répond `409`) ;
+- des badges, mais aucun valide (expirés, désactivés…) : le démarrage est refusé — pas de repli sur le badge `WEB-<utilisateur>`, qui contournerait la décision de l'administrateur ;
+- aucun badge pour ce site : le badge `WEB-<utilisateur>` est créé et utilisé.
+
 ### Connexion des bornes
 
 Les bornes se connectent via WebSocket à l'URL :

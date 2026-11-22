@@ -2844,54 +2844,97 @@ router.get('/user/available-connectors', requireAuth, (req, res) => {
   }
 });
 
+// Borne accessible à l'utilisateur pour un démarrage depuis le site web : { cp } ou { status, error }
+function getUserStartChargepoint(req, chargepointId) {
+  const cp = db.getChargepointById(Number(chargepointId));
+  if (!cp) return { status: 404, error: 'ERR_CHARGEPOINT_NOT_FOUND' };
+  // Vérifier que l'utilisateur est autorisé sur le site de la borne (l'admin l'est toujours)
+  if (cp.site_id && req.user.role !== 'admin') {
+    const userSite = (req.user.sites || []).find((s) => s.site_id === cp.site_id);
+    if (!userSite || !userSite.authorized) {
+      return { status: 403, error: 'ERR_USER_NOT_AUTHORIZED_IN_SITE' };
+    }
+  }
+  return { cp };
+}
+
+function getUserStartTags(req, cp) {
+  return db.getUserStartIdTags(req.user.id, cp.site_id, {
+    ignoreUserSite: req.user.role === 'admin',
+  });
+}
+
+// Badges utilisables par l'utilisateur pour démarrer sur cette borne (choix dans la confirmation
+// quand il y en a plusieurs). autoWeb : aucun badge → badge web automatique au démarrage ;
+// blocked : des badges, mais aucun valide (expirés, désactivés…) → démarrage refusé.
+router.get(
+  '/user/start-charge/id-tags',
+  requireAuth,
+  ...validateSchema(schema.UserStartChargeIdTagsQuery),
+  (req, res) => {
+    const { cp, status, error } = getUserStartChargepoint(req, req.query.chargepoint_id);
+    if (!cp) return res.status(status).json({ error });
+    const { candidates, usable } = getUserStartTags(req, cp);
+    res.json({
+      idTags: usable,
+      autoWeb: candidates === 0,
+      blocked: candidates > 0 && usable.length === 0,
+    });
+  }
+);
+
 // Démarrer une recharge depuis le site web
 router.post(
   '/user/start-charge',
   requireAuth,
-  ...validateSchema(schema.StartCharge),
+  ...validateSchema(schema.UserStartCharge),
   async (req, res) => {
     const { chargepoint_id, connector_id } = req.body;
+    const requested = req.body.id_tag || null;
 
-    const cp = db.getChargepointById(Number(chargepoint_id));
-    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
-
-    // Vérifier que l'utilisateur est autorisé sur le site de la borne
-    if (cp.site_id) {
-      const user = req.user;
-      if (user.role !== 'admin') {
-        const userSite = (user.sites || []).find((s) => s.site_id === cp.site_id);
-        if (!userSite || !userSite.authorized) {
-          return res.status(403).json({ error: 'ERR_USER_NOT_AUTHORIZED_IN_SITE' });
-        }
-      }
-    }
+    const { cp, status, error } = getUserStartChargepoint(req, chargepoint_id);
+    if (!cp) return res.status(status).json({ error });
 
     const client = getConnectedClients().get(cp.identity);
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
-    // Trouver un id_tag associé à l'utilisateur pour cette borne
-    const userTags = db
-      .getAllIdTags()
-      .filter(
-        (t) => t.user_id === req.user.id && t.active && (!t.site_id || t.site_id === cp.site_id)
-      );
+    // Badge du démarrage : un démarrage à distance en attente n'est pas recontrôlé à la réception
+    // de la transaction, le badge doit donc être valide ici (actif, non expiré, bon site…).
+    const { candidates, usable } = getUserStartTags(req, cp);
     let idTag;
-    if (userTags.length > 0) {
-      idTag = userTags[0].id_tag;
-    } else {
-      // Créer automatiquement un tag web lié à l'utilisateur
+    if (candidates === 0) {
+      // Aucun badge pour ce site : badge web automatique lié à l'utilisateur
       idTag = `WEB-${req.user.id}`;
-      const existingTag = db.getIdTagByTag(idTag, cp.site_id);
-      if (!existingTag) {
-        db.createIdTag(
-          idTag,
-          req.user.id,
-          null,
-          `Tag web auto (${req.user.shortname || req.user.useremail})`,
-          null,
-          0
-        );
+      if (requested && requested !== idTag) {
+        return res.status(400).json({ error: 'ERR_ID_TAG_NOT_USABLE' });
       }
+      // S'il existe déjà, il n'appartient pas à l'utilisateur (sinon ce serait un candidat) :
+      // ne pas démarrer avec le badge d'un autre
+      if (db.getIdTagByTag(idTag, cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_NO_VALID_ID_TAG' });
+      }
+      db.createIdTag(
+        idTag,
+        req.user.id,
+        null,
+        `Tag web auto (${req.user.shortname || req.user.useremail})`,
+        null,
+        0
+      );
+    } else if (usable.length === 0) {
+      // Badges expirés / désactivés / bloqués : pas de repli sur le badge web automatique,
+      // qui contournerait le blocage décidé par l'administrateur
+      return res.status(403).json({ error: 'ERR_NO_VALID_ID_TAG' });
+    } else if (requested) {
+      if (!usable.some((t) => t.id_tag === requested)) {
+        return res.status(400).json({ error: 'ERR_ID_TAG_NOT_USABLE' });
+      }
+      idTag = requested;
+    } else if (usable.length === 1) {
+      idTag = usable[0].id_tag;
+    } else {
+      // Plusieurs badges valides (pro / perso…) : le choix revient à l'utilisateur
+      return res.status(409).json({ error: 'ERR_ID_TAG_CHOICE_REQUIRED' });
     }
 
     try {

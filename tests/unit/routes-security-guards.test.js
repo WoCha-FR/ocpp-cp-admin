@@ -63,4 +63,34 @@ describe('Backend access control guards', () => {
     expect(values.slice(0, 600)).toMatch(/if \(!tx\) return res\.status\(404\)/);
     expect(values.slice(0, 600)).toMatch(/canViewTransaction\(req, tx\)/);
   });
+
+  it('POST /user/start-charge : badge contrôlé, pas de repli web si les badges sont invalides', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const start = src.indexOf("'/user/start-charge',");
+    const route = src.slice(start, src.indexOf('remoteStartTransaction(', start));
+    expect(route).toMatch(/validateSchema\(schema\.UserStartCharge\)/);
+    expect(route).toMatch(/getUserStartChargepoint\(req, chargepoint_id\)/);
+    expect(route).toMatch(/getUserStartTags\(req, cp\)/);
+    // badge web automatique seulement quand l'utilisateur n'a aucun badge pour ce site
+    expect(route).toMatch(
+      /if \(candidates === 0\) \{\s*\/\/[^\n]*\n\s*idTag = `WEB-\$\{req\.user\.id\}`/
+    );
+    expect(route).toMatch(/usable\.length === 0\) \{[\s\S]*?ERR_NO_VALID_ID_TAG/);
+    expect(route).toMatch(/!usable\.some\(\(t\) => t\.id_tag === requested\)/);
+    expect(route).toMatch(/status\(409\)\.json\(\{ error: 'ERR_ID_TAG_CHOICE_REQUIRED' \}\)/);
+    // plus de sélection « premier badge actif » sans contrôle d'expiration
+    expect(route).not.toMatch(/getAllIdTags\(\)/);
+    expect(route).not.toMatch(/userTags\[0\]/);
+  });
+
+  it('GET /user/start-charge/id-tags : même contrôle de site que le démarrage', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const start = src.indexOf("'/user/start-charge/id-tags',");
+    const route = src.slice(start, start + 700);
+    expect(route).toMatch(/requireAuth/);
+    expect(route).toMatch(/getUserStartChargepoint\(req, req\.query\.chargepoint_id\)/);
+    const helper = src.slice(src.indexOf('function getUserStartChargepoint'));
+    expect(helper.slice(0, 600)).toMatch(/ERR_USER_NOT_AUTHORIZED_IN_SITE/);
+    expect(src).toMatch(/ignoreUserSite: req\.user\.role === 'admin'/);
+  });
 });

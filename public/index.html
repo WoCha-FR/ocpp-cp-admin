@@ -229,6 +229,7 @@
   <div class="modal confirm-dialog">
     <div class="confirm-icon" id="confirmIcon">⚠️</div>
     <p class="confirm-message" id="confirmMessage"></p>
+    <div class="form-group confirm-extra hidden" id="confirmExtra"></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="confirmBtnCancel"></button>
       <button class="btn btn-danger" id="confirmBtnOk"></button>
@@ -494,6 +495,8 @@ document.getElementById('modalOverlay').addEventListener('click', (e) => {
   if (e.target === e.currentTarget) closeModal();
 });
 
+// options.select = { label, choices: [{ value, label }] } : liste de choix sous le message ;
+// la promesse résout alors la valeur choisie (ou false si annulé) au lieu de true.
 function confirmDialog(message, options = {}) {
   return new Promise((resolve) => {
     const overlay = document.getElementById('confirmOverlay');
@@ -501,8 +504,26 @@ function confirmDialog(message, options = {}) {
     const iconEl = document.getElementById('confirmIcon');
     const btnOk = document.getElementById('confirmBtnOk');
     const btnCancel = document.getElementById('confirmBtnCancel');
+    const extraEl = document.getElementById('confirmExtra');
 
     msgEl.textContent = message;
+    extraEl.replaceChildren();
+    let selectEl = null;
+    if (options.select) {
+      const label = document.createElement('label');
+      label.htmlFor = 'confirmSelect';
+      label.textContent = options.select.label || '';
+      selectEl = document.createElement('select');
+      selectEl.id = 'confirmSelect';
+      for (const c of options.select.choices) {
+        const opt = document.createElement('option');
+        opt.value = c.value;
+        opt.textContent = c.label;
+        selectEl.appendChild(opt);
+      }
+      extraEl.append(label, selectEl);
+    }
+    extraEl.classList.toggle('hidden', !selectEl);
     iconEl.textContent = options.danger ? '🗑️' : 'ℹ️';
     btnOk.className = options.danger ? 'btn btn-danger' : 'btn btn-primary';
     btnOk.textContent = options.confirmText || t('common.confirm');
@@ -518,7 +539,7 @@ function confirmDialog(message, options = {}) {
       overlay.removeEventListener('click', onOverlay);
       document.removeEventListener('keydown', onKey);
     }
-    function onConfirm() { cleanup(); resolve(true); }
+    function onConfirm() { const value = selectEl ? selectEl.value : true; cleanup(); resolve(value); }
     function onCancel() { cleanup(); resolve(false); }
     function onOverlay(e) { if (e.target === overlay) { cleanup(); resolve(false); } }
     function onKey(e) { if (e.key === 'Escape') { cleanup(); resolve(false); } }
@@ -3521,12 +3542,41 @@ function filterCpMode(mode) {
 }
 
 async function userStartCharge(chargepointId, connectorId, cpName, connId, evseId = null) {
-  if (!await confirmDialog(t('dashboard.cnStartCharge', { cpName, connId }))) return;
+  // Badges utilisables sur cette borne : choix dans la confirmation s'il y en a plusieurs
+  let tags;
+  try {
+    tags = await api('GET', `/user/start-charge/id-tags?chargepoint_id=${encodeURIComponent(chargepointId)}`);
+  } catch (err) {
+    toast(`${t('common.error')}: ${err.message}`, 'error');
+    return;
+  }
+  if (tags.blocked) {
+    toast(translateError('ERR_NO_VALID_ID_TAG'), 'error');
+    return;
+  }
+  const message = t('dashboard.cnStartCharge', { cpName, connId });
+  let idTag = null;
+  if (tags.idTags.length > 1) {
+    const categoryLabel = (c) => t(c === 'pro' ? 'idtags.rfCategoryPro' : 'idtags.rfCategoryPerso');
+    idTag = await confirmDialog(message, {
+      select: {
+        label: t('dashboard.cnStartChargeIdTag'),
+        choices: tags.idTags.map((tg) => ({
+          value: tg.id_tag,
+          label: `${tg.description ? `${tg.description} — ` : ''}${tg.id_tag} (${categoryLabel(tg.category)})`,
+        })),
+      },
+    });
+    if (!idTag) return;
+  } else if (!await confirmDialog(message)) {
+    return;
+  }
   try {
     const data = await api('POST', '/user/start-charge', {
       chargepoint_id: chargepointId,
       connector_id: connectorId,
       ...(evseId != null ? { evse_id: evseId } : {}),
+      ...(idTag ? { id_tag: idTag } : {}),
     });
     if (data.result && data.result.status === 'Accepted') {
       toast(`${t('dashboard.cnStartChargeOk', { cpName, connId })}`, 'success');

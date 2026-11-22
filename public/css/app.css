@@ -404,6 +404,8 @@
     .confirm-icon { font-size: 40px; margin-bottom: 12px; }
     .confirm-message { font-size: 15px; color: var(--text-primary); margin-bottom: 0; line-height: 1.5; white-space: pre-line; }
     .confirm-dialog .modal-actions { justify-content: center; margin-top: 24px; }
+    .confirm-dialog .confirm-extra { text-align: left; margin: 16px 0 0; }
+    .confirm-dialog .confirm-extra select { width: 100%; }
 
     /* ── Toast ── */
     .toast-container {

@@ -1072,6 +1072,12 @@ Starts from the interface use the user's badge or a **badge generated** by the a
 - an `Authorize` for this badge, from this charge point, is accepted — useful for charge points whose `AuthorizeRemoteTxRequests` / `AuthorizeRemoteStart` key is read-only;
 - only this badge skips the authorization check: another badge presented on the connector in the meantime is still checked.
 
+Since the badge of a remote start is not checked again when the transaction arrives, a start from the **user dashboard** only uses a badge of the user that is valid on the charge point's site (active, not expired, user authorized on the site — the same checks as an RFID card):
+
+- several valid badges (e.g. business and personal): the confirmation asks which one to use (`GET /api/user/start-charge/id-tags`, then `id_tag` in `POST /api/user/start-charge`; without a choice the API answers `409`);
+- badges, but none valid (expired, disabled…): the start is refused — no fallback to the `WEB-<user>` badge, which would bypass the administrator's decision;
+- no badge at all for this site: the `WEB-<user>` badge is created and used.
+
 ### Charge Point Connection
 
 Charge points connect via WebSocket to:
