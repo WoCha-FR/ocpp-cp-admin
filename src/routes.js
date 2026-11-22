@@ -2343,40 +2343,34 @@ function canViewTransaction(req, tx) {
   return !!(cp && cp.site_id && managedIds && managedIds.includes(cp.site_id));
 }
 
-router.get(
-  '/transactions/:transactionId',
-  requireAuth,
-  ...validateSchema(schema.TransactionIdParam),
-  (req, res) => {
-    const tx = db.getTransactionFull(req.params.transactionId);
-    if (!tx) return res.status(404).json({ error: 'Not found' });
-    if (!canViewTransaction(req, tx)) return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
-    res.json(tx);
-  }
-);
+// :id = identifiant interne de la transaction (transactions.id) : le transaction_id OCPP n'est
+// unique que pour une borne (2.0.1 : généré par la borne), il ne peut pas servir de clé d'URL
+router.get('/transactions/:id', requireAuth, ...validateSchema(schema.IdParam), (req, res) => {
+  const tx = db.getTransactionFullById(Number(req.params.id));
+  if (!tx) return res.status(404).json({ error: 'Not found' });
+  if (!canViewTransaction(req, tx)) return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
+  res.json(tx);
+});
 
 // ══════════════════════════════════════
 //  TRANSACTION VALUES (graphiques)
 // ══════════════════════════════════════
 router.get(
-  '/transactions/:transactionId/values',
+  '/transactions/:id/values',
   requireAuth,
-  ...validateSchema(schema.TransactionIdParam),
+  ...validateSchema(schema.IdParam),
   (req, res) => {
-    const transactionId = req.params.transactionId;
-    const access = db.getTransactionFull(transactionId);
-    if (access && !canViewTransaction(req, access)) {
+    const tx = db.getTransactionFullById(Number(req.params.id));
+    if (!tx) return res.status(404).json({ error: 'Not found' });
+    if (!canViewTransaction(req, tx)) {
       return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
     }
-    const values = db.getTransactionValues(transactionId);
-    const tx = db.getTransactionByTransactionId(transactionId);
+    const values = db.getTransactionValues(tx.chargepoint_id, tx.transaction_id);
 
     const energie = values && values.energie ? JSON.parse(values.energie) : [];
-    if (tx) {
-      const startUnix = Math.floor(new Date(tx.start_time).getTime() / 1000);
-      if (energie.length === 0 || energie[0].x > startUnix) {
-        energie.unshift({ x: startUnix, offer: null, power: null, energy: 0 });
-      }
+    const startUnix = Math.floor(new Date(tx.start_time).getTime() / 1000);
+    if (energie.length === 0 || energie[0].x > startUnix) {
+      energie.unshift({ x: startUnix, offer: null, power: null, energy: 0 });
     }
 
     if (!values)

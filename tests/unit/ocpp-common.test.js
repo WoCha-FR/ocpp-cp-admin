@@ -243,7 +243,7 @@ describe('ocpp-common — disconnectChargepoint', () => {
     mockDb.getTransactions.mockReturnValue([{ transaction_id: 42, meter_start: 100 }]);
     ocppCommon.disconnectChargepoint('CP_DISC');
     expect(mockClient.close).toHaveBeenCalled();
-    expect(mockDb.stopTransaction).toHaveBeenCalledWith(42, 100, expect.any(String), 'DeAuthorized');
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(1, 42, 100, expect.any(String), 'DeAuthorized', 'server');
   });
 
   it('closes with meter_start + accumulated energy, not meter_start (0 kWh billed)', () => {
@@ -252,7 +252,7 @@ describe('ocpp-common — disconnectChargepoint', () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 1 });
     mockDb.getTransactions.mockReturnValue([{ transaction_id: 43, meter_start: 100, energy: 2500 }]);
     ocppCommon.disconnectChargepoint('CP_NRJ');
-    expect(mockDb.stopTransaction).toHaveBeenCalledWith(43, 2600, expect.any(String), 'DeAuthorized');
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(1, 43, 2600, expect.any(String), 'DeAuthorized', 'server');
   });
 
   it('cert_revoked: coupe la session du certificat révoqué sans clore les sessions de charge', () => {
@@ -605,8 +605,8 @@ describe('ocpp-common — changement de protocole OCPP', () => {
     server.emit('client', client);
 
     expect(mockDb.stopTransaction).toHaveBeenCalledTimes(2);
-    expect(mockDb.stopTransaction).toHaveBeenCalledWith('101', 5000, expect.any(String), 'PowerLoss');
-    expect(mockDb.stopTransaction).toHaveBeenCalledWith('102', 6000, expect.any(String), 'PowerLoss');
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(10, '101', 5000, expect.any(String), 'PowerLoss', 'server');
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(10, '102', 6000, expect.any(String), 'PowerLoss', 'server');
     expect(mockDb.clearChargingProfilesByFilter).toHaveBeenCalledWith(10, {});
     expect(mockDb.resetChargepointInitialized).toHaveBeenCalledWith(10);
     expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
@@ -622,7 +622,7 @@ describe('ocpp-common — changement de protocole OCPP', () => {
     const client = makeVersionedClient('CP-SWITCH-BACK', 'ocpp1.6');
     server.emit('client', client);
 
-    expect(mockDb.stopTransaction).toHaveBeenCalledWith('201', 1000, expect.any(String), 'PowerLoss');
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(11, '201', 1000, expect.any(String), 'PowerLoss', 'server');
     expect(mockDb.clearChargingProfilesByFilter).toHaveBeenCalledWith(11, {});
     expect(mockDb.resetChargepointInitialized).toHaveBeenCalledWith(11);
   });

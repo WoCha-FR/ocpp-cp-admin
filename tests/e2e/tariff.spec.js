@@ -64,6 +64,13 @@ test.describe.serial('Tarification du kWh', () => {
   const identity = `E2ETF-${suffix}`;
   let siteId;
   let transactionId;
+  // Identifiant interne de la transaction : les URL de détail n'utilisent plus le transactionId
+  // OCPP (unique seulement par borne)
+  let txRowId;
+  const resolveRowId = async (page) => {
+    const list = await apiCall(page, 'GET', `/transactions?site_id=${siteId}&limit=all`);
+    return list.body.data.find((t) => String(t.transaction_id) === String(transactionId)).id;
+  };
 
   test('prépare un site et une borne en mode libre', async ({ loggedInPage: page }) => {
     const site = await apiCall(page, 'POST', '/sites', { name: siteName, address: '' });
@@ -148,9 +155,10 @@ test.describe.serial('Tarification du kWh', () => {
     loggedInPage: page,
   }) => {
     transactionId = await simulateSession(identity, `E2ETAG${suffix}`.slice(0, 20));
+    txRowId = await resolveRowId(page);
 
     // 5 kWh en HP (0.25) + 5 kWh en HC (0.15) = 2,00 €
-    const detail = await apiCall(page, 'GET', `/transactions/${transactionId}`);
+    const detail = await apiCall(page, 'GET', `/transactions/${txRowId}`);
     expect(detail.status).toBe(200);
     expect(detail.body.cost).toBe(2);
     expect(detail.body.cost_currency).toBe('EUR');
@@ -194,7 +202,7 @@ test.describe.serial('Tarification du kWh', () => {
       periods: [],
     });
     expect(put.status).toBe(200);
-    const detail = await apiCall(page, 'GET', `/transactions/${transactionId}`);
+    const detail = await apiCall(page, 'GET', `/transactions/${txRowId}`);
     expect(detail.body.cost).toBe(2);
   });
 

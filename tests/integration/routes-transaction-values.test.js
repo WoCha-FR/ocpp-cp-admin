@@ -56,25 +56,22 @@ function createApp() {
     })(req, res, next);
   });
 
-  // Reimplémentation fidèle de GET /api/transactions/:transactionId/values (src/routes.js)
-  // avec l'ajout du point de départ synthétique.
-  app.get('/api/transactions/:transactionId/values', (req, res) => {
+  // Reimplémentation fidèle de GET /api/transactions/:id/values (src/routes.js) : :id est
+  // l'identifiant interne (le transaction_id OCPP n'est unique que par borne), les relevés sont
+  // cherchés par (borne, transaction_id), avec l'ajout du point de départ synthétique.
+  app.get('/api/transactions/:id/values', (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ error: 'ERR_NOT_AUTHENTICATED' });
 
-    const transactionId = req.params.transactionId;
+    const tx = testDb.prepare('SELECT * FROM transactions WHERE id = ?').get(Number(req.params.id));
+    if (!tx) return res.status(404).json({ error: 'Not found' });
     const values = testDb
-      .prepare('SELECT * FROM transactions_values WHERE transaction_id = ?')
-      .get(transactionId);
-    const tx = testDb
-      .prepare('SELECT * FROM transactions WHERE transaction_id = ?')
-      .get(transactionId);
+      .prepare('SELECT * FROM transactions_values WHERE chargepoint_id = ? AND transaction_id = ?')
+      .get(tx.chargepoint_id, tx.transaction_id);
 
     const energie = values && values.energie ? JSON.parse(values.energie) : [];
-    if (tx) {
-      const startUnix = Math.floor(new Date(tx.start_time).getTime() / 1000);
-      if (energie.length === 0 || energie[0].x > startUnix) {
-        energie.unshift({ x: startUnix, offer: null, power: null, energy: 0 });
-      }
+    const startUnix = Math.floor(new Date(tx.start_time).getTime() / 1000);
+    if (energie.length === 0 || energie[0].x > startUnix) {
+      energie.unshift({ x: startUnix, offer: null, power: null, energy: 0 });
     }
 
     if (!values)
@@ -116,36 +113,39 @@ afterEach(() => {
 const START_TIME = '2026-09-05T10:00:00.000Z';
 const START_UNIX = Math.floor(new Date(START_TIME).getTime() / 1000);
 
-function insertCpAndTx(txId, startTime = START_TIME) {
+// Retourne { cpId, rowId } : rowId = identifiant interne utilisé dans l'URL
+function insertCpAndTx(txId, startTime = START_TIME, identity = 'VALUES-CP') {
   const cpId = db
-    .prepare("INSERT INTO chargepoints (identity, cpstatus) VALUES ('VALUES-CP', 'Available')")
-    .run().lastInsertRowid;
-  db.prepare(
-    "INSERT INTO transactions (transaction_id, chargepoint_id, connector_id, meter_start, start_time, status) VALUES (?,?,1,1000,?,'Completed')"
-  ).run(txId, cpId, startTime);
-  return cpId;
+    .prepare("INSERT INTO chargepoints (identity, cpstatus) VALUES (?, 'Available')")
+    .run(identity).lastInsertRowid;
+  const rowId = db
+    .prepare(
+      "INSERT INTO transactions (transaction_id, chargepoint_id, connector_id, meter_start, start_time, status) VALUES (?,?,1,1000,?,'Completed')"
+    )
+    .run(txId, cpId, startTime).lastInsertRowid;
+  return { cpId, rowId };
 }
 
-describe('GET /api/transactions/:transactionId/values — point de départ synthétique', () => {
+describe('GET /api/transactions/:id/values — point de départ synthétique', () => {
   it("ajoute un point synthétique (x=start_time, energy=0) quand la transaction n'a aucune valeur", async () => {
-    insertCpAndTx('TX-VAL-1');
+    const { rowId } = insertCpAndTx('TX-VAL-1');
     const agent = request.agent(app);
     await loginAsUser(agent);
-    const res = await agent.get('/api/transactions/TX-VAL-1/values');
+    const res = await agent.get(`/api/transactions/${rowId}/values`);
     expect(res.status).toBe(200);
     expect(res.body.energie).toEqual([{ x: START_UNIX, offer: null, power: null, energy: 0 }]);
   });
 
   it('préfixe le point synthétique quand la première entrée réelle est postérieure au start_time', async () => {
-    insertCpAndTx('TX-VAL-2');
+    const { cpId, rowId } = insertCpAndTx('TX-VAL-2');
     const laterEntry = { x: START_UNIX + 300, offer: 32, power: 7000, energy: 0.5 };
     db.prepare(
-      'INSERT INTO transactions_values (transaction_id, energie) VALUES (?, ?)'
-    ).run('TX-VAL-2', JSON.stringify([laterEntry]));
+      'INSERT INTO transactions_values (chargepoint_id, transaction_id, energie) VALUES (?, ?, ?)'
+    ).run(cpId, 'TX-VAL-2', JSON.stringify([laterEntry]));
 
     const agent = request.agent(app);
     await loginAsUser(agent);
-    const res = await agent.get('/api/transactions/TX-VAL-2/values');
+    const res = await agent.get(`/api/transactions/${rowId}/values`);
     expect(res.status).toBe(200);
     expect(res.body.energie).toEqual([
       { x: START_UNIX, offer: null, power: null, energy: 0 },
@@ -154,21 +154,47 @@ describe('GET /api/transactions/:transactionId/values — point de départ synth
   });
 
   it('ne duplique pas le point de départ si une entrée existe déjà à start_time ou avant', async () => {
-    insertCpAndTx('TX-VAL-3');
+    const { cpId, rowId } = insertCpAndTx('TX-VAL-3');
     const earlyEntry = { x: START_UNIX, offer: 32, power: 0, energy: 0 };
     db.prepare(
-      'INSERT INTO transactions_values (transaction_id, energie) VALUES (?, ?)'
-    ).run('TX-VAL-3', JSON.stringify([earlyEntry]));
+      'INSERT INTO transactions_values (chargepoint_id, transaction_id, energie) VALUES (?, ?, ?)'
+    ).run(cpId, 'TX-VAL-3', JSON.stringify([earlyEntry]));
 
     const agent = request.agent(app);
     await loginAsUser(agent);
-    const res = await agent.get('/api/transactions/TX-VAL-3/values');
+    const res = await agent.get(`/api/transactions/${rowId}/values`);
     expect(res.status).toBe(200);
     expect(res.body.energie).toEqual([earlyEntry]);
   });
 
+  it("même transaction_id sur deux bornes : chaque transaction n'affiche que ses propres relevés", async () => {
+    // 2.0.1 : le transactionId est généré par la borne, deux bornes peuvent produire le même
+    const a = insertCpAndTx('TX-SAME', START_TIME, 'VALUES-CP-A');
+    const b = insertCpAndTx('TX-SAME', START_TIME, 'VALUES-CP-B');
+    const entryA = { x: START_UNIX, offer: null, power: 1000, energy: 10 };
+    const entryB = { x: START_UNIX, offer: null, power: 2000, energy: 20 };
+    const ins = db.prepare(
+      'INSERT INTO transactions_values (chargepoint_id, transaction_id, energie) VALUES (?, ?, ?)'
+    );
+    ins.run(a.cpId, 'TX-SAME', JSON.stringify([entryA]));
+    ins.run(b.cpId, 'TX-SAME', JSON.stringify([entryB]));
+
+    const agent = request.agent(app);
+    await loginAsUser(agent);
+    expect((await agent.get(`/api/transactions/${a.rowId}/values`)).body.energie).toEqual([entryA]);
+    expect((await agent.get(`/api/transactions/${b.rowId}/values`)).body.energie).toEqual([entryB]);
+  });
+
+  it('retourne 404 pour un identifiant inconnu', async () => {
+    const agent = request.agent(app);
+    await loginAsUser(agent);
+    const res = await agent.get('/api/transactions/999999/values');
+    expect(res.status).toBe(404);
+  });
+
   it('retourne 401 si non authentifié', async () => {
-    const res = await request(app).get('/api/transactions/TX-VAL-1/values');
+    const { rowId } = insertCpAndTx('TX-VAL-1');
+    const res = await request(app).get(`/api/transactions/${rowId}/values`);
     expect(res.status).toBe(401);
   });
 });

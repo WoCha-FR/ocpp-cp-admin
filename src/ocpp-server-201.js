@@ -136,7 +136,7 @@ function evaluateIdTokenOnUpdate({ cp, tx, txId, idToken, identity, chargepointI
 
   // Badge accepté sur une transaction démarrée sans identification : on le rattache
   if (!tx.id_tag) {
-    const changed = db.setTransactionIdTag(txId, idTag, tokenType);
+    const changed = db.setTransactionIdTag(cp.id, txId, idTag, tokenType);
     if (changed > 0) {
       tx.id_tag = idTag;
       logger.info(`[2.0.1] Transaction ${txId} on ${identity}: badge ${idTag} attached`);
@@ -266,7 +266,7 @@ async function reconcileActiveTransactions(identity, isCancelled = () => false, 
     }
 
     // La transaction a pu être clôturée par la borne pendant l'attente de la réponse
-    const current = db.getTransactionByTransactionId(tx.transaction_id);
+    const current = db.getTransactionByTransactionId(cp.id, tx.transaction_id);
     if (!current || current.status !== 'Active') continue;
 
     if (status?.messagesInQueue) {
@@ -277,7 +277,14 @@ async function reconcileActiveTransactions(identity, isCancelled = () => false, 
 
     // Dernier état connu : meter_start + énergie cumulée par les MeterValues
     const meterStop = lastKnownMeterStop(current);
-    db.stopTransaction(current.transaction_id, meterStop, new Date().toISOString(), 'Other');
+    db.stopTransaction(
+      cp.id,
+      current.transaction_id,
+      meterStop,
+      new Date().toISOString(),
+      'Other',
+      'server'
+    );
     broadcast(
       'transaction_stop',
       { identity, transactionId: current.transaction_id, meterStop, reason: 'Other' },
@@ -676,11 +683,15 @@ function register201Handlers(client, loggedHandle) {
           (t) => t.connector_id === connectorDbId && (t.evse_id == null || t.evse_id === evseId)
         );
       if (activeTx && cnstatus === 'Available') {
+        // Clôture heuristique (closed_by = server) : un TransactionEvent(Ended) réel arrivant
+        // ensuite (ordre non garanti, file hors ligne) corrige la session
         db.stopTransaction(
+          cp.id,
           activeTx.transaction_id,
           lastKnownMeterStop(activeTx),
           params.timestamp || new Date().toISOString(),
-          'EVDisconnected'
+          'EVDisconnected',
+          'server'
         );
         broadcast(
           'transaction_stop',
@@ -820,16 +831,6 @@ function register201Handlers(client, loggedHandle) {
     if (eventType === 'Started') {
       logger.info(`[2.0.1] TransactionEvent Started from ${identity} EVSE#${evseId} txId=${txId}`);
 
-      // Retransmission : sans réponse dans le délai, la borne renvoie le même Started
-      // (TransactionMessageAttempts). La transaction existe déjà : réponse idempotente, sinon
-      // on la clorait comme « orpheline » avant que l'INSERT n'échoue sur transaction_id UNIQUE.
-      if (txId && db.getTransactionByTransactionId(txId)) {
-        logger.warn(
-          `[2.0.1] TransactionEvent Started: txId=${txId} already known on ${identity} (retransmission) — ignored`
-        );
-        return { idTokenInfo: buildIdTokenInfo('Accepted', null) };
-      }
-
       const idTag = idToken?.idToken || '';
       const startSource = TRIGGER_TO_START_SOURCE[triggerReason] || 'rfid';
 
@@ -848,7 +849,50 @@ function register201Handlers(client, loggedHandle) {
           authTag = authResult.tag;
         }
       }
+
+      // Retransmission : sans réponse dans le délai, la borne renvoie le même Started
+      // (MessageAttempts). La transaction existe déjà POUR CETTE BORNE (le transactionId 2.0.1
+      // n'est unique que par borne) : réponse idempotente, sans la clore comme « orpheline »
+      // ni la recréer. Une transaction refusée reste refusée.
+      const existing = cp && txId ? db.getTransactionByTransactionId(cp.id, txId) : null;
+      if (existing) {
+        logger.warn(
+          `[2.0.1] TransactionEvent Started: txId=${txId} already known on ${identity} (retransmission) — ignored`
+        );
+        if (existing.status === 'Rejected') {
+          return {
+            idTokenInfo: buildIdTokenInfo(
+              authStatus !== 'Accepted' ? authStatus : 'Invalid',
+              authTag
+            ),
+          };
+        }
+        return { idTokenInfo: buildIdTokenInfo('Accepted', null) };
+      }
+
       if (authStatus !== 'Accepted') {
+        // La borne a déjà démarré la transaction et continuera à envoyer Updated/Ended avec ce
+        // transactionId : on l'enregistre (statut Rejected, jamais facturée) pour que ces
+        // messages la retrouvent au lieu de toucher la transaction d'un autre EVSE
+        if (cp && txId) {
+          db.createTransaction(
+            cp.id,
+            connectorDbId,
+            idTag,
+            extractMeterEnergy(meterValue, 'first') ?? 0,
+            timestamp,
+            startSource,
+            {
+              transactionId: txId,
+              evse_id: evseId,
+              id_token_type: idToken?.type || 'ISO14443',
+              status: 'Rejected',
+            }
+          );
+          logger.warn(
+            `[2.0.1] TransactionEvent Started refused (${authStatus}) on ${identity} EVSE#${evseId}: transaction ${txId} recorded as Rejected`
+          );
+        }
         if (chargepointId) {
           db.addIdTagEvent(chargepointId, null, idTag, authStatus, authReason, 'authorize');
           broadcast(
@@ -886,7 +930,15 @@ function register201Handlers(client, loggedHandle) {
             meterStart > 0 && meterStart >= (orphan.meter_start ?? 0)
               ? meterStart
               : lastKnownMeterStop(orphan);
-          db.stopTransaction(orphan.transaction_id, orphanMeterStop, timestamp, 'Other');
+          // Clôture heuristique : un Ended réel arrivant ensuite corrige la session
+          db.stopTransaction(
+            cp.id,
+            orphan.transaction_id,
+            orphanMeterStop,
+            timestamp,
+            'Other',
+            'server'
+          );
           broadcast(
             'transaction_stop',
             { identity, transactionId: orphan.transaction_id, reason: 'Other' },
@@ -995,9 +1047,12 @@ function register201Handlers(client, loggedHandle) {
     // ── Updated ──
     if (eventType === 'Updated') {
       if (!cp || !txId) return {};
-      let tx = db.getTransactionByTransactionId(txId);
+      let tx = db.getTransactionByTransactionId(cp.id, txId);
       if (!tx) {
-        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId, evseId);
+        // Repli (ex. base restaurée) seulement si l'EVSE est connu : `evse` est facultatif après
+        // le premier événement, et sans lui le connecteur 1 désignerait n'importe quel EVSE
+        const activeTx =
+          evseId != null ? db.getActiveTransactionByConnector(cp.id, connectorDbId, evseId) : null;
         if (activeTx) {
           logger.warn(
             `[2.0.1] MeterValues txId inconnu ${txId} depuis ${identity}, redirigé vers tx active ${activeTx.transaction_id}`
@@ -1009,7 +1064,12 @@ function register201Handlers(client, loggedHandle) {
           return {};
         }
       }
-      if (tx.status !== 'Active') {
+      // Session close par une heuristique du serveur : des Updated mis en file pendant une
+      // coupure peuvent encore arriver avant l'Ended réel. Leurs relevés sont gardés pour le
+      // graphe (et la répartition du coût par tranche quand l'Ended corrigera la session).
+      const isActive = tx.status === 'Active';
+      const serverClosed = tx.status === 'Completed' && tx.closed_by === 'server';
+      if (!isActive && !serverClosed) {
         logger.warn(
           `[2.0.1] TransactionEvent Updated pour transaction clôturée ${txId} depuis ${identity} — ignorés`
         );
@@ -1017,13 +1077,14 @@ function register201Handlers(client, loggedHandle) {
       }
 
       // Badge présenté en cours de transaction : contrôle + rattachement, réponse idTokenInfo
-      const idTokenInfo = idToken?.idToken
-        ? evaluateIdTokenOnUpdate({ cp, tx, txId, idToken, identity, chargepointId })
-        : null;
+      const idTokenInfo =
+        isActive && idToken?.idToken
+          ? evaluateIdTokenOnUpdate({ cp, tx, txId, idToken, identity, chargepointId })
+          : null;
 
-      const chargingState = transactionInfo.chargingState || null;
+      const chargingState = isActive ? transactionInfo.chargingState || null : null;
       if (chargingState) {
-        db.updateTransactionChargingState(txId, chargingState);
+        db.updateTransactionChargingState(cp.id, txId, chargingState);
         const effectiveEvseId = evseId ?? tx.evse_id ?? null;
         if (effectiveEvseId !== null) {
           const newCnStatus = CHARGING_STATE_TO_CNSTATUS[chargingState] || 'Preparing';
@@ -1060,19 +1121,22 @@ function register201Handlers(client, loggedHandle) {
           freqValue,
         } = parsed;
 
-        if (powerW !== null) lastPowerW = powerW;
-        if (energyWh !== null) {
-          lastEnergyWh = energyWh;
-          // `evse` est optionnel après le premier événement : repli sur l'EVSE de la transaction
-          const meterEvseId = evseId ?? tx.evse_id ?? null;
-          if (meterEvseId !== null) db.updateEvseMeterValue(cp.id, meterEvseId, energyWh);
-        }
+        if (isActive) {
+          if (powerW !== null) lastPowerW = powerW;
+          if (energyWh !== null) {
+            lastEnergyWh = energyWh;
+            // `evse` est optionnel après le premier événement : repli sur l'EVSE de la transaction
+            const meterEvseId = evseId ?? tx.evse_id ?? null;
+            if (meterEvseId !== null) db.updateEvseMeterValue(cp.id, meterEvseId, energyWh);
+          }
 
-        db.updateTransactionPowerEnergy(
-          txId,
-          powerW !== null ? Math.round(powerW) : null,
-          energyWh !== null ? Math.round(energyWh) : null
-        );
+          db.updateTransactionPowerEnergy(
+            cp.id,
+            txId,
+            powerW !== null ? Math.round(powerW) : null,
+            energyWh !== null ? Math.round(energyWh) : null
+          );
+        }
 
         const ts = mv.timestamp || timestamp;
         if (ts) {
@@ -1108,8 +1172,15 @@ function register201Handlers(client, loggedHandle) {
           if (voltageL1 !== null || voltageL2 !== null || voltageL3 !== null)
             tvData.tensionEntry = { x: unixTs, l1: voltageL1, l2: voltageL2, l3: voltageL3 };
           if (freqValue !== null) tvData.freqEntry = { x: unixTs, y: freqValue };
-          if (Object.keys(tvData).length > 0) db.upsertTransactionValues(txId, tvData);
+          if (Object.keys(tvData).length > 0) db.upsertTransactionValues(cp.id, txId, tvData);
         }
+      }
+
+      if (!isActive) {
+        logger.info(
+          `[2.0.1] TransactionEvent Updated for transaction ${txId} closed by the server on ${identity} — meter values kept for the chart`
+        );
+        return {};
       }
 
       if (lastEnergyWh !== null) {
@@ -1147,7 +1218,7 @@ function register201Handlers(client, loggedHandle) {
     // ── Ended ──
     if (eventType === 'Ended') {
       logger.info(`[2.0.1] TransactionEvent Ended from ${identity} txId=${txId}`);
-      if (!txId) return {};
+      if (!txId || !cp) return {};
 
       // Un Ended porte souvent plusieurs relevés (Transaction.Begin … Transaction.End) :
       // le compteur d'arrêt est le dernier / Transaction.End, pas le premier
@@ -1155,8 +1226,7 @@ function register201Handlers(client, loggedHandle) {
       const stopReason = resolveStopReason201(transactionInfo, triggerReason);
 
       // Corriger meterStop si la borne envoie une valeur <= meter_start alors que de l'énergie a été consommée
-      const preTx = db.getTransactionByTransactionId(txId);
-      const txWasActive = preTx?.status === 'Active';
+      const preTx = db.getTransactionByTransactionId(cp.id, txId);
       if (
         preTx &&
         preTx.status === 'Active' &&
@@ -1171,19 +1241,73 @@ function register201Handlers(client, loggedHandle) {
         meterStop = corrected;
       }
 
-      db.stopTransaction(txId, meterStop, timestamp, stopReason);
+      // Transaction refusée au Started : on garde l'énergie délivrée, sans facturation ni
+      // notification
+      if (preTx?.status === 'Rejected') {
+        db.stopRejectedTransaction(cp.id, txId, meterStop, timestamp, stopReason);
+        logger.info(
+          `[2.0.1] TransactionEvent Ended for rejected transaction ${txId} on ${identity}`
+        );
+        return {};
+      }
 
-      let stoppedTx = db.getTransactionByTransactionId(txId);
-      // Fallback : transactionId inconnu (ex. base restaurée). Un Ended est aussi envoyé pour une
-      // transaction dont le Started a été REFUSÉ (jamais créée ici) : on ne ferme donc une
-      // transaction active que sans ambiguïté — une seule candidate, sur le même EVSE si connu —
-      // sinon on couperait la recharge d'un autre EVSE.
-      if (!stoppedTx && cp) {
+      // Déjà close : retransmission (rien à faire) ou clôture heuristique du serveur que l'Ended
+      // réel corrige (compteur, heure, raison, coût) — sans nouvelle notification
+      if (preTx?.status === 'Completed') {
+        const corrected =
+          preTx.closed_by === 'server'
+            ? db.correctServerClosedTransaction(cp.id, txId, meterStop, timestamp, stopReason)
+            : null;
+        if (corrected) {
+          logger.warn(
+            `[2.0.1] TransactionEvent Ended ${txId} on ${identity}: transaction closed by the server ` +
+              `corrected with the real stop (meter ${preTx.meter_stop} → ${corrected.meter_stop})`
+          );
+          if (corrected.meter_stop != null && corrected.evse_id != null) {
+            db.updateEvseMeterValue(cp.id, corrected.evse_id, corrected.meter_stop);
+          }
+          broadcast(
+            'transaction_stop',
+            {
+              identity,
+              transactionId: corrected.transaction_id,
+              meterStop: corrected.meter_stop,
+              reason: corrected.stop_reason,
+            },
+            cp.site_id ?? null
+          );
+        } else {
+          logger.info(
+            `[2.0.1] TransactionEvent Ended ${txId} on ${identity}: transaction already closed — ignored`
+          );
+        }
+        return {};
+      }
+
+      let stoppedTx = null;
+      let closed = false;
+      if (preTx) {
+        ({ tx: stoppedTx, closed } = db.stopTransaction(
+          cp.id,
+          txId,
+          meterStop,
+          timestamp,
+          stopReason
+        ));
+      } else if (evseId != null) {
+        // Fallback : transactionId inconnu (ex. base restaurée) → on ne ferme une transaction
+        // active que sans ambiguïté : une seule candidate SUR LE MÊME EVSE. Sans `evse` (facultatif
+        // après le premier événement), aucun repli : on couperait la recharge d'un autre EVSE.
         const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
         const activeTx = pickRecoveryCandidate(activeTxs, { evseId });
         if (activeTx) {
-          db.stopTransaction(activeTx.transaction_id, meterStop, timestamp, stopReason || 'Other');
-          stoppedTx = db.getTransactionByTransactionId(activeTx.transaction_id);
+          ({ tx: stoppedTx, closed } = db.stopTransaction(
+            cp.id,
+            activeTx.transaction_id,
+            meterStop,
+            timestamp,
+            stopReason || 'Other'
+          ));
           logger.warn(
             `[2.0.1] [Recovery] TransactionEvent Ended txId inconnu ${txId} sur ${identity}, ` +
               `tx ${activeTx.transaction_id} fermée (seule transaction active compatible)`
@@ -1196,20 +1320,20 @@ function register201Handlers(client, loggedHandle) {
         }
       }
 
-      if (!stoppedTx) {
+      // Notifications et diffusion uniquement si une transaction active vient réellement d'être
+      // close (un Ended retransmis ne renotifie pas)
+      if (!stoppedTx || !closed) {
         logger.warn(
-          `[2.0.1] TransactionEvent Ended txId=${txId} sur ${identity} ignoré : aucune transaction trouvée (idToken probablement invalide)`
+          `[2.0.1] TransactionEvent Ended txId=${txId} sur ${identity} ignoré : aucune transaction active trouvée`
         );
         return {};
       }
       const resolvedTransactionId = stoppedTx.transaction_id;
-      if (txWasActive || !preTx) {
-        broadcast(
-          'transaction_stop',
-          { identity, transactionId: resolvedTransactionId, meterStop, reason: stopReason },
-          cp?.site_id ?? null
-        );
-      }
+      broadcast(
+        'transaction_stop',
+        { identity, transactionId: resolvedTransactionId, meterStop, reason: stopReason },
+        cp.site_id ?? null
+      );
       if (stoppedTx && stoppedTx.evse_id != null) {
         db.updateConnectorCnstatus(
           stoppedTx.chargepoint_id,

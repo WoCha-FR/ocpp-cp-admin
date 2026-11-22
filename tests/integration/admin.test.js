@@ -334,7 +334,7 @@ describe('Endpoints admin — nettoyage des données', () => {
          VALUES ('TX-EP-OLD', ?, 1, 'Completed', '2024-01-01T00:00:00Z', '2024-01-01T00:00:00Z')`
       )
       .run(cp.id);
-    db.upsertTransactionValues('TX-EP-OLD', { energieEntry: '1' });
+    db.upsertTransactionValues(cp.id, 'TX-EP-OLD', { energieEntry: '1' });
 
     const adminAgent = request.agent(app);
     const csrf = await loginAs(adminAgent, 'admin@test.com', 'Admin!123');
@@ -347,7 +347,7 @@ describe('Endpoints admin — nettoyage des données', () => {
     expect(
       testDb.prepare("SELECT * FROM transactions WHERE transaction_id = 'TX-EP-OLD'").get()
     ).toBeDefined();
-    expect(db.getTransactionValues('TX-EP-OLD')).toBeUndefined();
+    expect(db.getTransactionValues(cp.id, 'TX-EP-OLD')).toBeUndefined();
   });
 
   it('DELETE /api/admin/cleanup/transaction-values rejette une requête sans date (VALIDATION_BEFORE)', async () => {

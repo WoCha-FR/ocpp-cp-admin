@@ -36,8 +36,8 @@ describe('Backend hardening regressions', () => {
     expect(route).toMatch(/requireManager/);
     expect(route).toMatch(/getUserManagedSiteIds\(req\)/);
     expect(route).toMatch(/category: req\.query\.category \|\| 'pro'/);
-    // La route doit être déclarée avant /transactions/:transactionId
-    expect(start).toBeLessThan(src.indexOf("'/transactions/:transactionId'"));
+    // La route doit être déclarée avant /transactions/:id
+    expect(start).toBeLessThan(src.indexOf("'/transactions/:id'"));
   });
 
   it('transmet la catégorie du badge à la création et applique le filtre aux routes self-service', () => {

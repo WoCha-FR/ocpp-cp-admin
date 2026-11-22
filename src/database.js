@@ -114,24 +114,30 @@ function replaceSiteTariff(siteId, { currency, timezone, default_price_per_kwh, 
  * Ne lève jamais : un échec de calcul ne doit pas empêcher la clôture de la transaction.
  * @returns {{cost: number, currency: string}|null} null si pas de tarif ou échec
  */
-function finalizeTransactionCost(transactionId) {
+// `txRowId` : identifiant interne (transactions.id), sans ambiguïté entre bornes.
+// Une transaction refusée (Rejected) n'est jamais facturée.
+function finalizeTransactionCost(txRowId) {
   try {
     const tx = db
       .prepare(
-        `SELECT t.transaction_id, t.start_time, t.stop_time, t.meter_start, t.meter_stop, cp.site_id
+        `SELECT t.id, t.transaction_id, t.chargepoint_id, t.status, t.start_time, t.stop_time,
+           t.meter_start, t.meter_stop, cp.site_id
          FROM transactions t JOIN chargepoints cp ON cp.id = t.chargepoint_id
-         WHERE t.transaction_id = ? ORDER BY t.id DESC`
+         WHERE t.id = ?`
       )
-      .get(String(transactionId));
-    if (!tx || !tx.site_id || !tx.start_time || !tx.stop_time) return null;
+      .get(txRowId);
+    if (!tx || tx.status !== 'Completed') return null;
+    if (!tx.site_id || !tx.start_time || !tx.stop_time) return null;
     if (tx.meter_start === null || tx.meter_stop === null) return null;
 
     const siteTariff = getSiteTariff(tx.site_id);
     if (!siteTariff || siteTariff.default_price_per_kwh === null) return null;
 
     const values = db
-      .prepare('SELECT energie FROM transactions_values WHERE transaction_id = ?')
-      .get(tx.transaction_id);
+      .prepare(
+        'SELECT energie FROM transactions_values WHERE chargepoint_id = ? AND transaction_id = ?'
+      )
+      .get(tx.chargepoint_id, tx.transaction_id);
     let points = [];
     if (values && values.energie) {
       try {
@@ -151,12 +157,11 @@ function finalizeTransactionCost(transactionId) {
     if (!result) return null;
 
     db.prepare(
-      `UPDATE transactions SET cost = ?, cost_currency = ?, cost_details = ?
-       WHERE transaction_id = ?`
-    ).run(result.cost, result.currency, JSON.stringify(result.details), tx.transaction_id);
+      `UPDATE transactions SET cost = ?, cost_currency = ?, cost_details = ? WHERE id = ?`
+    ).run(result.cost, result.currency, JSON.stringify(result.details), tx.id);
     return { cost: result.cost, currency: result.currency };
   } catch (err) {
-    logger.error(`Tariff computation failed for transaction ${transactionId}: ${err.message}`);
+    logger.error(`Tariff computation failed for transaction row ${txRowId}: ${err.message}`);
     return null;
   }
 }
@@ -841,8 +846,12 @@ function createTransaction(
     evse_id = null,
     charging_state = null,
     id_token_type = 'ISO14443',
+    // 'Rejected' : démarrage refusé par le CSMS. La borne a déjà démarré la transaction (spec) :
+    // on la garde pour retrouver ses messages suivants et l'énergie délivrée, sans la facturer.
+    status = 'Active',
   } = {}
 ) {
+  const txStatus = status === 'Rejected' ? 'Rejected' : 'Active';
   return db.transaction(() => {
     let transactionId;
     if (providedId !== null) {
@@ -872,7 +881,7 @@ function createTransaction(
       .prepare(
         `INSERT INTO transactions
       (chargepoint_id, connector_id, transaction_id, id_tag, meter_start, start_time, status, start_source, evse_id, charging_state, id_token_type)
-      VALUES (?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         chargepointId,
@@ -881,35 +890,103 @@ function createTransaction(
         idTag,
         meterStart,
         startTime,
+        txStatus,
         source,
         evse_id,
-        charging_state,
+        txStatus === 'Active' ? charging_state : null,
         id_token_type
       );
     return db.prepare('SELECT * FROM transactions WHERE id = ?').get(info.lastInsertRowid);
   })();
 }
 
-function stopTransaction(transactionId, meterStop, stopTime, reason) {
-  transactionId = String(transactionId);
+// Les transactions sont identifiées par (borne, transaction_id) : en 2.0.1 l'identifiant est
+// généré par la borne et n'est unique que pour elle.
+function getTransactionByTransactionId(chargepointId, transactionId) {
+  return db
+    .prepare('SELECT * FROM transactions WHERE chargepoint_id = ? AND transaction_id = ?')
+    .get(chargepointId, String(transactionId));
+}
+
+/**
+ * Clôture d'une transaction active.
+ * @param {'station'|'server'} closedBy station = arrêt envoyé par la borne ; server = clôture
+ *   heuristique du serveur (orpheline, réconciliation…), que l'arrêt réel de la borne peut corriger
+ * @returns {{tx: object|undefined, closed: boolean}} closed = la transaction était active et
+ *   vient d'être close (false : déjà close, refusée ou inconnue)
+ */
+function stopTransaction(
+  chargepointId,
+  transactionId,
+  meterStop,
+  stopTime,
+  reason,
+  closedBy = 'station'
+) {
+  const txId = String(transactionId);
   const info = db
     .prepare(
       `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, status = 'Completed',
-    charging_state = NULL
-    WHERE transaction_id = ? AND status = 'Active'`
+    charging_state = NULL, closed_by = ?
+    WHERE chargepoint_id = ? AND transaction_id = ? AND status = 'Active'`
     )
-    .run(meterStop, stopTime, reason || 'Local', transactionId);
+    .run(
+      meterStop,
+      stopTime,
+      reason || 'Local',
+      closedBy === 'server' ? 'server' : 'station',
+      chargepointId,
+      txId
+    );
+  const tx = getTransactionByTransactionId(chargepointId, txId);
   // Coût figé uniquement à la vraie clôture (un StopTransaction en double ne recalcule pas)
-  if (info.changes > 0) finalizeTransactionCost(transactionId);
-  return db
-    .prepare('SELECT * FROM transactions WHERE transaction_id = ? ORDER BY id DESC')
-    .get(transactionId);
+  if (info.changes > 0 && tx) finalizeTransactionCost(tx.id);
+  return { tx: info.changes > 0 && tx ? getTransactionById(tx.id) : tx, closed: info.changes > 0 };
 }
 
-function updateTransactionChargingState(transactionId, chargingState) {
+/**
+ * Arrêt réel envoyé par la borne pour une transaction déjà close par le serveur (closed_by =
+ * server) : l'arrêt de la borne fait foi (compteur, heure, raison) et le coût est recalculé.
+ * Un compteur d'arrêt absent ou incohérent (≤ compteur de départ) garde l'estimation du serveur.
+ * @returns {object|null} la transaction corrigée, null si rien à corriger
+ */
+function correctServerClosedTransaction(chargepointId, transactionId, meterStop, stopTime, reason) {
+  const tx = getTransactionByTransactionId(chargepointId, transactionId);
+  if (!tx || tx.status !== 'Completed' || tx.closed_by !== 'server') return null;
+  const coherent = meterStop != null && tx.meter_start != null && meterStop > tx.meter_start;
   db.prepare(
-    `UPDATE transactions SET charging_state = ? WHERE transaction_id = ? AND status = 'Active'`
-  ).run(chargingState, String(transactionId));
+    `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, closed_by = 'station',
+       power = NULL
+     WHERE id = ?`
+  ).run(coherent ? meterStop : tx.meter_stop, stopTime || tx.stop_time, reason || 'Local', tx.id);
+  finalizeTransactionCost(tx.id);
+  return getTransactionById(tx.id);
+}
+
+/**
+ * Arrêt d'une transaction refusée (Rejected) : on garde le compteur et l'heure d'arrêt
+ * (énergie délivrée avant la coupure), le statut reste Rejected et aucun coût n'est calculé.
+ * @returns {object|null} la transaction mise à jour, null si elle n'est pas refusée ou déjà arrêtée
+ */
+function stopRejectedTransaction(chargepointId, transactionId, meterStop, stopTime, reason) {
+  const info = db
+    .prepare(
+      `UPDATE transactions SET meter_stop = ?, stop_time = ?, stop_reason = ?, closed_by = 'station'
+       WHERE chargepoint_id = ? AND transaction_id = ? AND status = 'Rejected' AND stop_time IS NULL`
+    )
+    .run(meterStop, stopTime, reason || 'DeAuthorized', chargepointId, String(transactionId));
+  return info.changes > 0 ? getTransactionByTransactionId(chargepointId, transactionId) : null;
+}
+
+function getTransactionById(id) {
+  return db.prepare('SELECT * FROM transactions WHERE id = ?').get(id);
+}
+
+function updateTransactionChargingState(chargepointId, transactionId, chargingState) {
+  db.prepare(
+    `UPDATE transactions SET charging_state = ?
+     WHERE chargepoint_id = ? AND transaction_id = ? AND status = 'Active'`
+  ).run(chargingState, chargepointId, String(transactionId));
 }
 
 function getDashboardChartData(siteIds = null, days = 30) {
@@ -1043,7 +1120,8 @@ function getChargingKpi(siteIds = null, days = 30) {
       ), 0) as hours
       FROM transactions t
       JOIN chargepoints cp ON t.chargepoint_id = cp.id
-      WHERE t.start_time >= date('now', '-' || ${days} || ' days')${siteFilter}
+      WHERE t.status != 'Rejected'
+        AND t.start_time >= date('now', '-' || ${days} || ' days')${siteFilter}
     `
       )
       .get(...params);
@@ -1075,7 +1153,7 @@ function getChargingKpi(siteIds = null, days = 30) {
         ), 0) as hours
         FROM transactions t
         JOIN chargepoints cp ON t.chargepoint_id = cp.id
-        WHERE 1=1${siteFilter}
+        WHERE t.status != 'Rejected'${siteFilter}
       `
         )
         .get(...params);
@@ -1110,7 +1188,8 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
       LIMIT 1
     )
     LEFT JOIN users u ON it.user_id = u.id
-    LEFT JOIN transactions_values tv ON t.transaction_id = tv.transaction_id
+    LEFT JOIN transactions_values tv
+      ON tv.chargepoint_id = t.chargepoint_id AND tv.transaction_id = t.transaction_id
     LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id AND cn.evse_id IS t.evse_id
     LEFT JOIN evses ev ON ev.chargepoint_id = t.chargepoint_id AND ev.evse_id = t.evse_id`;
 
@@ -1131,6 +1210,10 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
   if (filters.status) {
     whereClause += ' AND t.status = ?';
     params.push(filters.status);
+  } else {
+    // Transactions refusées (démarrage non autorisé) : jamais facturées, absentes des listes,
+    // totaux et exports — consultables seulement en filtrant explicitement status=Rejected
+    whereClause += " AND t.status != 'Rejected'";
   }
   if (filters.category) {
     whereClause += ' AND it.category = ?';
@@ -1303,7 +1386,7 @@ function updateEvseMeterValue(chargepointId, evseId, meterValue) {
   recalcChargepointMeterValue(chargepointId);
 }
 
-function updateTransactionPowerEnergy(transactionId, power, energyWh) {
+function updateTransactionPowerEnergy(chargepointId, transactionId, power, energyWh) {
   const updates = [];
   const params = [];
   if (power !== null) {
@@ -1315,22 +1398,17 @@ function updateTransactionPowerEnergy(transactionId, power, energyWh) {
     params.push(energyWh);
   }
   if (updates.length === 0) return;
-  params.push(String(transactionId));
+  params.push(chargepointId, String(transactionId));
   db.prepare(
-    `UPDATE transactions SET ${updates.join(', ')} WHERE transaction_id = ? AND status = 'Active'`
+    `UPDATE transactions SET ${updates.join(', ')}
+     WHERE chargepoint_id = ? AND transaction_id = ? AND status = 'Active'`
   ).run(...params);
 }
 
-function getTransactionByTransactionId(transactionId) {
-  return db
-    .prepare('SELECT * FROM transactions WHERE transaction_id = ?')
-    .get(String(transactionId));
-}
-
-function getTransactionFull(transactionId) {
-  return db
-    .prepare(`${TRANSACTIONS_BASE_QUERY} WHERE t.transaction_id = ?`)
-    .get(String(transactionId));
+// Détail d'une transaction par son identifiant interne (transactions.id) : le transaction_id
+// OCPP n'est unique que par borne, il ne peut pas servir de clé dans les URL
+function getTransactionFullById(id) {
+  return db.prepare(`${TRANSACTIONS_BASE_QUERY} WHERE t.id = ?`).get(id);
 }
 
 // evseId (OCPP 2.0.1) : les connectorId sont numérotés par EVSE (connecteur 1 sur chaque EVSE),
@@ -1353,30 +1431,30 @@ function getActiveTransactionByConnector(chargepointId, connectorId, evseId = nu
 
 // Renseigne le badge d'une transaction démarrée sans identification (2.0.1 : câble branché puis
 // badge présenté dans un TransactionEvent Updated). Sans effet si un badge est déjà enregistré.
-function setTransactionIdTag(transactionId, idTag, idTokenType = null) {
+function setTransactionIdTag(chargepointId, transactionId, idTag, idTokenType = null) {
   return db
     .prepare(
       `UPDATE transactions SET id_tag = ?, id_token_type = COALESCE(?, id_token_type)
-       WHERE transaction_id = ? AND status = 'Active' AND (id_tag IS NULL OR id_tag = '')`
+       WHERE chargepoint_id = ? AND transaction_id = ? AND status = 'Active'
+         AND (id_tag IS NULL OR id_tag = '')`
     )
-    .run(idTag, idTokenType, String(transactionId)).changes;
+    .run(idTag, idTokenType, chargepointId, String(transactionId)).changes;
 }
 
-function getTransactionValues(transactionId) {
+function getTransactionValues(chargepointId, transactionId) {
   return db
-    .prepare('SELECT * FROM transactions_values WHERE transaction_id = ?')
-    .get(String(transactionId));
+    .prepare('SELECT * FROM transactions_values WHERE chargepoint_id = ? AND transaction_id = ?')
+    .get(chargepointId, String(transactionId));
 }
 
 // ── Transactions Values ──
 function upsertTransactionValues(
+  chargepointId,
   transactionId,
   { energieEntry, courantEntry, socEntry, tempEntry, tensionEntry, freqEntry } = {}
 ) {
   transactionId = String(transactionId);
-  const existing = db
-    .prepare('SELECT * FROM transactions_values WHERE transaction_id = ?')
-    .get(transactionId);
+  const existing = getTransactionValues(chargepointId, transactionId);
   if (existing) {
     const updates = [];
     const params = [];
@@ -1417,15 +1495,16 @@ function upsertTransactionValues(
       params.push(JSON.stringify(arr));
     }
     if (updates.length > 0) {
-      params.push(transactionId);
-      db.prepare(
-        `UPDATE transactions_values SET ${updates.join(', ')} WHERE transaction_id = ?`
-      ).run(...params);
+      params.push(existing.id);
+      db.prepare(`UPDATE transactions_values SET ${updates.join(', ')} WHERE id = ?`).run(
+        ...params
+      );
     }
   } else {
     db.prepare(
-      'INSERT INTO transactions_values (transaction_id, energie, courant, soc, temperature, tension, frequence) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO transactions_values (chargepoint_id, transaction_id, energie, courant, soc, temperature, tension, frequence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
     ).run(
+      chargepointId,
       transactionId,
       energieEntry ? JSON.stringify([energieEntry]) : null,
       courantEntry ? JSON.stringify([courantEntry]) : null,
@@ -2740,13 +2819,16 @@ function resetStateOnStartup() {
     )
     .run();
   const activeIds = db
-    .prepare(`SELECT transaction_id FROM transactions WHERE status = 'Active'`)
+    .prepare(`SELECT id FROM transactions WHERE status = 'Active'`)
     .all()
-    .map((r) => r.transaction_id);
+    .map((r) => r.id);
+  // Clôture heuristique (closed_by = server) : la borne a pu continuer à charger pendant
+  // l'arrêt du serveur, son StopTransaction / TransactionEvent(Ended) réel corrigera la session
   const txResult = db
     .prepare(
       `UPDATE transactions
        SET status = 'Completed',
+           closed_by = 'server',
            stop_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
            stop_reason = 'Other',
            charging_state = NULL,
@@ -2869,8 +2951,11 @@ function getCleanupStats() {
 function deleteTransactionValuesBefore(before) {
   return db
     .prepare(
-      `DELETE FROM transactions_values WHERE transaction_id IN (
-         SELECT transaction_id FROM transactions WHERE stop_time IS NOT NULL AND stop_time < ?
+      `DELETE FROM transactions_values WHERE id IN (
+         SELECT tv.id FROM transactions_values tv
+         JOIN transactions t
+           ON t.chargepoint_id = tv.chargepoint_id AND t.transaction_id = tv.transaction_id
+         WHERE t.stop_time IS NOT NULL AND t.stop_time < ?
        )`
     )
     .run(before).changes;
@@ -2977,7 +3062,10 @@ module.exports = {
   getReimbursementReport,
   getDashboardChartData,
   getTransactionByTransactionId,
-  getTransactionFull,
+  getTransactionById,
+  getTransactionFullById,
+  correctServerClosedTransaction,
+  stopRejectedTransaction,
   getActiveTransactionByConnector,
   setTransactionIdTag,
   getTransactionValues,

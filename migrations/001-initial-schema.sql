@@ -211,9 +211,14 @@ CREATE TABLE IF NOT EXISTS reservations (
   created_by INTEGER REFERENCES users(id) ON DELETE SET NULL
 );
 
+-- transaction_id : généré par le CSMS en 1.6, par la borne en 2.0.1 (unique pour cette borne
+-- seulement) → unicité par (chargepoint_id, transaction_id).
+-- status : Active | Completed | Rejected (démarrage refusé par le CSMS : énergie gardée, jamais facturée)
+-- closed_by : station (arrêt envoyé par la borne) | server (clôture heuristique du serveur,
+-- corrigeable par l'arrêt réel de la borne) | NULL (en cours ou antérieure à la migration 010)
 CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  transaction_id TEXT(36) UNIQUE,
+  transaction_id TEXT(36),
   chargepoint_id INTEGER NOT NULL,
   evse_id INTEGER, -- référence EVSE 2.0.1
   connector_id INTEGER NOT NULL,
@@ -232,11 +237,15 @@ CREATE TABLE IF NOT EXISTS transactions (
   cost REAL,
   cost_currency TEXT,
   cost_details TEXT,
+  closed_by TEXT CHECK (closed_by IN ('station', 'server')),
+  UNIQUE (chargepoint_id, transaction_id),
   FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE
 );
+CREATE INDEX IF NOT EXISTS idx_transactions_cp_status ON transactions(chargepoint_id, status);
 
 CREATE TABLE IF NOT EXISTS transactions_values (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chargepoint_id INTEGER NOT NULL,
   transaction_id TEXT(36) NOT NULL,
   energie TEXT,
   courant TEXT,
@@ -244,7 +253,9 @@ CREATE TABLE IF NOT EXISTS transactions_values (
   temperature TEXT,
   tension TEXT,
   frequence TEXT,
-  FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id) ON DELETE CASCADE
+  UNIQUE (chargepoint_id, transaction_id),
+  FOREIGN KEY (chargepoint_id, transaction_id)
+    REFERENCES transactions(chargepoint_id, transaction_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS ocpp_messages (

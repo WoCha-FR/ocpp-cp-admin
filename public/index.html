@@ -1120,7 +1120,7 @@ async function renderDashboard() {
                 <td class="td-date">${formatDateShort(tx.start_time)}</td>
                 <td>${tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : '-'}</td>
-                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'dashboard');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
+                <td>${tx.has_values ? `<a href="#" data-onclick="showTransactionDetail(${tx.id}, 'dashboard');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a>` : '<span class="text-muted">-</span>'}</td>
               </tr>
             `).join('')}
           </tbody>
@@ -4437,6 +4437,7 @@ async function renderTransactions(keepState = false) {
               <option value="">${t('filters.all')}</option>
               <option value="Active" ${txFilters.status === 'Active' ? 'selected' : ''}>${t('transac.inProgress')}</option>
               <option value="Completed" ${txFilters.status === 'Completed' ? 'selected' : ''}>${t('transac.completed')}</option>
+              <option value="Rejected" ${txFilters.status === 'Rejected' ? 'selected' : ''}>${t('transac.rejected')}</option>
             </select>
           </div>
           <div class="form-group">
@@ -4488,7 +4489,7 @@ async function renderTransactions(keepState = false) {
                 <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-'}</td>
                 <td>${formatTxCost(tx)}</td>
                 <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
-                <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'transactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
+                <td><a href="#" data-onclick="showTransactionDetail(${tx.id}, 'transactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
               </tr>
             `).join('')}
           </tbody>
@@ -4727,7 +4728,7 @@ async function renderMyTransactions(keepState = false) {
               <td>${energy}</td>
               <td>${formatTxCost(tx)}</td>
               <td>${tx.charging_state ? `<span class="badge ${statusBadgeClass(tx.charging_state)}">${escapeHtml(tx.charging_state)}</span>` : formatTxStatus(tx.status)}</td>
-              <td><a href="#" data-onclick="showTransactionDetail('${tx.transaction_id}', 'mytransactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
+              <td><a href="#" data-onclick="showTransactionDetail(${tx.id}, 'mytransactions');return false;" class="btn btn-outline btn-sm">📋 ${t('transac.view')}</a></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -4791,6 +4792,7 @@ function formatTxStatus(status) {
   const map = {
     Active: `<span class="badge badge-green">${t('transac.inProgress')}</span>`,
     Completed: `<span class="badge badge-gray">${t('transac.completed')}</span>`,
+    Rejected: `<span class="badge badge-red">${t('transac.rejected')}</span>`,
   };
   return map[status] || `<span class="badge badge-gray">${escapeHtml(status)}</span>`;
 }
@@ -4817,9 +4819,12 @@ function formatReason(reason) {
 let txDetailCharts = { energie: null, courant: null, soc: null, tempfreq: null };
 let txDetailContext = { transactionId: null, lastPage: null, data: null, tx: null };
 
-async function showTransactionDetail(transactionId, lastPage) {
+// txRowId : identifiant interne de la transaction (le transaction_id OCPP n'est unique que par
+// borne) ; le titre affiche le transaction_id OCPP une fois la transaction chargée
+async function showTransactionDetail(txRowId, lastPage) {
+  const transactionId = Number(txRowId);
   currentPage = 'transactiondetail';
-  document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: transactionId });
+  document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: '…' });
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === lastPage));
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-secondary" data-onclick="navigate('${lastPage}')">← ${t('charts.cBtnReturn')}</button>`;
@@ -4836,6 +4841,7 @@ async function showTransactionDetail(transactionId, lastPage) {
     ]);
     txDetailContext.tx = tx;
     txDetailContext.data = data;
+    document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: tx.transaction_id });
     renderTransactionDetail(tx, data);
   } catch (err) {
     const el = document.getElementById('txDetailLoading');
@@ -4913,7 +4919,7 @@ function renderTransactionDetail(tx, data) {
 function refreshTransactionDetail() {
   if (!txDetailContext.transactionId) return;
   currentPage = 'transactiondetail';
-  document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: txDetailContext.transactionId });
+  document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: txDetailContext.tx?.transaction_id ?? '…' });
   document.querySelectorAll('.sidebar-nav a').forEach(a => a.classList.toggle('active', a.dataset.page === txDetailContext.lastPage));
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-secondary" data-onclick="navigate('${txDetailContext.lastPage}')">← ${t('charts.cBtnReturn')}</button>`;

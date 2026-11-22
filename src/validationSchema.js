@@ -312,15 +312,6 @@ const IdParam = {
   id: { in: ['params'], isInt: { options: { gt: 0 } }, toInt: true, errorMessage: 'VALIDATION_ID' },
 };
 
-const TransactionIdParam = {
-  transactionId: {
-    in: ['params'],
-    trim: true,
-    notEmpty: true,
-    errorMessage: 'VALIDATION_TRANSACTION_ID',
-  },
-};
-
 const SiteIdParam = {
   siteId: {
     in: ['params'],
@@ -448,7 +439,7 @@ const TransactionsQuery = {
   status: {
     in: ['query'],
     optional: true,
-    isIn: { options: [['Active', 'Completed', 'Stopped', 'Error']] },
+    isIn: { options: [['Active', 'Completed', 'Rejected', 'Stopped', 'Error']] },
     errorMessage: 'VALIDATION_TRANSACTION_STATUS',
   },
   category: {
@@ -503,7 +494,7 @@ const UserTransactionsQuery = {
   status: {
     in: ['query'],
     optional: true,
-    isIn: { options: [['Active', 'Completed', 'Stopped', 'Error']] },
+    isIn: { options: [['Active', 'Completed', 'Rejected', 'Stopped', 'Error']] },
     errorMessage: 'VALIDATION_TRANSACTION_STATUS',
   },
   category: {
@@ -1143,7 +1134,6 @@ module.exports = {
   ResendSetupPassword,
   Login,
   IdParam,
-  TransactionIdParam,
   SiteIdParam,
   SiteUserParams,
   UserRole,

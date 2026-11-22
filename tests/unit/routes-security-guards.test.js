@@ -50,15 +50,17 @@ describe('Backend access control guards', () => {
     expect(src).toMatch(/tariff\.validateTariff\(input\)/);
   });
 
-  it('restricts GET /transactions/:transactionId (+ /values) to admin, site manager or tag owner', () => {
+  it('restricts GET /transactions/:id (+ /values) to admin, site manager or tag owner', () => {
     const src = fs.readFileSync(routesPath, 'utf8');
     const helper = src.slice(src.indexOf('function canViewTransaction'));
     expect(helper).toMatch(/req\.user\.role === 'admin'/);
     expect(helper).toMatch(/tx\.tag_user_id === req\.user\.id/);
     expect(helper).toMatch(/managedIds\.includes\(cp\.site_id\)/);
-    const detail = src.slice(src.indexOf("'/transactions/:transactionId',"));
+    const detail = src.slice(src.indexOf("router.get('/transactions/:id',"));
     expect(detail.slice(0, 500)).toMatch(/canViewTransaction\(req, tx\)/);
-    const values = src.slice(src.indexOf("'/transactions/:transactionId/values'"));
-    expect(values.slice(0, 600)).toMatch(/canViewTransaction\(req, access\)/);
+    const values = src.slice(src.indexOf("'/transactions/:id/values'"));
+    // Transaction inconnue → 404 (plus de relevés servis sans contrôle d'accès)
+    expect(values.slice(0, 600)).toMatch(/if \(!tx\) return res\.status\(404\)/);
+    expect(values.slice(0, 600)).toMatch(/canViewTransaction\(req, tx\)/);
   });
 });

@@ -504,10 +504,12 @@ function createOCPPServerBase(options = {}) {
         const activeTxs = db.getTransactions({ chargepoint_id: cpExisting.id, status: 'Active' });
         for (const tx of activeTxs) {
           db.stopTransaction(
+            cpExisting.id,
             tx.transaction_id,
             lastKnownMeterStop(tx),
             new Date().toISOString(),
-            'PowerLoss'
+            'PowerLoss',
+            'server'
           );
           logger.info(
             `[${identity}] Transaction ${tx.transaction_id} closed (PowerLoss, protocol change)`
@@ -702,18 +704,20 @@ function disconnectChargepoint(identity, reason = null) {
     if (reason) client._disconnectReason = reason;
     // Un timeout de heartbeat n'est pas une fin de session : la borne peut continuer à charger
     // hors ligne puis envoyer son StopTransaction/TransactionEvent(Ended) réel à la reconnexion.
-    // Clore ici figerait le coût sur une énergie fausse et ferait ignorer l'arrêt tardif
-    // (stopTransaction ne met à jour que les transactions « Active »).
-    // Seule une dé-autorisation explicite clôt les transactions côté serveur.
+    // Clore ici figerait le coût sur une énergie fausse.
+    // Seule une dé-autorisation explicite clôt les transactions côté serveur (closed_by =
+    // server : un arrêt réel envoyé ensuite par la borne corrige encore la session).
     const cp = db.getChargepointByIdentity(identity);
     if (cp && !NO_TX_CLOSE_REASONS.has(reason)) {
       const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
       for (const tx of activeTxs) {
         db.stopTransaction(
+          cp.id,
           tx.transaction_id,
           lastKnownMeterStop(tx),
           new Date().toISOString(),
-          'DeAuthorized'
+          'DeAuthorized',
+          'server'
         );
       }
     }

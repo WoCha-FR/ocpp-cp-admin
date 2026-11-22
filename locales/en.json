@@ -538,6 +538,7 @@
     "chargedEnergy": "Energy recharged",
     "inProgress": "In progress",
     "completed": "Completed",
+    "rejected": "Rejected",
     "duration": "Duration",
     "totalDuration": "Total duration",
     "history": "History",

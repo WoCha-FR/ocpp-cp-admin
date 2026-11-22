@@ -1004,7 +1004,7 @@ describe('database — resetStateOnStartup', () => {
   });
 
   it('ferme les transactions Active avec stop_reason=Other', () => {
-    const tx = db.getTransactionByTransactionId(txId);
+    const tx = db.getTransactionByTransactionId(cpId1, txId);
     expect(tx.status).toBe('Completed');
     expect(tx.stop_reason).toBe('Other');
     expect(tx.stop_time).not.toBeNull();
@@ -1019,9 +1019,9 @@ describe('database — resetStateOnStartup', () => {
     const tx = db.createTransaction(cpE, 1, 'RSTENERGY', 10000, oldDate, 'rfid');
     // updateTransactionPowerEnergy stocke energy = energyWh - meter_start
     // donc on passe 12500 (absolu) → energy = 12500 - 10000 = 2500
-    db.updateTransactionPowerEnergy(tx.transaction_id, 3000, 12500);
+    db.updateTransactionPowerEnergy(cpE, tx.transaction_id, 3000, 12500);
     db.resetStateOnStartup();
-    const closed = db.getTransactionByTransactionId(tx.transaction_id);
+    const closed = db.getTransactionByTransactionId(cpE, tx.transaction_id);
     expect(closed.status).toBe('Completed');
     expect(closed.meter_stop).toBe(12500); // meter_start(10000) + energy(2500)
     expect(closed.energy).toBeNull();
@@ -1033,7 +1033,7 @@ describe('database — resetStateOnStartup', () => {
     const cpN = db.getChargepointByIdentity('CP-RST-NOENERGY').id;
     const tx = db.createTransaction(cpN, 1, 'RSTNOENERGY', 5000, oldDate, 'rfid');
     db.resetStateOnStartup();
-    const closed = db.getTransactionByTransactionId(tx.transaction_id);
+    const closed = db.getTransactionByTransactionId(cpN, tx.transaction_id);
     expect(closed.status).toBe('Completed');
     expect(closed.meter_stop).toBeNull();
   });
@@ -1227,11 +1227,11 @@ describe('database — getDashboardChartData / getChargingKpi', () => {
 
     // Transaction complétée : meter_start=0, meter_stop=5000 => 5 kWh
     const tx1 = db.createTransaction(cpId, 1, 'TAG-KPI', 0, TODAY, 'rfid');
-    db.stopTransaction(tx1.transaction_id, 5000, TODAY, 'Local');
+    db.stopTransaction(cpId, tx1.transaction_id, 5000, TODAY, 'Local');
 
     // Transaction active : energy = 2000 Wh net => 2 kWh
     const tx2 = db.createTransaction(cpId, 2, 'TAG-KPI', 0, TODAY, 'rfid');
-    db.updateTransactionPowerEnergy(tx2.transaction_id, null, 2000);
+    db.updateTransactionPowerEnergy(cpId, tx2.transaction_id, null, 2000);
   });
 
   describe('getDashboardChartData', () => {
@@ -1346,7 +1346,7 @@ describe('database — getTransactions pagination', () => {
     cpId = db.getChargepointByIdentity('CP-PAGTEST').id;
     for (let i = 0; i < 5; i++) {
       const tx = db.createTransaction(cpId, 1, 'TAG-PAG', i * 100, START, 'local');
-      if (i < 3) db.stopTransaction(tx.transaction_id, (i + 1) * 100, STOP, 'Local');
+      if (i < 3) db.stopTransaction(cpId, tx.transaction_id, (i + 1) * 100, STOP, 'Local');
     }
   });
 
@@ -1533,24 +1533,24 @@ describe('database — Transaction Values (nouvelles métriques)', () => {
   });
 
   it('insère une entrée temperature (INSERT)', () => {
-    db.upsertTransactionValues(txId, { tempEntry: { x: 1000, y: 42.5 } });
-    const row = db.getTransactionValues(txId);
+    db.upsertTransactionValues(cpId, txId, { tempEntry: { x: 1000, y: 42.5 } });
+    const row = db.getTransactionValues(cpId, txId);
     const temp = JSON.parse(row.temperature);
     expect(temp).toHaveLength(1);
     expect(temp[0]).toEqual({ x: 1000, y: 42.5 });
   });
 
   it('appende une entrée temperature (UPDATE)', () => {
-    db.upsertTransactionValues(txId, { tempEntry: { x: 1060, y: 43.1 } });
-    const row = db.getTransactionValues(txId);
+    db.upsertTransactionValues(cpId, txId, { tempEntry: { x: 1060, y: 43.1 } });
+    const row = db.getTransactionValues(cpId, txId);
     const temp = JSON.parse(row.temperature);
     expect(temp).toHaveLength(2);
     expect(temp[1].y).toBeCloseTo(43.1);
   });
 
   it('insère une entrée tension triphasée', () => {
-    db.upsertTransactionValues(txId, { tensionEntry: { x: 1000, l1: 230.1, l2: 229.8, l3: 231.0 } });
-    const row = db.getTransactionValues(txId);
+    db.upsertTransactionValues(cpId, txId, { tensionEntry: { x: 1000, l1: 230.1, l2: 229.8, l3: 231.0 } });
+    const row = db.getTransactionValues(cpId, txId);
     const tension = JSON.parse(row.tension);
     expect(tension).toHaveLength(1);
     expect(tension[0].l1).toBeCloseTo(230.1);
@@ -1559,35 +1559,35 @@ describe('database — Transaction Values (nouvelles métriques)', () => {
   });
 
   it('appende une entrée tension (UPDATE)', () => {
-    db.upsertTransactionValues(txId, { tensionEntry: { x: 1060, l1: 228.5, l2: null, l3: null } });
-    const row = db.getTransactionValues(txId);
+    db.upsertTransactionValues(cpId, txId, { tensionEntry: { x: 1060, l1: 228.5, l2: null, l3: null } });
+    const row = db.getTransactionValues(cpId, txId);
     const tension = JSON.parse(row.tension);
     expect(tension).toHaveLength(2);
   });
 
   it('insère une entrée frequence', () => {
-    db.upsertTransactionValues(txId, { freqEntry: { x: 1000, y: 50.02 } });
-    const row = db.getTransactionValues(txId);
+    db.upsertTransactionValues(cpId, txId, { freqEntry: { x: 1000, y: 50.02 } });
+    const row = db.getTransactionValues(cpId, txId);
     const freq = JSON.parse(row.frequence);
     expect(freq).toHaveLength(1);
     expect(freq[0].y).toBeCloseTo(50.02);
   });
 
   it('appende une entrée frequence (UPDATE)', () => {
-    db.upsertTransactionValues(txId, { freqEntry: { x: 1060, y: 49.98 } });
-    const row = db.getTransactionValues(txId);
+    db.upsertTransactionValues(cpId, txId, { freqEntry: { x: 1060, y: 49.98 } });
+    const row = db.getTransactionValues(cpId, txId);
     const freq = JSON.parse(row.frequence);
     expect(freq).toHaveLength(2);
   });
 
   it('insère toutes les nouvelles métriques en une seule opération', () => {
     const tx2 = db.createTransaction(cpId, 1, 'TV-TAG-2', 0, '2026-01-02T10:00:00Z', 'local');
-    db.upsertTransactionValues(tx2.transaction_id, {
+    db.upsertTransactionValues(cpId, tx2.transaction_id, {
       tempEntry: { x: 2000, y: 35.0 },
       tensionEntry: { x: 2000, l1: 230.0, l2: null, l3: null },
       freqEntry: { x: 2000, y: 50.0 },
     });
-    const row = db.getTransactionValues(tx2.transaction_id);
+    const row = db.getTransactionValues(cpId, tx2.transaction_id);
     expect(JSON.parse(row.temperature)).toHaveLength(1);
     expect(JSON.parse(row.tension)).toHaveLength(1);
     expect(JSON.parse(row.frequence)).toHaveLength(1);
@@ -1595,8 +1595,8 @@ describe('database — Transaction Values (nouvelles métriques)', () => {
 
   it('les colonnes nouvelles restent null si non fournies', () => {
     const tx3 = db.createTransaction(cpId, 1, 'TV-TAG-3', 0, '2026-01-03T10:00:00Z', 'local');
-    db.upsertTransactionValues(tx3.transaction_id, { energieEntry: { x: 3000, power: 7000, offer: null, energy: 100 } });
-    const row = db.getTransactionValues(tx3.transaction_id);
+    db.upsertTransactionValues(cpId, tx3.transaction_id, { energieEntry: { x: 3000, power: 7000, offer: null, energy: 100 } });
+    const row = db.getTransactionValues(cpId, tx3.transaction_id);
     expect(row.temperature).toBeNull();
     expect(row.tension).toBeNull();
     expect(row.frequence).toBeNull();
@@ -2007,9 +2007,9 @@ describe('database — getInitialChargepointVariableByKey', () => {
   });
 });
 
-// ── getTransactionFull ──
-describe('database — getTransactionFull', () => {
-  let cpId, siteId, txId;
+// ── getTransactionFullById ──
+describe('database — getTransactionFullById', () => {
+  let cpId, siteId, txId, txRowId;
   const START = '2026-06-01T10:00:00Z';
 
   beforeAll(() => {
@@ -2022,15 +2022,16 @@ describe('database — getTransactionFull', () => {
       .run(cpId, 1, 'Prise Complète');
     const tx = db.createTransaction(cpId, 1, 'TAGFULL', 5000, START, 'rfid');
     txId = tx.transaction_id;
+    txRowId = tx.id;
   });
 
-  it('retourne undefined pour un transaction_id inexistant', () => {
-    const result = db.getTransactionFull('TX-DOES-NOT-EXIST');
+  it('retourne undefined pour un identifiant inexistant', () => {
+    const result = db.getTransactionFullById(999999);
     expect(result).toBeUndefined();
   });
 
   it('retourne la transaction avec les champs enrichis', () => {
-    const result = db.getTransactionFull(txId);
+    const result = db.getTransactionFullById(txRowId);
     expect(result).toBeDefined();
     expect(result.transaction_id).toBe(txId);
     expect(result.chargepoint_name).toBe('Borne Complète');
@@ -2041,15 +2042,15 @@ describe('database — getTransactionFull', () => {
   });
 
   it('retourne has_values=0 si aucune donnée de mesure', () => {
-    const result = db.getTransactionFull(txId);
+    const result = db.getTransactionFullById(txRowId);
     expect(result.has_values).toBe(0);
   });
 
   it('retourne has_values=1 si des données de mesure existent', () => {
-    db.upsertTransactionValues(txId, {
+    db.upsertTransactionValues(cpId, txId, {
       energieEntry: { x: Date.now(), power: 3000, offer: 3200, energy: 1000 },
     });
-    const result = db.getTransactionFull(txId);
+    const result = db.getTransactionFullById(txRowId);
     expect(result.has_values).toBe(1);
   });
 });
@@ -2134,7 +2135,7 @@ describe('database — tarification (coût figé à la clôture)', () => {
 
   it("ne calcule aucun coût tant que le site n'a pas de prix", () => {
     const tx = db.createTransaction(cpId, 1, 'TAG-T0', 0, START, 'rfid');
-    const stopped = db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    const stopped = db.stopTransaction(cpId, tx.transaction_id, 10000, STOP, 'Local').tx;
     expect(stopped.status).toBe('Completed');
     expect(stopped.cost).toBeNull();
     expect(stopped.cost_details).toBeNull();
@@ -2159,7 +2160,7 @@ describe('database — tarification (coût figé à la clôture)', () => {
 
   it('fige le coût et le détail à la clôture', () => {
     const tx = db.createTransaction(cpId, 1, 'TAG-T1', 0, START, 'rfid');
-    const stopped = db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    const stopped = db.stopTransaction(cpId, tx.transaction_id, 10000, STOP, 'Local').tx;
     expect(stopped.cost).toBe(2);
     expect(stopped.cost_currency).toBe('EUR');
     const details = JSON.parse(stopped.cost_details);
@@ -2170,22 +2171,22 @@ describe('database — tarification (coût figé à la clôture)', () => {
 
   it('utilise les MeterValues enregistrés pour découper le coût', () => {
     const tx = db.createTransaction(cpId, 1, 'TAG-T2', 0, START, 'rfid');
-    db.upsertTransactionValues(tx.transaction_id, {
+    db.upsertTransactionValues(cpId, tx.transaction_id, {
       energieEntry: { x: Date.parse(START) / 1000 + 1800, power: 18000, energy: 9000 },
     });
-    const stopped = db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    const stopped = db.stopTransaction(cpId, tx.transaction_id, 10000, STOP, 'Local').tx;
     expect(stopped.cost).toBe(2.43);
     expect(JSON.parse(stopped.cost_details).method).toBe('meter');
   });
 
   it("modifier la grille ensuite ne change pas le coût d'une session clôturée", () => {
     const tx = db.createTransaction(cpId, 1, 'TAG-T3', 0, START, 'rfid');
-    db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+    db.stopTransaction(cpId, tx.transaction_id, 10000, STOP, 'Local');
     db.replaceSiteTariff(siteId, grid(1, 1));
-    expect(db.getTransactionByTransactionId(tx.transaction_id).cost).toBe(2);
+    expect(db.getTransactionByTransactionId(cpId, tx.transaction_id).cost).toBe(2);
     // un StopTransaction en double ne recalcule pas non plus
-    db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
-    expect(db.getTransactionByTransactionId(tx.transaction_id).cost).toBe(2);
+    db.stopTransaction(cpId, tx.transaction_id, 10000, STOP, 'Local');
+    expect(db.getTransactionByTransactionId(cpId, tx.transaction_id).cost).toBe(2);
     db.replaceSiteTariff(siteId, grid());
   });
 
@@ -2195,7 +2196,7 @@ describe('database — tarification (coût figé à la clôture)', () => {
     let stopped;
     try {
       const tx = db.createTransaction(cpId, 1, 'TAG-T5', 0, START, 'rfid');
-      stopped = db.stopTransaction(tx.transaction_id, 10000, STOP, 'Local');
+      stopped = db.stopTransaction(cpId, tx.transaction_id, 10000, STOP, 'Local').tx;
     } finally {
       db.getDb().exec('ALTER TABLE site_tariff_periods_bak RENAME TO site_tariff_periods');
     }
@@ -2205,9 +2206,9 @@ describe('database — tarification (coût figé à la clôture)', () => {
 
   it('resetStateOnStartup fige aussi le coût des sessions orphelines', () => {
     const tx = db.createTransaction(cpId, 1, 'TAG-T6', 0, START, 'rfid');
-    db.updateTransactionPowerEnergy(tx.transaction_id, null, 10000);
+    db.updateTransactionPowerEnergy(cpId, tx.transaction_id, null, 10000);
     db.resetStateOnStartup();
-    const after = db.getTransactionByTransactionId(tx.transaction_id);
+    const after = db.getTransactionByTransactionId(cpId, tx.transaction_id);
     expect(after.status).toBe('Completed');
     expect(after.meter_stop).toBe(10000);
     expect(after.cost).not.toBeNull();
@@ -2249,7 +2250,7 @@ describe('database — catégorie des badges et rapport de remboursement', () =>
 
   const run = (cpId, tag, kwh, start = START) => {
     const tx = db.createTransaction(cpId, 1, tag, 0, start, 'rfid');
-    db.stopTransaction(tx.transaction_id, kwh * 1000, STOP, 'Local');
+    db.stopTransaction(cpId, tx.transaction_id, kwh * 1000, STOP, 'Local');
     return tx;
   };
 
@@ -2365,7 +2366,7 @@ describe('database — transactions multi-EVSE et badge tardif', () => {
       evse_id: 1,
     });
     expect(db.getActiveTransactionByConnector(cpId, 1).transaction_id).toBe(tx.transaction_id);
-    db.stopTransaction('TX-LEG-1', 0, START, 'Local');
+    db.stopTransaction(cpId, 'TX-LEG-1', 0, START, 'Local');
   });
 
   it('getActiveTransactionByConnector avec evseId : ne confond pas deux EVSE', () => {
@@ -2373,7 +2374,7 @@ describe('database — transactions multi-EVSE et badge tardif', () => {
     db.createTransaction(cpId, 1, 'TAG-E2', 0, START, 'rfid', { transactionId: 'TX-E2', evse_id: 2 });
     expect(db.getActiveTransactionByConnector(cpId, 1, 1).transaction_id).toBe('TX-E1');
     expect(db.getActiveTransactionByConnector(cpId, 1, 2).transaction_id).toBe('TX-E2');
-    db.stopTransaction('TX-E1', 0, START, 'Local');
+    db.stopTransaction(cpId, 'TX-E1', 0, START, 'Local');
     expect(db.getActiveTransactionByConnector(cpId, 1, 1)).toBeUndefined();
     expect(db.getActiveTransactionByConnector(cpId, 1, 2).transaction_id).toBe('TX-E2');
   });
@@ -2384,7 +2385,7 @@ describe('database — transactions multi-EVSE et badge tardif', () => {
     const evse2 = rows.find((r) => r.evse_id === 2);
     expect(evse1.active_transaction_id).toBeNull();
     expect(evse2.active_transaction_id).toBe('TX-E2');
-    db.stopTransaction('TX-E2', 0, START, 'Local');
+    db.stopTransaction(cpId, 'TX-E2', 0, START, 'Local');
   });
 
   it('setTransactionIdTag rattache le badge à une transaction démarrée sans identification', () => {
@@ -2393,18 +2394,186 @@ describe('database — transactions multi-EVSE et badge tardif', () => {
       evse_id: 1,
       id_token_type: 'ISO14443',
     });
-    expect(db.setTransactionIdTag('TX-NOTAG', 'TAG-LATE', 'KeyCode')).toBe(1);
-    const row = db.getTransactionByTransactionId('TX-NOTAG');
+    expect(db.setTransactionIdTag(cpId, 'TX-NOTAG', 'TAG-LATE', 'KeyCode')).toBe(1);
+    const row = db.getTransactionByTransactionId(cpId, 'TX-NOTAG');
     expect(row.id_tag).toBe('TAG-LATE');
     expect(row.id_token_type).toBe('KeyCode');
   });
 
   it('setTransactionIdTag ne remplace jamais un badge déjà enregistré ni une transaction clôturée', () => {
-    expect(db.setTransactionIdTag('TX-NOTAG', 'AUTRE', null)).toBe(0);
-    expect(db.getTransactionByTransactionId('TX-NOTAG').id_tag).toBe('TAG-LATE');
-    db.stopTransaction('TX-NOTAG', 0, START, 'Local');
+    expect(db.setTransactionIdTag(cpId, 'TX-NOTAG', 'AUTRE', null)).toBe(0);
+    expect(db.getTransactionByTransactionId(cpId, 'TX-NOTAG').id_tag).toBe('TAG-LATE');
+    db.stopTransaction(cpId, 'TX-NOTAG', 0, START, 'Local');
     db.createTransaction(cpId, 1, null, 0, START, 'local', { transactionId: 'TX-NULLTAG', evse_id: 1 });
-    db.stopTransaction('TX-NULLTAG', 0, START, 'Local');
-    expect(db.setTransactionIdTag('TX-NULLTAG', 'TAG-X', null)).toBe(0);
+    db.stopTransaction(cpId, 'TX-NULLTAG', 0, START, 'Local');
+    expect(db.setTransactionIdTag(cpId, 'TX-NULLTAG', 'TAG-X', null)).toBe(0);
+  });
+});
+
+// ── Lot D : transactions identifiées par borne, clôture serveur corrigeable, refus ──
+describe('database — lot D (H1 / H4 / M7)', () => {
+  const START = '2026-03-01T10:00:00Z';
+  const STOP = '2026-03-01T11:00:00Z';
+  let siteId;
+  let cpA;
+  let cpB;
+
+  beforeAll(() => {
+    siteId = db.createSite('Lot D Site', null).id;
+    db.replaceSiteTariff(siteId, {
+      currency: 'EUR',
+      timezone: 'UTC',
+      default_price_per_kwh: 0.2,
+      periods: [],
+    });
+    cpA = db.createChargepoint('CP-LOTD-A', 'A', null, 1, siteId).id;
+    cpB = db.createChargepoint('CP-LOTD-B', 'B', null, 1, siteId).id;
+  });
+
+  describe('H1 — même transaction_id sur deux bornes', () => {
+    beforeAll(() => {
+      db.createTransaction(cpA, 1, 'TAG-A', 1000, START, 'rfid', { transactionId: 'SAME-1' });
+      db.createTransaction(cpB, 1, 'TAG-B', 5000, START, 'rfid', { transactionId: 'SAME-1' });
+    });
+
+    it('les deux transactions coexistent (unicité par borne)', () => {
+      expect(db.getTransactionByTransactionId(cpA, 'SAME-1').id_tag).toBe('TAG-A');
+      expect(db.getTransactionByTransactionId(cpB, 'SAME-1').id_tag).toBe('TAG-B');
+    });
+
+    it('un doublon sur la même borne reste interdit', () => {
+      expect(() =>
+        db.createTransaction(cpA, 1, 'TAG-A', 1000, START, 'rfid', { transactionId: 'SAME-1' })
+      ).toThrow(/UNIQUE/);
+    });
+
+    it("les relevés et la mise à jour d'énergie d'une borne ne touchent pas l'autre", () => {
+      db.updateTransactionPowerEnergy(cpA, 'SAME-1', 3000, 1500);
+      db.upsertTransactionValues(cpA, 'SAME-1', { energieEntry: { x: 1, energy: 500 } });
+      expect(db.getTransactionByTransactionId(cpA, 'SAME-1').energy).toBe(500);
+      expect(db.getTransactionByTransactionId(cpB, 'SAME-1').energy).toBeNull();
+      expect(db.getTransactionValues(cpA, 'SAME-1')).toBeDefined();
+      expect(db.getTransactionValues(cpB, 'SAME-1')).toBeUndefined();
+    });
+
+    it("l'arrêt d'une borne ne clôt pas la transaction de l'autre", () => {
+      const res = db.stopTransaction(cpA, 'SAME-1', 3000, STOP, 'Local');
+      expect(res.closed).toBe(true);
+      expect(res.tx.chargepoint_id).toBe(cpA);
+      expect(res.tx.status).toBe('Completed');
+      expect(db.getTransactionByTransactionId(cpB, 'SAME-1').status).toBe('Active');
+    });
+
+    it('getTransactionFullById renvoie la bonne transaction', () => {
+      const rowB = db.getTransactionByTransactionId(cpB, 'SAME-1');
+      const full = db.getTransactionFullById(rowB.id);
+      expect(full.chargepoint_identity).toBe('CP-LOTD-B');
+      expect(full.id_tag).toBe('TAG-B');
+    });
+  });
+
+  describe('stopTransaction — closed / closed_by', () => {
+    it('closed=true à la première clôture, false ensuite (retransmission)', () => {
+      db.createTransaction(cpA, 1, 'TAG-A', 0, START, 'rfid', { transactionId: 'CLOSE-1' });
+      const first = db.stopTransaction(cpA, 'CLOSE-1', 1000, STOP, 'Local');
+      expect(first.closed).toBe(true);
+      expect(first.tx.closed_by).toBe('station');
+      const again = db.stopTransaction(cpA, 'CLOSE-1', 9999, STOP, 'Local');
+      expect(again.closed).toBe(false);
+      expect(again.tx.meter_stop).toBe(1000);
+    });
+
+    it('closed_by = server pour une clôture heuristique du serveur', () => {
+      db.createTransaction(cpA, 1, 'TAG-A', 0, START, 'rfid', { transactionId: 'CLOSE-SRV' });
+      const res = db.stopTransaction(cpA, 'CLOSE-SRV', 0, STOP, 'EVDisconnected', 'server');
+      expect(res.tx.closed_by).toBe('server');
+    });
+  });
+
+  describe("H4 — correction par l'arrêt réel", () => {
+    it("corrige compteur, heure, raison et coût d'une transaction close par le serveur", () => {
+      db.createTransaction(cpA, 1, 'TAG-A', 10000, START, 'rfid', { transactionId: 'H4-1' });
+      // Estimation du serveur : 2 kWh (dernier relevé connu)
+      db.stopTransaction(cpA, 'H4-1', 12000, '2026-03-01T10:30:00Z', 'EVDisconnected', 'server');
+      expect(db.getTransactionByTransactionId(cpA, 'H4-1').cost).toBe(0.4);
+
+      const corrected = db.correctServerClosedTransaction(cpA, 'H4-1', 15000, STOP, 'Local');
+      expect(corrected.meter_stop).toBe(15000);
+      expect(corrected.stop_time).toBe(STOP);
+      expect(corrected.stop_reason).toBe('Local');
+      expect(corrected.closed_by).toBe('station');
+      expect(corrected.status).toBe('Completed');
+      expect(corrected.cost).toBe(1); // 5 kWh × 0,20
+    });
+
+    it('une seconde correction est impossible (closed_by = station)', () => {
+      expect(db.correctServerClosedTransaction(cpA, 'H4-1', 20000, STOP, 'Local')).toBeNull();
+      expect(db.getTransactionByTransactionId(cpA, 'H4-1').meter_stop).toBe(15000);
+    });
+
+    it('ne corrige jamais une transaction close par la borne', () => {
+      db.createTransaction(cpA, 1, 'TAG-A', 0, START, 'rfid', { transactionId: 'H4-STATION' });
+      db.stopTransaction(cpA, 'H4-STATION', 1000, STOP, 'Local');
+      expect(db.correctServerClosedTransaction(cpA, 'H4-STATION', 5000, STOP, 'Local')).toBeNull();
+    });
+
+    it("un compteur d'arrêt incohérent (≤ compteur de départ) garde l'estimation du serveur", () => {
+      db.createTransaction(cpA, 1, 'TAG-A', 10000, START, 'rfid', { transactionId: 'H4-BAD' });
+      db.stopTransaction(cpA, 'H4-BAD', 11000, START, 'Other', 'server');
+      const corrected = db.correctServerClosedTransaction(cpA, 'H4-BAD', 0, STOP, 'PowerLoss');
+      expect(corrected.meter_stop).toBe(11000);
+      expect(corrected.stop_time).toBe(STOP);
+      expect(corrected.stop_reason).toBe('PowerLoss');
+    });
+
+    it('resetStateOnStartup marque ses clôtures closed_by = server (corrigeables)', () => {
+      db.createTransaction(cpA, 1, 'TAG-A', 0, START, 'rfid', { transactionId: 'H4-RESTART' });
+      db.resetStateOnStartup();
+      expect(db.getTransactionByTransactionId(cpA, 'H4-RESTART').closed_by).toBe('server');
+      expect(
+        db.correctServerClosedTransaction(cpA, 'H4-RESTART', 2500, STOP, 'Local')
+      ).not.toBeNull();
+    });
+  });
+
+  describe('M7 — transactions refusées', () => {
+    let rejected;
+
+    beforeAll(() => {
+      rejected = db.createTransaction(cpB, 2, 'BAD-TAG', 100, START, 'rfid', {
+        transactionId: 'REJ-1',
+        charging_state: 'Charging',
+        status: 'Rejected',
+      });
+    });
+
+    it('est créée au statut Rejected, sans état de charge', () => {
+      expect(rejected.status).toBe('Rejected');
+      expect(rejected.charging_state).toBeNull();
+    });
+
+    it("n'est jamais une transaction active du connecteur", () => {
+      expect(db.getActiveTransactionByConnector(cpB, 2)).toBeUndefined();
+    });
+
+    it("son arrêt garde le compteur, reste Rejected et n'est jamais facturé", () => {
+      db.stopTransaction(cpB, 'REJ-1', 600, STOP, 'Local'); // sans effet : pas Active
+      const row = db.stopRejectedTransaction(cpB, 'REJ-1', 600, STOP, 'DeAuthorized');
+      expect(row.status).toBe('Rejected');
+      expect(row.meter_stop).toBe(600);
+      expect(row.stop_reason).toBe('DeAuthorized');
+      expect(row.cost).toBeNull();
+      // Un second arrêt (retransmission) n'écrase rien
+      expect(db.stopRejectedTransaction(cpB, 'REJ-1', 999, STOP, 'Local')).toBeNull();
+    });
+
+    it('absente des listes, totaux et exports par défaut ; visible en filtrant status=Rejected', () => {
+      const all = db.getTransactions({ chargepoint_id: cpB });
+      expect(all.find((t) => t.transaction_id === 'REJ-1')).toBeUndefined();
+      const paged = db.getTransactions({ chargepoint_id: cpB, limit: 50, offset: 0 });
+      expect(paged.data.find((t) => t.transaction_id === 'REJ-1')).toBeUndefined();
+      const only = db.getTransactions({ chargepoint_id: cpB, status: 'Rejected' });
+      expect(only.map((t) => t.transaction_id)).toEqual(['REJ-1']);
+    });
   });
 });

@@ -91,7 +91,7 @@ describe('database — nettoyage des données', () => {
     it('retourne 0 pour une table vide et croît avec du contenu texte', () => {
       expect(db.estimateTableSize('transactions_values')).toBe(0);
       insertTransaction('TX-SIZE', { status: 'Completed', stopTime: '2024-06-01T00:00:00Z' });
-      db.upsertTransactionValues('TX-SIZE', { energieEntry: 'x'.repeat(500) });
+      db.upsertTransactionValues(cpId, 'TX-SIZE', { energieEntry: 'x'.repeat(500) });
       expect(db.estimateTableSize('transactions_values')).toBeGreaterThanOrEqual(500);
     });
   });
@@ -120,16 +120,16 @@ describe('database — nettoyage des données', () => {
       insertTransaction('TX-OLD', { status: 'Completed', stopTime: '2020-01-01T00:00:00Z' });
       insertTransaction('TX-RECENT', { status: 'Completed', stopTime: '2030-01-01T00:00:00Z' });
       insertTransaction('TX-ACTIVE', { status: 'Active', stopTime: null });
-      db.upsertTransactionValues('TX-OLD', { energieEntry: '1' });
-      db.upsertTransactionValues('TX-RECENT', { energieEntry: '1' });
-      db.upsertTransactionValues('TX-ACTIVE', { energieEntry: '1' });
+      db.upsertTransactionValues(cpId, 'TX-OLD', { energieEntry: '1' });
+      db.upsertTransactionValues(cpId, 'TX-RECENT', { energieEntry: '1' });
+      db.upsertTransactionValues(cpId, 'TX-ACTIVE', { energieEntry: '1' });
 
       const deleted = db.deleteTransactionValuesBefore('2024-01-01');
 
       expect(deleted).toBe(1);
-      expect(db.getTransactionValues('TX-OLD')).toBeUndefined();
-      expect(db.getTransactionValues('TX-RECENT')).toBeDefined();
-      expect(db.getTransactionValues('TX-ACTIVE')).toBeDefined();
+      expect(db.getTransactionValues(cpId, 'TX-OLD')).toBeUndefined();
+      expect(db.getTransactionValues(cpId, 'TX-RECENT')).toBeDefined();
+      expect(db.getTransactionValues(cpId, 'TX-ACTIVE')).toBeDefined();
       // Les transactions elles-mêmes ne sont jamais supprimées
       expect(testDb.prepare('SELECT COUNT(*) AS n FROM transactions').get().n).toBe(3);
     });
