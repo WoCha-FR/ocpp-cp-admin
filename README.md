@@ -1,6 +1,6 @@
 # OCPP CP Admin
 
-**Charge Point Management System (CSMS)** for Charge Point Operators (CPO), based on the OCPP 1.6 protocol.
+**Charge Point Management System (CSMS)** for Charge Point Operators (CPO), supporting the **OCPP 1.6-J** and **OCPP 2.0.1** protocols.
 
 OCPP CP Admin enables monitoring and managing electric vehicle charging infrastructure: charge point management, user management, charge transactions, real-time alerts, and an analytics dashboard.
 
@@ -15,8 +15,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
   - [Node.js](#nodejs-installation)
-  - [Docker](#docker-installation)
-  - [Docker Compose](#docker-compose)
+  - [Docker / Docker Compose](#docker-installation)
   - [Bare-metal (systemd)](#bare-metal-deployment-systemd)
 - [Environment Variables](#environment-variables)
 - [Configuration](#configuration)
@@ -33,8 +32,12 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - [Energy Tariffs](#energy-tariffs)
 - [Business / Personal Badges and Reimbursement Exports](#business--personal-badges-and-reimbursement-exports)
 - [Roles and Permissions](#roles-and-permissions)
-- [OCPP 1.6 Protocol](#ocpp-16-protocol)
-  - [Supported Operations](#supported-operations)
+- [OCPP Protocol (1.6 and 2.0.1)](#ocpp-protocol-16-and-201)
+  - [Supported Operations — OCPP 1.6](#supported-operations--ocpp-16)
+  - [Supported Operations — OCPP 2.0.1](#supported-operations--ocpp-201)
+  - [Initialization Sequence](#initialization-sequence)
+  - [Transaction Handling](#transaction-handling)
+  - [Remote Starts](#remote-starts)
   - [Charge Point Connection](#charge-point-connection)
   - [Security Profiles](#security-profiles)
   - [Heartbeat & Connection Monitoring](#heartbeat--connection-monitoring)
@@ -53,8 +56,9 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Manual registration or automatic discovery of charge points
 - Approval of pending charge points
 - Assignment of charge points to sites
+- OCPP 1.6 and OCPP 2.0.1 charge points side by side (multi-EVSE stations supported in 2.0.1)
 - Real-time monitoring (connector status, heartbeat, errors)
-- Remote charge point configuration (GetConfiguration / ChangeConfiguration)
+- Remote charge point configuration (GetConfiguration / ChangeConfiguration in 1.6, GetBaseReport / SetVariables in 2.0.1) and a default configuration applied automatically on first connection
 - OCPP message history (CALL / CALLRESULT / CALLERROR)
 
 ### Site and User Management
@@ -67,8 +71,9 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 ### Transactions and Charge Monitoring
 - Active and completed transaction tracking
 - Real-time data: energy (Wh), power (W), current (A per phase), state of charge (SOC %), temperature (°C), voltage (V per phase), frequency (Hz)
-- Transaction history with filters
-- CSV export of transactions (including cost columns when a tariff is configured)
+- Transaction history with filters; sessions refused at start (badge not authorized) are kept with the *Rejected* status, never billed — see [Transaction handling](#transaction-handling)
+- Sessions closed by the server (lost end message, restart…) corrected by the charge point's real stop when it arrives later
+- CSV export of transactions (including cost columns when a tariff is configured); cells that could be read as a spreadsheet formula (`=`, `+`, `-`, `@`…) are prefixed with an apostrophe
 - Per-site energy tariffs (time slots and weekdays) with the cost of each session frozen at closing — see [Energy Tariffs](#energy-tariffs)
 - Personal dashboard for users
 
@@ -80,7 +85,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 
 ### RFID Badge Management
 - Badge creation and management (ID Tags), with a **business / personal** category — see [Business / Personal Badges and Reimbursement Exports](#business--personal-badges-and-reimbursement-exports)
-- Automatic web tag generation for remote starts
+- Automatic generation of badges for remote starts (`ADMIN`, `MGR-<site>`, `WEB-<user>`), refused when presented as an RFID card — see [Remote starts](#remote-starts)
 - Expiration and authorization rejection tracking
 
 ### Charging Profiles
@@ -92,9 +97,9 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Automatic re-application of managed profiles on charge point reconnection
 
 ### Connector Reservations
-- Reserve a connector for a given RFID badge via OCPP 1.6 `ReserveNow`
+- Reserve a connector (1.6) or an EVSE (2.0.1) for a given RFID badge via `ReserveNow`
 - On-demand cancellation via `CancelReservation`
-- Automatic expiration detection from `StatusNotification`
+- Automatic expiration: from `StatusNotification` / `ReservationStatusUpdate` (2.0.1), and a server-side watchdog that releases reservations past their expiry date
 
 ### Multi-Channel Notifications
 - **Email** (SMTP via Nodemailer)
@@ -159,15 +164,15 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 └─────────┘  └──────────┘  └─────────────┘
                    │
 ┌──────────────────▼──────────────────────────────────────┐
-│         OCPP Server (WS Port 9000 / WSS Port 9001)     │
+│         OCPP Server (WS Port 9000 / WSS Port 9001)      │
 │  ┌────────────────────────────────────────────────────┐ │
-│  │ OCPP 1.6 RPC                                       │ │
+│  │ OCPP 1.6 / 2.0.1 RPC                               │ │
 │  │ Authentication (password + client certificate)     │ │
 │  │ Handlers: Boot, Authorize, Transactions ...        │ │
-│  │ Remote commands: RemoteStart, ChangeConfig         │ │
+│  │ Remote commands: RemoteStart, ChangeConfig ...     │ │
 │  └────────────────────────────────────────────────────┘ │
 └──────────────────┬──────────────────────────────────────┘
-                   │ WebSocket OCPP 1.6
+                   │ WebSocket OCPP 1.6 / 2.0.1
           ┌────────▼────────┐
           │   EVSE Stations │
           └─────────────────┘
@@ -180,7 +185,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 | Runtime | Node.js 22 |
 | Web framework | Express 5 |
 | Database | SQLite 3 (better-sqlite3, WAL mode) |
-| OCPP protocol | ocpp-rpc (OCPP 1.6-J, OCPP 2.0.1 ready) |
+| OCPP protocol | ocpp-rpc (OCPP 1.6-J and OCPP 2.0.1) |
 | Authentication | Passport.js (local + Google OAuth 2.0) |
 | Password hashing | bcryptjs |
 | HTTP security | Helmet, express-rate-limit |
@@ -234,7 +239,7 @@ Or build the image locally:
 docker build -t ghcr.io/wocha-fr/ocpp-cp-admin .
 ```
 
-Four Docker Compose files are available in the `docker/` folder, suited for different deployment scenarios:
+Six Docker Compose files are available in the `docker/` folder, suited for different deployment scenarios:
 
 | File | Description |
 |---|---|
@@ -242,6 +247,8 @@ Four Docker Compose files are available in the `docker/` folder, suited for diff
 | `docker-compose.https.yml` | App only — HTTPS + WSS (ports 3001/9000/9001, certbot included) |
 | `docker-compose.yml` | Full stack: Traefik (HTTPS, TLS termination) + App + FTP |
 | `docker-compose.tls.yml` | Full stack: Traefik (HTTPS + WSS passthrough) + cert export + App + FTP |
+| `docker-compose.traefik-ext.yml` | Same as `docker-compose.yml` with an existing (external) Traefik |
+| `docker-compose.tls-ext.yml` | Same as `docker-compose.tls.yml` with an existing (external) Traefik |
 
 ```bash
 # Example: full stack with Traefik
@@ -258,6 +265,32 @@ Traefik-based stacks include:
 - **TCP passthrough** for OCPP WSS with client certificate authentication (TLS variant)
 
 See [`docker/README.md`](docker/README.md) for details on each compose file.
+
+**Exposed Ports:**
+
+| Port | Usage |
+|------|-------|
+| 3000 | Web Interface (HTTP) |
+| 3001 | Web Interface (HTTPS, if enabled) |
+| 9000 | OCPP Server (WebSocket) |
+| 9001 | OCPP Server (WebSocket Secure, if enabled) |
+
+**Volumes:**
+
+| Volume | Contents |
+|--------|---------|
+| `/app/config` | Configuration, database, and certificates (`certs/`) |
+| `/app/logs` | Log files |
+| `/app/public/img` | Static images |
+| `/app/locales-custom` | Custom locale files (add or override translations) |
+
+The `/healthz` endpoint is used for Docker health checks (HTTP GET, every 30s).
+
+The `/metrics` endpoint exposes Prometheus-format metrics (chargepoints, transactions, connectors by status, uptime, heap). It is accessible without authentication by default; set `metrics.bearerToken` (or `CPADMIN_METRICS_TOKEN`) to require a bearer token.
+
+On first startup, if `config/config.json` does not exist, it is automatically created from `config.sample.json`.
+
+The entrypoint runs as root to seed default files and fix volume permissions, then drops privileges to a dedicated non-root user (`app`) via `su-exec`.
 
 ### Bare-metal Deployment (systemd)
 
@@ -299,30 +332,6 @@ sudo systemctl enable --now ocpp-cp-admin
 journalctl -u ocpp-cp-admin -f
 ```
 
-**Exposed Ports:**
-
-| Port | Usage |
-|------|-------|
-| 3000 | Web Interface (HTTP) |
-| 3001 | Web Interface (HTTPS, if enabled) |
-| 9000 | OCPP Server (WebSocket) |
-| 9001 | OCPP Server (WebSocket Secure, if enabled) |
-
-**Volumes:**
-
-| Volume | Contents |
-|--------|---------|
-| `/app/config` | Configuration, database, and certificates (`certs/`) |
-| `/app/logs` | Log files |
-| `/app/public/img` | Static images |
-| `/app/locales-custom` | Custom locale files (add or override translations) |
-The `/healthz` endpoint is used for Docker health checks (HTTP GET, every 30s).
-
-The `/metrics` endpoint exposes Prometheus-format metrics (chargepoints, transactions, connectors by status, uptime, heap). It is accessible without authentication by default; set `metrics.bearerToken` (or `CPADMIN_METRICS_TOKEN`) to require a bearer token.
-
-On first startup, if `config/config.json` does not exist, it is automatically created from `config.sample.json`.
-
-The entrypoint runs as root to seed default files and fix volume permissions, then drops privileges to a dedicated non-root user (`app`) via `su-exec`.
 
 ---
 
@@ -363,13 +372,13 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 
 | Variable | JSON Config | Example |
 |---|---|---|
-| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict OCPP 1.6 validation) |
+| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict validation of OCPP messages against the JSON schemas) |
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (disable OCPP 1.6 support) |
 | `CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE` | `ocpp.v16.enforceSecurityProfile` | `true` (see [OCPP security profile enforcement](#ocpp-security-profile-enforcement)) |
-| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (enable OCPP 2.0.1 support — in development) |
+| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (enable OCPP 2.0.1 support) |
 | `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (see [OCPP security profile enforcement](#ocpp-security-profile-enforcement)) |
 | `CPADMIN_OCPP_TRUST_PROXY_PROTO` | `ocpp.trustProxyProto` | `true` (behind a Traefik-like reverse proxy) |
 
@@ -405,6 +414,8 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 | Variable | JSON Config | Example |
 |---|---|---|
 | `CPADMIN_NOTIF_DISABLED_EVENTS` | `notifs.defaultDisabledEvents` | `connector_available,connector_unavailable` |
+| `CPADMIN_NOTIF_RECONNECT_GRACE_PERIOD` | `notifs.reconnectGracePeriodSeconds` | `60` (seconds before an offline notification) |
+| `CPADMIN_NOTIF_AVAILABILITY_DEBOUNCE` | `notifs.availabilityDebounceSeconds` | `5` (seconds before an available / unavailable notification) |
 
 ### Google Auth Configuration
 
@@ -524,12 +535,12 @@ Required fields are validated before saving. The application restarts automatica
 | `callTimeoutSeconds` | Timeout in seconds waiting for a response to an OCPP call |
 | `autoAddUnknownChargepoints` | Automatically add unknown charge points that connect |
 | `pendingUnknownChargepoints` | Put unknown charge points pending admin approval |
-| `trustProxyProto` | Trust the `X-Forwarded-Proto` header to recognize a WSS connection terminated upstream by a reverse proxy (e.g. Traefik) that then forwards to the app as plain WS — used for connection logging/classification, see [OCPP security profile enforcement](#ocpp-security-profile-enforcement) |
+| `trustProxyProto` | Trust the `X-Forwarded-Proto` header (`https` / `wss`) to recognize a WSS connection terminated upstream by a reverse proxy (e.g. Traefik) that then forwards to the app as plain WS: the charge point is shown as connected over WSS and the logs say so. No effect on authentication. Enable only behind such a proxy — see [OCPP security profile enforcement](#ocpp-security-profile-enforcement) |
 | `ocppWsUrl` | OCPP WebSocket URL to communicate (for charge point configuration) |
 | `diagnosticsLocation` | Destination URL for diagnostics upload |
 | `v16.enabled` | Enable OCPP 1.6 support (default: `true`) — set to `false` to disable; a warning is logged and all connections are rejected if both versions are disabled |
 | `v16.enforceSecurityProfile` | Reject OCPP 1.6 connections that meet none of the 3 security profiles recognized by the spec (default: `false`) — see [OCPP security profile enforcement](#ocpp-security-profile-enforcement) |
-| `v201.enabled` | Enable OCPP 2.0.1 support (default: `false`) — **in development**, not yet fully functional |
+| `v201.enabled` | Enable OCPP 2.0.1 support (default: `false`) — see [Supported Operations — OCPP 2.0.1](#supported-operations--ocpp-201) |
 | `v201.enforceSecurityProfile` | Reject OCPP 2.0.1 connections that meet none of the 3 security profiles recognized by the spec (default: `false`) — see [OCPP security profile enforcement](#ocpp-security-profile-enforcement) |
 | `wss.enabled` | Enable WebSocket Secure (TLS) |
 | `wss.strictClientCert` | Require a valid client certificate |
@@ -788,10 +799,15 @@ Alternative to the manual CA/certificate above: the app can act as a local CA an
 **How it works:**
 1. On the first certificate generated, a self-signed local CA is created at `ocpp.wss.clientCa.certFile`/`keyFile` (default: `certs/clients/ca.crt`/`ca.key`) if it doesn't already exist.
 2. A client certificate is automatically generated when a charge point is created (`POST /chargepoints`) or when a pending charge point is accepted — stored under `config/certs/clients/cp-<identity>/{cert.pem,key.pem}`.
-3. From the charge point detail page, a button lets a manager of the charge point's site (or an admin) **download** the certificate (combined cert+key PEM) — same access level as the server root CA, since the manager needs it to deploy onto the charge point. **Generating or regenerating** the certificate remains admin-only, as it issues a new private key.
+3. The **Certificates** section of the charge point detail page (managers of the charge point's site and admins) offers:
+   - the **server root certificate** (`ocpp-wss-root-ca.crt`, see [Root CA](#root-ca--wss-server-certificate-troubleshooting)) — also available from the **WSS root certificate** button at the top of the charge point list, before any charge point exists;
+   - the **client certificate** (combined cert+key PEM, `<identity>-client.pem`);
+   - the **client certificate with the server root** (`<identity>-client-with-root.pem`, for firmwares with a single certificate slot);
+   - the expiry date of the client certificate.
+
+   Managers can download these files since they deploy them onto the charge point. **Generating or regenerating** the certificate remains admin-only, as it issues a new private key (regeneration asks for confirmation).
 4. Default validity period is `ocpp.wss.clientCa.certValidityDays` (5 years).
 5. **Regenerating revokes the previous certificate immediately**: its fingerprint is added to `certs/clients/revoked.json` (checked on every mTLS connection, no restart needed, included in the backup archive), and the charge point's current session is closed — without ending its charging sessions. It cannot reconnect with mTLS until the new certificate is installed on it. Deleting a charge point also revokes and erases its certificate and private key. Certificates issued by a manual CA (`ocpp.wss.caFile`) are not covered by this list.
-6. The generic OCPP command route (`POST /api/chargepoints/:id/command`) is limited for site managers to everyday operations (`Reset`, `ChangeAvailability`, `UnlockConnector`, `TriggerMessage`, `ClearCache`, `GetLocalListVersion`, and diagnostics upload to the configured `ocpp.diagnosticsLocation` only). Any other OCPP command (configuration, firmware, certificates…) is admin-only (OCPP console).
 
 **For the WSS server to trust certificates issued this way**, point `ocpp.wss.caFile` at the same file as `ocpp.wss.clientCa.certFile` (or copy it), then restart the app — `caFile` remains the single mTLS trust mechanism; the issuing CA is not automatically wired into the validation chain.
 
@@ -869,7 +885,8 @@ Rules:
 
 ### How the cost is computed
 
-- The cost is computed **when the session is closed** (all closing paths: StopTransaction, orphan sessions, server restart recovery) and then **frozen** on the transaction (`cost`, `cost_currency`, `cost_details`).
+- The cost is computed **when the session is closed** (all closing paths: StopTransaction / TransactionEvent `Ended`, orphan sessions, server restart recovery) and then **frozen** on the transaction (`cost`, `cost_currency`, `cost_details`). Single exception: a session closed by the server (end message not received) is computed again once when the charge point's real stop arrives later — see [Transaction handling](#transaction-handling).
+- Sessions refused at start (*Rejected* status) never have a cost.
 - The energy is split across slots using the **MeterValues** received during the session (piecewise-linear cumulated energy curve). If the charge point sent none, the energy is **spread proportionally to the duration** (the calculation method is shown in the session detail).
 - Changing the grid afterwards **never changes past sessions**, and sessions closed before a tariff existed are **not back-filled**: the cost of a session is meant to stay a reliable supporting document.
 - A calculation failure never prevents a session from being closed (the session simply has no cost).
@@ -878,7 +895,7 @@ Rules:
 
 - **Transactions** (managers/admins) and **My transactions** (users): *Cost* column and a cost KPI card (totals are grouped by currency, different currencies are never added together).
 - **Session detail**: cost breakdown per slot (time span, kWh, price, amount), calculation method and time zone.
-- **CSV exports** (global/site export and personal export): four extra columns — `Cost`, `Currency`, `Average price (/kWh)` and `Tariff breakdown` (e.g. `Peak 6.20 kWh × 0.2500 = 1.55 | Off-peak 12.00 kWh × 0.1500 = 1.80`). They are empty for sessions without a cost. Each user only sees the cost of their own sessions. A `Category` column (business / personal badge) is also present.
+- **CSV exports** (global/site export and personal export): four extra columns — `Cost`, `Currency`, `Average price (/kWh)` and `Tariff breakdown` (e.g. `Peak 6.20 kWh × 0.2500 = 1.55 | Off-peak 12.00 kWh × 0.1500 = 1.80`). They are empty for sessions without a cost. Each user only sees the cost of their own sessions. A `Category` column (business / personal badge) is also present. Cells starting with `=`, `+`, `-` or `@` (badge, user name… — except numbers) are prefixed with an apostrophe so that a spreadsheet never runs them as a formula.
 
 > Access to a session's detail (`GET /api/transactions/:id`) is restricted to administrators, managers of the site of the charge point and the owner of the RFID badge used.
 
@@ -932,6 +949,7 @@ Management restricted to authorized sites:
 - Monitor charge points on assigned sites
 - Manage users on assigned sites
 - Remote start / stop charging
+- Everyday charge point operations: `Reset`, `ChangeAvailability`, `UnlockConnector`, `TriggerMessage`, `ClearCache`, `GetLocalListVersion`, and diagnostics / log upload to the configured `ocpp.diagnosticsLocation` only (the generic command route `POST /api/chargepoints/:id/command` refuses any other OCPP command to a manager — configuration, firmware, certificates… are admin-only)
 - View transactions on assigned sites
 - CSV export for assigned sites
 - Configure the energy tariff (price per kWh) of assigned sites
@@ -952,53 +970,107 @@ Limited access for charging:
 
 | Method | Endpoint | Access | Description |
 |---|---|---|---|
-| `GET` | `/api/error-events` | manager+ | Paginated error event log. Query params: `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
-| `GET` | `/api/transactions`, `/api/transactions/csv`, `/api/user/transactions`, `/api/user/transactions/stats`, `/api/user/transactions/csv` | manager+ / user | Accept a `category` filter (`pro`\|`perso`) on the badge used for the session |
+| `GET` | `/api/error-events` | manager+ | Paginated error event log. Query params: `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`\|`security_event`\|`notify_event`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
+| `GET` | `/api/transactions`, `/api/transactions/csv`, `/api/user/transactions`, `/api/user/transactions/stats`, `/api/user/transactions/csv` | manager+ / user | Accept a `category` filter (`pro`\|`perso`) on the badge used for the session, and a `status` filter (`Active`\|`Completed`\|`Rejected`). Refused (`Rejected`) sessions are only returned when explicitly filtered |
 | `GET` | `/api/sites/:siteId/tariff` | manager of the site / admin | Tariff of a site: `currency`, `timezone`, `default_price_per_kwh` and `periods[]` (`label`, `days` as ISO weekdays `1`–`7`, `start_time`, `end_time`, `price_per_kwh`) |
 | `PUT` | `/api/sites/:siteId/tariff` | manager of the site / admin | Atomically replaces the tariff of a site (same body as the `GET` response). `400` with `ERR_TARIFF_*` codes when invalid (format, overlap, missing default price…) |
 | `GET` | `/api/transactions/reimbursement/csv` | manager of the site / admin | Reimbursement CSV by site then employee. Query params: `site_id`, `category` (`pro`\|`perso`, default `pro`), `from`, `to` (ISO 8601) |
-| `GET` | `/api/transactions/:id` | admin / site manager / badge owner | Session detail, including the frozen `cost`, `cost_currency` and `cost_details` |
-| `GET` | `/api/transactions/:id/values` | admin / site manager / badge owner | Real-time metering series for a transaction: `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
-| `GET` | `/api/metrics` | optional token | Prometheus-format metrics |
+| `GET` | `/api/transactions/:id` | admin / site manager / badge owner | Session detail, including the frozen `cost`, `cost_currency` and `cost_details`. `:id` is the **internal identifier** of the session (`id` field of the lists), not the OCPP `transaction_id` — only unique per charge point in OCPP 2.0.1 |
+| `GET` | `/api/transactions/:id/values` | admin / site manager / badge owner | Real-time metering series for a transaction (same `:id`): `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
+| `GET` | `/metrics` | optional token | Prometheus-format metrics |
 | `GET` | `/healthz` | public | Health check |
 
 ---
 
-## OCPP 1.6 Protocol
+## OCPP Protocol (1.6 and 2.0.1)
 
-The application implements the OCPP 1.6-J protocol (JSON over WebSocket) for communication with charge points.
+The application implements **OCPP 1.6-J** and **OCPP 2.0.1** (JSON over WebSocket). Both versions can run side by side on the same ports: the version is negotiated with each charge point through the WebSocket sub-protocol (`ocpp1.6` / `ocpp2.0.1`). OCPP 1.6 is enabled by default; OCPP 2.0.1 is enabled with `ocpp.v201.enabled: true` (or `CPADMIN_OCPP_V201_ENABLED=true`).
 
-### Supported Operations
+### Supported Operations — OCPP 1.6
 
 #### Charge Point → Server (incoming requests)
 
 | Operation | Description |
 |---|---|
-| **BootNotification** | Charge point startup notification (manufacturer info, firmware) |
+| **BootNotification** | Charge point startup notification (manufacturer info, firmware) — triggers the [initialization sequence](#initialization-sequence) on first connection |
 | **Heartbeat** | Periodic heartbeat signal |
 | **StatusNotification** | Connector or charge point status change |
 | **Authorize** | RFID badge authorization request |
-| **StartTransaction** | Charging session start |
-| **StopTransaction** | Charging session end (stop reason, energy consumed) |
-| **MeterValues** | Real-time metering data (energy, power, current, SOC, temperature, voltage, frequency) |
+| **StartTransaction** | Charging session start (a refused badge is still recorded, see [Transaction handling](#transaction-handling)) |
+| **StopTransaction** | Charging session end (stop reason, energy consumed); the response carries the actual status of the badge used to stop |
+| **MeterValues** | Real-time metering data (energy, power, current, SOC, temperature, voltage, frequency); `SignedData` values are ignored |
 | **DataTransfer** | Vendor-specific data exchange (no vendor extension implemented: answered `UnknownVendorId`, as required by the specification) |
 | **DiagnosticsStatusNotification** | Diagnostics upload status |
 | **FirmwareStatusNotification** | Firmware update progress status |
 
-#### Server → Charge Point (remote commands)
+#### Server → Charge Point (commands)
+
+| Operation | Used for |
+|---|---|
+| **RemoteStartTransaction** / **RemoteStopTransaction** | Start / stop a charging session from the interface |
+| **GetConfiguration** / **ChangeConfiguration** | Read and modify configuration keys |
+| **SetChargingProfile** / **ClearChargingProfile** / **GetCompositeSchedule** | [Charging profiles](#charging-profiles) |
+| **ReserveNow** / **CancelReservation** | Connector reservations (expired reservations are released automatically) |
+| **Reset** (Soft / Hard), **ChangeAvailability**, **UnlockConnector**, **TriggerMessage**, **ClearCache**, **GetLocalListVersion**, **GetDiagnostics** | Operations from the charge point page |
+
+### Supported Operations — OCPP 2.0.1
+
+#### Charging Station → Server (incoming requests)
 
 | Operation | Description |
 |---|---|
-| **RemoteStartTransaction** | Start a charging session remotely |
-| **RemoteStopTransaction** | Stop a charging session remotely |
-| **GetConfiguration** | Retrieve charge point configuration |
-| **ChangeConfiguration** | Modify a configuration parameter |
-| **SetChargingProfile** | Apply a charging profile on a connector |
-| **ClearChargingProfile** | Clear one or more charging profiles |
-| **ReserveNow** | Reserve a connector for an RFID badge |
-| **CancelReservation** | Cancel an existing reservation |
+| **BootNotification**, **Heartbeat**, **StatusNotification** | Startup, keep-alive, connector status (per EVSE) |
+| **Authorize** | Badge (`idToken`) authorization; the token type is checked against the type stored for the badge |
+| **TransactionEvent** | `Started` / `Updated` / `Ended` events of a session (badge presented after plug-in, remote start correlated by `remoteStartId`, stop reason read from `stoppedReason`, meter values) |
+| **MeterValues** | Meter values outside a transaction |
+| **NotifyReport** | Device model inventory (response to `GetBaseReport`), stored as the charge point variables |
+| **ReservationStatusUpdate** | Reservation expired / removed by the charging station |
+| **FirmwareStatusNotification**, **LogStatusNotification** | Firmware update and log upload progress (failures are notified) |
+| **SecurityEventNotification**, **NotifyEvent** | Security events and alerting/critical device events, stored in the error event history |
+| **DataTransfer** | Answered `UnknownVendorId` (no vendor extension) |
+| **NotifyChargingLimit**, **ClearedChargingLimit**, **ReportChargingProfiles**, **NotifyCustomerInformation**, **NotifyDisplayMessages**, **NotifyMonitoringReport**, **PublishFirmwareStatusNotification** | Acknowledged (informational, not used) |
+| **SignCertificate**, **GetCertificateStatus**, **Get15118EVCertificate**, **NotifyEVChargingNeeds**, **NotifyEVChargingSchedule** | Explicitly refused (`Rejected` / `Failed`): certificate management over OCPP and ISO 15118 are not supported |
 
-A generic command interface allows sending any OCPP command through the API.
+#### Server → Charging Station (commands)
+
+| Operation | Used for |
+|---|---|
+| **RequestStartTransaction** / **RequestStopTransaction** | Start / stop a charging session (an EVSE can be targeted on multi-EVSE stations) |
+| **GetTransactionStatus** | After a reconnection, checks that sessions still active in the database still exist on the station |
+| **GetBaseReport**, **GetVariables** / **SetVariables** | Read the device model and modify variables (including variables with an instance, e.g. `MessageTimeout[Default]`) |
+| **SetChargingProfile** / **ClearChargingProfile** / **GetCompositeSchedule** | [Charging profiles](#charging-profiles) (`ChargingStationMaxProfile`, `TxDefaultProfile`) |
+| **ReserveNow** / **CancelReservation** | EVSE reservations |
+| **Reset** (Immediate / OnIdle), **ChangeAvailability**, **UnlockConnector**, **TriggerMessage**, **ClearCache**, **GetLocalListVersion**, **GetLog** | Operations from the charge point page |
+
+**Not supported in OCPP 2.0.1:** certificate management over OCPP (`InstallCertificate`, `CertificateSigned`, `SignCertificate`… — client certificates are issued by the app, see [Automatic client certificate generation](#automatic-client-certificate-generation)), ISO 15118 / Plug & Charge, `GetChargingProfiles`, local authorization list management, display messages, monitoring, and the `totalCost` field of `TransactionEventResponse`.
+
+For both versions, administrators can send any other command with arbitrary JSON parameters from the raw OCPP console (System Administration page).
+
+### Initialization Sequence
+
+On the first connection of a charge point (or after **Reinitialize** on its page), the server runs:
+
+1. `ClearCache`;
+2. `ClearChargingProfile` (only when the app manages no profile for this charge point);
+3. reading of the configuration — `GetConfiguration` (1.6, paginated if needed) or `GetBaseReport` + `NotifyReport` (2.0.1);
+4. application of the **default configuration** (*Settings → Default OCPP Configuration*): `ChangeConfiguration` keys (1.6) or `SetVariables` variables (2.0.1), except values locked (override) on this charge point;
+5. re-application of the values locked on this charge point.
+
+The default configuration enforces `AuthorizeRemoteTxRequests=false` (1.6) and `AuthCtrlr.AuthorizeRemoteStart=false` (2.0.1), so that a charge point does not ask for the authorization of the badge of a remote start (see [Remote starts](#remote-starts)). An OCPP 2.0.1 variable can carry an **instance** (field in the default configuration form). *Apply to all charge points* sends the 1.6 keys only to 1.6 charge points and the 2.0.1 variables only to 2.0.1 charge points; offline charge points receive them at their next initialization.
+
+### Transaction Handling
+
+- **Transactions are identified by charge point**: in 2.0.1 the `transactionId` is generated by the charging station and is only unique for it. In the interface and the API, a session is designated by its internal identifier (`id`).
+- **Refused start**: when the badge is refused at `StartTransaction` / `TransactionEvent(Started)`, the session is still recorded with the **Rejected** status (in 1.6 the charge point receives a real `transactionId`, not `0`): the energy delivered before the cut is kept, but the session is never billed and is excluded from lists, totals and exports (*Rejected* filter on the Transactions page).
+- **Sessions closed by the server**: the server closes a session itself when it can no longer expect its end message — connector back to `Available`, new session on the same connector, server restart, OCPP version change, de-authorization, or a 2.0.1 station confirming the end through `GetTransactionStatus`. If the real `StopTransaction` / `TransactionEvent(Ended)` arrives afterwards (the specification does not guarantee message order), it **corrects** the session (meter, time, stop reason) and the cost is computed again, without a new notification. Meter values received late for such a session are kept for the chart.
+- **Retransmissions**: a `StartTransaction`, `TransactionEvent(Started)`, `StopTransaction` or `Ended` sent again by the charge point (lost response) never creates a duplicate nor sends notifications twice.
+
+### Remote Starts
+
+Starts from the interface use the user's badge or a **badge generated** by the app (`ADMIN`, `MGR-<site>`, `WEB-<user>`, sent with the `Central` token type in 2.0.1). Generated badges are refused when presented as an RFID card. During a remote start, the server remembers the badge (and the 2.0.1 `remoteStartId`) for 60 seconds:
+
+- an `Authorize` for this badge, from this charge point, is accepted — useful for charge points whose `AuthorizeRemoteTxRequests` / `AuthorizeRemoteStart` key is read-only;
+- only this badge skips the authorization check: another badge presented on the connector in the meantime is still checked.
 
 ### Charge Point Connection
 
@@ -1016,11 +1088,15 @@ Where `<identity>` is the unique identifier of the charge point (registered in t
 
 ### Security Profiles
 
-| Profile | Description |
-|---|---|
-| **Profile 1** | No authentication (unsecured WebSocket) |
-| **Profile 2** | Password authentication (Basic Auth in WebSocket handshake) |
-| **Profile 3** | TLS client certificate (WebSocket Secure with certificate verification) |
+The OCPP security profiles (OCPP 1.6 security whitepaper, OCPP 2.0.1 part 2 — A00):
+
+| Profile | Transport | Charge point authentication |
+|---|---|---|
+| **Profile 1** | WS (unsecured) | Password (Basic Auth in the WebSocket handshake) |
+| **Profile 2** | WSS (TLS) | Password (Basic Auth) |
+| **Profile 3** | WSS (TLS) | TLS client certificate (mTLS) |
+
+A connection with **no authentication at all** (plain WS without password) is not one of these profiles; it is accepted by default for compatibility, and can be refused per OCPP version — see [OCPP security profile enforcement](#ocpp-security-profile-enforcement).
 
 Charge points must be registered and authorized in the application to connect. Unrecognized charge points can be:
 - **Rejected** (default behavior)
@@ -1047,7 +1123,9 @@ Any connection attempt on an enforced version matching none of these profiles is
 
 **Prerequisite for mTLS mode**: each charge point must have a client certificate whose `CN` exactly matches its identity — see [Automatic client certificate generation](#automatic-client-certificate-generation). A single certificate shared by all charge points (generic CN) does not satisfy this condition under enforcement.
 
-**Reverse proxy (Traefik, etc.)**: `ocpp.trustProxyProto` lets the app recognize, via the `X-Forwarded-Proto` header, that a connection arriving as plain WS on the app was actually secured by TLS upstream — useful for correct connection logging/classification. **WSS+mTLS remains impossible behind a TLS-terminating reverse proxy**, however (the client certificate is never forwarded to the app): only the Basic Auth profiles remain usable in that case, regardless of `trustProxyProto`.
+**Reverse proxy (Traefik, etc.)**: with `ocpp.trustProxyProto: true`, a connection arriving as plain WS on the app with an `X-Forwarded-Proto: https` (or `wss`) header is considered secured by TLS upstream: the charge point is shown as connected over **WSS**, the logs mention `WSS (TLS terminated by proxy)` and a refusal is classified `wss_no_auth`. It has **no effect on authentication**: the password is still required. Enable it only behind a reverse proxy that sets this header (otherwise a client could forge it). **WSS+mTLS remains impossible behind a TLS-terminating reverse proxy** (the client certificate is never forwarded to the app): only the Basic Auth profiles remain usable in that case.
+
+**Startup warning**: when enforcement is enabled on a version while `ocpp.wss.caFile` is empty, a warning is logged at startup — client certificates cannot be verified, so every mTLS connection would be refused (the message gives the path of the local client CA when it exists).
 
 ### Heartbeat & Connection Monitoring
 
@@ -1061,7 +1139,7 @@ Activity deferral (`deferPingsOnActivity`) is enabled: if a charge point is acti
 #### Heartbeat Watchdog (application level)
 A server-side watchdog checks at regular intervals whether each connected charge point has sent a `Heartbeat` message recently. A charge point that has not sent a heartbeat within `HeartbeatInterval × 2` seconds is forcibly disconnected.
 
-The `HeartbeatInterval` is a **global system parameter** managed exclusively in *Settings → Default OCPP Configuration*. It is sent to every charge point via `ChangeConfiguration` during initialization and cannot be overridden per charge point. The watchdog always reads this value from the database so that changes take effect immediately without restarting the server.
+The heartbeat interval is a **global system parameter** managed exclusively in *Settings → Default OCPP Configuration*: the `HeartbeatInterval` key for OCPP 1.6 charge points and the `OCPPCommCtrlr.HeartbeatInterval` variable for OCPP 2.0.1 charge points. It is returned in the `BootNotification` response, applied during initialization and cannot be overridden per charge point. The watchdog reads the value matching the OCPP version of each charge point from the database, so changes take effect immediately without restarting the server.
 
 When a charge point is disconnected by the watchdog, a **Dead charge point (heartbeat timeout)** notification is sent to admins and managers (web push by default, email optionally). The generic *charge point offline* notification is suppressed in this case to avoid duplicate alerts.
 
@@ -1092,6 +1170,10 @@ The application provides an event-driven alert system.
 | Auto-added charge point | An unknown charge point was automatically added |
 | Duplicate identity | Same charge point identifier from a different IP |
 | Flapping | Rapid repeated reconnections from a charge point |
+| Connection refused | A charge point was refused (unknown, not authorized, wrong or missing password, security profile not met…) — at most once per `refusedCooldownMinutes` for the same identity and reason |
+| Initialization result | Keys / variables of the default configuration rejected, not supported or requiring a reboot |
+| Diagnostics / log upload | Upload finished or failed |
+| Firmware update | Firmware installed or update failed |
 
 #### Manager Events
 
@@ -1109,7 +1191,7 @@ The application provides an event-driven alert system.
 | Event | Description |
 |---|---|
 | Transaction started / ended | My charging session starts or ends |
-| Charge suspended (EVSE) | The charge point has suspended charging |
+| Vehicle charged | The vehicle has stopped drawing energy (connector `SuspendedEV`, target charge reached): it can be unplugged |
 
 Each user can configure their notification preferences (which events to receive and on which channels) through the application settings.
 
@@ -1128,7 +1210,7 @@ The application uses **Winston** with daily file rotation.
 
 Maximum file size: 20 MB.
 
-Predefined logging scopes: `CPADM`, `WEBUI`, `OCPP`, `NOTIF`, `SQLDB`.
+Predefined logging scopes: `CPADM` (application), `WEBUI` (web server), `AUTH` (authentication), `OCPP` (OCPP server), `CERTCA` (client certificate authority), `NOTIF`, `NOTIFMAIL`, `NOTIFPUSH`, `NOTIFPUSHOVER` (notifications), `SQLDB` (database).
 
 In development mode, logs are also displayed in the console with color-coded scopes.
 
@@ -1196,14 +1278,14 @@ npm run start-dev
 # Start in development mode with file watching (auto-reload on change)
 npm run start-watch
 
-# Check code style
-npm run lint
+# Check code style (ESLint on src/)
+npm run lint:check
 
 # Auto-fix style issues
 npm run lint:fix
 
 # Format code with Prettier
-npm run format
+npm run format:fix
 
 # Check formatting without modifying
 npm run format:check
@@ -1223,11 +1305,17 @@ npm run test:coverage
 # Run tests in CI mode (coverage + forceExit)
 npm run test:ci
 
+# End-to-end tests (Playwright — starts the app on port 3099 with a dedicated e2e.db database)
+npm run test:e2e
+# … with the Playwright interactive UI
+npm run test:e2e:ui
+
 # Scan for secrets in source files
 npm run audit:secrets
 
-# Audit npm dependencies for high severity vulnerabilities
+# Audit npm dependencies for high severity vulnerabilities (production / including dev)
 npm run audit:deps
+npm run audit:depsdev
 ```
 
 ---
@@ -1308,15 +1396,21 @@ backup:
 | `users` | User accounts |
 | `user_sites` | User ↔ site association (with role) |
 | `chargepoints` | Registered charge points |
+| `evses` | EVSEs of OCPP 2.0.1 charge points |
 | `connectors` | Charge point connectors |
-| `chargepoint_config` | Charge point configuration |
-| `transactions` | Charging sessions (with the frozen cost: `cost`, `cost_currency`, `cost_details`) |
-| `transactions_values` | Real-time metering data |
+| `chargepoint_config` | Configuration keys of OCPP 1.6 charge points (with the locked/override flag) |
+| `chargepoint_variables` | Device model variables of OCPP 2.0.1 charge points (component, variable, attribute, instance, EVSE) |
+| `chargepoint_init_config` / `chargepoint_init_variables` | Default OCPP configuration applied to charge points (1.6 keys / 2.0.1 variables) |
+| `id_tags` | RFID badges (owner, site, expiry, business/personal category, token type) |
+| `id_tags_events` | Authorization rejections of badges |
+| `transactions` | Charging sessions, identified by charge point (`chargepoint_id`, `transaction_id`): status `Active` / `Completed` / `Rejected`, frozen cost (`cost`, `cost_currency`, `cost_details`), `closed_by` (`station` or `server`) |
+| `transactions_values` | Real-time metering data of a session |
 | `ocpp_messages` | OCPP message log |
 | `users_password_resets` | Password reset tokens |
 | `charging_profiles` | Charging profiles applied to charge points |
 | `reservations` | Active and historical connector reservations |
-| `error_events` | Persistent log of hardware/network errors (StatusNotification faults, disconnections, heartbeat timeouts) |
+| `error_events` | Persistent log of hardware/network errors (StatusNotification faults, disconnections, heartbeat timeouts, security events, alerting device events) |
+| `notification_preferences` / `push_subscriptions` / `notification_log` | Notification preferences per user and channel, Web Push subscriptions, sent notifications |
 
 ---
 

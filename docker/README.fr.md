@@ -1,6 +1,6 @@
 # Déploiement Docker
 
-Quatre fichiers Docker Compose sont disponibles dans le dossier `docker/`.
+Six fichiers Docker Compose sont disponibles dans le dossier `docker/`.
 Choisissez celui qui correspond à votre infrastructure.
 
 > **🇬🇧 [English version](README.md)**
@@ -51,7 +51,7 @@ docker compose -f docker/docker-compose.http.yml up -d
 L'application gère elle-même le TLS. Les certificats sont obtenus via **Let's Encrypt** (certbot standalone) et automatiquement déposés dans `./data/config/certs/`.
 
 - **Port 3001** : interface web (HTTPS)
-- **Port 9000** : OCPP WebSocket non chiffré (Security Profile 1)
+- **Port 9000** : OCPP WebSocket non chiffré (Security Profile 1 quand la borne envoie un mot de passe)
 - **Port 9001** : OCPP WebSocket Secure (TLS géré par l'app, Security Profile 2/3)
 
 **Premier démarrage — obtenir les certificats avant de lancer le reste de la stack :**
@@ -389,12 +389,15 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 
 | Variable | Config JSON | Exemple |
 |---|---|---|
-| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (désactiver la validation stricte OCPP 1.6) |
+| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (désactiver la validation stricte des messages OCPP par les schémas JSON) |
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (enregistrer automatiquement les bornes inconnues) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (désactiver le support OCPP 1.6) |
-| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (activer le support OCPP 2.0.1 — en cours de développement) |
+| `CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE` | `ocpp.v16.enforceSecurityProfile` | `true` (refuser les connexions OCPP 1.6 sans profil de sécurité OCPP, voir [Enforcement des profils de sécurité OCPP](../README.fr.md#enforcement-des-profils-de-sécurité-ocpp)) |
+| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (activer le support OCPP 2.0.1) |
+| `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (idem pour OCPP 2.0.1) |
+| `CPADMIN_OCPP_TRUST_PROXY_PROTO` | `ocpp.trustProxyProto` | `true` (stacks Traefik avec terminaison TLS : une borne connectée en WSS via Traefik est affichée en WSS — aucun effet sur l'authentification) |
 
 ### Configuration mail
 
@@ -428,6 +431,8 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | Variable | Config JSON | Exemple |
 |---|---|---|
 | `CPADMIN_NOTIF_DISABLED_EVENTS` | `notifs.defaultDisabledEvents` | `connector_available,connector_unavailable` |
+| `CPADMIN_NOTIF_RECONNECT_GRACE_PERIOD` | `notifs.reconnectGracePeriodSeconds` | `60` (secondes avant une notification « hors ligne ») |
+| `CPADMIN_NOTIF_AVAILABILITY_DEBOUNCE` | `notifs.availabilityDebounceSeconds` | `5` (secondes avant une notification disponible / indisponible) |
 
 ### Configuration Google Auth
 

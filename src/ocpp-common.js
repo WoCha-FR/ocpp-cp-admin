@@ -179,6 +179,17 @@ function makeLoggedHandle(client, identity, chargepointId) {
 }
 
 // ── Factory serveur OCPP ──
+// ocpp.trustProxyProto : le reverse proxy (Traefik…) a terminé le TLS de la borne et le signale
+// par X-Forwarded-Proto (https / wss). À n'activer que derrière un proxy de confiance (l'en-tête
+// est sinon falsifiable) ; ne sert qu'au classement de la connexion, jamais à l'authentification.
+function isTlsTerminatedUpstream(handshake, config) {
+  if (!config.ocpp?.trustProxyProto) return false;
+  const raw = handshake.headers?.['x-forwarded-proto'];
+  if (!raw) return false;
+  const proto = String(raw).split(',')[0].trim().toLowerCase();
+  return proto === 'https' || proto === 'wss';
+}
+
 function getClientIp(handshake, config) {
   if (config.webui?.trustProxy) {
     const forwarded = handshake.headers?.['x-forwarded-for'];
@@ -216,7 +227,14 @@ function createOCPPServerBase(options = {}) {
       return reject(429, 'Too many connection attempts');
     }
 
-    logger.debug(`Connection attempt: ${handshake.identity} on ${isWSS ? 'WSS' : 'WS'}`);
+    // TLS terminé en amont par un reverse proxy (Traefik…) : la connexion arrive en WS clair mais
+    // le lien borne ↔ proxy est chiffré. Classement uniquement (affichage « WSS », logs, raison
+    // d'un refus) : aucun effet sur l'authentification — le mot de passe reste exigé et le mTLS
+    // est impossible (le certificat client n'est jamais transmis par le proxy).
+    const tlsUpstream = !isWSS && isTlsTerminatedUpstream(handshake, config);
+    const transportLabel = isWSS ? 'WSS' : tlsUpstream ? 'WSS (TLS terminated by proxy)' : 'WS';
+
+    logger.debug(`Connection attempt: ${handshake.identity} on ${transportLabel}`);
 
     if (!handshake.identity) {
       return reject(400, 'Missing identity');
@@ -289,11 +307,12 @@ function createOCPPServerBase(options = {}) {
     if (enforceForVersion) {
       const validProfile = (isWSS && hasClientCert && clientCertVerified) || !!providedPassword;
       if (!validProfile) {
-        // ws_no_auth : WS clair sans mot de passe ; wss_no_auth : WSS sans mot de passe ni certificat
+        // ws_no_auth : WS clair sans mot de passe ; wss_no_auth : WSS (ou TLS terminé par le
+        // proxy, ocpp.trustProxyProto) sans mot de passe ni certificat
         const reason =
           hasClientCert && !clientCertVerified
             ? 'mtls_invalid'
-            : isWSS
+            : isWSS || tlsUpstream
               ? 'wss_no_auth'
               : 'ws_no_auth';
         const cert = describeClientCert(tlsSocket, handshake.identity);
@@ -306,7 +325,7 @@ function createOCPPServerBase(options = {}) {
         });
         logger.warn(
           `Connection refused: ${handshake.identity} does not meet an approved OCPP ${attemptedVersion} security profile ` +
-            `[reason=${reason}] causes: ${causes.join(' | ') || 'unknown'}; transport=${isWSS ? 'WSS' : 'WS'}, ` +
+            `[reason=${reason}] causes: ${causes.join(' | ') || 'unknown'}; transport=${transportLabel}, ` +
             `remote=${clientIp}, password_sent=${!!providedPassword}, ` +
             `ca_file_configured=${!!config.ocpp.wss?.caFile}, ${formatTlsSession(tlsSocket)}, ${formatClientCert(cert)}`
         );
@@ -450,8 +469,11 @@ function createOCPPServerBase(options = {}) {
       caFileConfigured: !!config.ocpp.wss?.caFile,
       identity: handshake.identity,
     });
-    logger[outcome.level](`Connection accepted for ${handshake.identity}: ${outcome.message}`);
-    accept({ identity: handshake.identity, remoteAddress: clientIp });
+    logger[outcome.level](
+      `Connection accepted for ${handshake.identity}: ${outcome.message}` +
+        (tlsUpstream ? ', transport=WSS (TLS terminated by proxy)' : '')
+    );
+    accept({ identity: handshake.identity, remoteAddress: clientIp, tlsUpstream });
   });
 
   server.on('client', (client) => {
@@ -529,7 +551,8 @@ function createOCPPServerBase(options = {}) {
     connectedClients.set(identity, client);
     db.upsertChargepoint(identity, {
       connected: 1,
-      connected_wss: isWSS ? 1 : 0,
+      // WSS natif, ou TLS terminé en amont par le reverse proxy (ocpp.trustProxyProto)
+      connected_wss: isWSS || client.session?.tlsUpstream ? 1 : 0,
       endpoint_address: client.session.remoteAddress || null,
       ocpp_version: ocppVersion,
     });

@@ -1513,6 +1513,86 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 2.0.1', () 
     expect(accept).toHaveBeenCalled();
   });
 
+  describe('ocpp.trustProxyProto — TLS terminé par le reverse proxy (classement seulement)', () => {
+    // Adresse distincte par tentative : ne pas consommer la limite de connexions par IP des
+    // autres tests (10 / minute)
+    let n = 0;
+    const handshake = (identity, extra = {}) => ({
+      identity,
+      remoteAddress: `10.99.0.${++n}`,
+      protocols: new Set(['ocpp2.0.1']),
+      headers: { 'x-forwarded-proto': 'https' },
+      ...extra,
+    });
+    afterEach(() => {
+      delete configMock.ocpp.trustProxyProto;
+    });
+
+    it('activé : la connexion est marquée TLS en amont (tlsUpstream) mais le mot de passe reste exigé', () => {
+      configMock.ocpp.trustProxyProto = true;
+      const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
+      const accept = jest.fn();
+      const reject = jest.fn();
+      server._authFn(accept, reject, handshake('CP201-PROXY-NOAUTH'));
+      // Toujours refusée sans authentification, raison classée « WSS »
+      expect(reject).toHaveBeenCalledWith(401, 'OCPP 2.0.1 security profile not met');
+      expect(mockNotifications.emit).toHaveBeenCalledWith(
+        'chargepoint_refused',
+        expect.objectContaining({ identity: 'CP201-PROXY-NOAUTH', reason: 'wss_no_auth' })
+      );
+    });
+
+    it('activé + Basic Auth : acceptée avec tlsUpstream=true', () => {
+      configMock.ocpp.trustProxyProto = true;
+      mockDb.getChargepointByIdentity.mockReturnValue({ authorized: true, password: 'hash' });
+      const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
+      const accept = jest.fn();
+      server._authFn(accept, jest.fn(), handshake('CP201-PROXY', { password: Buffer.from('secret') }));
+      expect(accept).toHaveBeenCalledWith(expect.objectContaining({ tlsUpstream: true }));
+    });
+
+    it.each([
+      ['réglage désactivé', false, 'https'],
+      ['en-tête http', true, 'http'],
+      ['en-tête absent', true, undefined],
+    ])('%s : tlsUpstream=false', (_label, setting, proto) => {
+      configMock.ocpp.trustProxyProto = setting;
+      mockDb.getChargepointByIdentity.mockReturnValue({ authorized: true, password: 'hash' });
+      const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
+      const accept = jest.fn();
+      server._authFn(
+        accept,
+        jest.fn(),
+        handshake('CP201-NOPROXY', {
+          password: Buffer.from('secret'),
+          headers: proto ? { 'x-forwarded-proto': proto } : {},
+        })
+      );
+      expect(accept).toHaveBeenCalledWith(expect.objectContaining({ tlsUpstream: false }));
+    });
+
+    it('la borne connectée derrière le proxy est enregistrée connected_wss=1', () => {
+      const { EventEmitter } = require('events');
+      mockDb.getChargepointByIdentity.mockReturnValue({ id: 3, site_id: 1, ocpp_version: '2.0.1' });
+      ocppCommon.registerHandlersFn('2.0.1', jest.fn());
+      const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS });
+      const client = new EventEmitter();
+      Object.assign(client, {
+        identity: 'CP201-PROXY-WSS',
+        session: { remoteAddress: '1.2.3.4', tlsUpstream: true },
+        protocol: 'ocpp2.0.1',
+        close: jest.fn(),
+        handle: jest.fn(),
+      });
+      server.emit('client', client);
+      expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+        'CP201-PROXY-WSS',
+        expect.objectContaining({ connected_wss: 1 })
+      );
+      ocppCommon.getConnectedClients().delete('CP201-PROXY-WSS');
+    });
+  });
+
   describe('certificat client révoqué (régénéré ou borne supprimée)', () => {
     const FP = 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99';
     let cfgDir;

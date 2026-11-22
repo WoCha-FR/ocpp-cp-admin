@@ -1,6 +1,6 @@
 # OCPP CP Admin
 
-**Système de gestion de bornes de recharge (CSMS)** pour opérateurs de charge (CPO), basé sur le protocole OCPP 1.6.
+**Système de gestion de bornes de recharge (CSMS)** pour opérateurs de charge (CPO), compatible avec les protocoles **OCPP 1.6-J** et **OCPP 2.0.1**.
 
 OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pour véhicules électriques : gestion des bornes, des utilisateurs, des transactions de charge, alertes en temps réel et tableau de bord analytique.
 
@@ -15,8 +15,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - [Prérequis](#prérequis)
 - [Installation](#installation)
   - [Node.js](#installation-nodejs)
-  - [Docker](#installation-docker)
-  - [Docker Compose](#docker-compose)
+  - [Docker / Docker Compose](#installation-docker)
   - [Bare-metal (systemd)](#déploiement-bare-metal-systemd)
 - [Variables d'environnement](#variables-denvironnement)
 - [Configuration](#configuration)
@@ -33,8 +32,12 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - [Tarification de l'énergie](#tarification-de-lénergie)
 - [Badges professionnels / personnels et exports de remboursement](#badges-professionnels--personnels-et-exports-de-remboursement)
 - [Rôles et permissions](#rôles-et-permissions)
-- [Protocole OCPP 1.6](#protocole-ocpp-16)
-  - [Opérations supportées](#opérations-supportées)
+- [Protocole OCPP (1.6 et 2.0.1)](#protocole-ocpp-16-et-201)
+  - [Opérations supportées — OCPP 1.6](#opérations-supportées--ocpp-16)
+  - [Opérations supportées — OCPP 2.0.1](#opérations-supportées--ocpp-201)
+  - [Séquence d'initialisation](#séquence-dinitialisation)
+  - [Gestion des transactions](#gestion-des-transactions)
+  - [Démarrages à distance](#démarrages-à-distance)
   - [Connexion des bornes](#connexion-des-bornes)
   - [Profils de sécurité](#profils-de-sécurité)
   - [Heartbeat et surveillance des connexions](#heartbeat-et-surveillance-des-connexions)
@@ -54,8 +57,9 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Enregistrement manuel ou découverte automatique des bornes
 - Approbation des bornes en attente de connexion
 - Affectation des bornes à des sites
+- Bornes OCPP 1.6 et OCPP 2.0.1 côte à côte (bornes multi-EVSE prises en charge en 2.0.1)
 - Supervision en temps réel (statut connecteur, heartbeat, erreurs)
-- Configuration à distance des bornes (GetConfiguration / ChangeConfiguration)
+- Configuration à distance des bornes (GetConfiguration / ChangeConfiguration en 1.6, GetBaseReport / SetVariables en 2.0.1) et configuration par défaut appliquée automatiquement à la première connexion
 - Historique des messages OCPP (CALL / CALLRESULT / CALLERROR)
 
 ### Gestion des sites et utilisateurs
@@ -68,8 +72,9 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 ### Transactions et suivi de charge
 - Suivi des transactions actives et terminées
 - Données temps réel : énergie (Wh), puissance (W), courant (A par phase), état de charge (SOC %), température (°C), tension (V par phase), fréquence (Hz)
-- Historique des transactions avec filtres
-- Export CSV des transactions (avec les colonnes de coût lorsqu'un tarif est configuré)
+- Historique des transactions avec filtres ; les sessions refusées au démarrage (badge non autorisé) sont conservées avec le statut *Refusée*, jamais facturées — voir [Gestion des transactions](#gestion-des-transactions)
+- Sessions clôturées par le serveur (message de fin perdu, redémarrage…) corrigées par l'arrêt réel de la borne quand il arrive ensuite
+- Export CSV des transactions (avec les colonnes de coût lorsqu'un tarif est configuré) ; les cellules qui pourraient être lues comme une formule de tableur (`=`, `+`, `-`, `@`…) sont précédées d'une apostrophe
 - Tarification du kWh par site (tranches horaires et jours de la semaine), coût de chaque session figé à la clôture — voir [Tarification de l'énergie](#tarification-de-lénergie)
 - Tableau de bord personnel pour les utilisateurs
 
@@ -81,7 +86,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 
 ### Gestion des badges RFID
 - Création et gestion de badges (ID Tags), avec une catégorie **professionnel / personnel** — voir [Badges professionnels / personnels et exports de remboursement](#badges-professionnels--personnels-et-exports-de-remboursement)
-- Génération automatique de tags web pour les démarrages à distance
+- Génération automatique de badges pour les démarrages à distance (`ADMIN`, `MGR-<site>`, `WEB-<utilisateur>`), refusés lorsqu'ils sont présentés comme carte RFID — voir [Démarrages à distance](#démarrages-à-distance)
 - Suivi des expirations et des rejets d'autorisation
 
 ### Profils de charge (Charging Profiles)
@@ -93,9 +98,9 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Synchronisation à la reconnexion de la borne : les profils existants sont ré-appliqués automatiquement
 
 ### Réservations de connecteurs
-- Réservation d'un connecteur pour un badge RFID donné via `ReserveNow` OCPP 1.6
+- Réservation d'un connecteur (1.6) ou d'un EVSE (2.0.1) pour un badge RFID donné via `ReserveNow`
 - Annulation à la demande via `CancelReservation`
-- Expiration automatique des réservations détectée par `StatusNotification`
+- Expiration automatique : par `StatusNotification` / `ReservationStatusUpdate` (2.0.1), et par une surveillance côté serveur qui libère les réservations dont la date d'expiration est passée
 
 ### Notifications multi-canaux
 - **Email** (SMTP via Nodemailer)
@@ -162,13 +167,13 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 ┌──────────────────▼──────────────────────────────────────┐
 │         Serveur OCPP (WS Port 9000 / WSS Port 9001)     │
 │  ┌────────────────────────────────────────────────────┐ │
-│  │ OCPP 1.6 RPC                                       │ │
+│  │ OCPP 1.6 / 2.0.1 RPC                               │ │
 │  │ Authentification (mot de passe + certificat client)│ │
 │  │ Handlers : Boot, Authorize, Transactions ...       │ │
-│  │ Commandes distantes : RemoteStart, ChangeConfig    │ │
+│  │ Commandes distantes : RemoteStart, ChangeConfig... │ │
 │  └────────────────────────────────────────────────────┘ │
 └──────────────────┬──────────────────────────────────────┘
-                   │ WebSocket OCPP 1.6
+                   │ WebSocket OCPP 1.6 / 2.0.1
           ┌────────▼────────┐
           │  Bornes EVSE    │
           └─────────────────┘
@@ -181,7 +186,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 | Runtime | Node.js 22 |
 | Framework web | Express 5 |
 | Base de données | SQLite 3 (better-sqlite3, mode WAL) |
-| Protocole OCPP | ocpp-rpc (OCPP 1.6-J, OCPP 2.0.1 ready) |
+| Protocole OCPP | ocpp-rpc (OCPP 1.6-J et OCPP 2.0.1) |
 | Authentification | Passport.js (local + Google OAuth 2.0) |
 | Hachage mot de passe | bcryptjs |
 | Sécurité HTTP | Helmet, express-rate-limit |
@@ -229,7 +234,7 @@ docker pull ghcr.io/wocha-fr/ocpp-cp-admin:latest
 docker pull wocha/ocpp-cp-admin:latest
 ```
 
-Quatre fichiers Docker Compose sont disponibles dans le dossier `docker/`, adaptés à différents scénarios de déploiement :
+Six fichiers Docker Compose sont disponibles dans le dossier `docker/`, adaptés à différents scénarios de déploiement :
 
 | Fichier | Description |
 |---|---|
@@ -237,6 +242,8 @@ Quatre fichiers Docker Compose sont disponibles dans le dossier `docker/`, adapt
 | `docker-compose.https.yml` | App seule — HTTPS + WSS (ports 3001/9000/9001, certbot inclus) |
 | `docker-compose.yml` | Stack complète : Traefik (HTTPS, TLS termination) + App + FTP |
 | `docker-compose.tls.yml` | Stack complète : Traefik (HTTPS + WSS passthrough) + export certs + App + FTP |
+| `docker-compose.traefik-ext.yml` | Comme `docker-compose.yml`, avec un Traefik existant (externe) |
+| `docker-compose.tls-ext.yml` | Comme `docker-compose.tls.yml`, avec un Traefik existant (externe) |
 
 ```bash
 # Exemple : stack complète avec Traefik
@@ -271,6 +278,7 @@ Consultez le fichier [`docker/README.md`](docker/README.md) pour le détail de c
 | `/app/logs` | Fichiers de journalisation |
 | `/app/public/img` | Images statiques |
 | `/app/locales-custom` | Fichiers de locale personnalisés (ajout ou surcharge de traductions) |
+
 Le point d'accès `/healthz` est utilisé pour le health check Docker (HTTP GET, toutes les 30s).
 
 Le point d'accès `/metrics` expose des métriques au format Prometheus (bornes, transactions, connecteurs par statut, uptime, heap). Accessible sans authentification par défaut ; définir `metrics.bearerToken` (ou `CPADMIN_METRICS_TOKEN`) pour exiger un bearer token.
@@ -358,13 +366,13 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 
 | Variable | Config JSON | Exemple |
 |---|---|---|
-| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (désactiver la validation stricte OCPP 1.6) |
+| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (désactiver la validation stricte des messages OCPP par les schémas JSON) |
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (enregistrer automatiquement les bornes inconnues) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (mettre les bornes inconnues en attente d'approbation) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (désactiver le support OCPP 1.6) |
 | `CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE` | `ocpp.v16.enforceSecurityProfile` | `true` (voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp)) |
-| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (activer le support OCPP 2.0.1 — en cours de développement) |
+| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (activer le support OCPP 2.0.1) |
 | `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp)) |
 | `CPADMIN_OCPP_TRUST_PROXY_PROTO` | `ocpp.trustProxyProto` | `true` (derrière un reverse proxy type Traefik) |
 
@@ -400,6 +408,8 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 | Variable | Config JSON | Exemple |
 |---|---|---|
 | `CPADMIN_NOTIF_DISABLED_EVENTS` | `notifs.defaultDisabledEvents` | `connector_available,connector_unavailable` |
+| `CPADMIN_NOTIF_RECONNECT_GRACE_PERIOD` | `notifs.reconnectGracePeriodSeconds` | `60` (secondes avant une notification « hors ligne ») |
+| `CPADMIN_NOTIF_AVAILABILITY_DEBOUNCE` | `notifs.availabilityDebounceSeconds` | `5` (secondes avant une notification disponible / indisponible) |
 
 ### Configuration Google Auth
 
@@ -519,12 +529,12 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 | `callTimeoutSeconds` | Délai d'attente en secondes pour la réponse à un appel OCPP |
 | `autoAddUnknownChargepoints` | Ajouter automatiquement les bornes inconnues qui se connectent |
 | `pendingUnknownChargepoints` | Mettre les bornes inconnues en attente d'approbation admin |
-| `trustProxyProto` | Faire confiance à l'en-tête `X-Forwarded-Proto` pour reconnaître une connexion WSS terminée en amont par un reverse proxy (ex. Traefik) qui transmet ensuite en WS clair à l'application — utilisé pour la journalisation/classification de la connexion, voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp) |
+| `trustProxyProto` | Faire confiance à l'en-tête `X-Forwarded-Proto` (`https` / `wss`) pour reconnaître une connexion WSS terminée en amont par un reverse proxy (ex. Traefik) qui transmet ensuite en WS clair à l'application : la borne est affichée connectée en WSS et les logs l'indiquent. Aucun effet sur l'authentification. À n'activer que derrière un tel proxy — voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp) |
 | `ocppWsUrl` | URL WebSocket OCPP à communiquer (pour la configuration des bornes) |
 | `diagnosticsLocation` | URL de destination pour l'upload des diagnostics |
 | `v16.enabled` | Activer le support OCPP 1.6 (défaut : `true`) — mettre à `false` pour désactiver ; un warning est loggué et toutes les connexions sont rejetées si les deux versions sont désactivées |
 | `v16.enforceSecurityProfile` | Rejeter les connexions OCPP 1.6 qui ne respectent aucun des 3 profils de sécurité reconnus par le spec (défaut : `false`) — voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp) |
-| `v201.enabled` | Activer le support OCPP 2.0.1 (défaut : `false`) — **en cours de développement**, pas encore pleinement fonctionnel |
+| `v201.enabled` | Activer le support OCPP 2.0.1 (défaut : `false`) — voir [Opérations supportées — OCPP 2.0.1](#opérations-supportées--ocpp-201) |
 | `v201.enforceSecurityProfile` | Rejeter les connexions OCPP 2.0.1 qui ne respectent aucun des 3 profils de sécurité reconnus par le spec (défaut : `false`) — voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp) |
 | `wss.enabled` | Activer le WebSocket Secure (TLS) |
 | `wss.strictClientCert` | Exiger un certificat client valide |
@@ -783,10 +793,15 @@ Alternative à la CA/certificat manuel ci-dessus : l'application peut jouer le r
 **Fonctionnement :**
 1. Au premier certificat généré, une CA locale auto-signée est créée dans `ocpp.wss.clientCa.certFile`/`keyFile` (défaut : `certs/clients/ca.crt`/`ca.key`) si elle n'existe pas déjà.
 2. Un certificat client est généré automatiquement à la création d'une borne (`POST /chargepoints`) ou à l'acceptation d'une borne en attente — stocké dans `config/certs/clients/cp-<identity>/{cert.pem,key.pem}`.
-3. Depuis la fiche borne, un bouton permet au gestionnaire du site de la borne (ou à l'admin) de **télécharger** le certificat (PEM combiné cert+clé) — même niveau d'accès que le root CA serveur, puisque le gestionnaire en a besoin pour le déployer sur la borne. **Générer ou régénérer** le certificat reste réservé à l'admin, car cela émet une nouvelle clé privée.
+3. La section **Certificats** de la fiche borne (gestionnaires du site de la borne et admins) propose :
+   - le **certificat racine du serveur** (`ocpp-wss-root-ca.crt`, voir [Root CA](#root-ca--dépannage-du-certificat-serveur-wss)) — aussi disponible par le bouton **Certificat racine WSS** en haut de la liste des bornes, avant même qu'une borne existe ;
+   - le **certificat client** (PEM combiné cert+clé, `<identity>-client.pem`) ;
+   - le **certificat client avec la racine serveur** (`<identity>-client-with-root.pem`, pour les firmwares n'ayant qu'un emplacement de certificat) ;
+   - la date d'expiration du certificat client.
+
+   Les gestionnaires peuvent télécharger ces fichiers puisqu'ils les déploient sur la borne. **Générer ou régénérer** le certificat reste réservé à l'admin, car cela émet une nouvelle clé privée (la régénération demande une confirmation).
 4. La durée de validité par défaut est `ocpp.wss.clientCa.certValidityDays` (5 ans).
 5. **Régénérer révoque immédiatement l'ancien certificat** : son empreinte est ajoutée à `certs/clients/revoked.json` (consultée à chaque connexion mTLS, sans redémarrage, incluse dans l'archive de sauvegarde) et la session en cours de la borne est coupée — sans terminer ses sessions de charge. Elle ne peut plus se reconnecter en mTLS tant que le nouveau certificat n'y est pas installé. Supprimer une borne révoque aussi son certificat et efface sa clé privée. Les certificats émis par une CA manuelle (`ocpp.wss.caFile`) ne sont pas concernés par cette liste.
-6. La route générique de commande OCPP (`POST /api/chargepoints/:id/command`) est limitée, pour un gestionnaire de site, aux opérations courantes (`Reset`, `ChangeAvailability`, `UnlockConnector`, `TriggerMessage`, `ClearCache`, `GetLocalListVersion`, et l'envoi des diagnostics vers l'`ocpp.diagnosticsLocation` configuré uniquement). Toute autre commande OCPP (configuration, firmware, certificats…) est réservée à l'admin (console OCPP).
 
 **Pour que le serveur WSS fasse confiance aux certificats ainsi émis**, pointez `ocpp.wss.caFile` vers le même fichier que `ocpp.wss.clientCa.certFile` (ou copiez-le), puis redémarrez l'application — `caFile` reste le seul mécanisme de confiance mTLS, la CA de génération n'est pas injectée automatiquement dans la chaîne de validation.
 
@@ -864,7 +879,8 @@ Règles :
 
 ### Calcul du coût
 
-- Le coût est calculé **à la clôture de la session** (tous les chemins de clôture : StopTransaction, sessions orphelines, récupération au redémarrage du serveur) puis **figé** sur la transaction (`cost`, `cost_currency`, `cost_details`).
+- Le coût est calculé **à la clôture de la session** (tous les chemins de clôture : StopTransaction / TransactionEvent `Ended`, sessions orphelines, récupération au redémarrage du serveur) puis **figé** sur la transaction (`cost`, `cost_currency`, `cost_details`). Seule exception : une session clôturée par le serveur (message de fin non reçu) est recalculée une fois quand l'arrêt réel de la borne arrive ensuite — voir [Gestion des transactions](#gestion-des-transactions).
+- Les sessions refusées au démarrage (statut *Refusée*) n'ont jamais de coût.
 - L'énergie est répartie entre les tranches à partir des **MeterValues** reçus pendant la session (courbe d'énergie cumulée linéaire par morceaux). Si la borne n'en a envoyé aucun, l'énergie est **répartie au prorata de la durée** (la méthode utilisée est indiquée dans le détail de la session).
 - Modifier la grille ensuite **ne change jamais les sessions passées**, et les sessions clôturées avant l'existence d'un tarif ne sont **pas recalculées** : le coût d'une session doit rester un justificatif fiable.
 - Un échec du calcul n'empêche jamais la clôture d'une session (elle n'a simplement pas de coût).
@@ -873,7 +889,7 @@ Règles :
 
 - **Transactions** (managers/admins) et **Mes transactions** (utilisateurs) : colonne *Coût* et carte KPI de coût (les totaux sont regroupés par devise, des devises différentes ne sont jamais additionnées).
 - **Détail d'une session** : détail du coût par tranche (période, kWh, prix, montant), méthode de calcul et fuseau horaire.
-- **Exports CSV** (export global/par site et export personnel) : quatre colonnes supplémentaires — `Coût`, `Devise`, `Prix moyen (/kWh)` et `Détail tarifaire` (ex. `HP 6.20 kWh × 0.2500 = 1.55 | HC 12.00 kWh × 0.1500 = 1.80`). Elles sont vides pour les sessions sans coût. Chaque utilisateur ne voit que le coût de ses propres sessions. Une colonne `Catégorie` (badge professionnel / personnel) est également présente.
+- **Exports CSV** (export global/par site et export personnel) : quatre colonnes supplémentaires — `Coût`, `Devise`, `Prix moyen (/kWh)` et `Détail tarifaire` (ex. `HP 6.20 kWh × 0.2500 = 1.55 | HC 12.00 kWh × 0.1500 = 1.80`). Elles sont vides pour les sessions sans coût. Chaque utilisateur ne voit que le coût de ses propres sessions. Une colonne `Catégorie` (badge professionnel / personnel) est également présente. Les cellules commençant par `=`, `+`, `-` ou `@` (badge, nom d'utilisateur… — sauf les nombres) sont précédées d'une apostrophe pour qu'un tableur ne les exécute jamais comme une formule.
 
 > L'accès au détail d'une session (`GET /api/transactions/:id`) est réservé aux administrateurs, aux managers du site de la borne et au propriétaire du badge RFID utilisé.
 
@@ -927,6 +943,7 @@ Gestion restreinte aux sites autorisés :
 - Supervision des bornes de ses sites
 - Gestion des utilisateurs de ses sites
 - Démarrage / arrêt de charge à distance
+- Opérations courantes sur les bornes : `Reset`, `ChangeAvailability`, `UnlockConnector`, `TriggerMessage`, `ClearCache`, `GetLocalListVersion`, et l'envoi des diagnostics / journaux vers l'`ocpp.diagnosticsLocation` configuré uniquement (la route générique `POST /api/chargepoints/:id/command` refuse toute autre commande OCPP à un manager — configuration, firmware, certificats… sont réservés à l'admin)
 - Visualisation des transactions de ses sites
 - Export CSV de ses sites
 - Configuration du tarif de l'énergie (prix du kWh) de ses sites
@@ -947,53 +964,107 @@ Accès limité à la recharge :
 
 | Méthode | Endpoint | Accès | Description |
 |---|---|---|---|
-| `GET` | `/api/error-events` | manager+ | Journal paginé des événements d'erreur. Paramètres : `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
-| `GET` | `/api/transactions`, `/api/transactions/csv`, `/api/user/transactions`, `/api/user/transactions/stats`, `/api/user/transactions/csv` | manager+ / utilisateur | Acceptent un filtre `category` (`pro`\|`perso`) sur le badge utilisé pour la session |
+| `GET` | `/api/error-events` | manager+ | Journal paginé des événements d'erreur. Paramètres : `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`\|`security_event`\|`notify_event`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
+| `GET` | `/api/transactions`, `/api/transactions/csv`, `/api/user/transactions`, `/api/user/transactions/stats`, `/api/user/transactions/csv` | manager+ / utilisateur | Acceptent un filtre `category` (`pro`\|`perso`) sur le badge utilisé pour la session, et un filtre `status` (`Active`\|`Completed`\|`Rejected`). Les sessions refusées (`Rejected`) ne sont renvoyées que si elles sont explicitement filtrées |
 | `GET` | `/api/sites/:siteId/tariff` | manager du site / admin | Tarif d'un site : `currency`, `timezone`, `default_price_per_kwh` et `periods[]` (`label`, `days` en jours ISO `1`–`7`, `start_time`, `end_time`, `price_per_kwh`) |
 | `PUT` | `/api/sites/:siteId/tariff` | manager du site / admin | Remplace atomiquement le tarif d'un site (même corps que la réponse du `GET`). `400` avec des codes `ERR_TARIFF_*` si invalide (format, chevauchement, prix par défaut manquant…) |
 | `GET` | `/api/transactions/reimbursement/csv` | manager du site / admin | CSV de remboursement par site puis salarié. Paramètres : `site_id`, `category` (`pro`\|`perso`, défaut `pro`), `from`, `to` (ISO 8601) |
-| `GET` | `/api/transactions/:id` | admin / manager du site / propriétaire du badge | Détail d'une session, avec le coût figé `cost`, `cost_currency` et `cost_details` |
-| `GET` | `/api/transactions/:id/values` | admin / manager du site / propriétaire du badge | Séries de comptage d'une transaction : `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
-| `GET` | `/api/metrics` | token optionnel | Métriques au format Prometheus |
+| `GET` | `/api/transactions/:id` | admin / manager du site / propriétaire du badge | Détail d'une session, avec le coût figé `cost`, `cost_currency` et `cost_details`. `:id` est l'**identifiant interne** de la session (champ `id` des listes), et non le `transaction_id` OCPP — unique seulement par borne en OCPP 2.0.1 |
+| `GET` | `/api/transactions/:id/values` | admin / manager du site / propriétaire du badge | Séries de comptage d'une transaction (même `:id`) : `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
+| `GET` | `/metrics` | token optionnel | Métriques au format Prometheus |
 | `GET` | `/healthz` | public | Vérification de santé |
 
 ---
 
-## Protocole OCPP 1.6
+## Protocole OCPP (1.6 et 2.0.1)
 
-L'application implémente le protocole OCPP 1.6-J (JSON sur WebSocket) pour la communication avec les bornes de recharge.
+L'application implémente **OCPP 1.6-J** et **OCPP 2.0.1** (JSON sur WebSocket). Les deux versions peuvent fonctionner en même temps sur les mêmes ports : la version est négociée avec chaque borne par le sous-protocole WebSocket (`ocpp1.6` / `ocpp2.0.1`). OCPP 1.6 est activé par défaut ; OCPP 2.0.1 s'active avec `ocpp.v201.enabled: true` (ou `CPADMIN_OCPP_V201_ENABLED=true`).
 
-### Opérations supportées
+### Opérations supportées — OCPP 1.6
 
 #### Borne → Serveur (requêtes entrantes)
 
 | Opération | Description |
 |---|---|
-| **BootNotification** | Notification de démarrage de la borne (informations constructeur, firmware) |
+| **BootNotification** | Notification de démarrage de la borne (informations constructeur, firmware) — déclenche la [séquence d'initialisation](#séquence-dinitialisation) à la première connexion |
 | **Heartbeat** | Signal de vie périodique |
 | **StatusNotification** | Changement de statut d'un connecteur ou de la borne |
 | **Authorize** | Demande d'autorisation d'un badge RFID |
-| **StartTransaction** | Début de session de charge |
-| **StopTransaction** | Fin de session de charge (raison d'arrêt, énergie consommée) |
-| **MeterValues** | Données de comptage temps réel (énergie, puissance, courant, SOC, température, tension, fréquence) |
+| **StartTransaction** | Début de session de charge (un badge refusé est quand même enregistré, voir [Gestion des transactions](#gestion-des-transactions)) |
+| **StopTransaction** | Fin de session de charge (raison d'arrêt, énergie consommée) ; la réponse donne le statut réel du badge utilisé pour arrêter |
+| **MeterValues** | Données de comptage temps réel (énergie, puissance, courant, SOC, température, tension, fréquence) ; les valeurs `SignedData` sont ignorées |
 | **DataTransfer** | Échange de données propriétaires constructeur (aucune extension constructeur implémentée : réponse `UnknownVendorId`, comme l'exige la spécification) |
 | **DiagnosticsStatusNotification** | Statut de l'upload de diagnostics |
 | **FirmwareStatusNotification** | Statut d'avancement de la mise à jour firmware |
 
-#### Serveur → Borne (commandes distantes)
+#### Serveur → Borne (commandes)
+
+| Opération | Utilisée pour |
+|---|---|
+| **RemoteStartTransaction** / **RemoteStopTransaction** | Démarrer / arrêter une session de charge depuis l'interface |
+| **GetConfiguration** / **ChangeConfiguration** | Lire et modifier les clés de configuration |
+| **SetChargingProfile** / **ClearChargingProfile** / **GetCompositeSchedule** | [Profils de charge](#profils-de-charge-charging-profiles) |
+| **ReserveNow** / **CancelReservation** | Réservations de connecteur (les réservations expirées sont libérées automatiquement) |
+| **Reset** (Soft / Hard), **ChangeAvailability**, **UnlockConnector**, **TriggerMessage**, **ClearCache**, **GetLocalListVersion**, **GetDiagnostics** | Opérations depuis la fiche de la borne |
+
+### Opérations supportées — OCPP 2.0.1
+
+#### Borne → Serveur (requêtes entrantes)
 
 | Opération | Description |
 |---|---|
-| **RemoteStartTransaction** | Démarrer une session de charge à distance |
-| **RemoteStopTransaction** | Arrêter une session de charge à distance |
-| **GetConfiguration** | Récupérer la configuration de la borne |
-| **ChangeConfiguration** | Modifier un paramètre de configuration |
-| **SetChargingProfile** | Appliquer un profil de charge sur un connecteur |
-| **ClearChargingProfile** | Effacer un ou plusieurs profils de charge |
-| **ReserveNow** | Réserver un connecteur pour un badge RFID |
-| **CancelReservation** | Annuler une réservation existante |
+| **BootNotification**, **Heartbeat**, **StatusNotification** | Démarrage, signal de vie, statut des connecteurs (par EVSE) |
+| **Authorize** | Autorisation d'un badge (`idToken`) ; le type de jeton est comparé au type enregistré pour le badge |
+| **TransactionEvent** | Événements `Started` / `Updated` / `Ended` d'une session (badge présenté après le branchement, démarrage à distance corrélé par `remoteStartId`, raison d'arrêt lue dans `stoppedReason`, relevés de compteur) |
+| **MeterValues** | Relevés de compteur hors transaction |
+| **NotifyReport** | Inventaire du device model (réponse à `GetBaseReport`), enregistré comme variables de la borne |
+| **ReservationStatusUpdate** | Réservation expirée / retirée par la borne |
+| **FirmwareStatusNotification**, **LogStatusNotification** | Avancement de la mise à jour firmware et de l'envoi des journaux (les échecs sont notifiés) |
+| **SecurityEventNotification**, **NotifyEvent** | Événements de sécurité et événements d'alerte / critiques du device model, enregistrés dans l'historique des événements d'erreur |
+| **DataTransfer** | Réponse `UnknownVendorId` (aucune extension constructeur) |
+| **NotifyChargingLimit**, **ClearedChargingLimit**, **ReportChargingProfiles**, **NotifyCustomerInformation**, **NotifyDisplayMessages**, **NotifyMonitoringReport**, **PublishFirmwareStatusNotification** | Acquittés (informatifs, non exploités) |
+| **SignCertificate**, **GetCertificateStatus**, **Get15118EVCertificate**, **NotifyEVChargingNeeds**, **NotifyEVChargingSchedule** | Refus explicite (`Rejected` / `Failed`) : gestion des certificats par OCPP et ISO 15118 non supportées |
 
-Une interface de commande générique permet d'envoyer n'importe quelle commande OCPP via l'API.
+#### Serveur → Borne (commandes)
+
+| Opération | Utilisée pour |
+|---|---|
+| **RequestStartTransaction** / **RequestStopTransaction** | Démarrer / arrêter une session de charge (un EVSE peut être ciblé sur les bornes multi-EVSE) |
+| **GetTransactionStatus** | Après une reconnexion, vérifie que les sessions encore actives en base existent toujours sur la borne |
+| **GetBaseReport**, **GetVariables** / **SetVariables** | Lire le device model et modifier des variables (y compris les variables à instance, ex. `MessageTimeout[Default]`) |
+| **SetChargingProfile** / **ClearChargingProfile** / **GetCompositeSchedule** | [Profils de charge](#profils-de-charge-charging-profiles) (`ChargingStationMaxProfile`, `TxDefaultProfile`) |
+| **ReserveNow** / **CancelReservation** | Réservations d'EVSE |
+| **Reset** (Immediate / OnIdle), **ChangeAvailability**, **UnlockConnector**, **TriggerMessage**, **ClearCache**, **GetLocalListVersion**, **GetLog** | Opérations depuis la fiche de la borne |
+
+**Non supporté en OCPP 2.0.1 :** la gestion des certificats par OCPP (`InstallCertificate`, `CertificateSigned`, `SignCertificate`… — les certificats clients sont émis par l'application, voir [Génération automatique de certificats clients](#génération-automatique-de-certificats-clients)), ISO 15118 / Plug & Charge, `GetChargingProfiles`, la gestion de la liste locale d'autorisation, les messages d'affichage, la supervision (monitoring) et le champ `totalCost` de `TransactionEventResponse`.
+
+Pour les deux versions, les administrateurs peuvent envoyer toute autre commande, avec des paramètres JSON libres, depuis la console OCPP brute (page Administration système).
+
+### Séquence d'initialisation
+
+À la première connexion d'une borne (ou après **Réinitialiser** sur sa fiche), le serveur exécute :
+
+1. `ClearCache` ;
+2. `ClearChargingProfile` (seulement si l'application ne gère aucun profil pour cette borne) ;
+3. la lecture de la configuration — `GetConfiguration` (1.6, paginé si besoin) ou `GetBaseReport` + `NotifyReport` (2.0.1) ;
+4. l'application de la **configuration par défaut** (*Paramètres → Configuration OCPP par défaut*) : clés `ChangeConfiguration` (1.6) ou variables `SetVariables` (2.0.1), sauf les valeurs verrouillées (override) sur cette borne ;
+5. la ré-application des valeurs verrouillées sur cette borne.
+
+La configuration par défaut impose `AuthorizeRemoteTxRequests=false` (1.6) et `AuthCtrlr.AuthorizeRemoteStart=false` (2.0.1), pour qu'une borne ne demande pas l'autorisation du badge d'un démarrage à distance (voir [Démarrages à distance](#démarrages-à-distance)). Une variable OCPP 2.0.1 peut porter une **instance** (champ du formulaire de la configuration par défaut). *Appliquer à toutes les bornes* n'envoie les clés 1.6 qu'aux bornes 1.6 et les variables 2.0.1 qu'aux bornes 2.0.1 ; les bornes hors ligne les reçoivent à leur prochaine initialisation.
+
+### Gestion des transactions
+
+- **Transactions identifiées par borne** : en 2.0.1 le `transactionId` est généré par la borne et n'est unique que pour elle. Dans l'interface et l'API, une session est désignée par son identifiant interne (`id`).
+- **Démarrage refusé** : quand le badge est refusé au `StartTransaction` / `TransactionEvent(Started)`, la session est quand même enregistrée avec le statut **Refusée** (`Rejected` ; en 1.6 la borne reçoit un vrai `transactionId`, et non `0`) : l'énergie délivrée avant la coupure est conservée, mais la session n'est jamais facturée et elle est exclue des listes, totaux et exports (filtre *Refusée* de la page Transactions).
+- **Sessions clôturées par le serveur** : le serveur clôt lui-même une session quand il ne peut plus attendre son message de fin — connecteur revenu `Available`, nouvelle session sur le même connecteur, redémarrage du serveur, changement de version OCPP, dé-autorisation, ou borne 2.0.1 qui confirme la fin via `GetTransactionStatus`. Si le vrai `StopTransaction` / `TransactionEvent(Ended)` arrive ensuite (la spécification ne garantit pas l'ordre des messages), il **corrige** la session (compteur, heure, raison d'arrêt) et le coût est recalculé, sans nouvelle notification. Les relevés reçus en retard pour une telle session sont conservés pour le graphique.
+- **Retransmissions** : un `StartTransaction`, `TransactionEvent(Started)`, `StopTransaction` ou `Ended` renvoyé par la borne (réponse perdue) ne crée jamais de doublon et ne renvoie pas de notification.
+
+### Démarrages à distance
+
+Les démarrages depuis l'interface utilisent le badge de l'utilisateur ou un **badge généré** par l'application (`ADMIN`, `MGR-<site>`, `WEB-<utilisateur>`, envoyé avec le type de jeton `Central` en 2.0.1). Les badges générés sont refusés lorsqu'ils sont présentés comme carte RFID. Pendant un démarrage à distance, le serveur mémorise le badge (et le `remoteStartId` en 2.0.1) pendant 60 secondes :
+
+- un `Authorize` de ce badge, venant de cette borne, est accepté — utile pour les bornes dont la clé `AuthorizeRemoteTxRequests` / `AuthorizeRemoteStart` est en lecture seule ;
+- seul ce badge échappe au contrôle d'autorisation : un autre badge présenté sur le connecteur entre-temps est toujours contrôlé.
 
 ### Connexion des bornes
 
@@ -1011,11 +1082,15 @@ Où `<identity>` est l'identifiant unique de la borne (enregistré dans l'applic
 
 ### Profils de sécurité
 
-| Profil | Description |
-|---|---|
-| **Profil 1** | Pas d'authentification (WebSocket non sécurisé) |
-| **Profil 2** | Authentification par mot de passe (Basic Auth dans le handshake WebSocket) |
-| **Profil 3** | Certificat client TLS (WebSocket Secure avec vérification certificat) |
+Les profils de sécurité OCPP (security whitepaper OCPP 1.6, OCPP 2.0.1 partie 2 — A00) :
+
+| Profil | Transport | Authentification de la borne |
+|---|---|---|
+| **Profil 1** | WS (non chiffré) | Mot de passe (Basic Auth dans le handshake WebSocket) |
+| **Profil 2** | WSS (TLS) | Mot de passe (Basic Auth) |
+| **Profil 3** | WSS (TLS) | Certificat client TLS (mTLS) |
+
+Une connexion **sans aucune authentification** (WS nu sans mot de passe) ne correspond à aucun de ces profils ; elle est acceptée par défaut pour compatibilité, et peut être refusée par version OCPP — voir [Enforcement des profils de sécurité OCPP](#enforcement-des-profils-de-sécurité-ocpp).
 
 Les bornes doivent être enregistrées et autorisées dans l'application pour pouvoir se connecter. Les bornes non reconnues peuvent être :
 - **Rejetées** (comportement par défaut)
@@ -1042,7 +1117,9 @@ Toute tentative de connexion sur une version soumise à l'enforcement qui ne cor
 
 **Prérequis pour le mode mTLS** : chaque borne doit posséder un certificat client dont le `CN` correspond exactement à son identité — voir [Génération automatique de certificats clients](#génération-automatique-de-certificats-clients). Un certificat unique partagé par toutes les bornes (CN générique) ne satisfait pas cette condition sous enforcement.
 
-**Reverse proxy (Traefik, etc.)** : `ocpp.trustProxyProto` permet de reconnaître, via l'en-tête `X-Forwarded-Proto`, qu'une connexion arrivant en WS clair sur l'application a en réalité été sécurisée par TLS en amont — utile pour une classification/journalisation correcte. **Le mode WSS+mTLS reste toutefois impossible derrière un reverse proxy qui termine le TLS** (le certificat client n'est pas transmis à l'application) : seuls les profils Basic Auth restent utilisables dans ce cas, quelle que soit la valeur de `trustProxyProto`.
+**Reverse proxy (Traefik, etc.)** : avec `ocpp.trustProxyProto: true`, une connexion arrivant en WS clair sur l'application avec l'en-tête `X-Forwarded-Proto: https` (ou `wss`) est considérée comme sécurisée par TLS en amont : la borne est affichée connectée en **WSS**, les logs indiquent `WSS (TLS terminated by proxy)` et un refus est classé `wss_no_auth`. Cela **n'a aucun effet sur l'authentification** : le mot de passe reste exigé. À n'activer que derrière un reverse proxy qui pose cet en-tête (sinon un client pourrait le falsifier). **Le mode WSS+mTLS reste impossible derrière un reverse proxy qui termine le TLS** (le certificat client n'est pas transmis à l'application) : seuls les profils Basic Auth restent utilisables dans ce cas.
+
+**Avertissement au démarrage** : quand l'enforcement est activé sur une version alors que `ocpp.wss.caFile` est vide, un avertissement est logué au démarrage — les certificats clients ne peuvent pas être vérifiés, toute connexion mTLS serait donc refusée (le message indique le chemin de la CA client locale quand elle existe).
 
 ### Heartbeat et surveillance des connexions
 
@@ -1056,7 +1133,7 @@ Le report d'activité (`deferPingsOnActivity`) est activé : si une borne envoie
 #### Watchdog heartbeat (niveau applicatif)
 Un watchdog côté serveur vérifie périodiquement si chaque borne connectée a bien envoyé un message `Heartbeat` récemment. Une borne n'ayant pas envoyé de heartbeat depuis `HeartbeatInterval × 2` secondes est déconnectée de force.
 
-`HeartbeatInterval` est un **paramètre système global** géré exclusivement dans *Paramètres → Configuration OCPP par défaut*. Il est envoyé à chaque borne via `ChangeConfiguration` lors de l'initialisation et ne peut pas être surchargé par borne. Le watchdog relit cette valeur en base de données à chaque cycle, de sorte qu'une modification prend effet immédiatement sans redémarrage du serveur.
+L'intervalle de heartbeat est un **paramètre système global** géré exclusivement dans *Paramètres → Configuration OCPP par défaut* : la clé `HeartbeatInterval` pour les bornes OCPP 1.6 et la variable `OCPPCommCtrlr.HeartbeatInterval` pour les bornes OCPP 2.0.1. Il est renvoyé dans la réponse au `BootNotification`, appliqué lors de l'initialisation et ne peut pas être surchargé par borne. Le watchdog relit en base, à chaque cycle, la valeur correspondant à la version OCPP de chaque borne, de sorte qu'une modification prend effet immédiatement sans redémarrage du serveur.
 
 Lorsqu'une borne est déconnectée par le watchdog, une notification **Borne morte (timeout heartbeat)** est envoyée aux admins et managers (web push par défaut, email en option). La notification générique *borne hors ligne* est supprimée dans ce cas pour éviter les doublons.
 
@@ -1087,6 +1164,10 @@ L'application propose un système d'alertes piloté par les événements.
 | Ajout automatique de borne | Une borne inconnue a été ajoutée automatiquement |
 | Identité dupliquée | Même identifiant de borne depuis une IP différente |
 | Flapping | Reconnexions rapides et répétées d'une borne |
+| Connexion refusée | Une borne a été refusée (inconnue, non autorisée, mot de passe absent ou faux, profil de sécurité non respecté…) — au plus une fois par `refusedCooldownMinutes` pour une même identité et une même raison |
+| Résultat de l'initialisation | Clés / variables de la configuration par défaut refusées, non supportées ou nécessitant un redémarrage |
+| Envoi des diagnostics / journaux | Envoi terminé ou en échec |
+| Mise à jour firmware | Firmware installé ou mise à jour en échec |
 
 #### Événements Manager
 
@@ -1104,7 +1185,7 @@ L'application propose un système d'alertes piloté par les événements.
 | Événement | Description |
 |---|---|
 | Transaction démarrée / terminée | Ma session de charge démarre ou se termine |
-| Charge suspendue (EVSE) | La borne a suspendu la charge |
+| Véhicule chargé | Le véhicule ne consomme plus d'énergie (connecteur `SuspendedEV`, charge cible atteinte) : il peut être débranché |
 
 Chaque utilisateur peut configurer ses préférences de notification (quels événements recevoir et sur quels canaux) via les paramètres de l'application.
 
@@ -1123,7 +1204,7 @@ L'application utilise **Winston** avec rotation quotidienne des fichiers de log.
 
 Taille maximale par fichier : 20 Mo.
 
-Les scopes de logging prédéfinis sont : `CPADM`, `WEBUI`, `OCPP`, `NOTIF`, `SQLDB`.
+Les scopes de logging prédéfinis sont : `CPADM` (application), `WEBUI` (serveur web), `AUTH` (authentification), `OCPP` (serveur OCPP), `CERTCA` (autorité de certification des certificats clients), `NOTIF`, `NOTIFMAIL`, `NOTIFPUSH`, `NOTIFPUSHOVER` (notifications), `SQLDB` (base de données).
 
 En mode développement, les logs sont également affichés en console avec coloration par scope.
 
@@ -1191,14 +1272,14 @@ npm run start-dev
 # Démarrer en mode développement avec surveillance des fichiers (rechargement automatique)
 npm run start-watch
 
-# Vérifier le style de code
-npm run lint
+# Vérifier le style de code (ESLint sur src/)
+npm run lint:check
 
 # Corriger automatiquement les problèmes de style
 npm run lint:fix
 
 # Formater le code avec Prettier
-npm run format
+npm run format:fix
 
 # Vérifier le formatage sans modifier
 npm run format:check
@@ -1218,11 +1299,17 @@ npm run test:coverage
 # Lancer les tests en mode CI (couverture + forceExit)
 npm run test:ci
 
+# Tests de bout en bout (Playwright — démarre l'application sur le port 3099 avec une base e2e.db dédiée)
+npm run test:e2e
+# … avec l'interface interactive de Playwright
+npm run test:e2e:ui
+
 # Analyser les secrets dans les fichiers source
 npm run audit:secrets
 
-# Auditer les dépendances npm pour les vulnérabilités critiques
+# Auditer les dépendances npm pour les vulnérabilités critiques (production / dépendances de dev incluses)
 npm run audit:deps
+npm run audit:depsdev
 ```
 
 ---
@@ -1303,15 +1390,21 @@ backup:
 | `users` | Comptes utilisateurs |
 | `user_sites` | Association utilisateurs ↔ sites (avec rôle) |
 | `chargepoints` | Bornes de recharge enregistrées |
+| `evses` | EVSE des bornes OCPP 2.0.1 |
 | `connectors` | Connecteurs des bornes |
-| `chargepoint_config` | Configuration des bornes |
-| `transactions` | Sessions de charge (avec le coût figé : `cost`, `cost_currency`, `cost_details`) |
-| `transactions_values` | Données de comptage temps réel |
+| `chargepoint_config` | Clés de configuration des bornes OCPP 1.6 (avec l'indicateur de valeur verrouillée / override) |
+| `chargepoint_variables` | Variables du device model des bornes OCPP 2.0.1 (composant, variable, attribut, instance, EVSE) |
+| `chargepoint_init_config` / `chargepoint_init_variables` | Configuration OCPP par défaut appliquée aux bornes (clés 1.6 / variables 2.0.1) |
+| `id_tags` | Badges RFID (propriétaire, site, expiration, catégorie pro/perso, type de jeton) |
+| `id_tags_events` | Refus d'autorisation des badges |
+| `transactions` | Sessions de charge, identifiées par borne (`chargepoint_id`, `transaction_id`) : statut `Active` / `Completed` / `Rejected`, coût figé (`cost`, `cost_currency`, `cost_details`), `closed_by` (`station` ou `server`) |
+| `transactions_values` | Données de comptage temps réel d'une session |
 | `ocpp_messages` | Journal des messages OCPP |
 | `users_password_resets` | Jetons de réinitialisation de mot de passe |
 | `charging_profiles` | Profils de charge appliqués sur les bornes |
 | `reservations` | Réservations de connecteurs actives et historiques |
-| `error_events` | Journal persistant des erreurs matérielles/réseau (fautes StatusNotification, déconnexions, timeouts heartbeat) |
+| `error_events` | Journal persistant des erreurs matérielles/réseau (fautes StatusNotification, déconnexions, timeouts heartbeat, événements de sécurité, événements d'alerte du device model) |
+| `notification_preferences` / `push_subscriptions` / `notification_log` | Préférences de notification par utilisateur et canal, abonnements Web Push, notifications envoyées |
 
 ---
 

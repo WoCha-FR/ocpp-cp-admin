@@ -1,6 +1,6 @@
 # Docker Deployment
 
-Four Docker Compose files are available in the `docker/` folder.
+Six Docker Compose files are available in the `docker/` folder.
 Choose the one that matches your infrastructure.
 
 > **🇫🇷 [Version française](README.fr.md)**
@@ -51,7 +51,7 @@ docker compose -f docker/docker-compose.http.yml up -d
 The application handles TLS itself. Certificates are obtained via **Let's Encrypt** (certbot standalone) and automatically deployed to `./data/config/certs/`.
 
 - **Port 3001**: web interface (HTTPS)
-- **Port 9000**: OCPP WebSocket (unencrypted, Security Profile 1)
+- **Port 9000**: OCPP WebSocket (unencrypted — Security Profile 1 when the charge point sends a password)
 - **Port 9001**: OCPP WebSocket Secure (TLS managed by the app, Security Profile 2/3)
 
 **First start — obtain certificates before launching the full stack:**
@@ -387,12 +387,15 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 
 | Variable | JSON Config | Example |
 |---|---|---|
-| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict OCPP 1.6 validation) |
+| `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict validation of OCPP messages against the JSON schemas) |
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
 | `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (disable OCPP 1.6 support) |
-| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (enable OCPP 2.0.1 support — in development) |
+| `CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE` | `ocpp.v16.enforceSecurityProfile` | `true` (refuse OCPP 1.6 connections without an OCPP security profile, see [OCPP security profile enforcement](../README.md#ocpp-security-profile-enforcement)) |
+| `CPADMIN_OCPP_V201_ENABLED` | `ocpp.v201.enabled` | `true` (enable OCPP 2.0.1 support) |
+| `CPADMIN_OCPP_V201_ENFORCE_SECURITY_PROFILE` | `ocpp.v201.enforceSecurityProfile` | `true` (same for OCPP 2.0.1) |
+| `CPADMIN_OCPP_TRUST_PROXY_PROTO` | `ocpp.trustProxyProto` | `true` (Traefik TLS-termination stacks: a charge point connected over WSS through Traefik is shown as WSS — no effect on authentication) |
 
 ### Mail Configuration
 
@@ -426,6 +429,8 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 | Variable | JSON Config | Example |
 |---|---|---|
 | `CPADMIN_NOTIF_DISABLED_EVENTS` | `notifs.defaultDisabledEvents` | `connector_available,connector_unavailable` |
+| `CPADMIN_NOTIF_RECONNECT_GRACE_PERIOD` | `notifs.reconnectGracePeriodSeconds` | `60` (seconds before an offline notification) |
+| `CPADMIN_NOTIF_AVAILABILITY_DEBOUNCE` | `notifs.availabilityDebounceSeconds` | `5` (seconds before an available / unavailable notification) |
 
 ### Google Auth Configuration
 
