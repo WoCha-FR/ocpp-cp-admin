@@ -16,7 +16,6 @@ const {
   disconnectChargepoint,
   remoteStopTransaction,
   remoteStartTransaction,
-  pendingRemoteStarts,
   pendingChargepoints,
 } = require('./ocpp-common');
 const { OCPP16_STANDARD_KEYS } = require('./ocpp-server-16');
@@ -1575,23 +1574,17 @@ router.post(
       }
     }
 
-    const pendingKey = `${cp.identity}_${connector_id}`;
-    pendingRemoteStarts.set(pendingKey, { source: 'web', userId: null });
-    setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
-
     try {
+      // Démarrage mémorisé avec son badge jusqu'au StartTransaction (voir remoteStarts.js)
       const result = await remoteStartTransaction(
         cp.identity,
         Number(connector_id),
         idTag,
-        req.body.evse_id ?? null
+        req.body.evse_id ?? null,
+        { source: 'web', userId: null }
       );
-      if (result.status !== 'Accepted') {
-        pendingRemoteStarts.delete(pendingKey);
-      }
       res.json({ result, idTag });
     } catch (err) {
-      pendingRemoteStarts.delete(pendingKey);
       errorResponse(res, 500, err.message);
     }
   }
@@ -2897,25 +2890,17 @@ router.post(
       }
     }
 
-    // Marquer ce démarrage comme venant du web
-    const pendingKey = `${cp.identity}_${connector_id}`;
-    pendingRemoteStarts.set(pendingKey, { source: 'web', userId: req.user.id });
-    // Timeout de nettoyage au cas où la borne ne répond pas
-    setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
-
     try {
+      // Démarrage marqué « web » et mémorisé avec son badge jusqu'au StartTransaction
       const result = await remoteStartTransaction(
         cp.identity,
         Number(connector_id),
         idTag,
-        req.body.evse_id ?? null
+        req.body.evse_id ?? null,
+        { source: 'web', userId: req.user.id }
       );
-      if (result.status !== 'Accepted') {
-        pendingRemoteStarts.delete(pendingKey);
-      }
       res.json({ result, idTag });
     } catch (err) {
-      pendingRemoteStarts.delete(pendingKey);
       errorResponse(res, 500, err.message);
     }
   }

@@ -535,7 +535,7 @@ describe('ocpp-server-16 — StartTransaction', () => {
   });
 
   it('uses remote source when pendingRemoteStarts has connector key', () => {
-    mockPendingRemoteStarts.set('CP001_1', { source: 'remote', userId: null });
+    mockPendingRemoteStarts.set('CP001_1', { source: 'remote', userId: null, idTag: 'TAG001' });
     const result = client._handlers['StartTransaction']({
       connectorId: 1,
       idTag: 'TAG001',
@@ -577,7 +577,7 @@ describe('ocpp-server-16 — StartTransaction', () => {
   );
 
   it('does not block auto-tag when source is remote (normal RemoteStart flow)', () => {
-    mockPendingRemoteStarts.set('CP001_1', { source: 'web', userId: 5 });
+    mockPendingRemoteStarts.set('CP001_1', { source: 'web', userId: 5, idTag: 'WEB-5' });
     mockDb.createTransaction.mockReturnValue({ transaction_id: 200 });
     const result = client._handlers['StartTransaction']({
       connectorId: 1,
@@ -730,7 +730,8 @@ describe('ocpp-server-16 — StopTransaction', () => {
     const result = stop();
     expect(mockDb.getTransactionByTransactionId).toHaveBeenCalledWith(1, 42);
     expect(mockDb.stopTransaction).toHaveBeenCalledWith(1, 42, 1000, expect.any(String), 'Local');
-    expect(result.idTagInfo.status).toBe('Accepted');
+    // Sans idTag dans la requête, idTagInfo est omis (champ facultatif)
+    expect(result).toEqual({});
   });
 
   it('emits site and user notifications when transaction found with valid tag', () => {
@@ -797,7 +798,7 @@ describe('ocpp-server-16 — StopTransaction', () => {
       activeTx({ status: 'Completed', closed_by: 'station', meter_stop: 1000 })
     );
     const result = stop();
-    expect(result.idTagInfo.status).toBe('Accepted');
+    expect(result).toEqual({});
     expect(mockDb.stopTransaction).not.toHaveBeenCalled();
     expect(mockDb.correctServerClosedTransaction).not.toHaveBeenCalled();
     expect(mockNotifications.emit).not.toHaveBeenCalled();
@@ -846,7 +847,7 @@ describe('ocpp-server-16 — StopTransaction', () => {
     expect(mockDb.stopRejectedTransaction).toHaveBeenCalledWith(1, 42, 150, ts, 'DeAuthorized');
     expect(mockDb.stopTransaction).not.toHaveBeenCalled();
     expect(mockNotifications.emit).not.toHaveBeenCalled();
-    expect(result.idTagInfo.status).toBe('Accepted');
+    expect(result).toEqual({});
   });
 
   it('fallback : ferme la tx active du chargeur si transactionId inconnu', () => {
@@ -1735,5 +1736,128 @@ describe('ocpp-server-16 — conformité (lot B) : divers', () => {
     });
     const res = client._handlers['Authorize']({ idTag: 'TAG1' });
     expect(res.idTagInfo.expiryDate).toBe('2099-12-31T00:00:00Z');
+  });
+});
+
+// ── Lot E : autorisation (H3 / M1 / M9) ──
+describe('ocpp-server-16 — lot E autorisation', () => {
+  let client;
+  const ts = () => new Date().toISOString();
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: 1 });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.getIdTagByTag.mockReturnValue(null);
+    mockDb.getTransactions.mockReturnValue([]);
+    mockDb.createTransaction.mockReturnValue({ transaction_id: 300 });
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  describe('H3 — Authorize d’un badge généré (AuthorizeRemoteTxRequests=true)', () => {
+    it('accepté si un démarrage à distance avec ce badge est en attente sur cette borne', () => {
+      mockPendingRemoteStarts.set('CP001_1', { source: 'web', userId: null, idTag: 'ADMIN' });
+      const result = client._handlers['Authorize']({ idTag: 'ADMIN' });
+      expect(result.idTagInfo.status).toBe('Accepted');
+      expect(mockDb.addIdTagEvent).not.toHaveBeenCalled();
+      // L'attente n'est pas consommée : le StartTransaction qui suit en a besoin
+      expect(mockPendingRemoteStarts.has('CP001_1')).toBe(true);
+    });
+
+    it('bloqué sans démarrage à distance en attente', () => {
+      const result = client._handlers['Authorize']({ idTag: 'ADMIN' });
+      expect(result.idTagInfo.status).toBe('Blocked');
+    });
+
+    it('bloqué si l’attente concerne un autre badge ou une autre borne', () => {
+      mockPendingRemoteStarts.set('CP001_1', { source: 'web', idTag: 'MGR-1' });
+      mockPendingRemoteStarts.set('CP002_1', { source: 'web', idTag: 'ADMIN' });
+      expect(client._handlers['Authorize']({ idTag: 'ADMIN' }).idTagInfo.status).toBe('Blocked');
+    });
+  });
+
+  describe('M9 — démarrage à distance en attente', () => {
+    it('un AUTRE badge présenté sur le connecteur pendant l’attente reste contrôlé', () => {
+      mockPendingRemoteStarts.set('CP001_1', { source: 'web', userId: 5, idTag: 'WEB-5' });
+      mockDb.authorizeIdTag.mockReturnValue({ status: 'Blocked', reason: 'inactive_tag' });
+      const result = client._handlers['StartTransaction']({
+        connectorId: 1,
+        idTag: 'STOLEN-BADGE',
+        meterStart: 0,
+        timestamp: ts(),
+      });
+      expect(mockDb.authorizeIdTag).toHaveBeenCalledWith('STOLEN-BADGE', 1);
+      expect(result.idTagInfo.status).toBe('Blocked');
+      // L'attente du vrai démarrage à distance n'est pas consommée
+      expect(mockPendingRemoteStarts.has('CP001_1')).toBe(true);
+    });
+
+    it('le badge du démarrage à distance démarre sans contrôle, avec la source mémorisée', () => {
+      mockPendingRemoteStarts.set('CP001_1', { source: 'web', userId: 5, idTag: 'WEB-5' });
+      const result = client._handlers['StartTransaction']({
+        connectorId: 1,
+        idTag: 'WEB-5',
+        meterStart: 0,
+        timestamp: ts(),
+      });
+      expect(result.idTagInfo.status).toBe('Accepted');
+      expect(mockDb.authorizeIdTag).not.toHaveBeenCalled();
+      expect(mockDb.createTransaction.mock.calls[0][5]).toBe('web');
+      expect(mockPendingRemoteStarts.has('CP001_1')).toBe(false);
+    });
+  });
+
+  describe('M1 — idTagInfo de StopTransaction.conf', () => {
+    const stop = (idTag, txIdTag = 'TAG001') => {
+      mockDb.getTransactionByTransactionId.mockReturnValue({
+        transaction_id: '42',
+        status: 'Active',
+        id_tag: txIdTag,
+        meter_start: 0,
+      });
+      mockDb.stopTransaction.mockReturnValue({ tx: null, closed: false });
+      return client._handlers['StopTransaction']({
+        transactionId: 42,
+        meterStop: 100,
+        timestamp: ts(),
+        ...(idTag !== undefined ? { idTag } : {}),
+      });
+    };
+
+    it('badge bloqué : Blocked (la borne ne doit pas le garder Accepted en cache)', () => {
+      mockDb.authorizeIdTag.mockReturnValue({ status: 'Blocked', tag: { expiry_date: null } });
+      expect(stop('TAG-BLOCKED').idTagInfo).toEqual({ status: 'Blocked' });
+    });
+
+    it('badge inconnu : Invalid', () => {
+      mockDb.authorizeIdTag.mockReturnValue({ status: 'Invalid', tag: null });
+      expect(stop('UNKNOWN').idTagInfo).toEqual({ status: 'Invalid' });
+    });
+
+    it('badge valide : Accepted avec expiryDate quand le badge expire', () => {
+      mockDb.authorizeIdTag.mockReturnValue({
+        status: 'Accepted',
+        tag: { expiry_date: '2030-01-01T00:00:00Z' },
+      });
+      expect(stop('TAG001').idTagInfo).toEqual({
+        status: 'Accepted',
+        expiryDate: '2030-01-01T00:00:00Z',
+      });
+    });
+
+    it('sans idTag : idTagInfo omis', () => {
+      expect(stop(undefined)).toEqual({});
+      expect(mockDb.authorizeIdTag).not.toHaveBeenCalled();
+    });
+
+    it('badge généré : Accepted pour sa propre transaction, Blocked sinon', () => {
+      expect(stop('WEB-5', 'WEB-5').idTagInfo).toEqual({ status: 'Accepted' });
+      expect(stop('WEB-5', 'TAG001').idTagInfo).toEqual({ status: 'Blocked' });
+    });
+
+    it('mode libre (3) : Accepted', () => {
+      mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 3, site_id: 1 });
+      expect(stop('ANY').idTagInfo).toEqual({ status: 'Accepted' });
+    });
   });
 });

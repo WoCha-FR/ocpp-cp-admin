@@ -18,6 +18,11 @@ const {
   parseHeartbeatInterval,
 } = require('./txRecovery');
 const { parseSampledValues } = require('./meterSamples');
+const {
+  isGeneratedTag,
+  registerPendingRemoteStart,
+  findPendingRemoteStart,
+} = require('./remoteStarts');
 const { toIsoDateTime } = require('./chargingProfiles');
 
 // ── Constantes ──
@@ -90,8 +95,20 @@ function buildIdTokenInfo(status, tag) {
 // badge est présenté : Updated(Authorized, idToken). Le CSMS doit contrôler le badge et répondre
 // idTokenInfo (la borne coupe la session si le statut n'est pas Accepted), et rattacher le badge
 // à la transaction (attribution à l'utilisateur, tarif, remboursement).
+// Cas « démarrage à distance, câble branché d'abord » (F02) : la transaction existe déjà, la
+// borne envoie Updated(RemoteStart, remoteStartId, idToken) avec le badge du démarrage à
+// distance (souvent un badge généré ADMIN / MGR-x / WEB-x) → `isRemoteStart` : accepté et
+// rattaché sans contrôle, comme un Started(RemoteStart).
 // Retourne l'idTokenInfo à renvoyer à la borne.
-function evaluateIdTokenOnUpdate({ cp, tx, txId, idToken, identity, chargepointId }) {
+function evaluateIdTokenOnUpdate({
+  cp,
+  tx,
+  txId,
+  idToken,
+  identity,
+  chargepointId,
+  isRemoteStart = false,
+}) {
   const idTag = idToken.idToken;
   const tokenType = idToken.type || null;
 
@@ -102,8 +119,8 @@ function evaluateIdTokenOnUpdate({ cp, tx, txId, idToken, identity, chargepointI
   let authReason = null;
   let authTag = null;
   // Même règle qu'au démarrage : seul le mode 1 (badge contrôlé par le CSMS) refuse un badge
-  if (cp.mode === 1) {
-    if (['WEB-', 'ADMIN', 'MGR-'].some((p) => idTag.startsWith(p))) {
+  if (cp.mode === 1 && !isRemoteStart) {
+    if (isGeneratedTag(idTag)) {
       authStatus = 'Blocked';
       authReason = 'auto_tag_rfid';
     } else {
@@ -610,16 +627,17 @@ function register201Handlers(client, loggedHandle) {
           if (!db.getIdTagByTag(idTag)) {
             db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null, 0);
           }
-          const pendingKey = `${identity}_${connectorDbId}`;
-          pendingRemoteStarts.set(pendingKey, { source: 'remote', userId: null });
-          const pendingRemoteStartTimer = setTimeout(
-            () => pendingRemoteStarts.delete(pendingKey),
-            60000
+          // Démarrage mémorisé avec son badge et son remoteStartId (voir remoteStarts.js)
+          const remoteStartId = Math.floor(Math.random() * 2147483647);
+          const pendingKey = registerPendingRemoteStart(
+            pendingRemoteStarts,
+            identity,
+            connectorDbId,
+            { source: 'remote', userId: null, idTag, remoteStartId }
           );
-          pendingRemoteStartTimer.unref();
 
           callClient201(identity, 'RequestStartTransaction', {
-            remoteStartId: Math.floor(Math.random() * 2147483647),
+            remoteStartId,
             evseId,
             idToken: { idToken: idTag, type: 'ISO14443' },
           })
@@ -765,9 +783,17 @@ function register201Handlers(client, loggedHandle) {
     const idTokenObj = params.idToken || {};
     const idTag = idTokenObj.idToken || '';
     const idTokenType = idTokenObj.type || null;
-    const AUTO_TAG_PREFIXES = ['WEB-', 'ADMIN', 'MGR-'];
 
-    if (AUTO_TAG_PREFIXES.some((p) => idTag.startsWith(p))) {
+    if (isGeneratedTag(idTag)) {
+      // Borne avec AuthorizeRemoteStart=true : elle fait autoriser le badge d'un démarrage à
+      // distance avant de démarrer. Un badge généré (ADMIN / MGR-x / WEB-x) n'est accepté que
+      // si un démarrage à distance avec CE badge est en attente sur CETTE borne.
+      if (findPendingRemoteStart(pendingRemoteStarts, identity, { idTag })) {
+        logger.info(
+          `[2.0.1] Authorize ${identity}: generated badge accepted (pending remote start)`
+        );
+        return { idTokenInfo: { status: 'Accepted' } };
+      }
       if (chargepointId) {
         db.addIdTagEvent(chargepointId, null, idTag, 'Blocked', 'auto_tag_rfid', 'authorize');
       }
@@ -832,14 +858,25 @@ function register201Handlers(client, loggedHandle) {
       logger.info(`[2.0.1] TransactionEvent Started from ${identity} EVSE#${evseId} txId=${txId}`);
 
       const idTag = idToken?.idToken || '';
-      const startSource = TRIGGER_TO_START_SOURCE[triggerReason] || 'rfid';
+      // Démarrage à distance : la spec corrèle le Started à la demande par
+      // transactionInfo.remoteStartId ; le triggerReason n'est pas toujours RemoteStart (ex.
+      // TxStartPoint=PowerPathClosed → ChargingStateChanged). Un démarrage à distance en attente
+      // avec ce badge sur cette borne compte aussi.
+      const remoteStartId = transactionInfo.remoteStartId ?? null;
+      const pending = findPendingRemoteStart(pendingRemoteStarts, identity, {
+        idTag,
+        remoteStartId,
+      });
+      const isRemoteStart = triggerReason === 'RemoteStart' || remoteStartId != null || !!pending;
+      const startSource = isRemoteStart
+        ? pending?.entry.source || 'remote'
+        : TRIGGER_TO_START_SOURCE[triggerReason] || 'rfid';
 
       let authStatus = 'Accepted';
       let authReason = null;
       let authTag = null;
       if (cp && cp.mode === 1 && startSource === 'rfid') {
-        const AUTO_TAG_PREFIXES = ['WEB-', 'ADMIN', 'MGR-'];
-        if (AUTO_TAG_PREFIXES.some((p) => idTag.startsWith(p))) {
+        if (isGeneratedTag(idTag)) {
           authStatus = 'Blocked';
           authReason = 'auto_tag_rfid';
         } else {
@@ -914,6 +951,7 @@ function register201Handlers(client, loggedHandle) {
 
       if (cp) {
         const meterStart = extractMeterEnergy(meterValue, 'first') ?? 0;
+        if (pending) pendingRemoteStarts.delete(pending.key);
 
         // Fermer les transactions orphelines sur le même connecteur DU MÊME EVSE (les
         // connectorId sont numérotés par EVSE : le connecteur 1 de l'EVSE 2 n'est pas celui de l'EVSE 1)
@@ -1076,11 +1114,28 @@ function register201Handlers(client, loggedHandle) {
         return {};
       }
 
-      // Badge présenté en cours de transaction : contrôle + rattachement, réponse idTokenInfo
-      const idTokenInfo =
-        isActive && idToken?.idToken
-          ? evaluateIdTokenOnUpdate({ cp, tx, txId, idToken, identity, chargepointId })
-          : null;
+      // Badge présenté en cours de transaction : contrôle + rattachement, réponse idTokenInfo.
+      // Démarrage à distance « câble branché d'abord » (F02) : Updated(RemoteStart,
+      // remoteStartId) avec le badge de la demande → accepté sans contrôle.
+      let idTokenInfo = null;
+      if (isActive && idToken?.idToken) {
+        const remoteStartId = transactionInfo.remoteStartId ?? null;
+        const pending = findPendingRemoteStart(pendingRemoteStarts, identity, {
+          idTag: idToken.idToken,
+          remoteStartId,
+        });
+        const isRemoteStart = triggerReason === 'RemoteStart' || remoteStartId != null || !!pending;
+        if (pending) pendingRemoteStarts.delete(pending.key);
+        idTokenInfo = evaluateIdTokenOnUpdate({
+          cp,
+          tx,
+          txId,
+          idToken,
+          identity,
+          chargepointId,
+          isRemoteStart,
+        });
+      }
 
       const chargingState = isActive ? transactionInfo.chargingState || null : null;
       if (chargingState) {

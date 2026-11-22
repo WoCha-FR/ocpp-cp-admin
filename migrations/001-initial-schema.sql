@@ -379,6 +379,8 @@ INSERT OR IGNORE INTO chargepoint_init_config (key, value, enabled) VALUES
   ('MeterValuesSampledData', 'Energy.Active.Import.Register,Power.Active.Import', 0),
   ('ClockAlignedDataInterval', '0', 0),
   ('LocalPreAuthorize', 'true', 0),
+  -- Démarrages à distance sans Authorize préalable (badges générés ADMIN / MGR-x / WEB-x)
+  ('AuthorizeRemoteTxRequests', 'false', 1),
   ('AllowOfflineTxForUnknownId', 'false', 0),
   ('MinimumStatusDuration', '0', 0),
   ('ResetRetries', '3', 0),
@@ -406,7 +408,7 @@ INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, value, en
   ('SampledDataCtrlr', 'SampledDataTxEndedMeasurands',    'Energy.Active.Import.Register', 0),
   ('SampledDataCtrlr', 'SampledDataAlignedDataInterval',  '0', 0),    -- was ClockAlignedDataInterval
   -- AuthCtrlr — Autorisation
-  ('AuthCtrlr', 'AuthorizeRemoteStart',        'false', 0),
+  ('AuthCtrlr', 'AuthorizeRemoteStart',        'false', 1),  -- badges générés : pas d'Authorize préalable
   ('AuthCtrlr', 'LocalAuthorizeOffline',       'true', 0),
   ('AuthCtrlr', 'LocalPreAuthorize',           'true', 0),  -- was LocalPreAuthorize
   ('AuthCtrlr', 'OfflineTxForUnknownIdEnabled','false', 0), -- was AllowOfflineTxForUnknownId

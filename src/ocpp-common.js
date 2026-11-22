@@ -5,6 +5,7 @@ const db = require('./database');
 const notifications = require('./notifications');
 const { verifyClientCertMatchesIdentity, isClientCertRevoked } = require('./certAuthority');
 const { lastKnownMeterStop, parseHeartbeatInterval } = require('./txRecovery');
+const { registerPendingRemoteStart } = require('./remoteStarts');
 const logger = require('./logger').scope('OCPP');
 
 // ── État partagé ──
@@ -959,18 +960,50 @@ async function remoteStopTransaction(identity, transactionId) {
 // evseId (2.0.1) : identifiant de l'EVSE à démarrer. Les connectorId sont numérotés par EVSE
 // (connecteur 1 sur chaque EVSE) : sur une borne multi-EVSE, connectorId ne désigne donc pas
 // l'EVSE. À défaut d'evseId explicite, on retombe sur connectorId (borne mono-connecteur par EVSE).
-async function remoteStartTransaction(identity, connectorId, idToken, evseId = null) {
+//
+// `pending` ({ source, userId }) : le démarrage est mémorisé (avec le badge et, en 2.0.1, le
+// remoteStartId) jusqu'au StartTransaction / TransactionEvent(Started) — voir remoteStarts.js.
+// La mémorisation est retirée si la borne refuse ou ne répond pas.
+async function remoteStartTransaction(
+  identity,
+  connectorId,
+  idToken,
+  evseId = null,
+  pending = null
+) {
   const cp = db.getChargepointByIdentity(identity);
-  if (cp?.ocpp_version === '2.0.1') {
-    const tag = db.getIdTagByTag(idToken, cp.site_id);
-    const tokenType = tag?.token_type || 'ISO14443';
-    return callClient(identity, 'RequestStartTransaction', {
-      remoteStartId: Math.floor(Math.random() * 2147483647),
-      evseId: evseId ?? connectorId,
-      idToken: { idToken, type: tokenType },
-    });
+  const is201 = cp?.ocpp_version === '2.0.1';
+  const remoteStartId = is201 ? Math.floor(Math.random() * 2147483647) : undefined;
+  const key = pending
+    ? registerPendingRemoteStart(pendingRemoteStarts, identity, connectorId, {
+        source: pending.source || 'remote',
+        userId: pending.userId ?? null,
+        idTag: idToken,
+        ...(is201 ? { remoteStartId } : {}),
+      })
+    : null;
+  try {
+    let result;
+    if (is201) {
+      const tag = db.getIdTagByTag(idToken, cp.site_id);
+      const tokenType = tag?.token_type || 'ISO14443';
+      result = await callClient(identity, 'RequestStartTransaction', {
+        remoteStartId,
+        evseId: evseId ?? connectorId,
+        idToken: { idToken, type: tokenType },
+      });
+    } else {
+      result = await callClient(identity, 'RemoteStartTransaction', {
+        connectorId,
+        idTag: idToken,
+      });
+    }
+    if (key && result?.status !== 'Accepted') pendingRemoteStarts.delete(key);
+    return result;
+  } catch (err) {
+    if (key) pendingRemoteStarts.delete(key);
+    throw err;
   }
-  return callClient(identity, 'RemoteStartTransaction', { connectorId, idTag: idToken });
 }
 
 // ── Diagnostic d'un refus de profil de sécurité : le plus verbeux possible ──

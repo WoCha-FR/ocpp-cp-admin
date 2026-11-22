@@ -18,6 +18,11 @@ const {
   parseHeartbeatInterval,
 } = require('./txRecovery');
 const { parseSampledValues } = require('./meterSamples');
+const {
+  isGeneratedTag,
+  registerPendingRemoteStart,
+  findPendingRemoteStart,
+} = require('./remoteStarts');
 const { toIsoDateTime } = require('./chargingProfiles');
 
 const OCPP16_STANDARD_KEYS = [
@@ -126,6 +131,29 @@ function sanitizeText(value, maxLen) {
 function sanitizeEnum(value, allowed, fallback) {
   if (typeof value !== 'string') return fallback;
   return allowed.has(value) ? value : fallback;
+}
+
+// StopTransaction.conf — idTagInfo du badge qui a arrêté la transaction. La borne met à jour
+// son cache d'autorisation avec cette réponse (spec 1.6, Authorization Cache) : répondre
+// Accepted pour un badge bloqué ou inconnu le ferait ensuite accepter hors ligne.
+// Même règle que Authorize (mode 3 libre : tout badge accepté). Sans idTag dans la requête,
+// idTagInfo est omis (champ facultatif).
+function stopTransactionResponse(cp, idTag, tx) {
+  if (!idTag) return {};
+  if (cp.mode === 3) return { idTagInfo: { status: 'Accepted' } };
+  if (isGeneratedTag(idTag)) {
+    // Badge généré (démarrage à distance) : légitime seulement pour sa propre transaction
+    return { idTagInfo: { status: tx && tx.id_tag === idTag ? 'Accepted' : 'Blocked' } };
+  }
+  const auth = db.authorizeIdTag(idTag, cp.site_id);
+  return {
+    idTagInfo: {
+      status: auth.status,
+      ...(auth.tag && auth.tag.expiry_date
+        ? { expiryDate: toIsoDateTime(auth.tag.expiry_date) }
+        : {}),
+    },
+  };
 }
 
 // ── Commandes CSMS → borne (OCPP 1.6) ──
@@ -674,9 +702,13 @@ function register16Handlers(client, loggedHandle) {
         if (!existingTag) {
           db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null, 0);
         }
-        const pendingKey = `${identity}_${params.connectorId}`;
-        pendingRemoteStarts.set(pendingKey, { source: 'remote', userId: null });
-        setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
+        // Démarrage mémorisé avec son badge (voir remoteStarts.js)
+        const pendingKey = registerPendingRemoteStart(
+          pendingRemoteStarts,
+          identity,
+          params.connectorId,
+          { source: 'remote', userId: null, idTag }
+        );
 
         callClient16(identity, 'RemoteStartTransaction', {
           idTag,
@@ -703,8 +735,14 @@ function register16Handlers(client, loggedHandle) {
 
   // ── Authorize ──
   loggedHandle('Authorize', (params) => {
-    const AUTO_TAG_PREFIXES = ['WEB-', 'ADMIN', 'MGR-'];
-    if (AUTO_TAG_PREFIXES.some((p) => params.idTag.startsWith(p))) {
+    if (isGeneratedTag(params.idTag)) {
+      // Borne avec AuthorizeRemoteTxRequests=true : elle fait autoriser le badge d'un démarrage
+      // à distance avant de démarrer. Un badge généré (ADMIN / MGR-x / WEB-x) n'est accepté
+      // que si un démarrage à distance avec CE badge est en attente sur CETTE borne.
+      if (findPendingRemoteStart(pendingRemoteStarts, identity, { idTag: params.idTag })) {
+        logger.info(`Authorize ${identity}: generated badge accepted (pending remote start)`);
+        return { idTagInfo: { status: 'Accepted' } };
+      }
       if (chargepointId) {
         db.addIdTagEvent(
           chargepointId,
@@ -769,15 +807,15 @@ function register16Handlers(client, loggedHandle) {
     logger.info(`StartTransaction from ${identity} #${params.connectorId}`);
     const cp = db.getChargepointByIdentity(identity);
     let startSource = 'rfid';
-    const pendingKey = `${identity}_${params.connectorId}`;
-    if (pendingRemoteStarts.has(pendingKey)) {
-      const pending = pendingRemoteStarts.get(pendingKey);
-      startSource = pending.source || 'remote';
-      pendingRemoteStarts.delete(pendingKey);
-    } else if (pendingRemoteStarts.has(identity)) {
-      const pending = pendingRemoteStarts.get(identity);
-      startSource = pending.source || 'remote';
-      pendingRemoteStarts.delete(identity);
+    // Démarrage à distance en attente : seulement s'il a été demandé AVEC CE BADGE. Un autre
+    // badge présenté sur le connecteur pendant l'attente reste contrôlé normalement.
+    const pending = findPendingRemoteStart(pendingRemoteStarts, identity, {
+      connectorId: params.connectorId,
+      idTag: params.idTag,
+    });
+    if (pending) {
+      startSource = pending.entry.source || 'remote';
+      pendingRemoteStarts.delete(pending.key);
     } else if (cp && cp.mode === 3) {
       startSource = 'local';
     }
@@ -785,8 +823,7 @@ function register16Handlers(client, loggedHandle) {
     let authStatus = 'Accepted';
     let authReason = null;
     if (cp && cp.mode === 1 && startSource === 'rfid') {
-      const AUTO_TAG_PREFIXES = ['WEB-', 'ADMIN', 'MGR-'];
-      if (AUTO_TAG_PREFIXES.some((p) => params.idTag.startsWith(p))) {
+      if (isGeneratedTag(params.idTag)) {
         authStatus = 'Blocked';
         authReason = 'auto_tag_rfid';
       } else {
@@ -966,7 +1003,7 @@ function register16Handlers(client, loggedHandle) {
     // a été consommée (firmware en Suspended EV), corriger avec meter_start + energy
     let meterStop = params.meterStop;
     const cp = db.getChargepointByIdentity(identity);
-    if (!cp) return { idTagInfo: { status: 'Accepted' } };
+    if (!cp) return {};
     // Transactions identifiées par (borne, transactionId)
     const preTx = db.getTransactionByTransactionId(cp.id, params.transactionId);
     if (
@@ -996,7 +1033,7 @@ function register16Handlers(client, loggedHandle) {
       logger.info(
         `StopTransaction for rejected transaction ${params.transactionId} on ${identity}`
       );
-      return { idTagInfo: { status: 'Accepted' } };
+      return stopTransactionResponse(cp, params.idTag, preTx);
     }
 
     // Déjà close : retransmission (rien à faire) ou clôture heuristique du serveur que l'arrêt
@@ -1035,7 +1072,7 @@ function register16Handlers(client, loggedHandle) {
           `StopTransaction ${params.transactionId} on ${identity}: transaction already closed — ignored`
         );
       }
-      return { idTagInfo: { status: 'Accepted' } };
+      return stopTransactionResponse(cp, params.idTag, preTx);
     }
 
     let stoppedTx = null;
@@ -1156,7 +1193,7 @@ function register16Handlers(client, loggedHandle) {
       }
     }
 
-    return { idTagInfo: { status: 'Accepted' } };
+    return stopTransactionResponse(cp, params.idTag, preTx ?? stoppedTx);
   });
 
   // ── MeterValues ──

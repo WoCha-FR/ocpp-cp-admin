@@ -73,6 +73,7 @@ const mockConnectedClients = new Map();
 const mockBroadcast = jest.fn();
 const mockTrackRepeatedAuthReject = jest.fn();
 const mockDebounceAvailabilityNotif = jest.fn((identity, connectorId, fn) => fn());
+const mockPendingRemoteStarts = new Map();
 
 jest.mock('../../src/ocpp-common', () => ({
   broadcast: mockBroadcast,
@@ -81,7 +82,7 @@ jest.mock('../../src/ocpp-common', () => ({
   registerCallClientImpl: jest.fn(),
   registerHandlersFn: jest.fn(),
   debounceAvailabilityNotif: mockDebounceAvailabilityNotif,
-  pendingRemoteStarts: new Map(),
+  pendingRemoteStarts: mockPendingRemoteStarts,
 }));
 
 const { callClient201, register201Handlers } = require('../../src/ocpp-server-201');
@@ -106,6 +107,7 @@ function makeClient(identity) {
 beforeEach(() => {
   jest.clearAllMocks();
   mockConnectedClients.clear();
+  mockPendingRemoteStarts.clear();
 });
 
 // ── callClient201 ──
@@ -2877,5 +2879,145 @@ describe('ocpp-server-201 — conformité OCPP (lot B)', () => {
     });
     const res = client._handlers['Authorize']({ idToken: { idToken: 'TAG1', type: 'ISO14443' } });
     expect(res.idTokenInfo.cacheExpiryDateTime).toBe('2099-12-31T00:00:00Z');
+  });
+});
+
+// ── Lot E : démarrages à distance en mode 1 (H3) ──
+describe('ocpp-server-201 — lot E démarrage à distance (H3)', () => {
+  let client;
+  const TS = new Date().toISOString();
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: 1 });
+    mockDb.getTransactionByTransactionId.mockReturnValue(null);
+    mockDb.getTransactions.mockReturnValue([]);
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.createTransaction.mockReturnValue({ transaction_id: 'TX-R' });
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  afterEach(() => mockDb.getTransactionByTransactionId.mockReset());
+
+  it('Started avec remoteStartId (triggerReason ChargingStateChanged) : badge généré accepté, source mémorisée', () => {
+    mockPendingRemoteStarts.set('CP001_1', {
+      source: 'web',
+      userId: 3,
+      idTag: 'ADMIN',
+      remoteStartId: 4242,
+    });
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'ChargingStateChanged',
+      transactionInfo: { transactionId: 'TX-R', remoteStartId: 4242, chargingState: 'Charging' },
+      idToken: { idToken: 'ADMIN', type: 'Central' },
+      evse: { id: 1, connectorId: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo.status).toBe('Accepted');
+    expect(mockDb.authorizeIdTag).not.toHaveBeenCalled();
+    expect(mockDb.createTransaction.mock.calls[0][5]).toBe('web');
+    expect(mockDb.createTransaction.mock.calls[0][6]).not.toHaveProperty('status', 'Rejected');
+    expect(mockPendingRemoteStarts.has('CP001_1')).toBe(false);
+  });
+
+  it('Started avec remoteStartId sans attente mémorisée (ex. serveur redémarré) : démarrage à distance', () => {
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-R', remoteStartId: 99 },
+      idToken: { idToken: 'MGR-1', type: 'Central' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo.status).toBe('Accepted');
+    expect(mockDb.createTransaction.mock.calls[0][5]).toBe('remote');
+  });
+
+  it('Started sans remoteStartId ni attente : badge généré toujours bloqué en mode 1', () => {
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-R' },
+      idToken: { idToken: 'ADMIN', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo.status).toBe('Blocked');
+  });
+
+  it('M9 — un autre badge pendant une attente reste contrôlé', () => {
+    mockPendingRemoteStarts.set('CP001_1', { source: 'web', idTag: 'WEB-5', remoteStartId: 1 });
+    mockDb.authorizeIdTag.mockReturnValue({ status: 'Invalid', reason: 'unknown_tag', tag: null });
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-R' },
+      idToken: { idToken: 'OTHER', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo.status).toBe('Invalid');
+    expect(mockPendingRemoteStarts.has('CP001_1')).toBe(true);
+  });
+
+  it('câble branché d’abord (F02) : Updated(RemoteStart) avec badge généré accepté et rattaché', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      transaction_id: 'TX-PLUG',
+      status: 'Active',
+      id_tag: null,
+      meter_start: 0,
+      connector_id: 1,
+      evse_id: 1,
+    });
+    mockPendingRemoteStarts.set('CP001_1', { source: 'web', idTag: 'MGR-1', remoteStartId: 7 });
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      triggerReason: 'RemoteStart',
+      transactionInfo: { transactionId: 'TX-PLUG', remoteStartId: 7 },
+      idToken: { idToken: 'MGR-1', type: 'Central' },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo.status).toBe('Accepted');
+    expect(mockDb.setTransactionIdTag).toHaveBeenCalledWith(1, 'TX-PLUG', 'MGR-1', 'Central');
+    expect(mockPendingRemoteStarts.has('CP001_1')).toBe(false);
+  });
+
+  it('Updated(Authorized) avec badge généré et sans démarrage à distance : bloqué', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      transaction_id: 'TX-PLUG',
+      status: 'Active',
+      id_tag: null,
+      meter_start: 0,
+      connector_id: 1,
+      evse_id: 1,
+    });
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-PLUG' },
+      idToken: { idToken: 'ADMIN', type: 'ISO14443' },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo.status).toBe('Blocked');
+    expect(mockDb.setTransactionIdTag).not.toHaveBeenCalled();
+  });
+
+  it('Authorize (AuthorizeRemoteStart=true) : badge généré accepté seulement avec une attente sur cette borne', () => {
+    expect(
+      client._handlers['Authorize']({ idToken: { idToken: 'ADMIN', type: 'Central' } }).idTokenInfo
+        .status
+    ).toBe('Blocked');
+    mockPendingRemoteStarts.set('CP001_1', { source: 'web', idTag: 'ADMIN', remoteStartId: 5 });
+    expect(
+      client._handlers['Authorize']({ idToken: { idToken: 'ADMIN', type: 'Central' } }).idTokenInfo
+        .status
+    ).toBe('Accepted');
   });
 });

@@ -1291,6 +1291,64 @@ describe('ocpp-common — remoteStartTransaction', () => {
       idTag: 'TAG001',
     });
   });
+
+  describe('mémorisation du démarrage en attente (badge + remoteStartId)', () => {
+    afterEach(() => ocppCommon.pendingRemoteStarts.clear());
+
+    it('2.0.1 : mémorise source, utilisateur, badge et le remoteStartId envoyé', async () => {
+      mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1', site_id: 1 });
+      mockDb.getIdTagByTag.mockReturnValue(null);
+      const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+      ocppCommon.registerCallClientImpl('2.0.1', impl);
+
+      await ocppCommon.remoteStartTransaction('CP001', 1, 'WEB-5', null, {
+        source: 'web',
+        userId: 5,
+      });
+
+      const sentId = impl.mock.calls[0][2].remoteStartId;
+      expect(ocppCommon.pendingRemoteStarts.get('CP001_1')).toEqual({
+        source: 'web',
+        userId: 5,
+        idTag: 'WEB-5',
+        remoteStartId: sentId,
+      });
+    });
+
+    it('1.6 : mémorise le badge (pas de remoteStartId)', async () => {
+      mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+      ocppCommon.registerCallClientImpl('1.6', jest.fn().mockResolvedValue({ status: 'Accepted' }));
+      await ocppCommon.remoteStartTransaction('CP001', 2, 'ADMIN', null, { source: 'web' });
+      expect(ocppCommon.pendingRemoteStarts.get('CP001_2')).toEqual({
+        source: 'web',
+        userId: null,
+        idTag: 'ADMIN',
+      });
+    });
+
+    it('retire la mémorisation si la borne refuse', async () => {
+      mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+      ocppCommon.registerCallClientImpl('1.6', jest.fn().mockResolvedValue({ status: 'Rejected' }));
+      await ocppCommon.remoteStartTransaction('CP001', 1, 'ADMIN', null, { source: 'web' });
+      expect(ocppCommon.pendingRemoteStarts.has('CP001_1')).toBe(false);
+    });
+
+    it("retire la mémorisation si l'appel échoue", async () => {
+      mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+      ocppCommon.registerCallClientImpl('1.6', jest.fn().mockRejectedValue(new Error('timeout')));
+      await expect(
+        ocppCommon.remoteStartTransaction('CP001', 1, 'ADMIN', null, { source: 'web' })
+      ).rejects.toThrow('timeout');
+      expect(ocppCommon.pendingRemoteStarts.has('CP001_1')).toBe(false);
+    });
+
+    it('sans `pending`, rien n’est mémorisé', async () => {
+      mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+      ocppCommon.registerCallClientImpl('1.6', jest.fn().mockResolvedValue({ status: 'Accepted' }));
+      await ocppCommon.remoteStartTransaction('CP001', 1, 'TAG001');
+      expect(ocppCommon.pendingRemoteStarts.size).toBe(0);
+    });
+  });
 });
 
 // ── Enforcement des profils de sécurité OCPP 2.0.1 ──
