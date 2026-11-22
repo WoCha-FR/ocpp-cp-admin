@@ -27,5 +27,29 @@ describe('Backend hardening regressions', () => {
     expect(db).toMatch(/function deletePushSubscriptionByUser\(userId,\s*endpoint\)/);
     expect(db).toMatch(/DELETE FROM push_subscriptions WHERE user_id = \? AND endpoint = \?/);
   });
+
+  it('restreint le rapport de remboursement aux sites gérés par le manager', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const start = src.indexOf("'/transactions/reimbursement/csv'");
+    expect(start).toBeGreaterThan(-1);
+    const route = src.slice(start, src.indexOf('TRANSACTION DETAIL', start));
+    expect(route).toMatch(/requireManager/);
+    expect(route).toMatch(/getUserManagedSiteIds\(req\)/);
+    expect(route).toMatch(/category: req\.query\.category \|\| 'pro'/);
+    // La route doit être déclarée avant /transactions/:transactionId
+    expect(start).toBeLessThan(src.indexOf("'/transactions/:transactionId'"));
+  });
+
+  it('transmet la catégorie du badge à la création et applique le filtre aux routes self-service', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    expect(src).toMatch(/data\.token_type,\s*null,\s*data\.category/);
+    const userSection = src.slice(
+      src.indexOf("'/user/transactions/stats'"),
+      src.indexOf("'/user/stop-charge'")
+    );
+    // stats + liste + CSV
+    expect(userSection.match(/filters\.category = req\.query\.category/g)).toHaveLength(3);
+    expect(userSection).toMatch(/withTotal: true/);
+  });
 });
 

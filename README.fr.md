@@ -31,6 +31,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
   - [WSS — Serveur OCPP](#wss--serveur-ocpp-profils-de-sécurité-2--3)
 - [Démarrage](#démarrage)
 - [Tarification de l'énergie](#tarification-de-lénergie)
+- [Badges professionnels / personnels et exports de remboursement](#badges-professionnels--personnels-et-exports-de-remboursement)
 - [Rôles et permissions](#rôles-et-permissions)
 - [Protocole OCPP 1.6](#protocole-ocpp-16)
   - [Opérations supportées](#opérations-supportées)
@@ -79,7 +80,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Mise à jour temps réel via WebSocket
 
 ### Gestion des badges RFID
-- Création et gestion de badges (ID Tags)
+- Création et gestion de badges (ID Tags), avec une catégorie **professionnel / personnel** — voir [Badges professionnels / personnels et exports de remboursement](#badges-professionnels--personnels-et-exports-de-remboursement)
 - Génération automatique de tags web pour les démarrages à distance
 - Suivi des expirations et des rejets d'autorisation
 
@@ -869,9 +870,35 @@ Règles :
 
 - **Transactions** (managers/admins) et **Mes transactions** (utilisateurs) : colonne *Coût* et carte KPI de coût (les totaux sont regroupés par devise, des devises différentes ne sont jamais additionnées).
 - **Détail d'une session** : détail du coût par tranche (période, kWh, prix, montant), méthode de calcul et fuseau horaire.
-- **Exports CSV** (export global/par site et export personnel) : quatre colonnes supplémentaires — `Coût`, `Devise`, `Prix moyen (/kWh)` et `Détail tarifaire` (ex. `HP 6.20 kWh × 0.2500 = 1.55 | HC 12.00 kWh × 0.1500 = 1.80`). Elles sont vides pour les sessions sans coût. Chaque utilisateur ne voit que le coût de ses propres sessions.
+- **Exports CSV** (export global/par site et export personnel) : quatre colonnes supplémentaires — `Coût`, `Devise`, `Prix moyen (/kWh)` et `Détail tarifaire` (ex. `HP 6.20 kWh × 0.2500 = 1.55 | HC 12.00 kWh × 0.1500 = 1.80`). Elles sont vides pour les sessions sans coût. Chaque utilisateur ne voit que le coût de ses propres sessions. Une colonne `Catégorie` (badge professionnel / personnel) est également présente.
 
 > L'accès au détail d'une session (`GET /api/transactions/:id`) est réservé aux administrateurs, aux managers du site de la borne et au propriétaire du badge RFID utilisé.
+
+---
+
+## Badges professionnels / personnels et exports de remboursement
+
+Chaque badge RFID possède une **catégorie** : `personnel` (par défaut) ou `professionnel`. Elle permet de séparer ce qui doit être remboursé (recharge d'un véhicule de société) de la consommation privée, quel que soit le site où le badge est utilisé.
+
+### Renseigner la catégorie
+
+- Sur la page **Badges RFID**, le formulaire de création/modification propose un sélecteur **Catégorie**, et la liste a une colonne et un filtre *Catégorie*.
+- Les badges existants (et les badges `MGR-*` / `WEB-*` créés automatiquement) sont **personnels** par défaut : passez en *professionnel* les badges à rembourser.
+- Un badge *professionnel* doit être **associé à un utilisateur**, sinon ses sessions apparaissent sans nom dans le rapport par salarié.
+
+### Configuration type : entreprise multi-sites
+
+- Un **site** par lieu (siège, domiciles des salariés…) avec son propre [tarif](#tarification-de-lénergie).
+- Créez les badges **sans site** (*Tous les sites*) : un badge est alors valable partout. Deux badges par salarié (pro + perso) sont simplement deux badges liés au même utilisateur.
+- **Liez chaque salarié à tous les sites** où il peut charger (gestion des utilisateurs) : sinon l'autorisation est refusée avec `user_not_linked`.
+
+### Filtres et exports
+
+- Page **Transactions** (managers/admins) : filtre *Catégorie*, également appliqué à l'export CSV, et colonne `Catégorie`.
+- Page **Mes transactions** (tous les utilisateurs) : même filtre *Catégorie*, appliqué à la liste, aux KPI et à l'export CSV. Le CSV personnel se termine par une **ligne de total** (kWh et coût par devise) : filtré sur *professionnel*, c'est une note de frais prête à l'emploi.
+- **Export remboursement** (bouton de la page **Transactions**, managers/admins) : CSV agrégé **par site puis par salarié** — nombre de sessions terminées, énergie (kWh) et coût par devise, avec un total par site. Il suit les filtres de la page (site, catégorie — **professionnel** par défaut — et dates). Un manager n'obtient que les sites qu'il gère. Les sessions d'un site sans tarif ont un coût vide.
+
+> Confidentialité : les sessions des badges personnels restent visibles des managers du site (l'entreprise paie les bornes) ; seuls les exports séparent les deux catégories.
 
 ---
 
@@ -918,8 +945,10 @@ Accès limité à la recharge :
 | Méthode | Endpoint | Accès | Description |
 |---|---|---|---|
 | `GET` | `/api/error-events` | manager+ | Journal paginé des événements d'erreur. Paramètres : `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
+| `GET` | `/api/transactions`, `/api/transactions/csv`, `/api/user/transactions`, `/api/user/transactions/stats`, `/api/user/transactions/csv` | manager+ / utilisateur | Acceptent un filtre `category` (`pro`\|`perso`) sur le badge utilisé pour la session |
 | `GET` | `/api/sites/:siteId/tariff` | manager du site / admin | Tarif d'un site : `currency`, `timezone`, `default_price_per_kwh` et `periods[]` (`label`, `days` en jours ISO `1`–`7`, `start_time`, `end_time`, `price_per_kwh`) |
 | `PUT` | `/api/sites/:siteId/tariff` | manager du site / admin | Remplace atomiquement le tarif d'un site (même corps que la réponse du `GET`). `400` avec des codes `ERR_TARIFF_*` si invalide (format, chevauchement, prix par défaut manquant…) |
+| `GET` | `/api/transactions/reimbursement/csv` | manager du site / admin | CSV de remboursement par site puis salarié. Paramètres : `site_id`, `category` (`pro`\|`perso`, défaut `pro`), `from`, `to` (ISO 8601) |
 | `GET` | `/api/transactions/:id` | admin / manager du site / propriétaire du badge | Détail d'une session, avec le coût figé `cost`, `cost_currency` et `cost_details` |
 | `GET` | `/api/transactions/:id/values` | admin / manager du site / propriétaire du badge | Séries de comptage d'une transaction : `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
 | `GET` | `/api/metrics` | token optionnel | Métriques au format Prometheus |

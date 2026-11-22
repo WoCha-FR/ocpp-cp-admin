@@ -31,6 +31,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
   - [WSS — OCPP Server](#wss--ocpp-server-security-profile-2--3)
 - [Getting Started](#getting-started)
 - [Energy Tariffs](#energy-tariffs)
+- [Business / Personal Badges and Reimbursement Exports](#business--personal-badges-and-reimbursement-exports)
 - [Roles and Permissions](#roles-and-permissions)
 - [OCPP 1.6 Protocol](#ocpp-16-protocol)
   - [Supported Operations](#supported-operations)
@@ -78,7 +79,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Real-time updates via WebSocket
 
 ### RFID Badge Management
-- Badge creation and management (ID Tags)
+- Badge creation and management (ID Tags), with a **business / personal** category — see [Business / Personal Badges and Reimbursement Exports](#business--personal-badges-and-reimbursement-exports)
 - Automatic web tag generation for remote starts
 - Expiration and authorization rejection tracking
 
@@ -874,9 +875,35 @@ Rules:
 
 - **Transactions** (managers/admins) and **My transactions** (users): *Cost* column and a cost KPI card (totals are grouped by currency, different currencies are never added together).
 - **Session detail**: cost breakdown per slot (time span, kWh, price, amount), calculation method and time zone.
-- **CSV exports** (global/site export and personal export): four extra columns — `Cost`, `Currency`, `Average price (/kWh)` and `Tariff breakdown` (e.g. `Peak 6.20 kWh × 0.2500 = 1.55 | Off-peak 12.00 kWh × 0.1500 = 1.80`). They are empty for sessions without a cost. Each user only sees the cost of their own sessions.
+- **CSV exports** (global/site export and personal export): four extra columns — `Cost`, `Currency`, `Average price (/kWh)` and `Tariff breakdown` (e.g. `Peak 6.20 kWh × 0.2500 = 1.55 | Off-peak 12.00 kWh × 0.1500 = 1.80`). They are empty for sessions without a cost. Each user only sees the cost of their own sessions. A `Category` column (business / personal badge) is also present.
 
 > Access to a session's detail (`GET /api/transactions/:id`) is restricted to administrators, managers of the site of the charge point and the owner of the RFID badge used.
+
+---
+
+## Business / Personal Badges and Reimbursement Exports
+
+Each RFID badge has a **category**: `personal` (default) or `business`. It lets you separate what must be reimbursed (charging a company vehicle) from private consumption, whatever the site where the badge is used.
+
+### Setting up the category
+
+- On the **RFID badges** page, the create/edit form has a **Category** selector, and the list has a *Category* column and filter.
+- Existing badges (and automatically created `MGR-*` / `WEB-*` badges) are **personal** by default: switch to *business* the badges that must be reimbursed.
+- A *business* badge should be **linked to a user**, otherwise its sessions appear without a name in the per-employee report.
+
+### Typical set-up: company with several sites
+
+- One **site** per location (headquarters, employees' homes…) with its own [tariff](#energy-tariffs).
+- Create the badges with **no site** (*All sites*): a badge is then valid everywhere. Two badges per employee (business + personal) are simply two badges linked to the same user.
+- **Link each employee to every site** where they may charge (user management): otherwise authorization is refused with `user_not_linked`.
+
+### Filters and exports
+
+- **Transactions** page (managers/admins): *Category* filter, also applied to the CSV export, plus a `Category` column.
+- **My transactions** page (all users): same *Category* filter, applied to the list, KPIs and CSV export. The personal CSV ends with a **total row** (kWh and cost per currency): filtered on *business*, it is a ready-to-use expense report.
+- **Reimbursement export** (button on the **Transactions** page, managers/admins): CSV aggregated **by site, then by employee** — number of completed sessions, energy (kWh) and cost per currency, with a total per site. It follows the site, category (**business** by default) and date filters of the page. A manager only gets the sites they manage. Sessions of a site with no tariff have an empty cost.
+
+> Confidentiality: sessions of personal badges remain visible to site managers (the company pays for the charge points); only the exports separate the two categories.
 
 ---
 
@@ -923,8 +950,10 @@ Limited access for charging:
 | Method | Endpoint | Access | Description |
 |---|---|---|---|
 | `GET` | `/api/error-events` | manager+ | Paginated error event log. Query params: `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
+| `GET` | `/api/transactions`, `/api/transactions/csv`, `/api/user/transactions`, `/api/user/transactions/stats`, `/api/user/transactions/csv` | manager+ / user | Accept a `category` filter (`pro`\|`perso`) on the badge used for the session |
 | `GET` | `/api/sites/:siteId/tariff` | manager of the site / admin | Tariff of a site: `currency`, `timezone`, `default_price_per_kwh` and `periods[]` (`label`, `days` as ISO weekdays `1`–`7`, `start_time`, `end_time`, `price_per_kwh`) |
 | `PUT` | `/api/sites/:siteId/tariff` | manager of the site / admin | Atomically replaces the tariff of a site (same body as the `GET` response). `400` with `ERR_TARIFF_*` codes when invalid (format, overlap, missing default price…) |
+| `GET` | `/api/transactions/reimbursement/csv` | manager of the site / admin | Reimbursement CSV by site then employee. Query params: `site_id`, `category` (`pro`\|`perso`, default `pro`), `from`, `to` (ISO 8601) |
 | `GET` | `/api/transactions/:id` | admin / site manager / badge owner | Session detail, including the frozen `cost`, `cost_currency` and `cost_details` |
 | `GET` | `/api/transactions/:id/values` | admin / site manager / badge owner | Real-time metering series for a transaction: `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
 | `GET` | `/api/metrics` | optional token | Prometheus-format metrics |

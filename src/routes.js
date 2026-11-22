@@ -36,7 +36,7 @@ const {
 } = require('./config');
 const { trad, SUPPORTED_LANGUAGES, i18next } = require('./i18n');
 const tariff = require('./tariff');
-const { buildTransactionsCsv } = require('./transactionsCsv');
+const { buildTransactionsCsv, buildReimbursementCsv } = require('./transactionsCsv');
 const logger = require('./logger').scope('AUTH');
 
 const router = express.Router();
@@ -2227,6 +2227,7 @@ router.get(
     if (req.query.chargepoint_id) filters.chargepoint_id = Number(req.query.chargepoint_id);
     if (req.query.site_id) filters.site_id = Number(req.query.site_id);
     if (req.query.status) filters.status = req.query.status;
+    if (req.query.category) filters.category = req.query.category;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
     if (req.query.limit === 'all') {
@@ -2265,6 +2266,7 @@ router.get(
     if (req.query.chargepoint_id) filters.chargepoint_id = Number(req.query.chargepoint_id);
     if (req.query.site_id) filters.site_id = Number(req.query.site_id);
     if (req.query.status) filters.status = req.query.status;
+    if (req.query.category) filters.category = req.query.category;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
 
@@ -2284,6 +2286,37 @@ router.get(
       lng: req.user.langue || 'fr',
     });
     const filename = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  }
+);
+
+// Export « remboursement » : sessions des badges d'une catégorie (pro par défaut),
+// agrégées par site puis par salarié
+router.get(
+  '/transactions/reimbursement/csv',
+  requireManager,
+  ...validateSchema(schema.ReimbursementQuery),
+  (req, res) => {
+    const filters = { category: req.query.category || 'pro' };
+    if (req.query.site_id) filters.site_id = Number(req.query.site_id);
+    if (req.query.from) filters.from = req.query.from;
+    if (req.query.to) filters.to = req.query.to;
+
+    if (req.user.role !== 'admin') {
+      const siteIds = getUserManagedSiteIds(req);
+      if (siteIds && siteIds.length > 0) {
+        filters.site_ids = siteIds;
+      } else if (siteIds && siteIds.length === 0) {
+        return res.status(403).json({ error: 'ERR_NO_AUTHORIZED_SITE' });
+      }
+    }
+
+    const csv = buildReimbursementCsv(db.getReimbursementReport(filters), {
+      lng: req.user.langue || 'fr',
+    });
+    const filename = `remboursement-${filters.category}-${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
@@ -2520,7 +2553,9 @@ router.post('/id-tags', requireManager, checkSchema(schema.IdTag), (req, res) =>
       data.description,
       data.expiry_date,
       data.active,
-      data.token_type
+      data.token_type,
+      null,
+      data.category
     );
     res.status(201).json(tag);
   } catch (e) {
@@ -2888,6 +2923,7 @@ router.get(
     const filters = {};
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
+    if (req.query.category) filters.category = req.query.category;
     res.json(db.getUserTransactionStats(req.user.id, filters));
   }
 );
@@ -2900,6 +2936,7 @@ router.get(
   (req, res) => {
     const filters = {};
     if (req.query.status) filters.status = req.query.status;
+    if (req.query.category) filters.category = req.query.category;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
     if (req.query.limit === 'all') {
@@ -2922,11 +2959,13 @@ router.get(
   (req, res) => {
     const filters = {};
     if (req.query.status) filters.status = req.query.status;
+    if (req.query.category) filters.category = req.query.category;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
     const transactions = db.getUserTransactions(req.user.id, filters);
     const csv = buildTransactionsCsv(transactions, {
       withUser: false,
+      withTotal: true,
       lng: req.user.langue || 'fr',
     });
     const filename = `mes-transactions-${new Date().toISOString().slice(0, 10)}.csv`;

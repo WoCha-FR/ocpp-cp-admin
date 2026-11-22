@@ -12,7 +12,7 @@ jest.mock('../../src/i18n', () => {
   };
 });
 
-const { buildTransactionsCsv } = require('../../src/transactionsCsv');
+const { buildTransactionsCsv, buildReimbursementCsv } = require('../../src/transactionsCsv');
 const { formatTariffDetail, normalizeTariffInput, validateTariff } = require('../../src/tariff');
 
 const details = {
@@ -32,6 +32,7 @@ const baseRow = {
   site_name: 'Maison',
   connector_id: 1,
   id_tag: 'TAG123',
+  tag_category: 'pro',
   tag_username: 'Alice',
   start_source: 'rfid',
   start_time: '2026-01-12T20:00:00Z',
@@ -87,6 +88,7 @@ describe('buildTransactionsCsv', () => {
       'Site',
       'Connecteur',
       'Tag',
+      'Catégorie',
       'Utilisateur',
       'Source',
       'Début',
@@ -103,12 +105,13 @@ describe('buildTransactionsCsv', () => {
       'Détail tarifaire',
     ]);
     expect(row).toHaveLength(head.length);
-    expect(row[5]).toBe('Alice');
-    expect(row[11]).toBe('20.20');
-    expect(row[15]).toBe('3.90');
-    expect(row[16]).toBe('EUR');
-    expect(row[17]).toBe((3.9 / 20.2).toFixed(4));
-    expect(row[18]).toContain('HP 7.20 kWh');
+    expect(row[5]).toBe('Professionnel');
+    expect(row[6]).toBe('Alice');
+    expect(row[12]).toBe('20.20');
+    expect(row[16]).toBe('3.90');
+    expect(row[17]).toBe('EUR');
+    expect(row[18]).toBe((3.9 / 20.2).toFixed(4));
+    expect(row[19]).toContain('HP 7.20 kWh');
     expect(csv.startsWith('﻿')).toBe(true);
   });
 
@@ -126,7 +129,7 @@ describe('buildTransactionsCsv', () => {
 
   it("laisse les colonnes de coût vides si la session n'a pas de coût", () => {
     const [head, row] = parse(buildTransactionsCsv([baseRow], { withUser: true }));
-    expect(row.slice(15)).toEqual(['', '', '', '']);
+    expect(row.slice(16)).toEqual(['', '', '', '']);
     expect(row).toHaveLength(head.length);
   });
 
@@ -137,8 +140,111 @@ describe('buildTransactionsCsv', () => {
         { withUser: true }
       )
     );
-    expect(row[15]).toBe('0.00');
-    expect(row[17]).toBe('');
+    expect(row[16]).toBe('0.00');
+    expect(row[18]).toBe('');
+  });
+
+  it('laisse la catégorie vide si le badge est inconnu', () => {
+    const [, row] = parse(buildTransactionsCsv([{ ...baseRow, tag_category: null }]));
+    expect(row[5]).toBe('');
+  });
+
+  it('ajoute une ligne de total (kWh + coût par devise) avec withTotal', () => {
+    const csv = buildTransactionsCsv(
+      [
+        { ...baseRow, cost: 3.9, cost_currency: 'EUR' },
+        { ...baseRow, meter_stop: 10000, cost: 2.1, cost_currency: 'EUR' },
+        { ...baseRow, meter_stop: 5000, cost: 1, cost_currency: 'CHF' },
+      ],
+      { withTotal: true }
+    );
+    const rows = parse(csv);
+    const head = rows[0];
+    const totals = rows.slice(4);
+    expect(totals).toHaveLength(2);
+    const col = (name) => head.indexOf(name);
+    expect(totals[0][0]).toBe('Total');
+    expect(totals[0][col('Énergie (kWh)')]).toBe('35.20');
+    expect(totals[0][col('Coût')]).toBe('6.00');
+    expect(totals[0][col('Devise')]).toBe('EUR');
+    expect(totals[1][col('Énergie (kWh)')]).toBe('');
+    expect(totals[1][col('Coût')]).toBe('1.00');
+    expect(totals[1][col('Devise')]).toBe('CHF');
+  });
+
+  it("la ligne de total n'a pas de coût quand aucune session n'est tarifée", () => {
+    const rows = parse(buildTransactionsCsv([baseRow], { withTotal: true }));
+    const total = rows[2];
+    expect(total[0]).toBe('Total');
+    expect(total[rows[0].indexOf('Coût')]).toBe('');
+    expect(total[rows[0].indexOf('Énergie (kWh)')]).toBe('20.20');
+  });
+
+  it('pas de ligne de total par défaut', () => {
+    expect(parse(buildTransactionsCsv([baseRow]))).toHaveLength(2);
+  });
+});
+
+describe('buildReimbursementCsv', () => {
+  const rows = [
+    {
+      site_id: 1,
+      site_name: 'Siège',
+      user_id: 5,
+      user_name: 'Alice',
+      category: 'pro',
+      sessions: 2,
+      energy_kwh: 30.5,
+      cost: 6.1,
+      currency: 'EUR',
+    },
+    {
+      site_id: 1,
+      site_name: 'Siège',
+      user_id: 6,
+      user_name: 'Bob',
+      category: 'pro',
+      sessions: 1,
+      energy_kwh: 10,
+      cost: 2,
+      currency: 'EUR',
+    },
+    {
+      site_id: 2,
+      site_name: 'Domicile',
+      user_id: 5,
+      user_name: 'Alice',
+      category: 'pro',
+      sessions: 3,
+      energy_kwh: 12,
+      cost: null,
+      currency: null,
+    },
+  ];
+
+  it('agrège par site avec un total par site', () => {
+    const out = parse(buildReimbursementCsv(rows, { lng: 'fr' }));
+    expect(out[0]).toEqual([
+      'Site',
+      'Utilisateur',
+      'Catégorie',
+      'Sessions',
+      'Énergie (kWh)',
+      'Coût',
+      'Devise',
+    ]);
+    expect(out[1]).toEqual(['Siège', 'Alice', 'Professionnel', '2', '30.50', '6.10', 'EUR']);
+    expect(out[3]).toEqual(['Total Siège', '', '', '3', '40.50', '8.10', 'EUR']);
+    expect(out[4]).toEqual(['Domicile', 'Alice', 'Professionnel', '3', '12.00', '', '']);
+    expect(out[5]).toEqual(['Total Domicile', '', '', '3', '12.00', '', '']);
+    expect(out).toHaveLength(6);
+  });
+
+  it('suit la langue et gère un rapport vide', () => {
+    const out = parse(buildReimbursementCsv([], { lng: 'en' }));
+    expect(out).toEqual([
+      ['Site', 'User', 'Category', 'Sessions', 'Energy (kWh)', 'Cost', 'Currency'],
+    ]);
   });
 });
 

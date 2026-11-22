@@ -86,4 +86,71 @@ test.describe('Tags RFID', () => {
 
     await expect(page.locator('#pageContent').getByText(tagId)).toBeHidden({ timeout: 8000 });
   });
+
+  test('peut créer un tag professionnel, le filtrer et le repasser en personnel', async ({
+    loggedInPage: page,
+  }) => {
+    const tagId = `E2EPRO${Date.now()}`;
+
+    await page.locator('[data-onclick="showCreateIdTagModal()"]').click();
+    await expect(page.locator('#tagCategory')).toHaveValue('perso');
+    await page.fill('#tagIdTag', tagId);
+    await page.selectOption('#tagCategory', 'pro');
+    await page.locator('[data-onclick*="createIdTag"]').click();
+    await expect(page.locator('#tagIdTag')).toBeHidden({ timeout: 5000 });
+
+    const row = page.locator('#pageContent table tbody tr', { hasText: tagId });
+    await expect(row).toBeVisible({ timeout: 8000 });
+    await expect(row.locator('.badge-blue', { hasText: /Professionnel|Business/ })).toBeVisible();
+
+    // Filtre : les badges personnels disparaissent de la liste
+    await page.selectOption('#idTagFilterCategory', 'perso');
+    await expect(page.locator('#pageContent').getByText(tagId)).toBeHidden({ timeout: 8000 });
+    await page.selectOption('#idTagFilterCategory', 'pro');
+    await expect(row).toBeVisible({ timeout: 8000 });
+
+    // Édition : la catégorie est pré-sélectionnée et modifiable
+    await row.locator('[data-onclick*="showEditIdTagModal"]').click();
+    await expect(page.locator('#editTagCategory')).toHaveValue('pro');
+    await page.selectOption('#editTagCategory', 'perso');
+    await page.locator('[data-onclick*="updateIdTag"]').click();
+    await expect(page.locator('#editTagIdTag')).toBeHidden({ timeout: 5000 });
+    await expect(page.locator('#pageContent').getByText(tagId)).toBeHidden({ timeout: 8000 });
+
+    // Nettoyage
+    await page.selectOption('#idTagFilterCategory', '');
+    const persoRow = page.locator('#pageContent table tbody tr', { hasText: tagId });
+    await persoRow.locator('[data-onclick*="deleteIdTag"]').click();
+    await page.locator('#confirmBtnOk').click();
+    await expect(page.locator('#pageContent').getByText(tagId)).toBeHidden({ timeout: 8000 });
+  });
+
+  test("la page Transactions propose le filtre catégorie et l'export remboursement", async ({
+    loggedInPage: page,
+  }) => {
+    await page.locator('#navTransactions').click();
+    await expect(page.locator('#txFilterCategory')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('[data-onclick="exportReimbursementCsv()"]')).toBeVisible();
+  });
+
+  test('la page Mes transactions propose le filtre catégorie', async ({ loggedInPage: page }) => {
+    await page.locator('#navMyTransactions').click();
+    await expect(page.locator('#myTxFilterCategory')).toBeVisible({ timeout: 10000 });
+  });
+
+  test("l'export remboursement renvoie un CSV et refuse une catégorie invalide", async ({
+    loggedInPage: page,
+  }) => {
+    const ok = await page.request.get('/api/transactions/reimbursement/csv');
+    expect(ok.status()).toBe(200);
+    expect(ok.headers()['content-type']).toContain('text/csv');
+    expect(ok.headers()['content-disposition']).toContain('remboursement-pro-');
+    const header = (await ok.text()).replace('﻿', '').split('\r\n')[0];
+    // La langue de l'admin dépend des tests précédents : on ne vérifie que la structure
+    expect(header.split(';')).toHaveLength(7);
+    expect(header.startsWith('Site;')).toBe(true);
+
+    const ko = await page.request.get('/api/transactions/reimbursement/csv?category=zzz');
+    expect(ko.status()).toBe(400);
+  });
 });

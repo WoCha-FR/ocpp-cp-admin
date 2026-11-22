@@ -1094,7 +1094,7 @@ function getChargingKpi(siteIds = null, days = 30) {
 // Base commune des requêtes transactions
 const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity, cp.cpname as chargepoint_name,
     s.sname as site_name,
-    it.user_id as tag_user_id, COALESCE(u.shortname, u.useremail) as tag_username,
+    it.user_id as tag_user_id, it.category as tag_category, COALESCE(u.shortname, u.useremail) as tag_username,
     CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values,
     cn.connector_name as connector_name,
     ev.evse_name as evse_name
@@ -1130,6 +1130,10 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
   if (filters.status) {
     whereClause += ' AND t.status = ?';
     params.push(filters.status);
+  }
+  if (filters.category) {
+    whereClause += ' AND it.category = ?';
+    params.push(filters.category);
   }
   if (filters.from) {
     whereClause += ' AND date(t.start_time) >= ?';
@@ -1205,6 +1209,59 @@ function getTransactions(filters = {}) {
 
 function getUserTransactions(userId, filters = {}) {
   return buildTransactionQuery('it.user_id = ?', [userId], filters);
+}
+
+/**
+ * Rapport « remboursement » : sessions terminées agrégées par site, salarié et devise,
+ * pour une catégorie de badge (pro par défaut). Énergie en kWh, coût figé à la clôture.
+ * @param {{category?: string, site_id?: number, site_ids?: number[], from?: string, to?: string}} filters
+ */
+function getReimbursementReport(filters = {}) {
+  const category = filters.category || 'pro';
+  let where = `t.status = 'Completed' AND it.category = ?`;
+  const params = [category];
+  if (filters.site_ids && filters.site_ids.length > 0) {
+    where += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
+    params.push(...filters.site_ids);
+  } else if (filters.site_id) {
+    where += ' AND cp.site_id = ?';
+    params.push(filters.site_id);
+  }
+  if (filters.from) {
+    where += ' AND date(t.start_time) >= ?';
+    params.push(filters.from);
+  }
+  if (filters.to) {
+    where += ' AND date(t.start_time) <= ?';
+    params.push(filters.to);
+  }
+  return db
+    .prepare(
+      `SELECT cp.site_id AS site_id, s.sname AS site_name,
+        it.user_id AS user_id, COALESCE(u.shortname, u.useremail) AS user_name,
+        it.category AS category,
+        COUNT(*) AS sessions,
+        ROUND(COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
+          THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 0), 3) AS energy_kwh,
+        ROUND(SUM(t.cost), 2) AS cost,
+        t.cost_currency AS currency
+      FROM transactions t
+      JOIN chargepoints cp ON t.chargepoint_id = cp.id
+      LEFT JOIN sites s ON cp.site_id = s.id
+      JOIN id_tags it ON it.id = (
+        SELECT it2.id FROM id_tags it2
+        JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
+        WHERE it2.id_tag = t.id_tag
+        ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
+        LIMIT 1
+      )
+      LEFT JOIN users u ON it.user_id = u.id
+      WHERE ${where}
+      GROUP BY cp.site_id, it.user_id, t.cost_currency
+      ORDER BY s.sname, user_name, t.cost_currency`
+    )
+    .all(...params)
+    .map((row) => ({ ...row }));
 }
 
 // ── Meter Values ──
@@ -1752,11 +1809,12 @@ function createIdTag(
   expiryDate,
   active = 1,
   token_type = 'ISO14443',
-  group_id_token = null
+  group_id_token = null,
+  category = 'perso'
 ) {
   const info = db
     .prepare(
-      'INSERT INTO id_tags (id_tag, user_id, site_id, description, expiry_date, active, token_type, group_id_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      'INSERT INTO id_tags (id_tag, user_id, site_id, description, expiry_date, active, token_type, group_id_token, category) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     )
     .run(
       idTag,
@@ -1766,7 +1824,8 @@ function createIdTag(
       expiryDate || null,
       active ? 1 : 0,
       token_type,
-      group_id_token || null
+      group_id_token || null,
+      category || 'perso'
     );
   return getIdTagById(info.lastInsertRowid);
 }
@@ -1782,8 +1841,9 @@ function updateIdTag(id, data) {
   const expiryDate = data.expiry_date !== undefined ? data.expiry_date : tag.expiry_date;
   const tokenType = data.token_type !== undefined ? data.token_type : tag.token_type || 'ISO14443';
   const groupIdToken = data.group_id_token !== undefined ? data.group_id_token : tag.group_id_token;
+  const category = data.category !== undefined ? data.category : tag.category;
   db.prepare(
-    'UPDATE id_tags SET id_tag = ?, user_id = ?, site_id = ?, active = ?, description = ?, expiry_date = ?, token_type = ?, group_id_token = ? WHERE id = ?'
+    'UPDATE id_tags SET id_tag = ?, user_id = ?, site_id = ?, active = ?, description = ?, expiry_date = ?, token_type = ?, group_id_token = ?, category = ? WHERE id = ?'
   ).run(
     idTag,
     userId || null,
@@ -1793,6 +1853,7 @@ function updateIdTag(id, data) {
     expiryDate || null,
     tokenType,
     groupIdToken || null,
+    category || 'perso',
     id
   );
   return getIdTagById(id);
@@ -1842,7 +1903,7 @@ function getUserDashboardStats(userId) {
 }
 
 function getUserTransactionStats(userId, filters = {}) {
-  const hasFilters = filters.from || filters.to || filters.status;
+  const hasFilters = filters.from || filters.to || filters.status || filters.category;
   const idTagJoin = `LEFT JOIN id_tags it ON it.id = (
     SELECT it2.id FROM id_tags it2
     JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
@@ -1907,6 +1968,10 @@ function getUserTransactionStats(userId, filters = {}) {
     if (filters.to) {
       filterWhere += ' AND date(t.start_time) <= ?';
       filterParams.push(filters.to);
+    }
+    if (filters.category) {
+      filterWhere += ' AND it.category = ?';
+      filterParams.push(filters.category);
     }
     filtered = withCost(
       db.prepare(buildQuery(filterWhere)).get(...filterParams),
@@ -2886,6 +2951,7 @@ module.exports = {
   updateTransactionChargingState,
   getTransactions,
   getUserTransactions,
+  getReimbursementReport,
   getDashboardChartData,
   getTransactionByTransactionId,
   getTransactionFull,

@@ -2235,3 +2235,113 @@ describe('database — tarification (coût figé à la clôture)', () => {
     expect(n).toBe(0);
   });
 });
+
+// ── Catégorie des badges (pro / perso) ──
+describe('database — catégorie des badges et rapport de remboursement', () => {
+  let siteA;
+  let siteB;
+  let cpA;
+  let cpB;
+  let alice;
+  let bob;
+  const START = '2026-02-10T10:00:00Z';
+  const STOP = '2026-02-10T12:00:00Z';
+
+  const run = (cpId, tag, kwh, start = START) => {
+    const tx = db.createTransaction(cpId, 1, tag, 0, start, 'rfid');
+    db.stopTransaction(tx.transaction_id, kwh * 1000, STOP, 'Local');
+    return tx;
+  };
+
+  beforeAll(() => {
+    siteA = db.createSite('Siège cat', null).id;
+    siteB = db.createSite('Domicile cat', null).id;
+    db.replaceSiteTariff(siteA, {
+      currency: 'EUR',
+      timezone: 'Europe/Paris',
+      default_price_per_kwh: 0.2,
+      periods: [],
+    });
+    cpA = db.createChargepoint('CP-CAT-A', 'A', null, 1, siteA).id;
+    cpB = db.createChargepoint('CP-CAT-B', 'B', null, 1, siteB).id;
+    alice = db.createUser('alice-cat@test.com', 'Passw0rd!x', 'user', 'AliceCat').id;
+    bob = db.createUser('bob-cat@test.com', 'Passw0rd!x', 'user', 'BobCat').id;
+    // Badges globaux (site_id NULL), valables sur les deux sites
+    db.createIdTag('CATALICEPRO', alice, null, 'Alice pro', null, 1, 'ISO14443', null, 'pro');
+    db.createIdTag('CATALICEPERSO', alice, null, 'Alice perso');
+    db.createIdTag('CATBOBPRO', bob, null, 'Bob pro', null, 1, 'ISO14443', null, 'pro');
+    run(cpA, 'CATALICEPRO', 10);
+    run(cpA, 'CATALICEPRO', 5);
+    run(cpA, 'CATALICEPERSO', 7);
+    run(cpA, 'CATBOBPRO', 3);
+    run(cpB, 'CATALICEPRO', 20);
+    run(cpB, 'CATALICEPERSO', 4);
+  });
+
+  it('crée un badge « perso » par défaut et accepte « pro »', () => {
+    expect(db.getIdTagByTag('CATALICEPERSO', null).category).toBe('perso');
+    expect(db.getIdTagByTag('CATALICEPRO', null).category).toBe('pro');
+  });
+
+  it('met à jour la catégorie sans la modifier si elle est omise', () => {
+    const tag = db.createIdTag('CATUPDATE1', null, null, null);
+    expect(db.updateIdTag(tag.id, { category: 'pro' }).category).toBe('pro');
+    expect(db.updateIdTag(tag.id, { description: 'x' }).category).toBe('pro');
+    expect(db.updateIdTag(tag.id, { category: 'perso' }).category).toBe('perso');
+  });
+
+  it('refuse une catégorie inconnue (contrainte CHECK)', () => {
+    expect(() =>
+      db.createIdTag('CATBADVAL1', null, null, null, null, 1, 'ISO14443', null, 'xx')
+    ).toThrow();
+  });
+
+  it('expose tag_category dans les transactions', () => {
+    const tx = db.getTransactions({ chargepoint_id: cpA }).find((t) => t.id_tag === 'CATBOBPRO');
+    expect(tx.tag_category).toBe('pro');
+  });
+
+  it('filtre les transactions par catégorie (liste, total et stats)', () => {
+    const pro = db.getTransactions({ category: 'pro', site_id: siteA, limit: 50, offset: 0 });
+    expect(pro.total).toBe(3);
+    expect(pro.data.every((t) => t.tag_category === 'pro')).toBe(true);
+    expect(pro.stats.totalEnergy).toBe(18000);
+    const perso = db.getTransactions({ category: 'perso', site_id: siteA });
+    expect(perso).toHaveLength(1);
+    expect(perso[0].id_tag).toBe('CATALICEPERSO');
+  });
+
+  it("filtre les transactions de l'utilisateur par catégorie et calcule les stats filtrées", () => {
+    const mine = db.getUserTransactions(alice, { category: 'pro', limit: 50, offset: 0 });
+    expect(mine.total).toBe(3);
+    const stats = db.getUserTransactionStats(alice, { category: 'pro' });
+    expect(stats.filtered.totalSessions).toBe(3);
+    expect(stats.filtered.totalEnergy).toBe(35);
+    expect(stats.allTime.totalSessions).toBe(5);
+  });
+
+  it('agrège le remboursement par site et salarié (pro par défaut)', () => {
+    const rows = db.getReimbursementReport({});
+    const find = (site, user) => rows.filter((r) => r.site_id === site && r.user_id === user);
+    expect(rows.every((r) => r.category === 'pro')).toBe(true);
+    expect(find(siteA, alice)).toEqual([
+      expect.objectContaining({ sessions: 2, energy_kwh: 15, cost: 3, currency: 'EUR' }),
+    ]);
+    expect(find(siteA, bob)[0]).toMatchObject({ sessions: 1, energy_kwh: 3 });
+    // Site sans tarif : pas de coût
+    expect(find(siteB, alice)).toEqual([
+      expect.objectContaining({ sessions: 1, energy_kwh: 20, cost: null }),
+    ]);
+  });
+
+  it('limite le rapport aux sites autorisés, à la période et à la catégorie', () => {
+    expect(
+      db.getReimbursementReport({ site_ids: [siteB] }).every((r) => r.site_id === siteB)
+    ).toBe(true);
+    expect(db.getReimbursementReport({ site_id: siteA, category: 'perso' })).toEqual([
+      expect.objectContaining({ user_id: alice, sessions: 1, energy_kwh: 7 }),
+    ]);
+    expect(db.getReimbursementReport({ from: '2026-03-01' })).toEqual([]);
+    expect(db.getReimbursementReport({ to: '2026-01-01' })).toEqual([]);
+  });
+});

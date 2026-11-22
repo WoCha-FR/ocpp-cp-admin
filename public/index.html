@@ -3546,14 +3546,14 @@ async function userStopCharge(chargepointId, transactionId, cpName, connId) {
 // ══════════════════════════════════════
 //  ID TAGS
 // ══════════════════════════════════════
-let idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
+let idTagsFilters = { status: '', site_id: '', user: '', auto: '', category: '' };
 let idTagsActiveTab = 'tags';
 
 async function renderIdTags(tab, keepState = false) {
   if (tab !== undefined) idTagsActiveTab = tab;
   else if (!keepState) idTagsActiveTab = 'tags';
   if (!keepState) {
-    idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
+    idTagsFilters = { status: '', site_id: '', user: '', auto: '', category: '' };
     idTagsEventsFilters = { status: '', chargepoint: '', id_tag: '', limit: '100' };
   }
   const isAdmin = currentUser.role === 'admin';
@@ -3590,6 +3590,7 @@ async function renderIdTags(tab, keepState = false) {
     if (idTagsFilters.site_id === 'all_sites') filtered = filtered.filter(tag => !tag.site_id && (!tag.user_sites || tag.user_sites.length === 0));
     else if (idTagsFilters.site_id) filtered = filtered.filter(tag => String(tag.site_id) === idTagsFilters.site_id || (tag.user_sites && tag.user_sites.some(s => String(s.site_id) === idTagsFilters.site_id)));
     if (idTagsFilters.user) filtered = filtered.filter(tag => String(tag.user_id || tag.user_name) === idTagsFilters.user);
+    if (idTagsFilters.category) filtered = filtered.filter(tag => (tag.category || 'perso') === idTagsFilters.category);
     if (idTagsFilters.auto === '1') filtered = filtered.filter(tag => isAutoTag(tag));
     if (idTagsFilters.auto === '0') filtered = filtered.filter(tag => !isAutoTag(tag));
 
@@ -3626,6 +3627,14 @@ async function renderIdTags(tab, keepState = false) {
               ${uniqueUsers.map(([id, name]) => `<option value="${id}" ${idTagsFilters.user === String(id) ? 'selected' : ''}>${name}</option>`).join('')}
             </select>
           </div>
+          <div class="form-group">
+            <label>${t('idtags.rfCategory')}</label>
+            <select id="idTagFilterCategory" data-onchange="applyIdTagsFilters()">
+              <option value="">${t('filters.all')}</option>
+              <option value="pro" ${idTagsFilters.category === 'pro' ? 'selected' : ''}>${t('idtags.rfCategoryPro')}</option>
+              <option value="perso" ${idTagsFilters.category === 'perso' ? 'selected' : ''}>${t('idtags.rfCategoryPerso')}</option>
+            </select>
+          </div>
           ${isAdmin ? `<div class="form-group">
             <label>${t('filters.type')}</label>
             <select id="idTagFilterAuto" data-onchange="applyIdTagsFilters()">
@@ -3645,12 +3654,13 @@ async function renderIdTags(tab, keepState = false) {
           const hasGroupToken = filtered.some(tag => tag.group_id_token);
           const tokenTypeBadgeClass = (type) => type === 'NoAuthorization' ? 'badge-gray' : type === 'ISO14443' ? 'badge-blue' : 'badge-orange';
           return `<table>
-          <thead><tr><th>${t('idtags.rfTag')}</th><th>${t('common.status')}</th><th>${t('common.user')}</th><th>${t('common.site_one')}</th>${hasNonDefault201 ? '<th>Token Type</th>' : ''}${hasGroupToken ? '<th>Group Token</th>' : ''}<th>${t('idtags.rfDescription')}</th><th>${t('idtags.rfExpiryDate')}</th><th>${t('common.createdAt')}</th><th>${t('common.actions')}</th></tr></thead>
+          <thead><tr><th>${t('idtags.rfTag')}</th><th>${t('common.status')}</th><th>${t('idtags.rfCategory')}</th><th>${t('common.user')}</th><th>${t('common.site_one')}</th>${hasNonDefault201 ? '<th>Token Type</th>' : ''}${hasGroupToken ? '<th>Group Token</th>' : ''}<th>${t('idtags.rfDescription')}</th><th>${t('idtags.rfExpiryDate')}</th><th>${t('common.createdAt')}</th><th>${t('common.actions')}</th></tr></thead>
           <tbody>
             ${filtered.map(tag => `
               <tr>
                 <td><span class="rfid-chip">${escapeHtml(tag.id_tag)}</span></td>
                 <td><span class="badge ${tag.active ? 'badge-green' : 'badge-red'}">${tag.active ? t('filters.active') : t('filters.inactive')}</span></td>
+                <td>${categoryBadge(tag.category)}</td>
                 <td>${tag.user_name ? `<span class="badge badge-blue">${escapeHtml(tag.user_name)}</span>` : '<span class="text-muted">-</span>'}</td>
                 <td>${tag.site_name
                   ? `<span class="badge badge-green">${escapeHtml(tag.site_name)}</span>`
@@ -3679,16 +3689,34 @@ async function renderIdTags(tab, keepState = false) {
   }
 }
 
+function categoryBadge(category) {
+  return category === 'pro'
+    ? `<span class="badge badge-blue">${t('idtags.rfCategoryPro')}</span>`
+    : `<span class="badge badge-gray">${t('idtags.rfCategoryPerso')}</span>`;
+}
+
+function categorySelect(id, current) {
+  return `<div class="form-group">
+      <label>${t('idtags.rfCategory')}</label>
+      <select id="${id}">
+        <option value="perso" ${current !== 'pro' ? 'selected' : ''}>${t('idtags.rfCategoryPerso')}</option>
+        <option value="pro" ${current === 'pro' ? 'selected' : ''}>${t('idtags.rfCategoryPro')}</option>
+      </select>
+    </div>
+    <div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfCategoryHint')}</div>`;
+}
+
 function applyIdTagsFilters() {
   idTagsFilters.status = document.getElementById('idTagFilterStatus').value;
   idTagsFilters.site_id = document.getElementById('idTagFilterSite').value;
   idTagsFilters.user = document.getElementById('idTagFilterUser').value;
+  idTagsFilters.category = document.getElementById('idTagFilterCategory').value;
   idTagsFilters.auto = document.getElementById('idTagFilterAuto').value;
   renderIdTags(idTagsActiveTab, true);
 }
 
 function resetIdTagsFilters() {
-  idTagsFilters = { status: '', site_id: '', user: '', auto: '' };
+  idTagsFilters = { status: '', site_id: '', user: '', auto: '', category: '' };
   renderIdTags(idTagsActiveTab, true);
 }
 
@@ -3722,6 +3750,7 @@ async function showCreateIdTagModal() {
       </select>
     </div>
     ${isAdmin ? `<div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfAllSitesHint')}</div>` : ''}
+    ${categorySelect('tagCategory', 'perso')}
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="tagDescription" placeholder="${t('idtags.rfDescriptionHint')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')}))</label><input type="text" id="tagExpiry" placeholder="${t('common.select')}" /></div>
     ${appSettings.v201Enabled ? `
@@ -3792,6 +3821,7 @@ async function showEditIdTagModal(id) {
         ${availableSites.map(s => `<option value="${s.id}" ${s.id === tag.site_id ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
       </select>
     </div>
+    ${categorySelect('editTagCategory', tag.category)}
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagDescription" value="${escapeAttr(tag.description || '')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagExpiry" placeholder="${t('common.select')}" /></div>
     ${appSettings.v201Enabled ? `
@@ -3835,6 +3865,7 @@ async function createIdTag() {
       id_tag: document.getElementById('tagIdTag').value,
       user_id: userId ? Number(userId) : null,
       site_id: siteId ? Number(siteId) : null,
+      category: document.getElementById('tagCategory').value,
       description: document.getElementById('tagDescription').value || null,
       expiry_date: expiry || null,
       token_type: document.getElementById('tagTokenType')?.value || undefined,
@@ -3857,6 +3888,7 @@ async function updateIdTag(id) {
       active: Number(document.getElementById('editTagActive').value),
       user_id: userId ? Number(userId) : null,
       site_id: siteId ? Number(siteId) : null,
+      category: document.getElementById('editTagCategory').value,
       description: document.getElementById('editTagDescription').value || null,
       expiry_date: expiry || null,
       token_type: document.getElementById('editTagTokenType')?.value || undefined,
@@ -4317,12 +4349,14 @@ let txFilters = { from: '', to: '', limit: '50' };
 async function renderTransactions(keepState = false) {
   if (!keepState) txFilters = { from: '', to: '', limit: '50' };
   document.getElementById('topbarActions').innerHTML =
-    `<button class="btn btn-primary" data-onclick="exportTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
+    `<button class="btn btn-outline" data-onclick="exportReimbursementCsv()" title="${escapeAttr(t('transac.reimbursementHint'))}">🧾 ${t('transac.reimbursementExport')}</button>
+     <button class="btn btn-primary" data-onclick="exportTransactionsCsv()">📥 ${t('common.csvExport')}</button>`;
   try {
     const queryParams = new URLSearchParams();
     if (txFilters.site_id) queryParams.set('site_id', txFilters.site_id);
     if (txFilters.chargepoint_id) queryParams.set('chargepoint_id', txFilters.chargepoint_id);
     if (txFilters.status) queryParams.set('status', txFilters.status);
+    if (txFilters.category) queryParams.set('category', txFilters.category);
     if (txFilters.from) queryParams.set('from', txFilters.from);
     if (txFilters.to) queryParams.set('to', txFilters.to);
     queryParams.set('limit', txFilters.limit || '50');
@@ -4340,7 +4374,7 @@ async function renderTransactions(keepState = false) {
       : chargepoints;
 
     const totalHours = formatDuree(txStats.totalMinutes);
-    const activeFilterCount = ['site_id', 'chargepoint_id', 'status', 'from', 'to'].filter(k => txFilters[k]).length;
+    const activeFilterCount = ['site_id', 'chargepoint_id', 'status', 'category', 'from', 'to'].filter(k => txFilters[k]).length;
 
     document.getElementById('pageContent').innerHTML = `
       <div class="stats-grid">
@@ -4391,6 +4425,14 @@ async function renderTransactions(keepState = false) {
             </select>
           </div>
           <div class="form-group">
+            <label>${t('idtags.rfCategory')}</label>
+            <select id="txFilterCategory" data-onchange="applyTxFilters()">
+              <option value="">${t('filters.allf')}</option>
+              <option value="pro" ${txFilters.category === 'pro' ? 'selected' : ''}>${t('idtags.rfCategoryPro')}</option>
+              <option value="perso" ${txFilters.category === 'perso' ? 'selected' : ''}>${t('idtags.rfCategoryPerso')}</option>
+            </select>
+          </div>
+          <div class="form-group">
             <label>${t('filters.dateFrom')}</label>
             <input type="text" id="txFilterFrom" placeholder="${t('common.select')}" />
           </div>
@@ -4415,7 +4457,7 @@ async function renderTransactions(keepState = false) {
         <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', { count: txTotal })})</h3></div>
         ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
         <table>
-          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.user')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.cost')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
+          <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.user')}</th><th>${t('idtags.rfCategory')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.cost')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
           <tbody>
             ${transactions.map(tx => `
               <tr>
@@ -4424,6 +4466,7 @@ async function renderTransactions(keepState = false) {
                 <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
                 <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
                 <td>${formatTxUser(tx)}</td>
+                <td>${tx.tag_category ? categoryBadge(tx.tag_category) : '<span class="text-muted">-</span>'}</td>
                 <td>${formatStartSource(tx.start_source)}</td>
                 <td class="td-date">${formatDateShort(tx.start_time)}</td>
                 <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
@@ -4463,6 +4506,7 @@ function applyTxFilters() {
     site_id: document.getElementById('txFilterSite')?.value || undefined,
     chargepoint_id: document.getElementById('txFilterCp')?.value || undefined,
     status: document.getElementById('txFilterStatus')?.value || undefined,
+    category: document.getElementById('txFilterCategory')?.value || undefined,
     from: document.getElementById('txFilterFrom')?.value || undefined,
     to: document.getElementById('txFilterTo')?.value || undefined,
     limit: document.getElementById('txFilterLimit')?.value || '50',
@@ -4480,10 +4524,22 @@ function exportTransactionsCsv() {
   if (txFilters.site_id) queryParams.set('site_id', txFilters.site_id);
   if (txFilters.chargepoint_id) queryParams.set('chargepoint_id', txFilters.chargepoint_id);
   if (txFilters.status) queryParams.set('status', txFilters.status);
+  if (txFilters.category) queryParams.set('category', txFilters.category);
   if (txFilters.from) queryParams.set('from', txFilters.from);
   if (txFilters.to) queryParams.set('to', txFilters.to);
   const qs = queryParams.toString();
   window.location.href = '/api/transactions/csv' + (qs ? '?' + qs : '');
+}
+
+// Export « remboursement » : agrégat par site puis par salarié (badges pro par défaut)
+function exportReimbursementCsv() {
+  const queryParams = new URLSearchParams();
+  if (txFilters.site_id) queryParams.set('site_id', txFilters.site_id);
+  if (txFilters.category) queryParams.set('category', txFilters.category);
+  if (txFilters.from) queryParams.set('from', txFilters.from);
+  if (txFilters.to) queryParams.set('to', txFilters.to);
+  const qs = queryParams.toString();
+  window.location.href = '/api/transactions/reimbursement/csv' + (qs ? '?' + qs : '');
 }
 
 function cleanIdTag(tag) {
@@ -4527,6 +4583,7 @@ async function renderMyTransactions(keepState = false) {
   try {
     const queryParams = new URLSearchParams();
     if (myTxFilters.status) queryParams.set('status', myTxFilters.status);
+    if (myTxFilters.category) queryParams.set('category', myTxFilters.category);
     if (myTxFilters.from) queryParams.set('from', myTxFilters.from);
     if (myTxFilters.to) queryParams.set('to', myTxFilters.to);
     queryParams.set('limit', myTxFilters.limit || '50');
@@ -4535,6 +4592,7 @@ async function renderMyTransactions(keepState = false) {
     const statsParams = new URLSearchParams();
     if (myTxFilters.from) statsParams.set('from', myTxFilters.from);
     if (myTxFilters.to) statsParams.set('to', myTxFilters.to);
+    if (myTxFilters.category) statsParams.set('category', myTxFilters.category);
     const statsQs = statsParams.toString();
     const [txResponse, kpiStats] = await Promise.all([
       api('GET', '/user/transactions?' + queryParams.toString()),
@@ -4543,8 +4601,8 @@ async function renderMyTransactions(keepState = false) {
     const transactions = txResponse.data;
     const myTxTotal = txResponse.total;
 
-    const hasDateFilter = myTxFilters.from || myTxFilters.to;
-    const myActiveFilterCount = ['status', 'from', 'to'].filter(k => myTxFilters[k]).length;
+    const hasDateFilter = myTxFilters.from || myTxFilters.to || myTxFilters.category;
+    const myActiveFilterCount = ['status', 'category', 'from', 'to'].filter(k => myTxFilters[k]).length;
 
     // Déterminer les valeurs principales et secondaires selon le contexte
     const main = hasDateFilter && kpiStats.filtered ? kpiStats.filtered : kpiStats.currentMonth;
@@ -4606,6 +4664,14 @@ async function renderMyTransactions(keepState = false) {
           </select>
         </div>
         <div class="form-group">
+          <label>${t('idtags.rfCategory')}</label>
+          <select id="myTxFilterCategory" data-onchange="applyMyTxFilters()">
+            <option value="">${t('filters.allf')}</option>
+            <option value="pro" ${myTxFilters.category === 'pro' ? 'selected' : ''}>${t('idtags.rfCategoryPro')}</option>
+            <option value="perso" ${myTxFilters.category === 'perso' ? 'selected' : ''}>${t('idtags.rfCategoryPerso')}</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>${t('filters.dateFrom')}</label>
           <input type="text" id="myTxFilterFrom" placeholder="${t('common.select')}" />
         </div>
@@ -4629,7 +4695,7 @@ async function renderMyTransactions(keepState = false) {
       <div class="card-header"><h3>${t('transac.history')} (${t('transac.result', {count: myTxTotal })})</h3></div>
       ${transactions.length === 0 ? `<p class="text-muted">${t('transac.noHistory')}</p>` : `
       <table>
-        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.cost')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
+        <thead><tr><th>ID</th><th>${t('common.site_one')}</th><th>${t('common.chargepoint_one')}</th><th>${t('common.connector_one')}</th><th>${t('idtags.rfCategory')}</th><th>${t('common.source')}</th><th>${t('common.start')}</th><th>${t('common.end')}</th><th>${t('common.energy')}</th><th>${t('transac.cost')}</th><th>${t('common.status')}</th><th>${t('transac.detail')}</th></tr></thead>
         <tbody>
         ${transactions.map(tx => {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
@@ -4639,6 +4705,7 @@ async function renderMyTransactions(keepState = false) {
               <td>${tx.site_name || '-'}</td>
               <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
               <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
+              <td>${tx.tag_category ? categoryBadge(tx.tag_category) : '<span class="text-muted">-</span>'}</td>
               <td>${formatStartSource(tx.start_source)}</td>
               <td class="td-date">${formatDateShort(tx.start_time)}</td>
               <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
@@ -4672,6 +4739,7 @@ async function renderMyTransactions(keepState = false) {
 function applyMyTxFilters() {
   myTxFilters = {
     status: document.getElementById('myTxFilterStatus')?.value || undefined,
+    category: document.getElementById('myTxFilterCategory')?.value || undefined,
     from: document.getElementById('myTxFilterFrom')?.value || undefined,
     to: document.getElementById('myTxFilterTo')?.value || undefined,
     limit: document.getElementById('myTxFilterLimit')?.value || '50',
@@ -4687,6 +4755,7 @@ function resetMyTxFilters() {
 function exportMyTransactionsCsv() {
   const queryParams = new URLSearchParams();
   if (myTxFilters.status) queryParams.set('status', myTxFilters.status);
+  if (myTxFilters.category) queryParams.set('category', myTxFilters.category);
   if (myTxFilters.from) queryParams.set('from', myTxFilters.from);
   if (myTxFilters.to) queryParams.set('to', myTxFilters.to);
   const qs = queryParams.toString();

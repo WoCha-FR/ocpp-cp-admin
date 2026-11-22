@@ -191,6 +191,12 @@ const IdTag = {
     errorMessage: 'VALIDATION_IDTAG_EXPIRY_DATE',
   },
   active: { in: ['body'], optional: true, isInt: true, isIn: { options: [[0, 1]] } },
+  category: {
+    in: ['body'],
+    optional: true,
+    isIn: { options: [['pro', 'perso']] },
+    errorMessage: 'VALIDATION_IDTAG_CATEGORY',
+  },
 };
 
 const UserProfile = {
@@ -431,6 +437,12 @@ const TransactionsQuery = {
     isIn: { options: [['Active', 'Completed', 'Stopped', 'Error']] },
     errorMessage: 'VALIDATION_TRANSACTION_STATUS',
   },
+  category: {
+    in: ['query'],
+    optional: true,
+    isIn: { options: [['pro', 'perso']] },
+    errorMessage: 'VALIDATION_IDTAG_CATEGORY',
+  },
   from: { in: ['query'], optional: true, isISO8601: true, errorMessage: 'VALIDATION_DATE_FROM' },
   to: { in: ['query'], optional: true, isISO8601: true, errorMessage: 'VALIDATION_DATE_TO' },
   limit: {
@@ -454,12 +466,37 @@ const TransactionsQuery = {
   },
 };
 
+// Export « remboursement » : agrégat par site puis par salarié
+const ReimbursementQuery = {
+  site_id: {
+    in: ['query'],
+    optional: true,
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_SITE_ID',
+  },
+  category: {
+    in: ['query'],
+    optional: true,
+    isIn: { options: [['pro', 'perso']] },
+    errorMessage: 'VALIDATION_IDTAG_CATEGORY',
+  },
+  from: { in: ['query'], optional: true, isISO8601: true, errorMessage: 'VALIDATION_DATE_FROM' },
+  to: { in: ['query'], optional: true, isISO8601: true, errorMessage: 'VALIDATION_DATE_TO' },
+};
+
 const UserTransactionsQuery = {
   status: {
     in: ['query'],
     optional: true,
     isIn: { options: [['Active', 'Completed', 'Stopped', 'Error']] },
     errorMessage: 'VALIDATION_TRANSACTION_STATUS',
+  },
+  category: {
+    in: ['query'],
+    optional: true,
+    isIn: { options: [['pro', 'perso']] },
+    errorMessage: 'VALIDATION_IDTAG_CATEGORY',
   },
   from: { in: ['query'], optional: true, isISO8601: true, errorMessage: 'VALIDATION_DATE_FROM' },
   to: { in: ['query'], optional: true, isISO8601: true, errorMessage: 'VALIDATION_DATE_TO' },
@@ -1090,6 +1127,7 @@ module.exports = {
   StartCharge,
   StopCharge,
   TransactionsQuery,
+  ReimbursementQuery,
   UserTransactionsQuery,
   OcppMessagesQuery,
   IdTagEventsQuery,

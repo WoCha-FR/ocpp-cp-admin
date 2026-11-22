@@ -208,6 +208,44 @@ describe('validationSchema — IdTag', () => {
   });
 });
 
+describe('validationSchema — catégorie des badges', () => {
+  it('accepte pro / perso et une catégorie absente sur IdTag', async () => {
+    for (const category of ['pro', 'perso', undefined]) {
+      const result = await runSchema(schema.IdTag, { id_tag: 'ABC123DEF456', category });
+      expect(result.isEmpty()).toBe(true);
+    }
+  });
+
+  it('refuse une catégorie inconnue sur IdTag', async () => {
+    const result = await runSchema(schema.IdTag, { id_tag: 'ABC123DEF456', category: 'autre' });
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_IDTAG_CATEGORY');
+  });
+
+  it.each(['TransactionsQuery', 'UserTransactionsQuery', 'ReimbursementQuery'])(
+    'valide le filtre category sur %s',
+    async (name) => {
+      const ok = await runSchema(schema[name], {}, {}, { category: 'pro' });
+      expect(ok.isEmpty()).toBe(true);
+      const ko = await runSchema(schema[name], {}, {}, { category: 'x' });
+      expect(ko.array().map((e) => e.msg)).toContain('VALIDATION_IDTAG_CATEGORY');
+    }
+  );
+
+  it('valide les dates et le site du rapport de remboursement', async () => {
+    const ok = await runSchema(
+      schema.ReimbursementQuery,
+      {},
+      {},
+      { site_id: '3', from: '2026-01-01', to: '2026-01-31' }
+    );
+    expect(ok.isEmpty()).toBe(true);
+    const ko = await runSchema(schema.ReimbursementQuery, {}, {}, { site_id: '0', from: 'nope' });
+    expect(ko.array().map((e) => e.msg)).toEqual(
+      expect.arrayContaining(['VALIDATION_SITE_ID', 'VALIDATION_DATE_FROM'])
+    );
+  });
+});
+
 // ── CreateReservation ──
 describe('validationSchema — CreateReservation', () => {
   const VALID = {

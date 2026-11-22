@@ -268,6 +268,7 @@ CREATE TABLE IF NOT EXISTS id_tags (
   active INTEGER (1) DEFAULT 1 CHECK (active IN (0, 1)),
   expiry_date TEXT,
   description TEXT,
+  category TEXT NOT NULL DEFAULT 'perso' CHECK (category IN ('pro', 'perso')), -- pro = remboursable
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE SET NULL,
   FOREIGN KEY (site_id) REFERENCES sites (id) ON DELETE SET NULL
