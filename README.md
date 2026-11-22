@@ -374,7 +374,7 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 |---|---|---|
 | `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict validation of OCPP messages against the JSON schemas) |
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
-| `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
+| `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `false` (`true` auto-registers unknown charge points — avoid on an Internet-facing server) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (disable OCPP 1.6 support) |
 | `CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE` | `ocpp.v16.enforceSecurityProfile` | `true` (see [OCPP security profile enforcement](#ocpp-security-profile-enforcement)) |

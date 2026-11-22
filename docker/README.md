@@ -3,6 +3,10 @@
 Six Docker Compose files are available in the `docker/` folder.
 Choose the one that matches your infrastructure.
 
+> **Unknown charge points** are put **pending approval** in every compose file (`CPADMIN_OCPP_AUTO_ADD=false`, `CPADMIN_OCPP_PENDING_UNKNOWN=true`): an administrator accepts them in one click (a notification is sent). Do not enable `AUTO_ADD` on an Internet-facing server — any device that connects would be registered.
+>
+> **Session secret**: replace `CPADMIN_SESSION_SECRET` (32+ random characters). With the example value, a too short or an empty secret, a warning is logged at startup and added to the *Server started* notification.
+
 > **🇫🇷 [Version française](README.fr.md)**
 
 ---
@@ -97,7 +101,9 @@ Full stack with three services:
 - `http://cpadmin.local` → redirect to HTTPS
 - `https://cpadmin.local` → web interface (TLS terminated by Traefik)
 - `ws://ws.cpadmin.local` (port 80) → OCPP WebSocket (charge points without TLS)
-- `wss://ws.cpadmin.local` (port 443) → OCPP WebSocket (TLS terminated by Traefik)
+- `wss://ws.cpadmin.local` (port 443) → OCPP WebSocket (TLS terminated by Traefik — Security Profile 2, password; mTLS / Profile 3 is impossible behind a TLS-terminating proxy)
+
+`CPADMIN_OCPP_TRUST_PROXY_PROTO=true` is set: charge points connected over `wss://` through Traefik are shown as connected over WSS (no effect on authentication).
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d
@@ -115,7 +121,7 @@ docker compose -f docker/docker-compose.yml up -d
 | `CPADMIN_PUBLIC_URL=https://cpadmin.local` | Public HTTPS URL of the web interface | Yes |
 | `CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local` | OCPP WS URL given to charge points | Yes |
 | `CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local` | OCPP WSS URL given to charge points | Yes |
-| `CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local` | FTP URL for diagnostics | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@ftp.cpadmin.local` | FTP URL for diagnostics — same credentials as the FTP `USERS` below | Yes |
 | `CPADMIN_SESSION_SECRET=change-me-with-a-random-secret` | Session signing secret — use at least 32 random characters | Yes |
 | FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
 | FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
@@ -131,8 +137,8 @@ Traefik generates **two certificates** (RSA2048 + ECDSA P-256) via Let's Encrypt
 | Service | Role |
 |---|---|
 | **Traefik** | HTTPS reverse proxy (Let's Encrypt, RSA + ECDSA) + TCP passthrough WSS |
-| **cert-dumper-rsa** | Watches `acme-rsa.json` and copies RSA certs to `./data/config/certs/` |
-| **cert-dumper-ecdsa** | Watches `acme-ecdsa.json` and copies ECDSA certs to `./data/config/certs/` |
+| **cert-dumper-rsa** | Watches `acme-rsa.json` and copies the RSA certificate of `CERT_DOMAIN` to `./data/config/certs/` |
+| **cert-dumper-ecdsa** | Watches `acme-ecdsa.json` and copies the ECDSA certificate of `CERT_DOMAIN` to `./data/config/certs/` |
 | **cert-init** | One-shot: generates a local CA + shared client certificate (`client.pem`) in `./data/config/certs/` — skipped on subsequent starts if files already exist |
 | **ocpp-cp-admin** | Application (OCPP WSS managed internally) |
 | **FTP** | FTP server for diagnostics |
@@ -141,7 +147,7 @@ Traefik generates **two certificates** (RSA2048 + ECDSA P-256) via Let's Encrypt
 - `https://cpadmin.local` (port 443) → web interface (TLS terminated by Traefik)
 - `http://cpadmin.local` (port 80) → automatic redirect to HTTPS
 - `ws://ws.cpadmin.local` (port 80) → OCPP WS (charge points without TLS)
-- `wss://ws.cpadmin.local` (port 9001) → OCPP WSS (TCP passthrough — TLS managed by the app)
+- `wss://ws.cpadmin.local` (port 443) → OCPP WSS (TCP passthrough — TLS managed by the app)
 
 ```bash
 docker compose -f docker/docker-compose.tls.yml up -d
@@ -154,16 +160,17 @@ docker compose -f docker/docker-compose.tls.yml up -d
 | `admin@cpadmin.local` (ACME email, repeated for RSA and ECDSA resolvers) | Email for Let's Encrypt expiry alerts | Yes |
 | `cpadmin.local` (all Traefik labels) | Domain of the web interface | Yes |
 | `ws.cpadmin.local` (all Traefik labels) | Domain of the OCPP WebSocket endpoint | Yes |
+| `CERT_DOMAIN=cpadmin.local` (both cert-dumpers) | **Main** domain of the certificate — same value as `tls.domains[0].main` in the labels | Yes |
 | `CPADMIN_PUBLIC_URL=https://cpadmin.local` | Public HTTPS URL of the web interface | Yes |
 | `CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local` | OCPP WS URL (charge points without TLS) | Yes |
 | `CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local` | OCPP WSS URL (charge points with TLS, Security Profile 2/3) | Yes |
-| `CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local` | FTP URL for diagnostics | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@ftp.cpadmin.local` | FTP URL for diagnostics — same credentials as the FTP `USERS` below | Yes |
 | FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
 | FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
 
 **Prerequisites:**
 - `CPADMIN_OCPP_WSS_ENABLED=true` is already set in the compose file — no manual `config.json` changes needed
-- The cert-dumpers automatically populate `./data/config/certs/` with `rsa-server.crt`, `rsa-server.key`, `ecdsa-server.crt`, `ecdsa-server.key` — no manual certificate handling required
+- The cert-dumpers automatically populate `./data/config/certs/` with `rsa-server.crt`, `rsa-server.key`, `ecdsa-server.crt`, `ecdsa-server.key` — no manual certificate handling required. Private keys are given to the app user (UID/GID 10001) with mode `600`. If the certificate of `CERT_DOMAIN` cannot be found, the cert-dumper logs an explicit error (expected only at the very first start, before Traefik has obtained the certificate) — otherwise the app would keep the 7-day bootstrap certificate created by `cert-init`
 - `CPADMIN_OCPP_WSS_ROOT_CA_FILE=certs/isrg-root-x1.pem` is also already set: the app ships with the Let's Encrypt root certificate (`ISRG Root X1`), so charge point WSS certificate troubleshooting downloads work out of the box (see [Root CA — WSS server certificate troubleshooting](../README.md#root-ca--wss-server-certificate-troubleshooting))
 
 **Security Profile 3 — client certificate authentication:**
@@ -237,7 +244,7 @@ docker compose -f docker/docker-compose.traefik-ext.yml up -d
 | `CPADMIN_PUBLIC_URL=https://cpadmin.local` | Public HTTPS URL of the web interface | Yes |
 | `CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local` | OCPP WS URL given to charge points | Yes |
 | `CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local` | OCPP WSS URL given to charge points | Yes |
-| `CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local` | FTP URL for diagnostics | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@ftp.cpadmin.local` | FTP URL for diagnostics — same credentials as the FTP `USERS` below | Yes |
 | `CPADMIN_SESSION_SECRET=change-me-with-a-random-secret` | Session signing secret — use at least 32 random characters | Yes |
 | FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
 | FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
@@ -310,10 +317,11 @@ docker compose -f docker/docker-compose.tls-ext.yml up -d
 | `ws.cpadmin.local` (Traefik labels) | Domain of the OCPP WebSocket endpoint | Yes |
 | `letsencrypt-rsa` / `letsencrypt-ecdsa` (certresolver labels) | Names of your existing Traefik RSA/ECDSA resolvers | Yes |
 | cert-dumper volume `/opt/traefik/letsencrypt` | Path to your external Traefik's letsencrypt folder | Yes |
+| `CERT_DOMAIN=cpadmin.local` (both cert-dumpers) | **Main** domain of the certificate — same value as `tls.domains[0].main` in the labels | Yes |
 | `CPADMIN_PUBLIC_URL=https://cpadmin.local` | Public HTTPS URL of the web interface | Yes |
 | `CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local` | OCPP WS URL (charge points without TLS) | Yes |
 | `CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local` | OCPP WSS URL (charge points with TLS, Security Profile 2/3) | Yes |
-| `CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local` | FTP URL for diagnostics | Yes |
+| `CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@ftp.cpadmin.local` | FTP URL for diagnostics — same credentials as the FTP `USERS` below | Yes |
 | FTP `USERS=ocpp\|changeme` | FTP username and password | Yes |
 | FTP `ADDRESS=ftp.cpadmin.local` | External address for FTP passive mode | Yes |
 
@@ -326,7 +334,9 @@ docker compose -f docker/docker-compose.tls-ext.yml up -d
 
 ## Mounted Volume Permissions
 
-The entrypoint runs as root to seed default files into empty volumes (`config/`, `public/img/`) and fix their ownership. It then drops privileges to a dedicated non-root user (`app`, UID 1000) via `su-exec` before starting the application.
+The entrypoint runs as root to seed default files into empty volumes (`config/`, `public/img/`) and fix their ownership. It then drops privileges to a dedicated non-root user (`app`, **UID/GID 10001**) via `su-exec` before starting the application.
+
+The certificate services of the compose files (certbot, cert-dumpers, cert-init) give the TLS private keys to this UID with mode `600`: they are never readable by other accounts of the host.
 
 This means volume permissions are handled automatically — no manual `chown` is required on the host.
 
@@ -389,7 +399,7 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 |---|---|---|
 | `CPADMIN_OCPP_STRICT_MODE` | `ocpp.strictMode` | `false` (disable strict validation of OCPP messages against the JSON schemas) |
 | `CPADMIN_OCPP_CALL_TIMEOUT` | `ocpp.callTimeoutSeconds` | `45` |
-| `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `true` (auto-register unknown charge points) |
+| `CPADMIN_OCPP_AUTO_ADD` | `ocpp.autoAddUnknownChargepoints` | `false` (default of the compose files: unknown charge points are put pending approval, see `CPADMIN_OCPP_PENDING_UNKNOWN`) |
 | `CPADMIN_OCPP_PENDING_UNKNOWN` | `ocpp.pendingUnknownChargepoints` | `true` (queue unknown charge points for approval) |
 | `CPADMIN_OCPP_V16_ENABLED` | `ocpp.v16.enabled` | `false` (disable OCPP 1.6 support) |
 | `CPADMIN_OCPP_V16_ENFORCE_SECURITY_PROFILE` | `ocpp.v16.enforceSecurityProfile` | `true` (refuse OCPP 1.6 connections without an OCPP security profile, see [OCPP security profile enforcement](../README.md#ocpp-security-profile-enforcement)) |

@@ -13,6 +13,21 @@ describe('notificationTemplates — format', () => {
     expect(result).toHaveProperty('corps');
   });
 
+  it('server_started sans problème de secret : corps standard seulement', () => {
+    const result = format('server_started', { sessionSecretIssue: null }, 'en');
+    expect(result.corps).toBe('[notifications.server_started.body]');
+  });
+
+  it.each(['empty', 'placeholder', 'too_short'])(
+    'server_started avec secret de session %s : avertissement ajouté au corps',
+    (code) => {
+      const result = format('server_started', { sessionSecretIssue: code }, 'en');
+      expect(result.corps).toBe(
+        `[notifications.server_started.body]\n[notifications.server_started.sessionSecret_${code}]`
+      );
+    }
+  );
+
   it('server_stopping includes signal', () => {
     const result = format('server_stopping', { signal: 'SIGTERM' }, 'en');
     expect(result.titre).toContain('notifications.server_stopping.title');

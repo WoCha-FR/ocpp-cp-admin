@@ -37,16 +37,20 @@ services:
       # ── Déploiement / URLs ──────────────────────────────────
       - CPADMIN_HTTP_HOST=0.0.0.0
       - CPADMIN_TRUST_PROXY=true
+      # Bornes en wss:// via Traefik affichées « WSS » (X-Forwarded-Proto) — sans effet sur l'authentification
+      - CPADMIN_OCPP_TRUST_PROXY_PROTO=true
       # URL publique HTTPS (utilisée pour les liens dans les notifications)
       - CPADMIN_PUBLIC_URL=https://cpadmin.local
       # URL WebSocket OCPP non chiffré (bornes sans TLS, via Traefik port 80)
       - CPADMIN_OCPP_WS_URL=ws://ws.cpadmin.local
-      # URL WebSocket OCPP chiffré, TLS terminé par Traefik (Security Profile 2/3)
+      # URL WebSocket OCPP chiffré, TLS terminé par Traefik (Security Profile 2 : mot de passe ;
+      # le mTLS / Security Profile 3 est impossible, Traefik ne transmet pas le certificat client)
       - CPADMIN_OCPP_WSS_URL=wss://ws.cpadmin.local
 
       # ── Diagnostics FTP ─────────────────────────────────────
       # URL FTP où les bornes déposent leurs fichiers de diagnostic
-      - CPADMIN_DIAGNOSTICS_URL=ftp://ftp.cpadmin.local
+      # Identifiants du service ftp ci-dessous (USERS=ocpp|changeme) — à changer ensemble
+      - CPADMIN_DIAGNOSTICS_URL=ftp://ocpp:changeme@ftp.cpadmin.local
 
       # ── Sécurité ────────────────────────────────────────────
       # IMPORTANT : changer cette valeur (min. 32 caractères aléatoires)
@@ -60,9 +64,13 @@ services:
       # ── Comportement OCPP ───────────────────────────────────
       # - CPADMIN_OCPP_V16_ENABLED=true
       # - CPADMIN_OCPP_V201_ENABLED=false
+      # Validation stricte des messages OCPP désactivée : compatibilité avec les bornes peu
+      # conformes aux schémas JSON (un message non conforme serait sinon rejeté par l'app)
       - CPADMIN_OCPP_STRICT_MODE=false
-      - CPADMIN_OCPP_AUTO_ADD=true
-      - CPADMIN_OCPP_PENDING_UNKNOWN=false
+      # Borne inconnue : mise en attente, à accepter par un admin (notification envoyée).
+      # Ne pas activer AUTO_ADD sur un serveur exposé : tout appareil serait enregistré
+      - CPADMIN_OCPP_AUTO_ADD=false
+      - CPADMIN_OCPP_PENDING_UNKNOWN=true
 
       # ── Configuration générale ──────────────────────────────
       # Niveau de log : error | warn | info | debug
@@ -123,6 +131,7 @@ services:
 
   # ── Serveur FTP pour les diagnostics de bornes ─────────────
   ftp:
+    # Image sans tag de version publié (seulement latest) : la figer par digest si besoin
     image: delfer/alpine-ftp-server
     container_name: ocpp-ftp
     restart: unless-stopped

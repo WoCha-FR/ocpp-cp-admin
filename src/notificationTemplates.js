@@ -26,9 +26,14 @@ function format(event, data, lang = 'fr') {
 
   const templates = {
     // ── Admin ──
+    // sessionSecretIssue (empty | placeholder | too_short) : secret de session à corriger
     server_started: () => ({
       titre: tradN('notifications.server_started.title'),
-      corps: tradN('notifications.server_started.body'),
+      corps: data.sessionSecretIssue
+        ? `${tradN('notifications.server_started.body')}\n${tradN(
+            `notifications.server_started.sessionSecret_${data.sessionSecretIssue}`
+          )}`
+        : tradN('notifications.server_started.body'),
     }),
     server_stopping: () => ({
       titre: tradN('notifications.server_stopping.title'),

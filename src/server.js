@@ -30,6 +30,7 @@ const {
 
 const certAuthority = require('./certAuthority');
 const { buildServerChain } = require('./wssRootCa');
+const { checkSessionSecret } = require('./sessionSecretCheck');
 const routes = require('./routes');
 const notifications = require('./notifications');
 const { getMetricsText } = require('./metrics');
@@ -680,8 +681,14 @@ async function start() {
   // Démarrer le scheduler de nettoyage des réservations expirées non libérées
   startReservationCleanupWatchdog();
   logOCPP.info('Reservation cleanup watchdog started');
+  // Secret de session absent, d'exemple (« change-me… ») ou trop court : avertissement dans les
+  // logs et dans la notification de démarrage envoyée aux admins (l'application démarre quand même)
+  const sessionSecretIssue = checkSessionSecret(config.webui.sessionSecret);
+  if (sessionSecretIssue) logWEBUI.warn(sessionSecretIssue.message);
   // Emission d'une notification de démarrage
-  notifications.emit('server_started', {});
+  notifications.emit('server_started', {
+    sessionSecretIssue: sessionSecretIssue ? sessionSecretIssue.code : null,
+  });
 }
 
 function flushAndExit(code) {

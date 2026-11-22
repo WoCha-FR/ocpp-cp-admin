@@ -11,20 +11,26 @@ RUN npm ci --omit=dev --no-audit --no-fund
 
 FROM node:22-alpine3.24
 
+# Version de l'image (étiquette OCI) — surchargeable au build : --build-arg APP_VERSION=x.y.z
+ARG APP_VERSION=1.1.0
+
 LABEL org.opencontainers.image.title="ocpp-cp-admin" \
       org.opencontainers.image.description="Administration and monitoring dashboard for OCPP charge points" \
       org.opencontainers.image.url="https://github.com/WoCha-FR/ocpp-cp-admin" \
       org.opencontainers.image.source="https://github.com/WoCha-FR/ocpp-cp-admin" \
       org.opencontainers.image.documentation="https://github.com/WoCha-FR/ocpp-cp-admin#readme" \
       org.opencontainers.image.licenses="AGPL-3.0-only" \
-      org.opencontainers.image.version="1.0.0"
+      org.opencontainers.image.version="${APP_VERSION}"
 
 WORKDIR /app
 ENV NODE_ENV=production
 
 # Create non-root user first so we can copy files directly with target ownership.
+# Fixed UID/GID (10001): the companion containers of the compose files (certbot, cert-dumpers,
+# cert-init) hand the TLS private keys over to this user with mode 600 instead of making them
+# world-readable. Existing volumes are re-owned by the entrypoint at every start.
 # openssl is required at runtime to generate/manage the client certificate authority (mTLS).
-RUN addgroup -S app && adduser -S app -G app \
+RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app app \
     && apk add --no-cache su-exec openssl
 
 COPY --chown=app:app package*.json ./

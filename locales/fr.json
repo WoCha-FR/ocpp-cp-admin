@@ -839,7 +839,10 @@
       "eLabel": "Démarrage du serveur",
       "eDesc" : "Le serveur a démarré avec succès",
       "title": "Démarrage du serveur",
-      "body": "Le serveur a démarré avec succès"
+      "body": "Le serveur a démarré avec succès",
+      "sessionSecret_empty": "⚠ Aucun secret de session configuré (CPADMIN_SESSION_SECRET) : les utilisateurs sont déconnectés à chaque redémarrage.",
+      "sessionSecret_placeholder": "⚠ Le secret de session a encore sa valeur d'exemple (« change-me… ») : définir CPADMIN_SESSION_SECRET avec 32 caractères aléatoires ou plus.",
+      "sessionSecret_too_short": "⚠ Le secret de session est trop court : utiliser au moins 32 caractères aléatoires (CPADMIN_SESSION_SECRET)."
     },
     "server_stopping": {
       "eLabel": "Arrêt du serveur",

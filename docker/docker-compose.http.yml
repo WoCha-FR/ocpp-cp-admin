@@ -40,9 +40,13 @@ services:
       # ── Comportement OCPP ───────────────────────────────────
       # - CPADMIN_OCPP_V16_ENABLED=true
       # - CPADMIN_OCPP_V201_ENABLED=false
+      # Validation stricte des messages OCPP désactivée : compatibilité avec les bornes peu
+      # conformes aux schémas JSON (un message non conforme serait sinon rejeté par l'app)
       - CPADMIN_OCPP_STRICT_MODE=false
-      - CPADMIN_OCPP_AUTO_ADD=true
-      - CPADMIN_OCPP_PENDING_UNKNOWN=false
+      # Borne inconnue : mise en attente, à accepter par un admin (notification envoyée).
+      # Ne pas activer AUTO_ADD sur un serveur exposé : tout appareil serait enregistré
+      - CPADMIN_OCPP_AUTO_ADD=false
+      - CPADMIN_OCPP_PENDING_UNKNOWN=true
 
       # ── Configuration générale ──────────────────────────────
       # Niveau de log : error | warn | info | debug
@@ -75,6 +79,7 @@ services:
 
   # ── Serveur FTP pour les diagnostics de bornes ─────────────
   ftp:
+    # Image sans tag de version publié (seulement latest) : la figer par digest si besoin
     image: delfer/alpine-ftp-server
     container_name: ocpp-ftp
     restart: unless-stopped

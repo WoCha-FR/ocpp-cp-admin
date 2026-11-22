@@ -839,7 +839,10 @@
       "eLabel": "Server started",
       "eDesc" : "The server has started successfully",
       "title": "Server started",
-      "body": "The server has started successfully"
+      "body": "The server has started successfully",
+      "sessionSecret_empty": "⚠ No session secret configured (CPADMIN_SESSION_SECRET): users are logged out at every restart.",
+      "sessionSecret_placeholder": "⚠ The session secret still has its example value (\"change-me…\"): set CPADMIN_SESSION_SECRET to 32+ random characters.",
+      "sessionSecret_too_short": "⚠ The session secret is too short: use at least 32 random characters (CPADMIN_SESSION_SECRET)."
     },
     "server_stopping": {
       "eLabel": "Server stopping",

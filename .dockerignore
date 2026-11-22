@@ -11,6 +11,10 @@ config/*.db
 config/*.db-*
 config/certs/*
 !config/certs/isrg-root-x1.pem
+# Backups (ZIP: database + private keys) and site-specific legal pages: never in the image
+config/backups/
+config/legal/*.md
+!config/legal/*.sample.md
 Dockerfile
 docker/
 logs/

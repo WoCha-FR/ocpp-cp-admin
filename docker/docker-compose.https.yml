@@ -12,7 +12,7 @@ services:
   #
   # ⚠  Remplacer CERTBOT_DOMAIN et CERTBOT_EMAIL avant de lancer.
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:v5.10.0
     container_name: certbot
     restart: unless-stopped
     ports:
@@ -55,10 +55,11 @@ services:
           # Cert OCPP WSS — ECDSA P-256 (bornes modernes préférant ECDSA)
           cp $$ECC/fullchain.pem /deploy-certs/ecdsa-server.crt
           cp $$ECC/privkey.pem   /deploy-certs/ecdsa-server.key
-          # CA chain intermédiaire (validation côté borne)
-          cp $$RSA/chain.pem     /deploy-certs/ca.pem
-          # Rendre lisibles par l'user non-root de l'app
-          chmod 644 /deploy-certs/server.key /deploy-certs/rsa-server.key /deploy-certs/ecdsa-server.key
+          # Clés privées : propriétaire = utilisateur app de l'image (UID/GID 10001), mode 600
+          # (jamais lisibles par les autres comptes de l'hôte)
+          chown 10001:10001 /deploy-certs/server.* /deploy-certs/rsa-server.* /deploy-certs/ecdsa-server.*
+          chmod 644 /deploy-certs/server.crt /deploy-certs/rsa-server.crt /deploy-certs/ecdsa-server.crt
+          chmod 600 /deploy-certs/server.key /deploy-certs/rsa-server.key /deploy-certs/ecdsa-server.key
           echo "[certbot] Certificates deployed (RSA + ECDSA)."
         }
         obtain
@@ -79,7 +80,7 @@ services:
       - certbot
     ports:
       - "3001:3001"   # UI HTTPS
-      - "9000:9000"   # OCPP WS  (non chiffré, Security Profile 1)
+      - "9000:9000"   # OCPP WS  (non chiffré — Security Profile 1 si la borne envoie un mot de passe)
       - "9001:9001"   # OCPP WSS (TLS géré par l'app, Security Profile 2/3)
     volumes:
       - ./data/config:/app/config
@@ -99,7 +100,7 @@ services:
       - CPADMIN_HTTP_HOST=0.0.0.0
       # URL publique HTTPS (utilisée pour les liens dans les notifications)
       - CPADMIN_PUBLIC_URL=https://cpadmin.example.com
-      # URL WebSocket OCPP non chiffré (bornes sans TLS, Security Profile 1)
+      # URL WebSocket OCPP non chiffré (bornes sans TLS — Security Profile 1 = avec mot de passe)
       - CPADMIN_OCPP_WS_URL=ws://cpadmin.example.com:9000
       # URL WebSocket OCPP chiffré, TLS géré par l'app (Security Profile 2/3)
       - CPADMIN_OCPP_WSS_URL=wss://cpadmin.example.com:9001
@@ -122,9 +123,13 @@ services:
       # ── Comportement OCPP ───────────────────────────────────
       # - CPADMIN_OCPP_V16_ENABLED=true
       # - CPADMIN_OCPP_V201_ENABLED=false
+      # Validation stricte des messages OCPP désactivée : compatibilité avec les bornes peu
+      # conformes aux schémas JSON (un message non conforme serait sinon rejeté par l'app)
       - CPADMIN_OCPP_STRICT_MODE=false
-      - CPADMIN_OCPP_AUTO_ADD=true
-      - CPADMIN_OCPP_PENDING_UNKNOWN=false
+      # Borne inconnue : mise en attente, à accepter par un admin (notification envoyée).
+      # Ne pas activer AUTO_ADD sur un serveur exposé : tout appareil serait enregistré
+      - CPADMIN_OCPP_AUTO_ADD=false
+      - CPADMIN_OCPP_PENDING_UNKNOWN=true
 
       # ── Configuration générale ──────────────────────────────
       # Niveau de log : error | warn | info | debug
@@ -157,6 +162,7 @@ services:
 
   # ── Serveur FTP pour les diagnostics de bornes ─────────────
   ftp:
+    # Image sans tag de version publié (seulement latest) : la figer par digest si besoin
     image: delfer/alpine-ftp-server
     container_name: ocpp-ftp-ssl
     restart: unless-stopped
