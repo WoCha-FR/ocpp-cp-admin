@@ -573,7 +573,7 @@ describe('ocpp-server-201 — StatusNotification', () => {
     expect(client.call).toHaveBeenCalledWith('RequestStartTransaction', {
       remoteStartId: expect.any(Number),
       evseId: 1,
-      idToken: { idToken: 'MGR-42', type: 'ISO14443' },
+      idToken: { idToken: 'MGR-42', type: 'Central' },
     });
     expect(mockDb.createIdTag).toHaveBeenCalledWith('MGR-42', null, 42, expect.any(String), null, 0);
   });
@@ -2115,6 +2115,47 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     mockDb.getChargepointOverrideVariables.mockReturnValue([]);
   });
 
+  it('M6 — envoie l’instance de la variable et l’enregistre avec elle', async () => {
+    mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
+      {
+        component: 'OCPPCommCtrlr',
+        variable: 'MessageTimeout',
+        attribute: 'Actual',
+        instance: 'Default',
+        value: '30',
+      },
+    ]);
+    client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await flushThroughInit();
+    expect(client.call).toHaveBeenCalledWith('SetVariables', {
+      setVariableData: [
+        {
+          component: { name: 'OCPPCommCtrlr' },
+          variable: { name: 'MessageTimeout', instance: 'Default' },
+          attributeType: 'Actual',
+          attributeValue: '30',
+        },
+      ],
+    });
+    expect(mockDb.getChargepointVariableByKey).toHaveBeenCalledWith(
+      1,
+      'OCPPCommCtrlr',
+      'MessageTimeout',
+      'Actual',
+      'Default'
+    );
+    expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
+      1,
+      'OCPPCommCtrlr',
+      'MessageTimeout',
+      'Actual',
+      '30',
+      0,
+      'Default'
+    );
+  });
+
   it('upsert la variable en DB après SetVariables Accepted', async () => {
     mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
       { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' },
@@ -2123,7 +2164,7 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
     await flushThroughInit();
     expect(mockDb.upsertChargepointVariable).toHaveBeenCalledWith(
-      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60'
+      1, 'OCPPCommCtrlr', 'HeartbeatInterval', 'Actual', '60', 0, ''
     );
   });
 
@@ -2310,6 +2351,18 @@ describe('ocpp-server-201 — FirmwareStatusNotification', () => {
     );
   });
 
+  it.each(['InstallVerificationFailed', 'InvalidSignature'])(
+    'L6 — échec 2.0.1 %s (firmware signé) : notification',
+    async (status) => {
+      client._handlers['FirmwareStatusNotification']({ status });
+      await Promise.resolve();
+      expect(mockNotifications.emit).toHaveBeenCalledWith(
+        'firmware_status',
+        expect.objectContaining({ status })
+      );
+    }
+  );
+
   it("n'émet pas de notification pour Downloading", async () => {
     client._handlers['FirmwareStatusNotification']({ status: 'Downloading' });
     await Promise.resolve();
@@ -2336,17 +2389,42 @@ describe('ocpp-server-201 — LogStatusNotification', () => {
     expect(result).toEqual({});
   });
 
-  it('broadcast diagnostics_upload sur Uploaded', () => {
+  it('broadcast diagnostics_upload sur Uploaded (+ notification)', () => {
     client._handlers['LogStatusNotification']({ status: 'Uploaded', requestId: 1 });
     expect(mockBroadcast).toHaveBeenCalledWith(
-      'diagnostics_upload', { identity: 'CP001', status: 'Uploaded' }, 5
+      'diagnostics_upload',
+      { identity: 'CP001', status: 'Uploaded', rawStatus: 'Uploaded' },
+      5
+    );
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'diagnostics_upload',
+      expect.objectContaining({ identity: 'CP001', status: 'Uploaded' })
     );
   });
 
-  it('broadcast diagnostics_upload sur UploadFailed', () => {
+  // UploadLogStatusEnumType 2.0.1 : l'échec s'appelle UploadFailure (pas UploadFailed)
+  it.each(['UploadFailure', 'BadMessage', 'NotSupportedOperation', 'PermissionDenied'])(
+    'M5 — échec %s : diffusé comme UploadFailed pour l’interface, notifié avec le statut reçu',
+    (status) => {
+      client._handlers['LogStatusNotification']({ status, requestId: 1 });
+      expect(mockBroadcast).toHaveBeenCalledWith(
+        'diagnostics_upload',
+        { identity: 'CP001', status: 'UploadFailed', rawStatus: status },
+        5
+      );
+      expect(mockNotifications.emit).toHaveBeenCalledWith(
+        'diagnostics_upload',
+        expect.objectContaining({ status })
+      );
+    }
+  );
+
+  it("« UploadFailed » (vocabulaire 1.6) n'est pas un statut 2.0.1 : ignoré", () => {
     client._handlers['LogStatusNotification']({ status: 'UploadFailed', requestId: 1 });
-    expect(mockBroadcast).toHaveBeenCalledWith(
-      'diagnostics_upload', { identity: 'CP001', status: 'UploadFailed' }, 5
+    expect(mockBroadcast).not.toHaveBeenCalledWith(
+      'diagnostics_upload',
+      expect.anything(),
+      expect.anything()
     );
   });
 

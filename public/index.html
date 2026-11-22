@@ -1943,7 +1943,7 @@ async function renderDetailTabConnectors(cp) {
                   <div class="cmd-subgroup">
                     <span class="cmd-subgroup-label">📡 ${t('connectors.cTriggerMessage')}</span>
                     ${isFirstOfEvse ? `<button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'MeterValues', evse:{id:${c.evse_id}}}` : `{requestedMessage:'MeterValues', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerMeter')}</button>` : ''}
-                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'StatusNotification', evse:{id:${c.connector_id}}}` : `{requestedMessage:'StatusNotification', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerStatus')}</button>
+                    <button class="btn btn-info btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'TriggerMessage', ${cp.ocpp_version === '2.0.1' ? `{requestedMessage:'StatusNotification', evse:{id:${c.evse_id ?? c.connector_id}, connectorId:${c.connector_id}}}` : `{requestedMessage:'StatusNotification', connectorId:${c.connector_id}}`})">${t('connectors.cTriggerStatus')}</button>
                   </div>
                 </div>
               </div>` : ''}
@@ -5951,7 +5951,7 @@ async function _renderInitConfig201() {
     );
     html += `<tr>
       <td class="td-mono">${escapeHtml(r.component)}</td>
-      <td class="td-mono">${escapeHtml(r.variable)}${isGlobalOnly ? ` <span class="badge badge-blue" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>` : ''}</td>
+      <td class="td-mono">${escapeHtml(r.variable)}${r.instance ? ` <span class="td-meta">[${escapeHtml(r.instance)}]</span>` : ''}${isGlobalOnly ? ` <span class="badge badge-blue" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>` : ''}</td>
       <td class="td-meta">${escapeHtml(r.attribute || 'Actual')}</td>
       <td>${escapeHtml(r.value)}</td>
       <td><input type="checkbox" ${r.enabled || isGlobalOnly ? 'checked' : ''} ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : `data-onchange="toggleInitVariable(${r.id}, this.checked)"`}></td>
@@ -5973,6 +5973,7 @@ function showCreateInitVariableModal() {
     <h3>Nouvelle variable OCPP 2.0.1</h3>
     <div class="form-group"><label>Component</label><input type="text" id="initVarComponent" required /></div>
     <div class="form-group"><label>Variable</label><input type="text" id="initVarVariable" required /></div>
+    <div class="form-group"><label>Instance</label><input type="text" id="initVarInstance" placeholder="${t('initConfig.instancePlaceholder')}" /></div>
     <div class="form-group">
       <label>Attribute</label>
       <select id="initVarAttribute">
@@ -5995,11 +5996,12 @@ async function createInitVariable() {
   const component = document.getElementById('initVarComponent').value.trim();
   const variable = document.getElementById('initVarVariable').value.trim();
   const attribute = document.getElementById('initVarAttribute').value;
+  const instance = document.getElementById('initVarInstance').value.trim();
   const value = document.getElementById('initVarValue').value.trim();
   const enabled = document.getElementById('initVarEnabled').checked;
   if (!component || !variable || !value) return;
   try {
-    await api('POST', '/init-config/variables', { component, variable, attribute, value, enabled });
+    await api('POST', '/init-config/variables', { component, variable, attribute, instance, value, enabled });
     closeModal();
     _renderInitConfig201();
   } catch (err) {

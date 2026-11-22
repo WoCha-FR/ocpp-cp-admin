@@ -152,3 +152,43 @@ describe('meterSamples — parseSampledValues', () => {
     expect(t('298.15', 'K')).toBeCloseTo(25, 5);
   });
 });
+
+describe('meterSamples — lot F (M3 SignedData, L5 multiplier)', () => {
+  it('M3 — 1.6 : une valeur SignedData est ignorée (jamais lue comme un nombre)', () => {
+    const r = parseSampledValues([
+      { measurand: E, format: 'SignedData', value: '3A4F00C1DEADBEEF', unit: 'Wh' },
+      { measurand: E, format: 'Raw', value: '12000', unit: 'Wh' },
+    ]);
+    expect(r.energyWh).toBe(12000);
+  });
+
+  it('M3 — SignedData seule : aucune énergie', () => {
+    const r = parseSampledValues([{ format: 'SignedData', value: '0x9F1234' }]);
+    expect(r.energyWh).toBeNull();
+  });
+
+  it('L5 — 2.0.1 : le multiplier s’applique aussi à la tension, au courant, à la fréquence, au SoC et à la température', () => {
+    const uom = (unit, multiplier) => ({ unit, multiplier });
+    const r = parseSampledValues([
+      { measurand: 'Voltage', phase: 'L1-N', value: '2301', unitOfMeasure: uom('V', -1) },
+      { measurand: 'Current.Import', phase: 'L1', value: '160', unitOfMeasure: uom('A', -1) },
+      { measurand: 'Current.Offered', value: '320', unitOfMeasure: uom('A', -1) },
+      { measurand: 'Frequency', value: '5002', unitOfMeasure: uom('Hz', -2) },
+      { measurand: 'SoC', value: '805', unitOfMeasure: uom('Percent', -1) },
+      { measurand: 'Temperature', value: '255', unitOfMeasure: uom('Celsius', -1) },
+    ]);
+    expect(r.voltageL1).toBeCloseTo(230.1, 5);
+    expect(r.currentL1).toBeCloseTo(16, 5);
+    expect(r.currentOffered).toBeCloseTo(32, 5);
+    expect(r.freqValue).toBeCloseTo(50.02, 5);
+    expect(r.socValue).toBeCloseTo(80.5, 5);
+    expect(r.tempValue).toBeCloseTo(25.5, 5);
+  });
+
+  it('L5 — le multiplier n’est pas appliqué deux fois à l’énergie', () => {
+    const r = parseSampledValues([
+      { measurand: E, value: '12.5', unitOfMeasure: { unit: 'kWh', multiplier: 1 } },
+    ]);
+    expect(r.energyWh).toBe(125000); // 12.5 × 10 kWh = 125 kWh
+  });
+});

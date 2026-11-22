@@ -97,6 +97,15 @@ describe('txRecovery — extractMeterEnergy', () => {
     ...extra,
   });
 
+  it('M3 — une valeur SignedData est ignorée', () => {
+    const mv = [
+      { sampledValue: [sv(1000, { context: 'Transaction.Begin' })] },
+      { sampledValue: [sv('7F3A9C00', { format: 'SignedData', context: 'Transaction.End' })] },
+      { sampledValue: [sv(5000)] },
+    ];
+    expect(extractMeterEnergy(mv, 'last')).toBe(5000);
+  });
+
   it('aucune énergie → null', () => {
     expect(extractMeterEnergy([])).toBeNull();
     expect(extractMeterEnergy([{ sampledValue: [{ measurand: 'Voltage', value: '230' }] }])).toBeNull();

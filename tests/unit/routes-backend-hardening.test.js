@@ -169,7 +169,24 @@ describe('Lot C — sécurité : régressions routes', () => {
     expect(cascade).toMatch(/existing\?\.is_override/);
     expect(cascade).toMatch(/reason: 'override'/);
     const apply = routeBlock("'/init-config/chargepoint/:id/apply'", "router.post('/init-config/cascade-all'");
-    expect(apply).toMatch(/getChargepointVariableByKey\(cp\.id, v\.component, v\.variable/);
+    expect(apply).toMatch(/getChargepointVariableByKey\(\s*cp\.id,\s*v\.component,\s*v\.variable/);
     expect(apply).toMatch(/\?\.is_override/);
+  });
+
+  it('M8 — cascade des clés 1.6 : les bornes 2.0.1 sont exclues', () => {
+    const start = src.indexOf("router.post('/init-config/cascade-all'");
+    expect(start).toBeGreaterThan(-1);
+    const cascade = src.slice(start, start + 600);
+    expect(cascade).toMatch(/getAllChargepoints\(\)\s*\.filter\(\(cp\) => cp\.ocpp_version !== '2\.0\.1'\)/);
+  });
+
+  it('M6 — variables initiales 2.0.1 : SetVariables construit avec buildSetVariableData (instance)', () => {
+    const cascade = routeBlock(
+      "router.post('/init-config/variables/cascade-all'",
+      "'/init-config/chargepoint/:id/apply'"
+    );
+    expect(cascade).toMatch(/setVariableData: \[buildSetVariableData\(v\)\]/);
+    const apply = routeBlock("'/init-config/chargepoint/:id/apply'", "router.post('/init-config/cascade-all'");
+    expect(apply).toMatch(/setVariableData: \[buildSetVariableData\(v\)\]/);
   });
 });

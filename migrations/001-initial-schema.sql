@@ -171,11 +171,12 @@ CREATE TABLE IF NOT EXISTS chargepoint_init_variables (
   component   TEXT NOT NULL,                    -- nom du composant OCPP 2.0.1
   variable    TEXT NOT NULL,                    -- nom de la variable
   attribute   TEXT NOT NULL DEFAULT 'Actual',   -- Actual | Target | MinSet | MaxSet
+  instance    TEXT NOT NULL DEFAULT '',         -- instance de la variable ('' = aucune)
   value       TEXT NOT NULL,
   enabled     INTEGER NOT NULL DEFAULT 1,
   created_at  TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE (component, variable, attribute)
+  UNIQUE (component, variable, attribute, instance)
 );
 
 CREATE TABLE IF NOT EXISTS charging_profiles (
@@ -390,9 +391,7 @@ INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, value, en
   ('OCPPCommCtrlr', 'HeartbeatInterval',       '600', 1),   -- secondes (0 = utiliser intervalle réseau)
   ('OCPPCommCtrlr', 'WebSocketPingInterval',   '60', 0),    -- secondes
   ('OCPPCommCtrlr', 'ResetRetries',            '3', 0),
-  ('OCPPCommCtrlr', 'MessageTimeout',          '30', 0),    -- secondes
-  ('OCPPCommCtrlr', 'MessageAttempts',         '3', 0),     -- was TransactionMessageAttempts
-  ('OCPPCommCtrlr', 'MessageAttemptInterval',  '60', 0),    -- was TransactionMessageRetryInterval
+  -- (MessageTimeout, MessageAttempts, MessageAttemptInterval : variables à instance, voir plus bas)
   -- TxCtrlr — Gestion des transactions
   ('TxCtrlr', 'EVConnectionTimeOut',           '60', 0),    -- secondes, was ConnectionTimeOut
   ('TxCtrlr', 'StopTxOnEVSideDisconnect',      'true', 0),  -- was StopTransactionOnEVSideDisconnect
@@ -417,14 +416,18 @@ INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, value, en
   ('LocalAuthListCtrlr', 'Enabled',            'false', 0), -- was LocalAuthListEnabled
   -- ClockCtrlr — Horloge
   ('ClockCtrlr', 'TimeSource',                 'Heartbeat', 0),
-  ('ClockCtrlr', 'TimeOffset',                 'UTC+0', 0),
+  ('ClockCtrlr', 'TimeOffset',                 '+00:00', 0), -- décalage RFC 3339
   -- ReservationCtrlr — Réservations
   ('ReservationCtrlr', 'Enabled',              'false', 0),
   ('ReservationCtrlr', 'NonEvseSpecific',       'false', 0),
-  ('ReservationCtrlr', 'ReservationTimeOut',    '60', 0),    -- secondes
   -- SmartChargingCtrlr — Smart charging
   ('SmartChargingCtrlr', 'Enabled',            'false', 0),
   ('SmartChargingCtrlr', 'PeriodsPerSchedule', '3', 0),
   ('SmartChargingCtrlr', 'Phases3to1',         'false', 0),
   -- DisplayMessageCtrlr — Messages affichés
   ('DisplayMessageCtrlr', 'Enabled',           'false', 0);
+-- Variables qui n'existent qu'avec une instance (Device Model 2.0.1)
+INSERT OR IGNORE INTO chargepoint_init_variables (component, variable, instance, value, enabled) VALUES
+  ('OCPPCommCtrlr', 'MessageTimeout',          'Default',          '30', 0),  -- secondes
+  ('OCPPCommCtrlr', 'MessageAttempts',         'TransactionEvent', '3', 0),   -- was TransactionMessageAttempts
+  ('OCPPCommCtrlr', 'MessageAttemptInterval',  'TransactionEvent', '60', 0);  -- was TransactionMessageRetryInterval

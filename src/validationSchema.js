@@ -792,6 +792,16 @@ const InitVariable = {
     toBoolean: true,
     optional: { options: { nullable: true } },
   },
+  // Instance de la variable dans le Device Model (ex. MessageTimeout « Default ») ; vide = aucune
+  instance: {
+    in: ['body'],
+    optional: { options: { values: 'falsy' } },
+    isString: true,
+    trim: true,
+    isLength: { options: { min: 0, max: 50 } },
+    matches: { options: OCPP_VAR_NAME_REGEX },
+    errorMessage: 'VALIDATION_VARIABLE_INSTANCE',
+  },
 };
 
 const InitVariableUpdate = {

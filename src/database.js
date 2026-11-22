@@ -1693,18 +1693,35 @@ function getChargepointOverrideConfigs(chargepointId) {
     .all(chargepointId);
 }
 
-function getChargepointVariableByKey(chargepointId, component, variable, attribute = 'Actual') {
+// Variable de niveau borne (pas d'EVSE / connecteur) ; `instance` '' = variable sans instance
+function getChargepointVariableByKey(
+  chargepointId,
+  component,
+  variable,
+  attribute = 'Actual',
+  instance = ''
+) {
   return db
     .prepare(
-      'SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?'
+      `SELECT * FROM chargepoint_variables WHERE chargepoint_id = ? AND component = ? AND variable = ?
+       AND attribute = ? AND instance = ? AND evse_id = 0 AND connector_id = 0`
     )
-    .get(chargepointId, component, variable, attribute);
+    .get(chargepointId, component, variable, attribute, instance || '');
 }
 
-function setChargepointVariableOverride(chargepointId, component, variable, attribute, isOverride) {
+function setChargepointVariableOverride(
+  chargepointId,
+  component,
+  variable,
+  attribute,
+  isOverride,
+  instance = ''
+) {
   db.prepare(
-    "UPDATE chargepoint_variables SET is_override = ?, updated_at = datetime('now') WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?"
-  ).run(isOverride ? 1 : 0, chargepointId, component, variable, attribute);
+    `UPDATE chargepoint_variables SET is_override = ?, updated_at = datetime('now')
+     WHERE chargepoint_id = ? AND component = ? AND variable = ? AND attribute = ?
+       AND instance = ? AND evse_id = 0 AND connector_id = 0`
+  ).run(isOverride ? 1 : 0, chargepointId, component, variable, attribute, instance || '');
 }
 
 function getChargepointOverrideVariables(chargepointId) {
@@ -1769,14 +1786,16 @@ function deleteInitialChargepointConfig(id) {
 
 function getInitialChargepointVariables() {
   return db
-    .prepare('SELECT * FROM chargepoint_init_variables ORDER BY component, variable, attribute')
+    .prepare(
+      'SELECT * FROM chargepoint_init_variables ORDER BY component, variable, attribute, instance'
+    )
     .all();
 }
 
 function getEnabledInitialChargepointVariables() {
   return db
     .prepare(
-      'SELECT * FROM chargepoint_init_variables WHERE enabled = 1 ORDER BY component, variable, attribute'
+      'SELECT * FROM chargepoint_init_variables WHERE enabled = 1 ORDER BY component, variable, attribute, instance'
     )
     .all();
 }
@@ -1784,17 +1803,26 @@ function getEnabledInitialChargepointVariables() {
 function getInitialChargepointVariableByKey(component, variable) {
   return db
     .prepare(
-      "SELECT * FROM chargepoint_init_variables WHERE component = ? AND variable = ? AND attribute = 'Actual' LIMIT 1"
+      "SELECT * FROM chargepoint_init_variables WHERE component = ? AND variable = ? AND attribute = 'Actual' AND instance = '' LIMIT 1"
     )
     .get(component, variable);
 }
 
-function createInitialChargepointVariable(component, variable, attribute, value, enabled) {
+// `instance` : instance de la variable dans le Device Model ('' = aucune), ex. MessageTimeout
+// n'existe qu'avec l'instance « Default »
+function createInitialChargepointVariable(
+  component,
+  variable,
+  attribute,
+  value,
+  enabled,
+  instance = ''
+) {
   return db
     .prepare(
-      'INSERT INTO chargepoint_init_variables (component, variable, attribute, value, enabled) VALUES (?, ?, ?, ?, ?)'
+      'INSERT INTO chargepoint_init_variables (component, variable, attribute, instance, value, enabled) VALUES (?, ?, ?, ?, ?, ?)'
     )
-    .run(component, variable, attribute || 'Actual', value, enabled ? 1 : 0);
+    .run(component, variable, attribute || 'Actual', instance || '', value, enabled ? 1 : 0);
 }
 
 function updateInitialChargepointVariable(id, data) {

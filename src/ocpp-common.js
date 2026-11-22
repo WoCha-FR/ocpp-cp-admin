@@ -5,7 +5,7 @@ const db = require('./database');
 const notifications = require('./notifications');
 const { verifyClientCertMatchesIdentity, isClientCertRevoked } = require('./certAuthority');
 const { lastKnownMeterStop, parseHeartbeatInterval } = require('./txRecovery');
-const { registerPendingRemoteStart } = require('./remoteStarts');
+const { registerPendingRemoteStart, isGeneratedTag } = require('./remoteStarts');
 const logger = require('./logger').scope('OCPP');
 
 // ── État partagé ──
@@ -828,16 +828,31 @@ let heartbeatWatchdogTimer = null;
 
 function startHeartbeatWatchdog() {
   heartbeatWatchdogTimer = setInterval(() => {
-    const initHbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
-    const initHeartbeatInterval = parseHeartbeatInterval(initHbConfig?.value);
+    // Intervalle imposé à la borne (BootNotificationResponse.interval) : clé 1.6
+    // HeartbeatInterval, ou variable 2.0.1 OCPPCommCtrlr.HeartbeatInterval — chacune avec sa
+    // valeur initiale globale, éventuellement surchargée sur la borne
+    const initHeartbeat16 = parseHeartbeatInterval(
+      db.getInitialChargepointConfigByKey('HeartbeatInterval')?.value
+    );
+    const initHeartbeat201 = parseHeartbeatInterval(
+      db.getInitialChargepointVariableByKey('OCPPCommCtrlr', 'HeartbeatInterval')?.value
+    );
 
     const now = Date.now();
     for (const [identity] of connectedClients) {
       const cp = db.getChargepointByIdentity(identity);
       if (!cp || !cp.last_heartbeat) continue;
 
-      const cpHbConfig = cp.id ? db.getChargepointConfigByKey(cp.id, 'HeartbeatInterval') : null;
-      const heartbeatInterval = parseHeartbeatInterval(cpHbConfig?.value, initHeartbeatInterval);
+      const heartbeatInterval =
+        cp.ocpp_version === '2.0.1'
+          ? parseHeartbeatInterval(
+              db.getChargepointVariableByKey(cp.id, 'OCPPCommCtrlr', 'HeartbeatInterval')?.value,
+              initHeartbeat201
+            )
+          : parseHeartbeatInterval(
+              db.getChargepointConfigByKey(cp.id, 'HeartbeatInterval')?.value,
+              initHeartbeat16
+            );
       // 0 = la borne choisit elle-même (pas d'intervalle imposé) : rien à surveiller, sinon
       // timeout = 0 → déconnexion immédiate
       if (!(heartbeatInterval > 0)) continue;
@@ -918,19 +933,24 @@ function startReservationCleanupWatchdog() {
           reservationId: reservation.reservation_id,
         });
         const status = result?.status ?? 'Rejected';
+        // Accepted : la borne a annulé la réservation. Rejected : la borne ne la connaît plus —
+        // cas normal après l'expiryDate, la borne libère d'elle-même une réservation expirée
+        // (spec CancelReservation : Rejected si aucune réservation ne correspond). Dans les deux
+        // cas elle est terminée : on la marque Expired, sinon le CancelReservation serait
+        // renvoyé chaque minute indéfiniment (1.6 n'a pas de ReservationStatusUpdate).
+        db.updateReservationStatus(reservation.id, 'Expired');
+        broadcast(
+          'reservation_updated',
+          { chargepoint_id: reservation.chargepoint_id },
+          db.getChargepointById(reservation.chargepoint_id)?.site_id ?? null
+        );
         if (status === 'Accepted') {
-          db.updateReservationStatus(reservation.id, 'Expired');
-          broadcast(
-            'reservation_updated',
-            { chargepoint_id: reservation.chargepoint_id },
-            db.getChargepointById(reservation.chargepoint_id)?.site_id ?? null
-          );
           logger.info(
             `Reservation ${reservation.reservation_id} auto-expired on ${reservation.identity}`
           );
         } else {
-          logger.warn(
-            `CancelReservation rejected for reservation ${reservation.reservation_id} on ${reservation.identity}: ${status}`
+          logger.info(
+            `Reservation ${reservation.reservation_id} already released by ${reservation.identity} (CancelReservation ${status}) — marked Expired`
           );
         }
       } catch (e) {
@@ -985,8 +1005,10 @@ async function remoteStartTransaction(
   try {
     let result;
     if (is201) {
+      // Badge généré par le CSMS (ADMIN / MGR-x / WEB-x) : type « Central » (IdTokenEnumType :
+      // identifiant généré par le CSMS) ; sinon le type réel du badge
       const tag = db.getIdTagByTag(idToken, cp.site_id);
-      const tokenType = tag?.token_type || 'ISO14443';
+      const tokenType = isGeneratedTag(idToken) ? 'Central' : tag?.token_type || 'ISO14443';
       result = await callClient(identity, 'RequestStartTransaction', {
         remoteStartId,
         evseId: evseId ?? connectorId,

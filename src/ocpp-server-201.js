@@ -24,6 +24,7 @@ const {
   findPendingRemoteStart,
 } = require('./remoteStarts');
 const { toIsoDateTime } = require('./chargingProfiles');
+const { buildSetVariableData } = require('./ocppVariables');
 
 // ── Constantes ──
 
@@ -52,6 +53,24 @@ const TRIGGER_TO_START_SOURCE = {
   PowerPathClosed: 'local',
   EVDetected: 'local',
 };
+
+// LogStatusNotification 2.0.1 → statut affiché par l'interface (vocabulaire 1.6)
+const LOG_UPLOAD_UI_STATUS = {
+  Uploaded: 'Uploaded',
+  UploadFailure: 'UploadFailed',
+  BadMessage: 'UploadFailed',
+  NotSupportedOperation: 'UploadFailed',
+  PermissionDenied: 'UploadFailed',
+};
+
+// FirmwareStatusNotification 2.0.1 : statuts finaux notifiés (succès + tous les échecs)
+const FIRMWARE_NOTIFY_STATUSES = new Set([
+  'Installed',
+  'InstallationFailed',
+  'DownloadFailed',
+  'InstallVerificationFailed',
+  'InvalidSignature',
+]);
 
 // La raison d'arrêt se lit dans transactionInfo.stoppedReason (repli sur triggerReason) :
 // voir resolveStopReason201 dans txRecovery.js
@@ -455,7 +474,8 @@ function register201Handlers(client, loggedHandle) {
               cpSnap.id,
               v.component,
               v.variable,
-              v.attribute || 'Actual'
+              v.attribute || 'Actual',
+              v.instance || ''
             )?.is_override
           ) {
             continue;
@@ -465,14 +485,7 @@ function register201Handlers(client, loggedHandle) {
               `[InitSeq201] ${identity} step 4/5 — SetVariables ${v.component}.${v.variable}`
             );
             const result = await callClient201(identity, 'SetVariables', {
-              setVariableData: [
-                {
-                  component: { name: v.component },
-                  variable: { name: v.variable },
-                  attributeType: v.attribute || 'Actual',
-                  attributeValue: v.value,
-                },
-              ],
+              setVariableData: [buildSetVariableData(v)],
             });
             const setResult = result?.setVariableResult?.[0];
             if (
@@ -486,7 +499,9 @@ function register201Handlers(client, loggedHandle) {
                   v.component,
                   v.variable,
                   v.attribute || 'Actual',
-                  v.value
+                  v.value,
+                  0,
+                  v.instance || ''
                 );
               if (setResult.attributeStatus === 'RebootRequired')
                 rebootVars.push(`${v.component}.${v.variable}`);
@@ -516,15 +531,9 @@ function register201Handlers(client, loggedHandle) {
               logger.debug(
                 `[InitSeq201] ${identity} step 5/5 — SetVariables override ${v.component}.${v.variable}`
               );
+              // Variable de la borne : instance, EVSE et connecteur repris de la ligne enregistrée
               const result = await callClient201(identity, 'SetVariables', {
-                setVariableData: [
-                  {
-                    component: { name: v.component },
-                    variable: { name: v.variable },
-                    attributeType: v.attribute || 'Actual',
-                    attributeValue: v.value,
-                  },
-                ],
+                setVariableData: [buildSetVariableData(v)],
               });
               const setResult = result?.setVariableResult?.[0];
               if (setResult?.attributeStatus === 'RebootRequired')
@@ -639,7 +648,7 @@ function register201Handlers(client, loggedHandle) {
           callClient201(identity, 'RequestStartTransaction', {
             remoteStartId,
             evseId,
-            idToken: { idToken: idTag, type: 'ISO14443' },
+            idToken: { idToken: idTag, type: 'Central' }, // badge généré par le CSMS
           })
             .then((result) => {
               logger.info(
@@ -1106,6 +1115,9 @@ function register201Handlers(client, loggedHandle) {
       // coupure peuvent encore arriver avant l'Ended réel. Leurs relevés sont gardés pour le
       // graphe (et la répartition du coût par tranche quand l'Ended corrigera la session).
       const isActive = tx.status === 'Active';
+      // `evse` est facultatif après le premier événement : sans lui, le connecteur est celui de
+      // la transaction (et non le connecteur 1 par défaut)
+      const txConnectorId = evse.connectorId ?? tx.connector_id ?? connectorDbId;
       const serverClosed = tx.status === 'Completed' && tx.closed_by === 'server';
       if (!isActive && !serverClosed) {
         logger.warn(
@@ -1143,7 +1155,7 @@ function register201Handlers(client, loggedHandle) {
         const effectiveEvseId = evseId ?? tx.evse_id ?? null;
         if (effectiveEvseId !== null) {
           const newCnStatus = CHARGING_STATE_TO_CNSTATUS[chargingState] || 'Preparing';
-          db.updateConnectorCnstatus(cp.id, connectorDbId, effectiveEvseId, newCnStatus);
+          db.updateConnectorCnstatus(cp.id, txConnectorId, effectiveEvseId, newCnStatus);
           db.upsertEvse(cp.id, effectiveEvseId, newCnStatus);
           const updatedCp2 = db.getChargepointByIdentity(identity);
           const connectors2 = db.getConnectorsByChargepoint(cp.id);
@@ -1251,7 +1263,7 @@ function register201Handlers(client, loggedHandle) {
         'transaction_updated',
         {
           identity,
-          connectorId: connectorDbId,
+          connectorId: txConnectorId,
           transactionId: txId,
           power: lastPowerW !== null ? Math.round(lastPowerW) : null,
           energy: lastEnergyWh !== null ? Math.round(lastEnergyWh) : null,
@@ -1263,7 +1275,7 @@ function register201Handlers(client, loggedHandle) {
       if (meterValue.length > 0) {
         broadcast(
           'meter_values',
-          { identity, connectorId: connectorDbId, meterValue },
+          { identity, connectorId: txConnectorId, meterValue },
           cp.site_id ?? null
         );
       }
@@ -1592,7 +1604,8 @@ function register201Handlers(client, loggedHandle) {
   loggedHandle('FirmwareStatusNotification', (params) => {
     const cp = db.getChargepointByIdentity(identity);
     broadcast('firmware_status', { identity, status: params.status }, cp?.site_id ?? null);
-    if (['Installed', 'InstallationFailed', 'DownloadFailed'].includes(params.status)) {
+    // 2.0.1 ajoute InstallVerificationFailed et InvalidSignature (firmware signé) aux échecs
+    if (FIRMWARE_NOTIFY_STATUSES.has(params.status)) {
       notifications
         .emit('firmware_status', {
           identity,
@@ -1606,10 +1619,27 @@ function register201Handlers(client, loggedHandle) {
   });
 
   // ── LogStatusNotification (équivalent 2.0.1 de DiagnosticsStatusNotification) ──
+  // UploadLogStatusEnumType 2.0.1 : l'échec s'appelle UploadFailure (et non UploadFailed comme en
+  // 1.6) ; BadMessage, NotSupportedOperation et PermissionDenied sont aussi des échecs définitifs.
+  // L'interface garde le vocabulaire 1.6 (Uploaded / UploadFailed) ; la notification porte le
+  // statut reçu, comme en 1.6.
   loggedHandle('LogStatusNotification', (params) => {
-    if (params.status === 'Uploaded' || params.status === 'UploadFailed') {
+    const uiStatus = LOG_UPLOAD_UI_STATUS[params.status];
+    if (uiStatus) {
       const cp = db.getChargepointByIdentity(identity);
-      broadcast('diagnostics_upload', { identity, status: params.status }, cp?.site_id ?? null);
+      broadcast(
+        'diagnostics_upload',
+        { identity, status: uiStatus, rawStatus: params.status },
+        cp?.site_id ?? null
+      );
+      notifications
+        .emit('diagnostics_upload', {
+          identity,
+          status: params.status,
+          cp_name: cp?.cpname ?? null,
+          site_name: cp?.site_name ?? null,
+        })
+        .catch(() => {});
     }
     return {};
   });

@@ -7,7 +7,7 @@
 // Dernier relevé de compteur connu d'une transaction active : meter_start + énergie cumulée
 // par les MeterValues. Utilisé quand le serveur doit clore lui-même une transaction (borne
 // déconnectée, transaction orpheline) : meter_stop = meter_start donnerait 0 kWh facturé.
-const { toBase } = require('./meterSamples');
+const { toBase, isSignedData } = require('./meterSamples');
 
 function lastKnownMeterStop(tx) {
   if (!tx) return 0;
@@ -102,6 +102,7 @@ function extractMeterEnergy(meterValue = [], mode = 'first') {
   const samples = [];
   for (const mv of meterValue) {
     for (const sv of mv.sampledValue || []) {
+      if (isSignedData(sv)) continue;
       if ((sv.measurand || 'Energy.Active.Import.Register') !== 'Energy.Active.Import.Register') {
         continue;
       }

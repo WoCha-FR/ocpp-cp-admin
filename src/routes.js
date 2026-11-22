@@ -19,6 +19,8 @@ const {
   pendingChargepoints,
 } = require('./ocpp-common');
 const { OCPP16_STANDARD_KEYS } = require('./ocpp-server-16');
+const { buildSetVariableData } = require('./ocppVariables');
+const { isGeneratedTag } = require('./remoteStarts');
 const certAuthority = require('./certAuthority');
 const { checkCommandAllowed } = require('./ocppCommandPolicy');
 const { createBackupArchive } = require('./backupArchive');
@@ -1379,7 +1381,9 @@ router.post(
       if (cp.ocpp_version === '2.0.1') {
         // Type de jeton réel du badge (ISO14443 par défaut) : un type différent de celui que la
         // borne lira sur le badge ferait refuser la réservation à l'utilisation
-        const tokenType = db.getIdTagByTag(id_tag, cp.site_id)?.token_type || 'ISO14443';
+        const tokenType = isGeneratedTag(id_tag)
+          ? 'Central'
+          : db.getIdTagByTag(id_tag, cp.site_id)?.token_type || 'ISO14443';
         result = await callClient(cp.identity, 'ReserveNow', {
           id: reservation_id,
           expiryDateTime: expiry_date,
@@ -1950,14 +1954,15 @@ router.post(
   requireRole('admin'),
   ...validateSchema(schema.InitVariable),
   (req, res) => {
-    const { component, variable, attribute, value, enabled } = matchedData(req);
+    const { component, variable, attribute, value, enabled, instance } = matchedData(req);
     try {
       const result = db.createInitialChargepointVariable(
         component,
         variable,
         attribute || 'Actual',
         value,
-        enabled ?? false
+        enabled ?? false,
+        instance || ''
       );
       res.json({ id: result.lastInsertRowid });
     } catch (e) {
@@ -2021,7 +2026,8 @@ router.post('/init-config/variables/cascade-all', requireRole('admin'), async (r
         cp.id,
         v.component,
         v.variable,
-        v.attribute || 'Actual'
+        v.attribute || 'Actual',
+        v.instance || ''
       );
       if (existing?.is_override) {
         skipped.push({
@@ -2034,14 +2040,7 @@ router.post('/init-config/variables/cascade-all', requireRole('admin'), async (r
       if (isOnline) {
         try {
           const result = await callClient(cp.identity, 'SetVariables', {
-            setVariableData: [
-              {
-                component: { name: v.component },
-                variable: { name: v.variable },
-                attributeType: v.attribute || 'Actual',
-                attributeValue: v.value,
-              },
-            ],
+            setVariableData: [buildSetVariableData(v)],
           });
           const setResult = result?.setVariableResult?.[0];
           if (
@@ -2053,7 +2052,9 @@ router.post('/init-config/variables/cascade-all', requireRole('admin'), async (r
               v.component,
               v.variable,
               v.attribute || 'Actual',
-              v.value
+              v.value,
+              0,
+              v.instance || ''
             );
             applied.push({ identity: cp.identity, key: `${v.component}.${v.variable}` });
           } else {
@@ -2097,21 +2098,19 @@ router.post(
       for (const v of vars) {
         // Variable verrouillée (override) : on ne touche pas (même règle que pour OCPP 1.6)
         if (
-          db.getChargepointVariableByKey(cp.id, v.component, v.variable, v.attribute || 'Actual')
-            ?.is_override
+          db.getChargepointVariableByKey(
+            cp.id,
+            v.component,
+            v.variable,
+            v.attribute || 'Actual',
+            v.instance || ''
+          )?.is_override
         ) {
           continue;
         }
         try {
           const result = await callClient(cp.identity, 'SetVariables', {
-            setVariableData: [
-              {
-                component: { name: v.component },
-                variable: { name: v.variable },
-                attributeType: v.attribute || 'Actual',
-                attributeValue: v.value,
-              },
-            ],
+            setVariableData: [buildSetVariableData(v)],
           });
           const setResult = result?.setVariableResult?.[0];
           if (
@@ -2123,7 +2122,9 @@ router.post(
               v.component,
               v.variable,
               v.attribute || 'Actual',
-              v.value
+              v.value,
+              0,
+              v.instance || ''
             );
           }
         } catch (e) {
@@ -2158,7 +2159,9 @@ router.post(
 
 router.post('/init-config/cascade-all', requireRole('admin'), async (req, res) => {
   const configs = db.getEnabledInitialChargepointConfig();
-  const chargepoints = db.getAllChargepoints();
+  // Clés de configuration 1.6 (ChangeConfiguration) : les bornes 2.0.1 ont leurs propres
+  // variables (/init-config/variables/cascade-all) — ChangeConfiguration n'existe pas en 2.0.1
+  const chargepoints = db.getAllChargepoints().filter((cp) => cp.ocpp_version !== '2.0.1');
   const clients = getConnectedClients();
 
   const applied = [];

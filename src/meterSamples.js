@@ -19,6 +19,12 @@ function toBase(value, unit, multiplier) {
   return v;
 }
 
+// 1.6 SampledValue.format : Raw (défaut) | SignedData. En 2.0.1, la valeur signée est dans un
+// champ séparé (signedMeterValue) et `value` reste toujours un nombre.
+function isSignedData(sv) {
+  return sv?.format === 'SignedData';
+}
+
 function toCelsius(value, unit) {
   if (unit === 'Fahrenheit') return ((value - 32) * 5) / 9;
   if (unit === 'K') return value - 273.15;
@@ -58,23 +64,29 @@ function parseSampledValues(samples = []) {
   };
 
   for (const sv of samples || []) {
-    const val = parseFloat(sv.value);
-    if (isNaN(val)) continue;
+    // 1.6 : format SignedData = valeur signée (blob encodé), pas un nombre. parseFloat en
+    // extrairait un préfixe numérique aberrant (ex. « 3A4F… » → 3) pris pour l'énergie.
+    if (isSignedData(sv)) continue;
+    const raw = parseFloat(sv.value);
+    if (isNaN(raw)) continue;
     const measurand = sv.measurand || ENERGY;
     const phase = sv.phase || null;
     // 2.0.1 : unitOfMeasure ; 1.6 : unit
     const unit = sv.unitOfMeasure?.unit ?? sv.unit ?? '';
     const multiplier = sv.unitOfMeasure?.multiplier ?? 0;
+    // 2.0.1 : le multiplier (exposant de 10) s'applique à toutes les mesures, pas seulement à
+    // l'énergie et à la puissance (ex. tension 2300 × 10^-1 = 230 V)
+    const val = multiplier ? raw * 10 ** multiplier : raw;
 
     switch (measurand) {
       case ENERGY:
-        addSum(energy, toBase(val, unit, multiplier), phase);
+        addSum(energy, toBase(val, unit, 0), phase);
         break;
       case 'Power.Active.Import':
-        addSum(power, toBase(val, unit, multiplier), phase);
+        addSum(power, toBase(val, unit, 0), phase);
         break;
       case 'Power.Offered':
-        addSum(offered, toBase(val, unit, multiplier), phase);
+        addSum(offered, toBase(val, unit, 0), phase);
         break;
       case 'SoC':
         r.socValue = val;
@@ -110,4 +122,4 @@ function parseSampledValues(samples = []) {
   };
 }
 
-module.exports = { parseSampledValues, toBase };
+module.exports = { parseSampledValues, toBase, isSignedData };

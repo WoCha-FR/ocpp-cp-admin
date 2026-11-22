@@ -97,7 +97,10 @@ function createApp(connectedClients = new Map(), mockCallClient = jest.fn()) {
     const configs = db
       .prepare('SELECT * FROM chargepoint_init_config WHERE enabled = 1 ORDER BY key')
       .all();
-    const chargepoints = db.prepare('SELECT * FROM chargepoints').all();
+    // Clés 1.6 : les bornes 2.0.1 sont exclues (ChangeConfiguration n'existe pas en 2.0.1)
+    const chargepoints = db
+      .prepare("SELECT * FROM chargepoints WHERE ocpp_version IS NOT '2.0.1'")
+      .all();
 
     const applied = [];
     const queued = [];
@@ -212,6 +215,38 @@ describe('POST /api/init-config/cascade-all', () => {
       const res = await agent.post('/api/init-config/cascade-all').set('x-xsrf-token', csrf);
       expect(res.status).toBe(403);
       expect(res.body.error).toBe('ERR_ACCESS_DENIED');
+    });
+  });
+
+  describe('M8 — bornes 2.0.1 exclues de la cascade des clés 1.6', () => {
+    let app, db, mockCallClient;
+
+    beforeEach(() => {
+      mockCallClient = jest.fn().mockResolvedValue({ status: 'Accepted' });
+      ({ app, db } = createApp(new Map([['CP-201', {}], ['CP-16', {}]]), mockCallClient));
+      db.prepare('UPDATE chargepoint_init_config SET enabled = 0').run();
+      insertInitConfig(db, 'HeartbeatInterval', '300', 1);
+      insertChargepoint(db, 'CP-201', 1);
+      insertChargepoint(db, 'CP-16', 1);
+      insertChargepoint(db, 'CP-OFF-201', 1);
+      db.prepare(
+        "UPDATE chargepoints SET ocpp_version = '2.0.1' WHERE identity IN ('CP-201', 'CP-OFF-201')"
+      ).run();
+    });
+
+    afterEach(() => db.close());
+
+    it("n'envoie ChangeConfiguration qu'aux bornes 1.6 et ne réinitialise pas les 2.0.1 hors ligne", async () => {
+      const agent = request.agent(app);
+      const csrf = await loginAs(agent);
+      const res = await agent.post('/api/init-config/cascade-all').set('x-xsrf-token', csrf);
+      expect(res.status).toBe(200);
+      expect(mockCallClient.mock.calls.map((c) => c[0])).toEqual(['CP-16']);
+      expect(res.body.queued).toEqual([]);
+      expect(
+        db.prepare("SELECT initialized FROM chargepoints WHERE identity = 'CP-OFF-201'").get()
+          .initialized
+      ).toBe(1);
     });
   });
 

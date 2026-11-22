@@ -1220,6 +1220,7 @@
     "keyExists": "This key already exists.",
     "globalOnly": "System",
     "globalOnlyTooltip": "This parameter is managed globally and cannot be deleted or overridden per chargepoint.",
+    "instancePlaceholder": "Optional — e.g. Default, TransactionEvent",
     "cascadeBtn": "Apply to all chargepoints",
     "cascadeConfirmTitle": "Apply configuration to all chargepoints",
     "cascadeConfirmBody": "All currently enabled values will be sent via ChangeConfiguration to all connected chargepoints. Offline chargepoints will be re-initialized to receive the config on next boot. Values with per-chargepoint overrides will be skipped.",

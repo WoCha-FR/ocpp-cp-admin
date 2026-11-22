@@ -41,6 +41,8 @@ const mockDb = {
   stopTransaction: jest.fn(),
   getInitialChargepointConfigByKey: jest.fn(),
   getChargepointConfigByKey: jest.fn(),
+  getInitialChargepointVariableByKey: jest.fn(),
+  getChargepointVariableByKey: jest.fn(),
   addOcppMessage: jest.fn(),
   getExpiredActiveReservations: jest.fn(() => []),
   updateReservationStatus: jest.fn(),
@@ -359,6 +361,42 @@ describe('ocpp-common — heartbeat watchdog', () => {
     }
   });
 
+  it('L2 — borne 2.0.1 : utilise OCPPCommCtrlr.HeartbeatInterval, pas la clé 1.6', async () => {
+    jest.useFakeTimers();
+    try {
+      mockDb.addOcppMessage.mockClear();
+      const mockClient = { close: jest.fn() };
+      ocppCommon.getConnectedClients().set('CP_HB_201', mockClient);
+      // Clé 1.6 à 60 s (limite 120 s) mais variable 2.0.1 à 900 s (limite 1800 s)
+      mockDb.getInitialChargepointConfigByKey.mockReturnValue({ value: '60' });
+      mockDb.getChargepointConfigByKey.mockReturnValue(null);
+      mockDb.getInitialChargepointVariableByKey.mockReturnValue({ value: '900' });
+      mockDb.getChargepointVariableByKey.mockReturnValue(null);
+      mockDb.getChargepointByIdentity.mockReturnValue({
+        id: 9,
+        site_id: 3,
+        ocpp_version: '2.0.1',
+        last_heartbeat: new Date(Date.now() - 600000).toISOString(), // 10 min
+      });
+
+      ocppCommon.startHeartbeatWatchdog();
+      await jest.advanceTimersByTimeAsync(60000);
+
+      expect(mockDb.getChargepointVariableByKey).toHaveBeenCalledWith(
+        9,
+        'OCPPCommCtrlr',
+        'HeartbeatInterval'
+      );
+      expect(mockClient.close).not.toHaveBeenCalled();
+      expect(mockDb.addOcppMessage.mock.calls.filter((c) => c[3] === 'HeartbeatTimeout')).toHaveLength(0);
+    } finally {
+      ocppCommon.stopHeartbeatWatchdog();
+      ocppCommon.getConnectedClients().delete('CP_HB_201');
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
   // Intervalle 0 (la borne choisit) ou valeur non numérique : timeout = 0 / NaN ne doit
   // ni déconnecter immédiatement une borne saine, ni la rendre invisible au watchdog
   describe.each([
@@ -438,12 +476,28 @@ describe('ocpp-common — reservation cleanup watchdog', () => {
     expect(mockDb.updateReservationStatus).toHaveBeenCalledWith(7, 'Expired');
   });
 
-  it('does not mark Expired when CancelReservation is rejected', async () => {
+  it('M4 — CancelReservation Rejected (réservation déjà libérée par la borne) : marquée Expired, sans nouvel envoi', async () => {
     const reservation = { id: 8, reservation_id: 43, chargepoint_id: 99, identity: 'CP-CLEANUP' };
-    mockDb.getExpiredActiveReservations.mockReturnValue([reservation]);
+    // La réservation n'est renvoyée qu'une fois : marquée Expired, elle sort de la liste
+    mockDb.getExpiredActiveReservations.mockReturnValueOnce([reservation]).mockReturnValue([]);
     mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
     const impl = jest.fn().mockResolvedValue({ status: 'Rejected' });
     ocppCommon.registerCallClientImpl('1.6', impl);
+    ocppCommon.getConnectedClients().set('CP-CLEANUP', {});
+
+    ocppCommon.startReservationCleanupWatchdog();
+    await jest.advanceTimersByTimeAsync(60000);
+    expect(mockDb.updateReservationStatus).toHaveBeenCalledWith(8, 'Expired');
+
+    await jest.advanceTimersByTimeAsync(120000);
+    expect(impl).toHaveBeenCalledTimes(1);
+  });
+
+  it("reste à traiter si l'appel échoue (borne injoignable) : nouvel essai à la minute suivante", async () => {
+    const reservation = { id: 10, reservation_id: 45, chargepoint_id: 99, identity: 'CP-CLEANUP' };
+    mockDb.getExpiredActiveReservations.mockReturnValue([reservation]);
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '1.6' });
+    ocppCommon.registerCallClientImpl('1.6', jest.fn().mockRejectedValue(new Error('timeout')));
     ocppCommon.getConnectedClients().set('CP-CLEANUP', {});
 
     ocppCommon.startReservationCleanupWatchdog();
@@ -1261,11 +1315,26 @@ describe('ocpp-common — remoteStartTransaction', () => {
     const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
     ocppCommon.registerCallClientImpl('2.0.1', impl);
 
-    await ocppCommon.remoteStartTransaction('CP001', 1, 'WEB-5');
+    await ocppCommon.remoteStartTransaction('CP001', 1, '04A1B2C3');
 
     const [, , params] = impl.mock.calls[0];
     expect(params.idToken.type).toBe('ISO14443');
   });
+
+  it.each(['WEB-5', 'ADMIN', 'MGR-2'])(
+    "L4 — badge généré %s : type « Central » (identifiant généré par le CSMS)",
+    async (tag) => {
+      mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1', site_id: 1 });
+      // Même si la base lui attribue un autre type
+      mockDb.getIdTagByTag.mockReturnValue({ token_type: 'ISO14443' });
+      const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+      ocppCommon.registerCallClientImpl('2.0.1', impl);
+
+      await ocppCommon.remoteStartTransaction('CP001', 1, tag);
+
+      expect(impl.mock.calls[0][2].idToken).toEqual({ idToken: tag, type: 'Central' });
+    }
+  );
 
   it('idToken.type uses stored token_type from DB for 2.0.1', async () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1', site_id: 1 });
