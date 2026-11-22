@@ -36,6 +36,11 @@ const {
 } = require('./config');
 const { trad, SUPPORTED_LANGUAGES, i18next } = require('./i18n');
 const tariff = require('./tariff');
+const {
+  mapPurpose,
+  normalizeProfileInput,
+  buildSetChargingProfileParams,
+} = require('./chargingProfiles');
 const { buildTransactionsCsv, buildReimbursementCsv } = require('./transactionsCsv');
 const logger = require('./logger').scope('AUTH');
 
@@ -1041,8 +1046,6 @@ router.post(
 );
 
 // ── Charging Profiles ──
-const mapPurposeTo201 = (p) => (p === 'ChargePointMaxProfile' ? 'ChargingStationMaxProfile' : p);
-
 router.get(
   '/chargepoints/:id/charging-profiles',
   requireManager,
@@ -1076,76 +1079,35 @@ router.post(
     const client = getConnectedClients().get(cp.identity);
     if (!client) return res.status(400).json({ error: 'ERR_CHARGEPOINT_OFFLINE' });
 
-    const {
-      connector_id = 0,
-      stack_level = 0,
-      profile_purpose,
-      profile_kind,
-      recurrency_kind,
-      valid_from,
-      valid_to,
-      charging_rate_unit = 'W',
-      schedule_periods,
-    } = req.body;
+    // Cohérence avec la spec (profil Max sur connecteur 0, recurrencyKind requis pour Recurring)
+    // et complétion de l'ancrage startSchedule : voir chargingProfiles.js
+    const normalized = normalizeProfileInput(req.body);
+    if (normalized.error) return res.status(400).json({ error: normalized.error });
+    const input = normalized.value;
 
     const profile_id = db.getNextProfileId(cp.id);
-    const chargingSchedule = {
-      chargingRateUnit: charging_rate_unit,
-      chargingSchedulePeriod: schedule_periods.map((p) => {
-        const period = { startPeriod: p.startPeriod, limit: p.limit };
-        if (p.numberPhases != null) period.numberPhases = p.numberPhases;
-        return period;
-      }),
-    };
+    const version = cp.ocpp_version === '2.0.1' ? '2.0.1' : '1.6';
 
     const dbId = db.createChargingProfile({
       chargepoint_id: cp.id,
       profile_id,
-      connector_id,
-      stack_level,
-      profile_purpose,
-      profile_kind,
-      recurrency_kind: recurrency_kind || null,
-      valid_from: valid_from || null,
-      valid_to: valid_to || null,
-      charging_rate_unit,
-      schedule_json: chargingSchedule,
+      connector_id: input.connector_id,
+      stack_level: input.stack_level,
+      profile_purpose: input.profile_purpose,
+      profile_kind: input.profile_kind,
+      recurrency_kind: input.recurrency_kind,
+      valid_from: input.valid_from,
+      valid_to: input.valid_to,
+      charging_rate_unit: input.charging_rate_unit,
+      schedule_json: input.schedule,
     });
 
-    const csChargingProfiles = {
-      chargingProfileId: profile_id,
-      stackLevel: stack_level,
-      chargingProfilePurpose: profile_purpose,
-      chargingProfileKind: profile_kind,
-      chargingSchedule,
-    };
-    if (recurrency_kind) csChargingProfiles.recurrencyKind = recurrency_kind;
-    if (valid_from) csChargingProfiles.validFrom = valid_from;
-    if (valid_to) csChargingProfiles.validTo = valid_to;
-
     try {
-      let result;
-      if (cp.ocpp_version === '2.0.1') {
-        const chargingProfile201 = {
-          id: profile_id,
-          stackLevel: stack_level,
-          chargingProfilePurpose: mapPurposeTo201(profile_purpose),
-          chargingProfileKind: profile_kind,
-          chargingSchedule: [{ id: 1, ...chargingSchedule }],
-        };
-        if (recurrency_kind) chargingProfile201.recurrencyKind = recurrency_kind;
-        if (valid_from) chargingProfile201.validFrom = valid_from;
-        if (valid_to) chargingProfile201.validTo = valid_to;
-        result = await callClient(cp.identity, 'SetChargingProfile', {
-          evseId: connector_id,
-          chargingProfile: chargingProfile201,
-        });
-      } else {
-        result = await callClient(cp.identity, 'SetChargingProfile', {
-          connectorId: connector_id,
-          csChargingProfiles,
-        });
-      }
+      const result = await callClient(
+        cp.identity,
+        'SetChargingProfile',
+        buildSetChargingProfileParams(version, { ...input, profile_id })
+      );
       const status = result?.status ?? 'Rejected';
       db.updateChargingProfileStatus(dbId, status);
       broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
@@ -1180,19 +1142,23 @@ router.post(
       if (profile_id != null) ocppParams.chargingProfileId = profile_id;
       const criteria = {};
       if (connector_id != null) criteria.evseId = connector_id;
-      if (profile_purpose) criteria.chargingProfilePurpose = mapPurposeTo201(profile_purpose);
+      if (profile_purpose) {
+        criteria.chargingProfilePurpose = mapPurpose('2.0.1', profile_purpose);
+      }
       if (stack_level != null) criteria.stackLevel = stack_level;
       if (Object.keys(criteria).length > 0) ocppParams.chargingProfileCriteria = criteria;
     } else {
       if (profile_id != null) ocppParams.id = profile_id;
       if (connector_id != null) ocppParams.connectorId = connector_id;
-      if (profile_purpose) ocppParams.chargingProfilePurpose = profile_purpose;
+      if (profile_purpose) ocppParams.chargingProfilePurpose = mapPurpose('1.6', profile_purpose);
       if (stack_level != null) ocppParams.stackLevel = stack_level;
     }
 
     try {
       const result = await callClient(cp.identity, 'ClearChargingProfile', ocppParams);
-      if (result?.status === 'Accepted') {
+      // « Unknown » = aucun profil ne correspond côté borne (ex. perdu au redémarrage) : les
+      // lignes correspondantes de la base sont périmées et doivent pouvoir être supprimées
+      if (result?.status === 'Accepted' || result?.status === 'Unknown') {
         const filters = {};
         if (profile_id != null) filters.profile_id = profile_id;
         if (connector_id != null) filters.connector_id = connector_id;
@@ -1236,47 +1202,22 @@ router.post(
       rejected = 0,
       errors = 0;
     for (const p of profiles) {
-      let chargingSchedule;
+      let schedule;
       try {
-        chargingSchedule = JSON.parse(p.schedule_json);
+        schedule = JSON.parse(p.schedule_json);
       } catch {
-        chargingSchedule = {};
+        schedule = {};
       }
 
-      const csChargingProfiles = {
-        chargingProfileId: p.profile_id,
-        stackLevel: p.stack_level,
-        chargingProfilePurpose: p.profile_purpose,
-        chargingProfileKind: p.profile_kind,
-        chargingSchedule,
-      };
-      if (p.recurrency_kind) csChargingProfiles.recurrencyKind = p.recurrency_kind;
-      if (p.valid_from) csChargingProfiles.validFrom = p.valid_from;
-      if (p.valid_to) csChargingProfiles.validTo = p.valid_to;
-
       try {
-        let result;
-        if (cp.ocpp_version === '2.0.1') {
-          const chargingProfile201 = {
-            id: p.profile_id,
-            stackLevel: p.stack_level,
-            chargingProfilePurpose: mapPurposeTo201(p.profile_purpose),
-            chargingProfileKind: p.profile_kind,
-            chargingSchedule: [{ id: 1, ...chargingSchedule }],
-          };
-          if (p.recurrency_kind) chargingProfile201.recurrencyKind = p.recurrency_kind;
-          if (p.valid_from) chargingProfile201.validFrom = p.valid_from;
-          if (p.valid_to) chargingProfile201.validTo = p.valid_to;
-          result = await callClient(cp.identity, 'SetChargingProfile', {
-            evseId: p.evse_id ?? p.connector_id ?? 0,
-            chargingProfile: chargingProfile201,
-          });
-        } else {
-          result = await callClient(cp.identity, 'SetChargingProfile', {
-            connectorId: p.connector_id,
-            csChargingProfiles,
-          });
-        }
+        const result = await callClient(
+          cp.identity,
+          'SetChargingProfile',
+          buildSetChargingProfileParams(cp.ocpp_version === '2.0.1' ? '2.0.1' : '1.6', {
+            ...p,
+            schedule,
+          })
+        );
         const status = result?.status ?? 'Rejected';
         db.updateChargingProfileStatus(p.id, status);
         status === 'Accepted' ? accepted++ : rejected++;
@@ -1357,7 +1298,9 @@ router.delete(
           ? { chargingProfileId: profile.profile_id }
           : { id: profile.profile_id };
       const result = await callClient(cp.identity, 'ClearChargingProfile', clearParams);
-      if (result?.status === 'Accepted') {
+      // « Unknown » : le profil n'existe plus côté borne (perdu au redémarrage…) ; on supprime
+      // quand même la ligne, sinon elle resterait indéfiniment impossible à retirer de l'UI
+      if (result?.status === 'Accepted' || result?.status === 'Unknown') {
         db.deleteChargingProfileById(profileDbId);
         broadcast('charging_profile_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
@@ -1409,10 +1352,13 @@ router.post(
     try {
       let result;
       if (cp.ocpp_version === '2.0.1') {
+        // Type de jeton réel du badge (ISO14443 par défaut) : un type différent de celui que la
+        // borne lira sur le badge ferait refuser la réservation à l'utilisation
+        const tokenType = db.getIdTagByTag(id_tag, cp.site_id)?.token_type || 'ISO14443';
         result = await callClient(cp.identity, 'ReserveNow', {
           id: reservation_id,
           expiryDateTime: expiry_date,
-          idToken: { idToken: id_tag, type: 'ISO14443' },
+          idToken: { idToken: id_tag, type: tokenType },
           evseId: connector_id,
         });
       } else {
@@ -1855,8 +1801,14 @@ router.put(
             },
           ],
         });
-        db.upsertChargepointVariable(cp.id, component, variable, 'Actual', String(value));
-        return res.json({ result });
+        // Le CSMS ne retient la valeur que si la borne l'a acceptée (attributeStatus :
+        // Accepted | RebootRequired ; sinon Rejected, UnknownComponent, UnknownVariable,
+        // NotSupportedAttributeType) — comme pour ChangeConfiguration en 1.6
+        const attributeStatus = result?.setVariableResult?.[0]?.attributeStatus;
+        if (attributeStatus === 'Accepted' || attributeStatus === 'RebootRequired') {
+          db.upsertChargepointVariable(cp.id, component, variable, 'Actual', String(value));
+        }
+        return res.json({ result, status: attributeStatus ?? 'Rejected' });
       } catch (e) {
         return errorResponse(res, 500, e.message);
       }

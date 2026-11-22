@@ -1,3 +1,9 @@
+const { toIsoDateTime } = require('./chargingProfiles');
+
+// Date-time OCPP complet (ex. 2026-11-22T10:00:00Z) : une date seule ou sans fuseau est
+// normalisée (un « date-time » incomplet est refusé par la validation stricte des bornes)
+const isoDateTimeSanitizer = { customSanitizer: { options: (v) => toIsoDateTime(v) } };
+
 const User = {
   useremail: {
     in: ['body'],
@@ -923,13 +929,23 @@ const CreateChargingProfile = {
     in: ['body'],
     optional: { options: { nullable: true } },
     isISO8601: true,
+    ...isoDateTimeSanitizer,
     errorMessage: 'VALIDATION_DATE_FROM',
   },
   valid_to: {
     in: ['body'],
     optional: { options: { nullable: true } },
     isISO8601: true,
+    ...isoDateTimeSanitizer,
     errorMessage: 'VALIDATION_DATE_TO',
+  },
+  // Ancrage du calendrier des profils Absolute / Recurring (défaut calculé côté serveur)
+  start_schedule: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isISO8601: true,
+    ...isoDateTimeSanitizer,
+    errorMessage: 'VALIDATION_START_SCHEDULE',
   },
   charging_rate_unit: {
     in: ['body'],
@@ -1030,6 +1046,7 @@ const CreateReservation = {
   expiry_date: {
     in: ['body'],
     isISO8601: true,
+    ...isoDateTimeSanitizer,
     errorMessage: 'VALIDATION_EXPIRY_DATE',
   },
 };

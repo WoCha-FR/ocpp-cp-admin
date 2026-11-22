@@ -2803,6 +2803,11 @@ async function showCreateProfileModal(cpId, isOnline) {
       <label>${t('chargepoint.cpProfileValidity')} — ${t('common.end')}</label>
       <input type="text" id="cp_valid_to" placeholder="${t('common.select')}"/>
     </div>
+    <div class="form-group" id="cp_start_schedule_row">
+      <label>${t('chargepoint.cpProfileStartSchedule')}</label>
+      <input type="text" id="cp_start_schedule" placeholder="${t('common.select')}"/>
+      <small class="text-muted">${t('chargepoint.cpProfileStartScheduleHint')}</small>
+    </div>
     <div style="margin-bottom:8px;font-weight:500">${t('chargepoint.cpProfilePeriods')}</div>
     <div id="cp_periods_container">
       <div class="cp-period-row" style="display:flex;gap:8px;align-items:flex-end;margin-bottom:8px">
@@ -2823,6 +2828,8 @@ async function showCreateProfileModal(cpId, isOnline) {
   const fpOpts = { enableTime: true, dateFormat: 'Z', altInput: true, altFormat: lc.dateTimeFormat, time_24hr: true, locale: getFlatpickrLocaleOption(lc), minDate: new Date() };
   flatpickr('#cp_valid_from', fpOpts);
   flatpickr('#cp_valid_to', fpOpts);
+  // L'ancrage du calendrier peut être dans le passé (ex. lundi dernier 00:00)
+  flatpickr('#cp_start_schedule', { ...fpOpts, minDate: undefined });
   // Init conditional display
   onProfilePurposeChange();
 }
@@ -2846,6 +2853,9 @@ function onProfileKindChange() {
   if (!kind) return;
   const recRow = document.getElementById('cp_recurrency_row');
   if (recRow) recRow.style.display = kind === 'Recurring' ? '' : 'none';
+  // startSchedule : sans objet pour un profil Relative (démarre avec la transaction)
+  const startRow = document.getElementById('cp_start_schedule_row');
+  if (startRow) startRow.style.display = kind === 'Relative' ? 'none' : '';
 }
 
 function addPeriodRow() {
@@ -2894,6 +2904,8 @@ async function submitCreateProfile(cpId) {
   if (recurrency_kind) body.recurrency_kind = recurrency_kind;
   if (valid_from) body.valid_from = valid_from;
   if (valid_to) body.valid_to = valid_to;
+  const start_schedule = kind !== 'Relative' ? document.getElementById('cp_start_schedule').value : '';
+  if (start_schedule) body.start_schedule = start_schedule;
 
   const result = await api('POST', `/chargepoints/${cpId}/charging-profiles`, body);
   closeModal();
@@ -2969,6 +2981,7 @@ async function executeCopyProfile(sourceCpId, profileDbId) {
   if (p.recurrency_kind) body.recurrency_kind = p.recurrency_kind;
   if (p.valid_from) body.valid_from = p.valid_from;
   if (p.valid_to) body.valid_to = p.valid_to;
+  if (schedule.startSchedule) body.start_schedule = schedule.startSchedule;
 
   const result = await api('POST', `/chargepoints/${targetCpId}/charging-profiles`, body);
   closeModal();
@@ -3196,8 +3209,6 @@ async function updateChargepointConfig(cpId, key) {
       toast(t('chargepoint.cpConfSetAccepted', { key }), 'success');
     } else if (data.status === 'RebootRequired') {
       toast(t('chargepoint.cpConfSetRebootRequired', { key }), 'info');
-    } else if (data.result) {
-      toast(t('chargepoint.cpConfUpdated', { defaultValue: 'Variable mise à jour.' }), 'success');
     } else {
       toast(t('chargepoint.cpConfSetError', { status: data.status }), 'error');
     }

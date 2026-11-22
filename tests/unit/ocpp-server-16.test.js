@@ -1076,8 +1076,11 @@ describe('ocpp-server-16 — DataTransfer', () => {
     register16Handlers(client, makeLoggedHandle(client));
   });
 
-  it('returns Accepted', () => {
-    expect(client._handlers['DataTransfer']({})).toEqual({ status: 'Accepted' });
+  // Aucune extension constructeur : la spec 1.6 impose UnknownVendorId pour un vendorId non reconnu
+  it('returns UnknownVendorId (no vendor extension implemented)', () => {
+    expect(client._handlers['DataTransfer']({ vendorId: 'ACME' })).toEqual({
+      status: 'UnknownVendorId',
+    });
   });
 });
 
@@ -1529,5 +1532,137 @@ describe('ocpp-server-16 — StateRefresh TriggerMessage', () => {
 
     expect(client.call).toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'BootNotification' });
     expect(client.call).not.toHaveBeenCalledWith('TriggerMessage', { requestedMessage: 'StatusNotification' });
+  });
+});
+
+// ── Lot B : conformité spec ──
+describe('ocpp-server-16 — MeterValues conformité (lot B)', () => {
+  let client;
+  const T1 = '2026-11-22T10:00:00Z';
+  const T2 = '2026-11-22T10:05:00Z';
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 1 });
+    mockDb.getTransactionByTransactionId.mockReturnValue({ meter_start: 1000, status: 'Active' });
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('measurand absent = Energy.Active.Import.Register (défaut spec)', () => {
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [{ timestamp: T1, sampledValue: [{ value: '4200' }] }],
+    });
+    expect(mockDb.updateTransactionPowerEnergy).toHaveBeenCalledWith(42, null, 4200);
+    expect(mockDb.updateConnectorMeterValue).toHaveBeenCalledWith(1, 1, 4200);
+  });
+
+  it("une tension phase-à-phase n'écrase pas la tension L1", () => {
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [{ timestamp: T1, sampledValue: [
+        { measurand: 'Voltage', value: '230', phase: 'L1-N' },
+        { measurand: 'Voltage', value: '398', phase: 'L1-L2' },
+        { measurand: 'Voltage', value: '399', phase: 'L2-L3' },
+      ]}],
+    });
+    const tv = mockDb.upsertTransactionValues.mock.calls[0][1];
+    expect(tv.tensionEntry.l1).toBe(230);
+    expect(tv.tensionEntry.l2).toBeNull();
+  });
+
+  it('puissance totale prioritaire sur les puissances par phase', () => {
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [{ timestamp: T1, sampledValue: [
+        { measurand: 'Power.Active.Import', value: '2400', unit: 'W', phase: 'L1' },
+        { measurand: 'Power.Active.Import', value: '7.2', unit: 'kW' },
+        { measurand: 'Power.Active.Import', value: '2400', unit: 'W', phase: 'L2' },
+      ]}],
+    });
+    expect(mockDb.updateTransactionPowerEnergy).toHaveBeenCalledWith(42, 7200, null);
+  });
+
+  it('puissance par phase seule : somme des phases', () => {
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [{ timestamp: T1, sampledValue: [
+        { measurand: 'Power.Active.Import', value: '2400', unit: 'W', phase: 'L1' },
+        { measurand: 'Power.Active.Import', value: '2400', unit: 'W', phase: 'L2' },
+        { measurand: 'Power.Active.Import', value: '2400', unit: 'W', phase: 'L3' },
+      ]}],
+    });
+    expect(mockDb.updateTransactionPowerEnergy).toHaveBeenCalledWith(42, 7200, null);
+  });
+
+  it('un lot (plusieurs meterValue) alimente un point de graphe PAR entrée horodatée', () => {
+    client._handlers['MeterValues']({
+      connectorId: 1,
+      transactionId: 42,
+      meterValue: [
+        { timestamp: T1, sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '1500' }] },
+        { timestamp: T2, sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '2100' }] },
+      ],
+    });
+    expect(mockDb.upsertTransactionValues).toHaveBeenCalledTimes(2);
+    const xs = mockDb.upsertTransactionValues.mock.calls.map((c) => c[1].energieEntry.x);
+    expect(xs).toEqual([Date.parse(T1) / 1000, Date.parse(T2) / 1000]);
+    // L'énergie courante retenue est la dernière du lot
+    expect(mockDb.updateTransactionPowerEnergy).toHaveBeenCalledWith(42, null, 2100);
+  });
+
+  it('énergie sur le connecteur 0 : compteur de la borne', () => {
+    client._handlers['MeterValues']({
+      connectorId: 0,
+      meterValue: [{ timestamp: T1, sampledValue: [{ value: '9000' }] }],
+    });
+    expect(mockDb.updateChargepointMeterValue).toHaveBeenCalledWith(1, 9000);
+    expect(mockDb.updateConnectorMeterValue).not.toHaveBeenCalled();
+  });
+});
+
+describe('ocpp-server-16 — conformité (lot B) : divers', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: 1 });
+    mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.getTransactions.mockReturnValue([]);
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  it("'StrongRiderFailure' (absent de l'énumération 1.6) est ramené à OtherError", () => {
+    client._handlers['StatusNotification']({
+      connectorId: 1, status: 'Faulted', errorCode: 'StrongRiderFailure',
+    });
+    expect(mockDb.upsertConnector).toHaveBeenCalledWith(
+      1, 1, 'Faulted', 'OtherError', null, null, null, null, 'Faulted'
+    );
+  });
+
+  it.each([[undefined], [{ value: 'abc' }], [{ value: '' }]])(
+    'BootNotification : interval jamais NaN (config %p)',
+    (cfg) => {
+      mockDb.getInitialChargepointConfigByKey.mockReturnValueOnce(cfg);
+      const res = client._handlers['BootNotification']({
+        chargePointVendor: 'V', chargePointModel: 'M',
+      });
+      expect(res.interval).toBe(300);
+    }
+  );
+
+  it('Authorize : expiryDate est un date-time complet même si la date stockée est une date seule', () => {
+    mockDb.authorizeIdTag.mockReturnValue({
+      status: 'Accepted',
+      tag: { expiry_date: '2099-12-31' },
+    });
+    const res = client._handlers['Authorize']({ idTag: 'TAG1' });
+    expect(res.idTagInfo.expiryDate).toBe('2099-12-31T00:00:00Z');
   });
 });

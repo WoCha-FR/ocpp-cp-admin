@@ -590,6 +590,49 @@ describe('ocpp-server-201 — StatusNotification', () => {
     expect(client.call).not.toHaveBeenCalledWith('RequestStartTransaction', expect.anything());
   });
 
+  describe('Plug&Charge mode 2 : uniquement sur un nouveau branchement', () => {
+    const occupied = () =>
+      client._handlers['StatusNotification']({
+        evseId: 1,
+        connectorId: 1,
+        connectorStatus: 'Occupied',
+        timestamp: TS,
+      });
+
+    beforeEach(() => {
+      mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 2, site_id: 42 });
+      mockDb.getActiveTransactionByConnector.mockReturnValue(null);
+      mockConnectedClients.set('CP001', client);
+    });
+
+    it.each(['Available', 'Unavailable', 'Reserved', 'Faulted'])(
+      'déclenche depuis le statut précédent %s',
+      async (previous) => {
+        mockDb.getConnectorByChargepointAndId.mockReturnValue({ cnstatus: previous });
+        occupied();
+        await new Promise((r) => setImmediate(r));
+        expect(client.call).toHaveBeenCalledWith('RequestStartTransaction', expect.anything());
+      }
+    );
+
+    it.each(['Finishing', 'Preparing', 'Charging', 'SuspendedEV', 'SuspendedEVSE'])(
+      'ne redémarre PAS depuis %s (véhicule resté branché après un arrêt)',
+      async (previous) => {
+        mockDb.getConnectorByChargepointAndId.mockReturnValue({ cnstatus: previous });
+        occupied();
+        await new Promise((r) => setImmediate(r));
+        expect(client.call).not.toHaveBeenCalledWith('RequestStartTransaction', expect.anything());
+      }
+    );
+
+    it('déclenche sur le premier statut connu (reconnexion, véhicule déjà branché)', async () => {
+      mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+      occupied();
+      await new Promise((r) => setImmediate(r));
+      expect(client.call).toHaveBeenCalledWith('RequestStartTransaction', expect.anything());
+    });
+  });
+
   it('mode 1 : ne déclenche pas RequestStartTransaction sur Occupied', async () => {
     mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: 42 });
     mockDb.getActiveTransactionByConnector.mockReturnValue(null);
@@ -2134,9 +2177,25 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
     mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
       { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' },
     ]);
+    // GetBaseReport accepté : un NotifyReport va suivre, on l'attend avant SetVariables
+    client.call.mockImplementation((method) =>
+      Promise.resolve(method === 'GetBaseReport' ? { status: 'Accepted' } : {})
+    );
     client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
     await new Promise((resolve) => setImmediate(resolve));
     expect(client.call).not.toHaveBeenCalledWith('SetVariables', expect.anything());
+  });
+
+  it("n'attend pas de NotifyReport quand GetBaseReport est refusé (Rejected / NotSupported)", async () => {
+    mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
+      { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' },
+    ]);
+    client.call.mockImplementation((method) =>
+      Promise.resolve(method === 'GetBaseReport' ? { status: 'NotSupported' } : {})
+    );
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(client.call).toHaveBeenCalledWith('SetVariables', expect.anything());
   });
 
   it('stoppe la boucle override si déconnecté pendant le step 5/5', async () => {
@@ -2167,16 +2226,17 @@ describe('ocpp-server-201 — DataTransfer', () => {
     expect(client._handlers['DataTransfer']).toBeDefined();
   });
 
-  it('retourne status Accepted', () => {
+  // Aucune extension constructeur : la spec impose UnknownVendorId pour un vendorId non reconnu
+  it('retourne UnknownVendorId (aucun vendorId reconnu)', () => {
     const result = client._handlers['DataTransfer']({
       vendorId: 'ACME', messageId: 'Ping', data: 'hello',
     });
-    expect(result).toEqual({ status: 'Accepted' });
+    expect(result).toEqual({ status: 'UnknownVendorId' });
   });
 
-  it('retourne Accepted même sans payload', () => {
+  it('retourne UnknownVendorId même sans payload', () => {
     const result = client._handlers['DataTransfer']({});
-    expect(result).toEqual({ status: 'Accepted' });
+    expect(result).toEqual({ status: 'UnknownVendorId' });
   });
 });
 
@@ -2704,5 +2764,101 @@ describe('ocpp-server-201 — TxReconcile GetTransactionStatus', () => {
     await jest.advanceTimersByTimeAsync(30001);
 
     expect(client.call).not.toHaveBeenCalledWith('GetTransactionStatus', expect.anything());
+  });
+});
+
+// ── Lot B : conformité spec ──
+describe('ocpp-server-201 — conformité OCPP (lot B)', () => {
+  let client;
+  const TS = new Date().toISOString();
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: 1 });
+    mockDb.getTransactionByTransactionId.mockReturnValue({
+      transaction_id: 'TX-001', status: 'Active', meter_start: 0, connector_id: 1, evse_id: 1, id_tag: 'T',
+    });
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it.each([
+    'NotifyCustomerInformation',
+    'NotifyDisplayMessages',
+    'NotifyMonitoringReport',
+    'PublishFirmwareStatusNotification',
+  ])('%s est acquitté par {} (schéma) au lieu de NotImplemented', (action) => {
+    expect(client._handlers[action]).toBeDefined();
+    expect(client._handlers[action]({})).toEqual({});
+  });
+
+  it('interprète unitOfMeasure.multiplier (12.5 Wh × 10^3 = 12500 Wh)', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      transactionInfo: { transactionId: 'TX-001' },
+      evse: { id: 1 },
+      meterValue: [{ timestamp: TS, sampledValue: [
+        { measurand: 'Energy.Active.Import.Register', value: '12.5', unitOfMeasure: { unit: 'Wh', multiplier: 3 } },
+      ]}],
+      timestamp: TS,
+    });
+    expect(mockDb.updateTransactionPowerEnergy).toHaveBeenCalledWith('TX-001', null, 12500);
+  });
+
+  it('une puissance par phase ne remplace pas la puissance totale', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      transactionInfo: { transactionId: 'TX-001' },
+      evse: { id: 1 },
+      meterValue: [{ timestamp: TS, sampledValue: [
+        { measurand: 'Power.Active.Import', value: '7400', phase: 'L1' },
+        { measurand: 'Power.Active.Import', value: '7000' },
+        { measurand: 'Power.Active.Import', value: '7600', phase: 'L2' },
+      ]}],
+      timestamp: TS,
+    });
+    expect(mockDb.updateTransactionPowerEnergy).toHaveBeenCalledWith('TX-001', 7000, null);
+  });
+
+  it("une tension phase-à-phase (L1-L2) n'écrase pas la tension L1", () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      transactionInfo: { transactionId: 'TX-001' },
+      evse: { id: 1 },
+      meterValue: [{ timestamp: TS, sampledValue: [
+        { measurand: 'Voltage', value: '230', phase: 'L1-N' },
+        { measurand: 'Voltage', value: '398', phase: 'L1-L2' },
+      ]}],
+      timestamp: TS,
+    });
+    expect(mockDb.upsertTransactionValues).toHaveBeenCalledWith(
+      'TX-001',
+      expect.objectContaining({ tensionEntry: expect.objectContaining({ l1: 230 }) })
+    );
+  });
+
+  describe('BootNotification : interval toujours entier', () => {
+    it.each([[undefined], [{ value: 'abc' }], [{ value: '' }], [{ value: '-5' }]])(
+      'config %p → 300 (jamais NaN)',
+      (cfg) => {
+        mockDb.getInitialChargepointVariableByKey.mockReturnValueOnce(cfg);
+        const res = client._handlers['BootNotification']({ chargingStation: { vendorName: 'X', model: 'M' } });
+        expect(res.interval).toBe(300);
+        expect(res.status).toBe('Accepted');
+      }
+    );
+    it('config valide conservée', () => {
+      mockDb.getInitialChargepointVariableByKey.mockReturnValueOnce({ value: '60' });
+      const res = client._handlers['BootNotification']({ chargingStation: { vendorName: 'X', model: 'M' } });
+      expect(res.interval).toBe(60);
+    });
+  });
+
+  it('Authorize : cacheExpiryDateTime est un date-time complet même si la date stockée est une date seule', () => {
+    mockDb.authorizeIdTag.mockReturnValue({
+      status: 'Accepted',
+      tag: { expiry_date: '2099-12-31' },
+    });
+    const res = client._handlers['Authorize']({ idToken: { idToken: 'TAG1', type: 'ISO14443' } });
+    expect(res.idTokenInfo.cacheExpiryDateTime).toBe('2099-12-31T00:00:00Z');
   });
 });

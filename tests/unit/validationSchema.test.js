@@ -537,3 +537,61 @@ describe('validationSchema — StartCharge', () => {
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_EVSE_ID');
   });
 });
+
+// ── Lot B : dates OCPP en date-time complet, ancrage des profils ──
+describe('validationSchema — dates OCPP normalisées (lot B)', () => {
+  const profile = (over = {}) => ({
+    connector_id: 0,
+    profile_purpose: 'TxDefaultProfile',
+    profile_kind: 'Absolute',
+    charging_rate_unit: 'A',
+    schedule_periods: [{ startPeriod: 0, limit: 16 }],
+    ...over,
+  });
+
+  async function sanitized(schemaObj, body) {
+    const req = { body, params: {}, query: {}, headers: {} };
+    for (const fn of checkSchema(schemaObj)) await new Promise((resolve) => fn(req, {}, resolve));
+    return { req, result: validationResult(req) };
+  }
+
+  it('valid_from / valid_to / start_schedule : date seule → date-time complet UTC', async () => {
+    const { req, result } = await sanitized(
+      schema.CreateChargingProfile,
+      profile({ valid_from: '2026-12-01', valid_to: '2027-01-01T10:00:00.000Z', start_schedule: '2026-11-16' })
+    );
+    expect(result.isEmpty()).toBe(true);
+    expect(req.body.valid_from).toBe('2026-12-01T00:00:00Z');
+    expect(req.body.valid_to).toBe('2027-01-01T10:00:00Z');
+    expect(req.body.start_schedule).toBe('2026-11-16T00:00:00Z');
+  });
+
+  it('start_schedule illisible : refusé', async () => {
+    const { result } = await sanitized(schema.CreateChargingProfile, profile({ start_schedule: 'demain' }));
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_START_SCHEDULE');
+  });
+
+  it('start_schedule absent ou null : accepté', async () => {
+    expect((await sanitized(schema.CreateChargingProfile, profile())).result.isEmpty()).toBe(true);
+    expect((await sanitized(schema.CreateChargingProfile, profile({ start_schedule: null }))).result.isEmpty()).toBe(true);
+  });
+
+  it('réservation : expiry_date normalisée en date-time complet', async () => {
+    const { req, result } = await sanitized(schema.CreateReservation, {
+      connector_id: 1,
+      id_tag: 'TAG1',
+      expiry_date: '2030-05-01T12:00:00+02:00',
+    });
+    expect(result.isEmpty()).toBe(true);
+    expect(req.body.expiry_date).toBe('2030-05-01T10:00:00Z');
+  });
+
+  it('réservation : expiry_date invalide toujours refusée (sans exception)', async () => {
+    const { result } = await sanitized(schema.CreateReservation, {
+      connector_id: 1,
+      id_tag: 'TAG1',
+      expiry_date: 'bientôt',
+    });
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_EXPIRY_DATE');
+  });
+});

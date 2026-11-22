@@ -87,6 +87,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Create and apply charging profiles on charge points via `SetChargingProfile`
 - Supported purposes: `ChargePointMaxProfile` (global station power cap) and `TxDefaultProfile` (default transaction profile)
 - Periodic (weekly) or relative scheduling with configurable power per time slot
+- Absolute and recurring profiles are anchored by a "schedule start" (`startSchedule`, optional): when left empty, absolute profiles start at their validity start (or now) and recurring ones at today's midnight UTC; period offsets are seconds from that anchor. Maximum-limit profiles apply to the whole station (connector 0)
 - Targeted or full profile clearing via `ClearChargingProfile`
 - Automatic re-application of managed profiles on charge point reconnection
 
@@ -978,7 +979,7 @@ The application implements the OCPP 1.6-J protocol (JSON over WebSocket) for com
 | **StartTransaction** | Charging session start |
 | **StopTransaction** | Charging session end (stop reason, energy consumed) |
 | **MeterValues** | Real-time metering data (energy, power, current, SOC, temperature, voltage, frequency) |
-| **DataTransfer** | Vendor-specific data exchange |
+| **DataTransfer** | Vendor-specific data exchange (no vendor extension implemented: answered `UnknownVendorId`, as required by the specification) |
 | **DiagnosticsStatusNotification** | Diagnostics upload status |
 | **FirmwareStatusNotification** | Firmware update progress status |
 

@@ -88,6 +88,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Création et application de profils de charge sur les bornes via `SetChargingProfile`
 - Types supportés : `ChargePointMaxProfile` (limite globale de la borne) et `TxDefaultProfile` (profil par défaut de transaction)
 - Planification périodique (hebdomadaire) ou relative avec puissance configurable par plage horaire
+- Les profils absolus et récurrents sont ancrés par un « départ du calendrier » (`startSchedule`, facultatif) : laissé vide, un profil absolu démarre à son début de validité (ou maintenant) et un profil récurrent à minuit UTC du jour ; les débuts de période sont des secondes depuis cette origine. Les profils de limite maximale s'appliquent à la borne entière (connecteur 0)
 - Effacement ciblé ou global des profils via `ClearChargingProfile`
 - Synchronisation à la reconnexion de la borne : les profils existants sont ré-appliqués automatiquement
 
@@ -973,7 +974,7 @@ L'application implémente le protocole OCPP 1.6-J (JSON sur WebSocket) pour la c
 | **StartTransaction** | Début de session de charge |
 | **StopTransaction** | Fin de session de charge (raison d'arrêt, énergie consommée) |
 | **MeterValues** | Données de comptage temps réel (énergie, puissance, courant, SOC, température, tension, fréquence) |
-| **DataTransfer** | Échange de données propriétaires constructeur |
+| **DataTransfer** | Échange de données propriétaires constructeur (aucune extension constructeur implémentée : réponse `UnknownVendorId`, comme l'exige la spécification) |
 | **DiagnosticsStatusNotification** | Statut de l'upload de diagnostics |
 | **FirmwareStatusNotification** | Statut d'avancement de la mise à jour firmware |
 

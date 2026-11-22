@@ -11,7 +11,14 @@ const {
   checkConnectorErrorCooldown,
   debounceAvailabilityNotif,
 } = require('./ocpp-common');
-const { lastKnownMeterStop, isRealTransactionId, pickRecoveryCandidate } = require('./txRecovery');
+const {
+  lastKnownMeterStop,
+  isRealTransactionId,
+  pickRecoveryCandidate,
+  parseHeartbeatInterval,
+} = require('./txRecovery');
+const { parseSampledValues } = require('./meterSamples');
+const { toIsoDateTime } = require('./chargingProfiles');
 
 const OCPP16_STANDARD_KEYS = [
   'AllowOfflineTxForUnknownId',
@@ -84,7 +91,6 @@ const OCPP16_ERROR_CODES = new Set([
   'PowerSwitchFailure',
   'ReaderFailure',
   'ResetFailure',
-  'StrongRiderFailure',
   'UnderVoltage',
   'WeakSignal',
 ]);
@@ -431,7 +437,7 @@ function register16Handlers(client, loggedHandle) {
     );
 
     const hbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
-    const heartbeatInterval = hbConfig ? parseInt(hbConfig.value, 10) : 300;
+    const heartbeatInterval = parseHeartbeatInterval(hbConfig?.value);
     return {
       status: 'Accepted',
       interval: heartbeatInterval,
@@ -747,7 +753,7 @@ function register16Handlers(client, loggedHandle) {
       idTagInfo: {
         status: authResult.status,
         ...(authResult.tag && authResult.tag.expiry_date
-          ? { expiryDate: authResult.tag.expiry_date }
+          ? { expiryDate: toIsoDateTime(authResult.tag.expiry_date) }
           : {}),
       },
     };
@@ -1066,76 +1072,31 @@ function register16Handlers(client, loggedHandle) {
     const cp = db.getChargepointByIdentity(identity);
     if (cp && params.meterValue) {
       logger.info(`MeterValues from ${identity} #${params.connectorId}`);
-      let powerW = null;
-      let powerOffered = null;
-      let energyWh = null;
-      let socValue = null;
-      let currentOffered = null;
-      let currentL1 = null;
-      let currentL2 = null;
-      let currentL3 = null;
-      let tempValue = null;
-      let voltageL1 = null;
-      let voltageL2 = null;
-      let voltageL3 = null;
-      let freqValue = null;
-      let timestamp = null;
-
-      for (const mv of params.meterValue) {
-        timestamp = mv.timestamp || null;
-        for (const sv of mv.sampledValue || []) {
-          if (sv.measurand === 'Energy.Active.Import.Register') {
-            const value = parseFloat(sv.value);
-            energyWh = sv.unit === 'kWh' ? value * 1000 : value;
-            if (params.connectorId === 0) {
-              db.updateChargepointMeterValue(cp.id, energyWh);
-            } else {
-              db.updateConnectorMeterValue(cp.id, params.connectorId, energyWh);
-            }
-          }
-          if (sv.measurand === 'Power.Active.Import') {
-            const value = parseFloat(sv.value);
-            powerW = sv.unit === 'kW' ? value * 1000 : value;
-          }
-          if (sv.measurand === 'Power.Offered') {
-            const value = parseFloat(sv.value);
-            powerOffered = sv.unit === 'kW' ? value * 1000 : value;
-          }
-          if (sv.measurand === 'SoC') {
-            socValue = parseFloat(sv.value);
-          }
-          if (sv.measurand === 'Current.Offered') {
-            currentOffered = parseFloat(sv.value);
-          }
-          if (sv.measurand === 'Current.Import') {
-            const phase = sv.phase || 'L1';
-            const val = parseFloat(sv.value);
-            if (phase === 'L1') currentL1 = val;
-            else if (phase === 'L2') currentL2 = val;
-            else if (phase === 'L3') currentL3 = val;
-          }
-          if (sv.measurand === 'Temperature') {
-            tempValue = parseFloat(sv.value);
-          }
-          if (sv.measurand === 'Voltage') {
-            const phase = sv.phase || 'L1';
-            const val = parseFloat(sv.value);
-            if (phase === 'L1' || phase === 'L1-N') voltageL1 = val;
-            else if (phase === 'L2' || phase === 'L2-N') voltageL2 = val;
-            else if (phase === 'L3' || phase === 'L3-N') voltageL3 = val;
-            else voltageL1 = val;
-          }
-          if (sv.measurand === 'Frequency') {
-            freqValue = parseFloat(sv.value);
-          }
-        }
+      // Chaque entrée meterValue a son horodatage : toutes alimentent le graphe (une borne qui
+      // renvoie un lot après une coupure réseau envoie plusieurs entrées dans un seul message).
+      // Mesures sans measurand = Energy.Active.Import.Register (défaut spec), mesures par phase
+      // et tensions phase-à-phase gérées dans meterSamples.js.
+      const entries = params.meterValue.map((mv) => ({
+        timestamp: mv.timestamp || null,
+        ...parseSampledValues(mv.sampledValue || []),
+      }));
+      const lastOf = (key) => {
+        for (let i = entries.length - 1; i >= 0; i--)
+          if (entries[i][key] !== null) return entries[i][key];
+        return null;
+      };
+      const powerW = lastOf('powerW');
+      const energyWh = lastOf('energyWh');
+      if (energyWh !== null) {
+        if (params.connectorId === 0) db.updateChargepointMeterValue(cp.id, energyWh);
+        else db.updateConnectorMeterValue(cp.id, params.connectorId, energyWh);
       }
 
       if (energyWh !== null) {
         const updatedCp = db.getChargepointByIdentity(identity);
         broadcast(
           'chargepoint_meter_update',
-          { identity, meter_value: updatedCp.meter_value },
+          { identity, meter_value: updatedCp?.meter_value },
           cp?.site_id ?? null
         );
       }
@@ -1175,41 +1136,43 @@ function register16Handlers(client, loggedHandle) {
           energyWh !== null ? Math.round(energyWh) : null
         );
 
-        if (timestamp) {
-          const unixTs = Math.floor(new Date(timestamp).getTime() / 1000);
+        for (const e of entries) {
+          if (!e.timestamp) continue;
+          const unixTs = Math.floor(new Date(e.timestamp).getTime() / 1000);
           const tvData = {};
-          if (powerOffered !== null || powerW !== null || energyWh !== null) {
+          if (e.powerOffered !== null || e.powerW !== null || e.energyWh !== null) {
             let relativeEnergy = null;
-            if (energyWh !== null) {
+            if (e.energyWh !== null) {
               const meterStart = tx.meter_start != null ? tx.meter_start : 0;
-              relativeEnergy = Math.round(energyWh - meterStart);
+              relativeEnergy = Math.round(e.energyWh - meterStart);
             }
             tvData.energieEntry = {
               x: unixTs,
-              offer: powerOffered !== null ? Math.round(powerOffered) : null,
-              power: powerW !== null ? Math.round(powerW) : null,
+              offer: e.powerOffered !== null ? Math.round(e.powerOffered) : null,
+              power: e.powerW !== null ? Math.round(e.powerW) : null,
               energy: relativeEnergy,
             };
           }
           if (
-            currentOffered !== null ||
-            currentL1 !== null ||
-            currentL2 !== null ||
-            currentL3 !== null
+            e.currentOffered !== null ||
+            e.currentL1 !== null ||
+            e.currentL2 !== null ||
+            e.currentL3 !== null
           ) {
             tvData.courantEntry = {
               x: unixTs,
-              offer: currentOffered,
-              l1: currentL1,
-              l2: currentL2,
-              l3: currentL3,
+              offer: e.currentOffered,
+              l1: e.currentL1,
+              l2: e.currentL2,
+              l3: e.currentL3,
             };
           }
-          if (socValue !== null) tvData.socEntry = { x: unixTs, y: socValue };
-          if (tempValue !== null) tvData.tempEntry = { x: unixTs, y: tempValue };
-          if (voltageL1 !== null || voltageL2 !== null || voltageL3 !== null)
-            tvData.tensionEntry = { x: unixTs, l1: voltageL1, l2: voltageL2, l3: voltageL3 };
-          if (freqValue !== null) tvData.freqEntry = { x: unixTs, y: freqValue };
+          if (e.socValue !== null) tvData.socEntry = { x: unixTs, y: e.socValue };
+          if (e.tempValue !== null) tvData.tempEntry = { x: unixTs, y: e.tempValue };
+          if (e.voltageL1 !== null || e.voltageL2 !== null || e.voltageL3 !== null) {
+            tvData.tensionEntry = { x: unixTs, l1: e.voltageL1, l2: e.voltageL2, l3: e.voltageL3 };
+          }
+          if (e.freqValue !== null) tvData.freqEntry = { x: unixTs, y: e.freqValue };
           if (Object.keys(tvData).length > 0) {
             db.upsertTransactionValues(txId, tvData);
           }
@@ -1241,8 +1204,11 @@ function register16Handlers(client, loggedHandle) {
   });
 
   // ── DataTransfer ──
+  // Aucune extension constructeur n'est implémentée côté CSMS : spec 1.6 « DataTransfer »
+  // → UnknownVendorId quand le vendorId n'est pas reconnu (et non Accepted, qui laisserait
+  // croire à la borne que sa donnée a été traitée)
   loggedHandle('DataTransfer', (_params) => {
-    return { status: 'Accepted' };
+    return { status: 'UnknownVendorId' };
   });
 
   // ── DiagnosticsStatusNotification ──

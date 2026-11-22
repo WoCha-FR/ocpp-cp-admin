@@ -15,7 +15,10 @@ const {
   pickRecoveryCandidate,
   resolveStopReason201,
   extractMeterEnergy,
+  parseHeartbeatInterval,
 } = require('./txRecovery');
+const { parseSampledValues } = require('./meterSamples');
+const { toIsoDateTime } = require('./chargingProfiles');
 
 // ── Constantes ──
 
@@ -50,6 +53,14 @@ const TRIGGER_TO_START_SOURCE = {
 
 // ── Utilitaires ──
 
+// Statuts de connecteur (vocabulaire normalisé) dont on peut passer à « Occupied » par un nouveau
+// branchement ; null = premier statut connu (ex. reconnexion avec un véhicule déjà branché).
+// Preparing / Finishing / Charging / Suspended* : véhicule déjà branché, session déjà vue.
+const NEW_PLUG_IN_FROM = new Set(['Available', 'Unavailable', 'Reserved', 'Faulted']);
+function isNewPlugIn(previousStatus) {
+  return previousStatus == null || NEW_PLUG_IN_FROM.has(previousStatus);
+}
+
 function sanitizeText(value, maxLen) {
   if (value == null) return null;
   const normalized = String(value)
@@ -70,80 +81,7 @@ function sanitizeText(value, maxLen) {
 function buildIdTokenInfo(status, tag) {
   return {
     status,
-    ...(tag && tag.expiry_date ? { cacheExpiryDateTime: tag.expiry_date } : {}),
-  };
-}
-
-function parseSampledValues(sampledValues = []) {
-  let powerW = null,
-    energyWh = null,
-    powerOffered = null;
-  let socValue = null,
-    currentOffered = null;
-  let currentL1 = null,
-    currentL2 = null,
-    currentL3 = null;
-  let tempValue = null;
-  let voltageL1 = null,
-    voltageL2 = null,
-    voltageL3 = null;
-  let freqValue = null;
-
-  for (const sv of sampledValues) {
-    const val = parseFloat(sv.value);
-    if (isNaN(val)) continue;
-    const measurand = sv.measurand || 'Energy.Active.Import.Register';
-    const phase = sv.phase || null;
-    const unit = sv.unitOfMeasure?.unit || '';
-
-    switch (measurand) {
-      case 'Energy.Active.Import.Register':
-        energyWh = unit === 'kWh' ? val * 1000 : val;
-        break;
-      case 'Power.Active.Import':
-        powerW = unit === 'kW' ? val * 1000 : val;
-        break;
-      case 'Power.Offered':
-        powerOffered = unit === 'kW' ? val * 1000 : val;
-        break;
-      case 'SoC':
-        socValue = val;
-        break;
-      case 'Current.Offered':
-        currentOffered = val;
-        break;
-      case 'Current.Import':
-        if (!phase || phase === 'L1') currentL1 = val;
-        else if (phase === 'L2') currentL2 = val;
-        else if (phase === 'L3') currentL3 = val;
-        break;
-      case 'Temperature':
-        tempValue = val;
-        break;
-      case 'Voltage':
-        if (!phase || phase === 'L1' || phase === 'L1-N') voltageL1 = val;
-        else if (phase === 'L2' || phase === 'L2-N') voltageL2 = val;
-        else if (phase === 'L3' || phase === 'L3-N') voltageL3 = val;
-        break;
-      case 'Frequency':
-        freqValue = val;
-        break;
-    }
-  }
-  return {
-    powerW,
-    energyWh,
-    powerOffered,
-    socValue,
-    currentOffered,
-    currentL1,
-    currentL2,
-    currentL3,
-    tempValue,
-    voltageL1,
-    voltageL2,
-    voltageL3,
-    freqValue,
+    ...(tag && tag.expiry_date ? { cacheExpiryDateTime: toIsoDateTime(tag.expiry_date) } : {}),
   };
 }
 
@@ -438,12 +376,20 @@ function register201Handlers(client, loggedHandle) {
         const notifyReportDone = new Promise((resolve) => {
           pendingNotifyReportWaiters.set(`${identity}_${baseReportRequestId}`, resolve);
         });
+        let baseReportAccepted = false;
         try {
           logger.debug(`[InitSeq201] ${identity} step 3/5 — GetBaseReport`);
-          await callClient201(identity, 'GetBaseReport', {
+          const baseReport = await callClient201(identity, 'GetBaseReport', {
             requestId: baseReportRequestId,
             reportBase: 'FullInventory',
           });
+          // Rejected / NotSupported / EmptyResultSet : aucun NotifyReport ne suivra
+          baseReportAccepted = baseReport?.status === 'Accepted';
+          if (!baseReportAccepted) {
+            logger.warn(
+              `[InitSeq201] ${identity} GetBaseReport ${baseReport?.status} — pas d'attente de NotifyReport`
+            );
+          }
         } catch (e) {
           logger.warn(`[InitSeq201] ${identity} GetBaseReport: ${e.message}`);
           if (isDisconnectionError(e)) {
@@ -451,7 +397,7 @@ function register201Handlers(client, loggedHandle) {
             lastFailedStep = 'GetBaseReport';
           }
         }
-        if (!disconnectedDuringInit && !isSuperseded()) {
+        if (baseReportAccepted && !disconnectedDuringInit && !isSuperseded()) {
           let timeoutId;
           try {
             logger.debug(`[InitSeq201] ${identity} en attente des NotifyReport…`);
@@ -588,7 +534,7 @@ function register201Handlers(client, loggedHandle) {
     );
 
     const hbConfig = db.getInitialChargepointVariableByKey('OCPPCommCtrlr', 'HeartbeatInterval');
-    const heartbeatInterval = hbConfig ? parseInt(hbConfig.value, 10) : 300;
+    const heartbeatInterval = parseHeartbeatInterval(hbConfig?.value);
     return {
       status: 'Accepted',
       interval: heartbeatInterval,
@@ -636,8 +582,11 @@ function register201Handlers(client, loggedHandle) {
           cnstatus = CHARGING_STATE_TO_CNSTATUS[activeTx.charging_state] || cnstatus;
         }
 
-        // Plug&Charge mode 2 : déclencher RequestStartTransaction automatiquement
-        if (cp.mode === 2 && evseId > 0 && !activeTx) {
+        // Plug&Charge mode 2 : déclencher RequestStartTransaction automatiquement, mais seulement
+        // sur un NOUVEAU branchement. En 2.0.1 « Occupied » couvre aussi le câble resté branché
+        // après la fin d'une session (équivalent du Finishing 1.6) : redémarrer là rendrait
+        // impossible l'arrêt d'une recharge (arrêt → Occupied → redémarrage).
+        if (cp.mode === 2 && evseId > 0 && !activeTx && isNewPlugIn(previousStatus)) {
           const idTag = `MGR-${cp.site_id}`;
           if (!db.getIdTagByTag(idTag)) {
             db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null, 0);
@@ -1442,8 +1391,10 @@ function register201Handlers(client, loggedHandle) {
   });
 
   // ── DataTransfer ──
+  // Aucune extension constructeur n'est implémentée côté CSMS : spec 2.0.1 (P01/P02)
+  // → UnknownVendorId quand le vendorId n'est pas reconnu
   loggedHandle('DataTransfer', (_params) => {
-    return { status: 'Accepted' };
+    return { status: 'UnknownVendorId' };
   });
 
   // ── FirmwareStatusNotification ──
@@ -1516,6 +1467,18 @@ function register201Handlers(client, loggedHandle) {
   // ── Messages non exploités par le CSMS : réponse conforme au schéma plutôt que CALLERROR ──
   // Smart charging : informatifs (le CSMS ne pilote pas ces flux), acquittement simple
   for (const action of ['NotifyChargingLimit', 'ClearedChargingLimit', 'ReportChargingProfiles']) {
+    loggedHandle(action, () => ({}));
+  }
+
+  // Notifications de rapports que le CSMS ne demande jamais (CustomerInformation, monitoring,
+  // affichages, PublishFirmware) : une borne qui les envoie reçoit l'acquittement du schéma
+  // plutôt qu'un CALLERROR NotImplemented
+  for (const action of [
+    'NotifyCustomerInformation',
+    'NotifyDisplayMessages',
+    'NotifyMonitoringReport',
+    'PublishFirmwareStatusNotification',
+  ]) {
     loggedHandle(action, () => ({}));
   }
 

@@ -1,12 +1,14 @@
 'use strict';
 
 // ── Aides pures pour la clôture/réconciliation des transactions OCPP ──
-// Module volontairement sans dépendance (ni base, ni logger) : partagé par ocpp-common,
+// Module sans dépendance applicative (ni base, ni logger) : partagé par ocpp-common,
 // ocpp-server-16 et ocpp-server-201, facile à tester isolément.
 
 // Dernier relevé de compteur connu d'une transaction active : meter_start + énergie cumulée
 // par les MeterValues. Utilisé quand le serveur doit clore lui-même une transaction (borne
 // déconnectée, transaction orpheline) : meter_stop = meter_start donnerait 0 kWh facturé.
+const { toBase } = require('./meterSamples');
+
 function lastKnownMeterStop(tx) {
   if (!tx) return 0;
   const start = tx.meter_start;
@@ -32,6 +34,13 @@ function pickRecoveryCandidate(activeTxs, { evseId = null } = {}) {
     (tx) => evseId == null || tx.evse_id == null || tx.evse_id === evseId
   );
   return candidates.length === 1 ? candidates[0] : null;
+}
+
+// Intervalle de heartbeat renvoyé à la borne (BootNotificationResponse.interval, entier requis) :
+// une valeur de configuration absente ou non numérique ne doit pas produire NaN (→ réponse invalide)
+function parseHeartbeatInterval(value, fallback = 300) {
+  const n = parseInt(value, 10);
+  return Number.isInteger(n) && n >= 0 ? n : fallback;
 }
 
 // ── OCPP 2.0.1 : raison d'arrêt ──
@@ -98,8 +107,10 @@ function extractMeterEnergy(meterValue = [], mode = 'first') {
       }
       const v = parseFloat(sv.value);
       if (isNaN(v)) continue;
+      // unité (défaut Wh) et multiplier (exposant de 10) de unitOfMeasure
       const unit = sv.unitOfMeasure?.unit || '';
-      samples.push({ wh: unit === 'kWh' ? v * 1000 : v, context: sv.context || null });
+      const multiplier = sv.unitOfMeasure?.multiplier ?? 0;
+      samples.push({ wh: toBase(v, unit, multiplier), context: sv.context || null });
     }
   }
   if (samples.length === 0) return null;
@@ -112,6 +123,7 @@ function extractMeterEnergy(meterValue = [], mode = 'first') {
 module.exports = {
   lastKnownMeterStop,
   isRealTransactionId,
+  parseHeartbeatInterval,
   pickRecoveryCandidate,
   resolveStopReason201,
   extractMeterEnergy,

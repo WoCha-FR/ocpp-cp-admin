@@ -4,7 +4,7 @@ const { getConfig } = require('./config');
 const db = require('./database');
 const notifications = require('./notifications');
 const { verifyClientCertMatchesIdentity } = require('./certAuthority');
-const { lastKnownMeterStop } = require('./txRecovery');
+const { lastKnownMeterStop, parseHeartbeatInterval } = require('./txRecovery');
 const logger = require('./logger').scope('OCPP');
 
 // ── État partagé ──
@@ -818,7 +818,7 @@ let heartbeatWatchdogTimer = null;
 function startHeartbeatWatchdog() {
   heartbeatWatchdogTimer = setInterval(() => {
     const initHbConfig = db.getInitialChargepointConfigByKey('HeartbeatInterval');
-    const initHeartbeatInterval = initHbConfig ? parseInt(initHbConfig.value, 10) : 300;
+    const initHeartbeatInterval = parseHeartbeatInterval(initHbConfig?.value);
 
     const now = Date.now();
     for (const [identity] of connectedClients) {
@@ -826,8 +826,10 @@ function startHeartbeatWatchdog() {
       if (!cp || !cp.last_heartbeat) continue;
 
       const cpHbConfig = cp.id ? db.getChargepointConfigByKey(cp.id, 'HeartbeatInterval') : null;
-      const heartbeatInterval =
-        cpHbConfig && cpHbConfig.value ? parseInt(cpHbConfig.value, 10) : initHeartbeatInterval;
+      const heartbeatInterval = parseHeartbeatInterval(cpHbConfig?.value, initHeartbeatInterval);
+      // 0 = la borne choisit elle-même (pas d'intervalle imposé) : rien à surveiller, sinon
+      // timeout = 0 → déconnexion immédiate
+      if (!(heartbeatInterval > 0)) continue;
       const timeoutMs = heartbeatInterval * HEARTBEAT_MISS_FACTOR * 1000;
       logger.debug(
         `Watchdog check ${identity}: HeartbeatInterval=${heartbeatInterval}s, timeout=${timeoutMs / 1000}s`

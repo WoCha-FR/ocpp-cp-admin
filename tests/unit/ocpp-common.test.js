@@ -345,6 +345,47 @@ describe('ocpp-common — heartbeat watchdog', () => {
       jest.useRealTimers();
     }
   });
+
+  // Intervalle 0 (la borne choisit) ou valeur non numérique : timeout = 0 / NaN ne doit
+  // ni déconnecter immédiatement une borne saine, ni la rendre invisible au watchdog
+  describe.each([
+    ['0 (pas d\'intervalle imposé)', { value: '0' }, null, 0],
+    ['non numérique → repli 300 s', { value: 'abc' }, null, 600],
+  ])('intervalle global %s', (_label, globalCfg, cpCfg, expectedLimit) => {
+    it(expectedLimit === 0 ? 'ne surveille pas la borne' : `utilise limit_seconds=${expectedLimit}`, async () => {
+      jest.useFakeTimers();
+      try {
+        mockDb.addOcppMessage.mockClear();
+        const mockClient = { close: jest.fn() };
+        ocppCommon.getConnectedClients().set('CP_HB_ZERO', mockClient);
+        mockDb.getInitialChargepointConfigByKey.mockReturnValue(globalCfg);
+        mockDb.getChargepointConfigByKey.mockReturnValue(cpCfg);
+        mockDb.getChargepointByIdentity.mockReturnValue({
+          id: 8,
+          site_id: 3,
+          ocpp_version: '1.6',
+          last_heartbeat: new Date(Date.now() - 700000).toISOString(),
+        });
+
+        ocppCommon.startHeartbeatWatchdog();
+        await jest.advanceTimersByTimeAsync(60000);
+
+        const timeouts = mockDb.addOcppMessage.mock.calls.filter((c) => c[3] === 'HeartbeatTimeout');
+        if (expectedLimit === 0) {
+          expect(timeouts).toHaveLength(0);
+          expect(mockClient.close).not.toHaveBeenCalled();
+        } else {
+          expect(timeouts).toHaveLength(1);
+          expect(timeouts[0][4]).toMatchObject({ limit_seconds: expectedLimit });
+        }
+      } finally {
+        ocppCommon.stopHeartbeatWatchdog();
+        ocppCommon.getConnectedClients().delete('CP_HB_ZERO');
+        jest.clearAllTimers();
+        jest.useRealTimers();
+      }
+    });
+  });
 });
 
 // ── startReservationCleanupWatchdog / stopReservationCleanupWatchdog ──

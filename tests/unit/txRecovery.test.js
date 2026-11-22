@@ -6,6 +6,7 @@ const {
   pickRecoveryCandidate,
   resolveStopReason201,
   extractMeterEnergy,
+  parseHeartbeatInterval,
 } = require('../../src/txRecovery');
 
 describe('txRecovery — lastKnownMeterStop', () => {
@@ -128,7 +129,23 @@ describe('txRecovery — extractMeterEnergy', () => {
   it('measurand absent = Energy.Active.Import.Register (défaut spec)', () => {
     expect(extractMeterEnergy([{ sampledValue: [{ value: '777' }] }])).toBe(777);
   });
+  it('applique unitOfMeasure.multiplier (exposant de 10)', () => {
+    expect(extractMeterEnergy([{ sampledValue: [sv(12.5, { unitOfMeasure: { unit: 'Wh', multiplier: 3 } })] }])).toBe(12500);
+  });
   it('ignore les valeurs non numériques', () => {
     expect(extractMeterEnergy([{ sampledValue: [sv('abc'), sv(42)] }])).toBe(42);
+  });
+});
+
+describe('txRecovery — parseHeartbeatInterval', () => {
+  it.each([['60', 60], ['0', 0], [300, 300]])('%p → %p', (v, expected) => {
+    expect(parseHeartbeatInterval(v)).toBe(expected);
+  });
+  it.each([[undefined], [null], [''], ['abc'], ['-5']])('%p → repli 300 (jamais NaN)', (v) => {
+    expect(parseHeartbeatInterval(v)).toBe(300);
+  });
+  it('repli personnalisé (intervalle global pour une borne sans valeur propre)', () => {
+    expect(parseHeartbeatInterval(undefined, 120)).toBe(120);
+    expect(parseHeartbeatInterval('xx', 120)).toBe(120);
   });
 });
