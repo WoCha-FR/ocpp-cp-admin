@@ -564,6 +564,32 @@ describe('ocpp-server-16 — StartTransaction', () => {
     expect(mockDb.createTransaction).toHaveBeenCalled();
   });
 
+  it('retransmitted StartTransaction (same connector, tag, meter, timestamp) returns the existing transaction', () => {
+    const ts = new Date().toISOString();
+    mockDb.getTransactions.mockReturnValue([
+      { transaction_id: '99', connector_id: 1, id_tag: 'TAG001', meter_start: 500, start_time: ts },
+    ]);
+    const result = client._handlers['StartTransaction']({
+      connectorId: 1,
+      idTag: 'TAG001',
+      meterStart: 500,
+      timestamp: ts,
+    });
+    expect(result.transactionId).toBe(99);
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+    expect(mockDb.createTransaction).not.toHaveBeenCalled();
+  });
+
+  it('a new StartTransaction with another meter/timestamp still closes the orphan', () => {
+    mockDb.getTransactions.mockReturnValue([
+      { transaction_id: '99', connector_id: 1, id_tag: 'TAG001', meter_start: 500, start_time: '2026-01-01T00:00:00Z' },
+    ]);
+    const ts = new Date().toISOString();
+    client._handlers['StartTransaction']({ connectorId: 1, idTag: 'TAG001', meterStart: 900, timestamp: ts });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('99', 900, ts, 'Other');
+    expect(mockDb.createTransaction).toHaveBeenCalled();
+  });
+
   it('does not close active transaction on a different connector', () => {
     mockDb.getTransactions.mockReturnValue([{ transaction_id: 99, connector_id: 2 }]);
     client._handlers['StartTransaction']({
@@ -744,12 +770,48 @@ describe('ocpp-server-16 — StopTransaction', () => {
     mockDb.getConnectorsByChargepoint.mockReturnValue([]);
 
     client._handlers['StopTransaction']({
-      transactionId: 0,
+      transactionId: 4242,
       meterStop: 1000,
       timestamp: new Date().toISOString(),
       reason: 'Other',
     });
     expect(mockDb.stopTransaction).toHaveBeenCalledWith('888', 1000, expect.any(String), 'Other');
+  });
+
+  describe('fallback sur transactionId inconnu — jamais ambigu', () => {
+    const active = (id, connectorId) => ({
+      transaction_id: id,
+      connector_id: connectorId,
+      start_time: new Date().toISOString(),
+    });
+
+    beforeEach(() => {
+      mockDb.getTransactionByTransactionId.mockReturnValue(null);
+      mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    });
+
+    it('transactionId 0 (StartTransaction refusée) : ne ferme JAMAIS la transaction d\'un autre connecteur', () => {
+      mockDb.getTransactions.mockReturnValue([active('777', 1)]);
+      client._handlers['StopTransaction']({
+        transactionId: 0,
+        meterStop: 10,
+        timestamp: new Date().toISOString(),
+        reason: 'DeAuthorized',
+      });
+      expect(mockDb.stopTransaction).not.toHaveBeenCalledWith('777', expect.anything(), expect.anything(), expect.anything());
+    });
+
+    it('plusieurs transactions actives : pas de repli (on ne sait pas laquelle clore)', () => {
+      mockDb.getTransactions.mockReturnValue([active('701', 1), active('702', 2)]);
+      client._handlers['StopTransaction']({
+        transactionId: 9999,
+        meterStop: 10,
+        timestamp: new Date().toISOString(),
+        reason: 'Local',
+      });
+      expect(mockDb.stopTransaction).not.toHaveBeenCalledWith('701', expect.anything(), expect.anything(), expect.anything());
+      expect(mockDb.stopTransaction).not.toHaveBeenCalledWith('702', expect.anything(), expect.anything(), expect.anything());
+    });
   });
 
   it('does not broadcast reservation_updated when no InUse reservation matched', () => {
@@ -1105,6 +1167,15 @@ describe('ocpp-server-16 — StatusNotification', () => {
     mockDb.getTransactions.mockReturnValue([{ transaction_id: 99, connector_id: 1, meter_start: 500 }]);
     client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError', timestamp: ts });
     expect(mockDb.stopTransaction).toHaveBeenCalledWith(99, 500, ts, 'EVDisconnected');
+  });
+
+  it('closes the orphan with meter_start + accumulated energy (not meter_start → 0 kWh billed)', () => {
+    const ts = '2026-05-16T15:34:42Z';
+    mockDb.getTransactions.mockReturnValue([
+      { transaction_id: 99, connector_id: 1, meter_start: 500, energy: 7200 },
+    ]);
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Available', errorCode: 'NoError', timestamp: ts });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(99, 7700, ts, 'EVDisconnected');
   });
 
   it('does not close transaction when connector status is not Available', () => {

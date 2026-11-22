@@ -11,6 +11,7 @@ const {
   checkConnectorErrorCooldown,
   debounceAvailabilityNotif,
 } = require('./ocpp-common');
+const { lastKnownMeterStop, isRealTransactionId, pickRecoveryCandidate } = require('./txRecovery');
 
 const OCPP16_STANDARD_KEYS = [
   'AllowOfflineTxForUnknownId',
@@ -520,7 +521,7 @@ function register16Handlers(client, loggedHandle) {
             // Borne revenue Available sans StopTransaction — fermer la transaction orpheline
             db.stopTransaction(
               activeTx.transaction_id,
-              activeTx.meter_start || 0,
+              lastKnownMeterStop(activeTx),
               params.timestamp || new Date().toISOString(),
               'EVDisconnected'
             );
@@ -802,10 +803,31 @@ function register16Handlers(client, loggedHandle) {
     }
 
     let transactionId = 0;
-    if (cp && authStatus === 'Accepted') {
-      const orphans = db
-        .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
-        .filter((t) => t.connector_id === params.connectorId);
+    // StartTransaction rejoué (réponse perdue → la borne retente) : même connecteur, même
+    // badge, même compteur, même horodatage → on renvoie la transaction déjà créée au lieu
+    // de la clore comme « orpheline » puis d'en recréer une (doublon, énergie perdue).
+    const activeOnConnector =
+      cp && authStatus === 'Accepted'
+        ? db
+            .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
+            .filter((t) => t.connector_id === params.connectorId)
+        : [];
+    const duplicate =
+      authStatus === 'Accepted'
+        ? activeOnConnector.find(
+            (t) =>
+              t.id_tag === params.idTag &&
+              t.meter_start === params.meterStart &&
+              t.start_time === params.timestamp
+          )
+        : null;
+    if (duplicate) {
+      logger.warn(
+        `StartTransaction: duplicate of active transaction ${duplicate.transaction_id} on ${identity} #${params.connectorId} (retransmission) — existing transaction returned`
+      );
+      transactionId = duplicate.transaction_id;
+    } else if (cp && authStatus === 'Accepted') {
+      const orphans = activeOnConnector;
       for (const orphan of orphans) {
         db.stopTransaction(orphan.transaction_id, params.meterStart, params.timestamp, 'Other');
         broadcast(
@@ -923,15 +945,18 @@ function register16Handlers(client, loggedHandle) {
     db.stopTransaction(params.transactionId, meterStop, params.timestamp, params.reason);
 
     let stoppedTx = db.getTransactionByTransactionId(params.transactionId);
-    // Fallback : si le transactionId est inconnu, chercher une tx active sur ce chargeur
+    // Fallback : transactionId inconnu (ex. base restaurée) → on ne devine QUE sans ambiguïté :
+    //  - transactionId 0 = StartTransaction refusée (aucune transaction n'a existé) : jamais
+    //    de repli, sinon on couperait la recharge d'un autre connecteur ;
+    //  - une seule transaction active sur la borne, sinon on ne sait pas laquelle clore.
     if (!stoppedTx) {
       const cp = db.getChargepointByIdentity(identity);
       if (cp) {
         const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
-        if (activeTxs.length >= 1) {
-          const activeTx = activeTxs.sort(
-            (a, b) => new Date(b.start_time) - new Date(a.start_time)
-          )[0];
+        const activeTx = isRealTransactionId(params.transactionId)
+          ? pickRecoveryCandidate(activeTxs)
+          : null;
+        if (activeTx) {
           db.stopTransaction(
             activeTx.transaction_id,
             meterStop,
@@ -941,11 +966,12 @@ function register16Handlers(client, loggedHandle) {
           stoppedTx = db.getTransactionByTransactionId(activeTx.transaction_id);
           logger.warn(
             `[Recovery] StopTransaction txId inconnu ${params.transactionId} sur ${identity}, ` +
-              `${activeTxs.length > 1 ? `${activeTxs.length} tx actives — ` : ''}tx ${activeTx.transaction_id} fermée`
+              `tx ${activeTx.transaction_id} fermée (seule transaction active)`
           );
         } else {
           logger.warn(
-            `[Recovery] StopTransaction txId inconnu ${params.transactionId} sur ${identity}, aucune tx active`
+            `[Recovery] StopTransaction txId inconnu ${params.transactionId} sur ${identity} ignoré ` +
+              `(${activeTxs.length} tx active(s), pas de repli sans ambiguïté)`
           );
         }
       }

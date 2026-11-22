@@ -1608,7 +1608,12 @@ router.post(
     setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
 
     try {
-      const result = await remoteStartTransaction(cp.identity, Number(connector_id), idTag);
+      const result = await remoteStartTransaction(
+        cp.identity,
+        Number(connector_id),
+        idTag,
+        req.body.evse_id ?? null
+      );
       if (result.status !== 'Accepted') {
         pendingRemoteStarts.delete(pendingKey);
       }
@@ -2152,6 +2157,8 @@ router.post(
         logger.warn(`[InitSeq] ${cp.identity} ChangeConfiguration ${cfg.key}: ${e.message}`);
       }
     }
+    // La branche 1.6 ne répondait jamais (requête pendante jusqu'au timeout client)
+    return res.json({ ok: true });
   }
 );
 
@@ -2902,7 +2909,12 @@ router.post(
     setTimeout(() => pendingRemoteStarts.delete(pendingKey), 60000);
 
     try {
-      const result = await remoteStartTransaction(cp.identity, Number(connector_id), idTag);
+      const result = await remoteStartTransaction(
+        cp.identity,
+        Number(connector_id),
+        idTag,
+        req.body.evse_id ?? null
+      );
       if (result.status !== 'Accepted') {
         pendingRemoteStarts.delete(pendingKey);
       }

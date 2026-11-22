@@ -1118,6 +1118,7 @@
     "VALIDATION_AUTHORIZED": "Invalid authorization value.",
     "VALIDATION_CHARGEPOINT_ID": "Invalid charge point ID.",
     "VALIDATION_CONNECTOR_ID": "Invalid connector ID.",
+    "VALIDATION_EVSE_ID": "Invalid EVSE ID.",
     "VALIDATION_TRANSACTION_STATUS": "Invalid transaction status.",
     "VALIDATION_DATE_FROM": "Invalid start date.",
     "VALIDATION_DATE_TO": "Invalid end date.",

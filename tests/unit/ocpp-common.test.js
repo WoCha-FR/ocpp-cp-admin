@@ -243,6 +243,26 @@ describe('ocpp-common — disconnectChargepoint', () => {
     expect(mockDb.stopTransaction).toHaveBeenCalledWith(42, 100, expect.any(String), 'DeAuthorized');
   });
 
+  it('closes with meter_start + accumulated energy, not meter_start (0 kWh billed)', () => {
+    const mockClient = { close: jest.fn() };
+    ocppCommon.getConnectedClients().set('CP_NRJ', mockClient);
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 1 });
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 43, meter_start: 100, energy: 2500 }]);
+    ocppCommon.disconnectChargepoint('CP_NRJ');
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith(43, 2600, expect.any(String), 'DeAuthorized');
+  });
+
+  it('heartbeat_timeout: closes the connection but leaves active transactions open', () => {
+    const mockClient = { close: jest.fn() };
+    ocppCommon.getConnectedClients().set('CP_HB', mockClient);
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 1 });
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 44, meter_start: 100, energy: 900 }]);
+    ocppCommon.disconnectChargepoint('CP_HB', 'heartbeat_timeout');
+    expect(mockClient.close).toHaveBeenCalled();
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+    expect(mockClient._disconnectReason).toBe('heartbeat_timeout');
+  });
+
   it('handles client.close() throwing without propagating', () => {
     const mockClient = { close: jest.fn(() => { throw new Error('already closed'); }) };
     ocppCommon.getConnectedClients().set('CP_ERR', mockClient);
@@ -1167,6 +1187,18 @@ describe('ocpp-common — remoteStartTransaction', () => {
       evseId: 2,
       idToken: { idToken: 'TAG001', type: 'ISO14443' },
     });
+  });
+
+  it('uses the explicit evseId (connectorId is numbered per EVSE, not an EVSE id)', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ ocpp_version: '2.0.1', site_id: 1 });
+    mockDb.getIdTagByTag.mockReturnValue({ token_type: 'ISO14443' });
+    const impl = jest.fn().mockResolvedValue({ status: 'Accepted' });
+    ocppCommon.registerCallClientImpl('2.0.1', impl);
+
+    // connecteur 1 de l'EVSE 2 : sans evseId explicite on démarrerait l'EVSE 1
+    await ocppCommon.remoteStartTransaction('CP001', 1, 'TAG001', 2);
+
+    expect(impl.mock.calls[0][2].evseId).toBe(2);
   });
 
   it('idToken.type falls back to ISO14443 when tag not found in DB', async () => {

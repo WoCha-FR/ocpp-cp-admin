@@ -10,6 +10,12 @@ const {
   debounceAvailabilityNotif,
   pendingRemoteStarts,
 } = require('./ocpp-common');
+const {
+  lastKnownMeterStop,
+  pickRecoveryCandidate,
+  resolveStopReason201,
+  extractMeterEnergy,
+} = require('./txRecovery');
 
 // ── Constantes ──
 
@@ -39,19 +45,8 @@ const TRIGGER_TO_START_SOURCE = {
   EVDetected: 'local',
 };
 
-// triggerReason → stop_reason
-const TRIGGER_TO_STOP_REASON = {
-  Remote: 'Remote',
-  Local: 'Local',
-  EVDisconnected: 'EVDisconnected',
-  HardReset: 'HardReset',
-  SoftReset: 'SoftReset',
-  PowerLoss: 'PowerLoss',
-  Deauthorized: 'DeAuthorized',
-  EmergencyStop: 'EmergencyStop',
-  ImmediateReset: 'HardReset',
-  StoppedByEV: 'EVDisconnected',
-};
+// La raison d'arrêt se lit dans transactionInfo.stoppedReason (repli sur triggerReason) :
+// voir resolveStopReason201 dans txRecovery.js
 
 // ── Utilitaires ──
 
@@ -152,20 +147,88 @@ function parseSampledValues(sampledValues = []) {
   };
 }
 
-// Extract energy (Wh) from a OCPP 2.0.1 meterValue array (first Energy.Active.Import.Register)
-function extractMeterEnergy(meterValue = []) {
-  for (const mv of meterValue) {
-    for (const sv of mv.sampledValue || []) {
-      if ((sv.measurand || 'Energy.Active.Import.Register') === 'Energy.Active.Import.Register') {
-        const v = parseFloat(sv.value);
-        if (!isNaN(v)) {
-          const unit = sv.unitOfMeasure?.unit || '';
-          return unit === 'kWh' ? v * 1000 : v;
-        }
+// ── Badge présenté pendant une transaction (TransactionEvent Updated avec idToken) ──
+// Cas nominal 2.0.1 : « câble branché d'abord » → Started(CablePluggedIn) sans idToken, puis le
+// badge est présenté : Updated(Authorized, idToken). Le CSMS doit contrôler le badge et répondre
+// idTokenInfo (la borne coupe la session si le statut n'est pas Accepted), et rattacher le badge
+// à la transaction (attribution à l'utilisateur, tarif, remboursement).
+// Retourne l'idTokenInfo à renvoyer à la borne.
+function evaluateIdTokenOnUpdate({ cp, tx, txId, idToken, identity, chargepointId }) {
+  const idTag = idToken.idToken;
+  const tokenType = idToken.type || null;
+
+  // Même badge que celui de la session : déjà contrôlé au démarrage (ex. arrêt par le même badge)
+  if (tx.id_tag && tx.id_tag === idTag) return buildIdTokenInfo('Accepted', null);
+
+  let authStatus = 'Accepted';
+  let authReason = null;
+  let authTag = null;
+  // Même règle qu'au démarrage : seul le mode 1 (badge contrôlé par le CSMS) refuse un badge
+  if (cp.mode === 1) {
+    if (['WEB-', 'ADMIN', 'MGR-'].some((p) => idTag.startsWith(p))) {
+      authStatus = 'Blocked';
+      authReason = 'auto_tag_rfid';
+    } else {
+      const authResult = db.authorizeIdTag(idTag, cp.site_id, tokenType);
+      authStatus = authResult.status;
+      authReason = authResult.reason;
+      authTag = authResult.tag;
+    }
+  }
+
+  if (authStatus !== 'Accepted') {
+    if (chargepointId) {
+      db.addIdTagEvent(chargepointId, null, idTag, authStatus, authReason, 'authorize');
+    }
+    broadcast(
+      'auth_rejected',
+      {
+        identity,
+        id_tag: idTag,
+        status: authStatus,
+        reason: authReason,
+        source: 'authorize',
+        cp_name: cp.cpname ?? null,
+      },
+      cp.site_id ?? null
+    );
+    trackRepeatedAuthReject(idTag, identity, cp);
+    return buildIdTokenInfo(authStatus, authTag);
+  }
+
+  // Badge accepté sur une transaction démarrée sans identification : on le rattache
+  if (!tx.id_tag) {
+    const changed = db.setTransactionIdTag(txId, idTag, tokenType);
+    if (changed > 0) {
+      tx.id_tag = idTag;
+      logger.info(`[2.0.1] Transaction ${txId} on ${identity}: badge ${idTag} attached`);
+      const tag = db.getIdTagByTag(idTag, cp.site_id);
+      if (tag?.user_id) {
+        const connectors = db.getConnectorsByChargepoint(cp.id);
+        notifications
+          .emit(
+            'transaction_started',
+            {
+              identity,
+              connector_id: tx.connector_id,
+              transaction_id: txId,
+              cp_name: cp.cpname ?? null,
+              cn_name:
+                connectors.find((c) => c.connector_id === tx.connector_id)?.connector_name ?? null,
+              site_name: cp.site_name ?? null,
+            },
+            { userId: tag.user_id }
+          )
+          .catch(() => {});
+      }
+      if (tx.evse_id != null) {
+        const reserved = db.startUsingReservationByEvseAndIdTag(cp.id, tx.evse_id, idTag);
+        if (reserved > 0)
+          broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       }
     }
   }
-  return null;
+  return buildIdTokenInfo('Accepted', authTag);
 }
 
 const initSeqVersions201 = new Map();
@@ -275,10 +338,7 @@ async function reconcileActiveTransactions(identity, isCancelled = () => false, 
     if (status?.ongoingIndicator !== false) continue; // en cours, ou réponse non concluante
 
     // Dernier état connu : meter_start + énergie cumulée par les MeterValues
-    const meterStop =
-      current.meter_start != null && current.energy > 0
-        ? current.meter_start + current.energy
-        : (current.meter_start ?? 0);
+    const meterStop = lastKnownMeterStop(current);
     db.stopTransaction(current.transaction_id, meterStop, new Date().toISOString(), 'Other');
     broadcast(
       'transaction_stop',
@@ -571,7 +631,7 @@ function register201Handlers(client, loggedHandle) {
 
       // 'Occupied' est un statut grossier — ne pas écraser le statut fin établi par TransactionEvent
       if (rawStatus === 'Occupied') {
-        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId);
+        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId, evseId);
         if (activeTx?.charging_state) {
           cnstatus = CHARGING_STATE_TO_CNSTATUS[activeTx.charging_state] || cnstatus;
         }
@@ -636,7 +696,7 @@ function register201Handlers(client, loggedHandle) {
         db.activateReservationByEvse(cp.id, evseId);
         broadcast('reservation_updated', { chargepoint_id: cp.id }, cp.site_id ?? null);
       } else if (cnstatus === 'Charging') {
-        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId);
+        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId, evseId);
         if (activeTx) {
           const changed = db.startUsingReservationByEvseAndIdTag(cp.id, evseId, activeTx.id_tag);
           if (changed > 0)
@@ -651,11 +711,13 @@ function register201Handlers(client, loggedHandle) {
       // Transaction orpheline : borne redevenue Available sans TransactionEvent Ended
       const activeTx = db
         .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
-        .find((t) => t.connector_id === connectorDbId);
+        .find(
+          (t) => t.connector_id === connectorDbId && (t.evse_id == null || t.evse_id === evseId)
+        );
       if (activeTx && cnstatus === 'Available') {
         db.stopTransaction(
           activeTx.transaction_id,
-          activeTx.meter_start || 0,
+          lastKnownMeterStop(activeTx),
           params.timestamp || new Date().toISOString(),
           'EVDisconnected'
         );
@@ -796,6 +858,17 @@ function register201Handlers(client, loggedHandle) {
     // ── Started ──
     if (eventType === 'Started') {
       logger.info(`[2.0.1] TransactionEvent Started from ${identity} EVSE#${evseId} txId=${txId}`);
+
+      // Retransmission : sans réponse dans le délai, la borne renvoie le même Started
+      // (TransactionMessageAttempts). La transaction existe déjà : réponse idempotente, sinon
+      // on la clorait comme « orpheline » avant que l'INSERT n'échoue sur transaction_id UNIQUE.
+      if (txId && db.getTransactionByTransactionId(txId)) {
+        logger.warn(
+          `[2.0.1] TransactionEvent Started: txId=${txId} already known on ${identity} (retransmission) — ignored`
+        );
+        return { idTokenInfo: buildIdTokenInfo('Accepted', null) };
+      }
+
       const idTag = idToken?.idToken || '';
       const startSource = TRIGGER_TO_START_SOURCE[triggerReason] || 'rfid';
 
@@ -835,12 +908,24 @@ function register201Handlers(client, loggedHandle) {
       }
 
       if (cp) {
-        // Fermer les transactions orphelines sur le même connecteur
+        const meterStart = extractMeterEnergy(meterValue, 'first') ?? 0;
+
+        // Fermer les transactions orphelines sur le même connecteur DU MÊME EVSE (les
+        // connectorId sont numérotés par EVSE : le connecteur 1 de l'EVSE 2 n'est pas celui de l'EVSE 1)
         const orphans = db
           .getTransactions({ chargepoint_id: cp.id, status: 'Active' })
-          .filter((t) => t.connector_id === connectorDbId);
+          .filter(
+            (t) =>
+              t.connector_id === connectorDbId &&
+              (evseId == null || t.evse_id == null || t.evse_id === evseId)
+          );
         for (const orphan of orphans) {
-          db.stopTransaction(orphan.transaction_id, null, timestamp, 'Other');
+          // Le compteur au démarrage de la nouvelle session borne la précédente ; sinon dernier relevé connu
+          const orphanMeterStop =
+            meterStart > 0 && meterStart >= (orphan.meter_start ?? 0)
+              ? meterStart
+              : lastKnownMeterStop(orphan);
+          db.stopTransaction(orphan.transaction_id, orphanMeterStop, timestamp, 'Other');
           broadcast(
             'transaction_stop',
             { identity, transactionId: orphan.transaction_id, reason: 'Other' },
@@ -851,7 +936,6 @@ function register201Handlers(client, loggedHandle) {
           );
         }
 
-        const meterStart = extractMeterEnergy(meterValue) ?? 0;
         const tx = db.createTransaction(
           cp.id,
           connectorDbId,
@@ -952,7 +1036,7 @@ function register201Handlers(client, loggedHandle) {
       if (!cp || !txId) return {};
       let tx = db.getTransactionByTransactionId(txId);
       if (!tx) {
-        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId);
+        const activeTx = db.getActiveTransactionByConnector(cp.id, connectorDbId, evseId);
         if (activeTx) {
           logger.warn(
             `[2.0.1] MeterValues txId inconnu ${txId} depuis ${identity}, redirigé vers tx active ${activeTx.transaction_id}`
@@ -970,6 +1054,11 @@ function register201Handlers(client, loggedHandle) {
         );
         return {};
       }
+
+      // Badge présenté en cours de transaction : contrôle + rattachement, réponse idTokenInfo
+      const idTokenInfo = idToken?.idToken
+        ? evaluateIdTokenOnUpdate({ cp, tx, txId, idToken, identity, chargepointId })
+        : null;
 
       const chargingState = transactionInfo.chargingState || null;
       if (chargingState) {
@@ -1013,7 +1102,9 @@ function register201Handlers(client, loggedHandle) {
         if (powerW !== null) lastPowerW = powerW;
         if (energyWh !== null) {
           lastEnergyWh = energyWh;
-          db.updateEvseMeterValue(cp.id, evseId, energyWh);
+          // `evse` est optionnel après le premier événement : repli sur l'EVSE de la transaction
+          const meterEvseId = evseId ?? tx.evse_id ?? null;
+          if (meterEvseId !== null) db.updateEvseMeterValue(cp.id, meterEvseId, energyWh);
         }
 
         db.updateTransactionPowerEnergy(
@@ -1089,7 +1180,7 @@ function register201Handlers(client, loggedHandle) {
           cp.site_id ?? null
         );
       }
-      return {};
+      return idTokenInfo ? { idTokenInfo } : {};
     }
 
     // ── Ended ──
@@ -1097,8 +1188,10 @@ function register201Handlers(client, loggedHandle) {
       logger.info(`[2.0.1] TransactionEvent Ended from ${identity} txId=${txId}`);
       if (!txId) return {};
 
-      let meterStop = extractMeterEnergy(meterValue);
-      const stopReason = TRIGGER_TO_STOP_REASON[triggerReason] || triggerReason || 'Local';
+      // Un Ended porte souvent plusieurs relevés (Transaction.Begin … Transaction.End) :
+      // le compteur d'arrêt est le dernier / Transaction.End, pas le premier
+      let meterStop = extractMeterEnergy(meterValue, 'last');
+      const stopReason = resolveStopReason201(transactionInfo, triggerReason);
 
       // Corriger meterStop si la borne envoie une valeur <= meter_start alors que de l'énergie a été consommée
       const preTx = db.getTransactionByTransactionId(txId);
@@ -1120,22 +1213,24 @@ function register201Handlers(client, loggedHandle) {
       db.stopTransaction(txId, meterStop, timestamp, stopReason);
 
       let stoppedTx = db.getTransactionByTransactionId(txId);
-      // Fallback : si le transactionId est inconnu, chercher une tx active sur ce chargeur
+      // Fallback : transactionId inconnu (ex. base restaurée). Un Ended est aussi envoyé pour une
+      // transaction dont le Started a été REFUSÉ (jamais créée ici) : on ne ferme donc une
+      // transaction active que sans ambiguïté — une seule candidate, sur le même EVSE si connu —
+      // sinon on couperait la recharge d'un autre EVSE.
       if (!stoppedTx && cp) {
         const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
-        if (activeTxs.length >= 1) {
-          const activeTx = activeTxs.sort(
-            (a, b) => new Date(b.start_time) - new Date(a.start_time)
-          )[0];
+        const activeTx = pickRecoveryCandidate(activeTxs, { evseId });
+        if (activeTx) {
           db.stopTransaction(activeTx.transaction_id, meterStop, timestamp, stopReason || 'Other');
           stoppedTx = db.getTransactionByTransactionId(activeTx.transaction_id);
           logger.warn(
             `[2.0.1] [Recovery] TransactionEvent Ended txId inconnu ${txId} sur ${identity}, ` +
-              `${activeTxs.length > 1 ? `${activeTxs.length} tx actives — ` : ''}tx ${activeTx.transaction_id} fermée`
+              `tx ${activeTx.transaction_id} fermée (seule transaction active compatible)`
           );
         } else {
           logger.warn(
-            `[2.0.1] [Recovery] TransactionEvent Ended txId inconnu ${txId} sur ${identity}, aucune tx active`
+            `[2.0.1] [Recovery] TransactionEvent Ended txId inconnu ${txId} sur ${identity} ignoré ` +
+              `(${activeTxs.length} tx active(s), pas de repli sans ambiguïté)`
           );
         }
       }

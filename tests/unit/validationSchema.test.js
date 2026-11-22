@@ -519,3 +519,21 @@ describe('validationSchema — EvseDetails', () => {
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_EVSE_NAME');
   });
 });
+
+// ── StartCharge : evse_id optionnel (OCPP 2.0.1, connectorId numéroté par EVSE) ──
+describe('validationSchema — StartCharge', () => {
+  it('accepte une demande sans evse_id (OCPP 1.6)', async () => {
+    const result = await runSchema(schema.StartCharge, { chargepoint_id: 1, connector_id: 1 });
+    expect(result.isEmpty()).toBe(true);
+  });
+
+  it('accepte un evse_id entier positif (ou null)', async () => {
+    expect((await runSchema(schema.StartCharge, { chargepoint_id: 1, connector_id: 1, evse_id: 2 })).isEmpty()).toBe(true);
+    expect((await runSchema(schema.StartCharge, { chargepoint_id: 1, connector_id: 1, evse_id: null })).isEmpty()).toBe(true);
+  });
+
+  it.each([0, -1, 'abc', 1.5])('refuse evse_id=%p', async (evse_id) => {
+    const result = await runSchema(schema.StartCharge, { chargepoint_id: 1, connector_id: 1, evse_id });
+    expect(result.array().map((e) => e.msg)).toContain('VALIDATION_EVSE_ID');
+  });
+});

@@ -53,3 +53,23 @@ describe('Backend hardening regressions', () => {
   });
 });
 
+
+describe('Lot A — transactions : régressions routes', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/routes.js'), 'utf8');
+
+  it("POST /init-config/chargepoint/:id/apply répond aussi pour une borne 1.6 (requête pendante)", () => {
+    const start = src.indexOf("'/init-config/chargepoint/:id/apply'");
+    expect(start).toBeGreaterThan(-1);
+    const end = src.indexOf("router.post('/init-config/cascade-all'", start);
+    const route = src.slice(start, end);
+    // La branche 2.0.1 répond dans son bloc ; la branche 1.6 doit répondre après sa boucle
+    const after16 = route.slice(route.indexOf('getEnabledInitialChargepointConfig()'));
+    expect(after16).toMatch(/return res\.json\(\{ ok: true \}\)/);
+  });
+
+  it('les démarrages à distance transmettent evse_id (connectorId est numéroté par EVSE en 2.0.1)', () => {
+    const calls = src.match(/remoteStartTransaction\(\s*cp\.identity,[^;]*;/g) || [];
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call).toMatch(/req\.body\.evse_id \?\? null/);
+  });
+});

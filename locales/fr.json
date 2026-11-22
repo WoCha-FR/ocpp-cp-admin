@@ -1118,6 +1118,7 @@
     "VALIDATION_AUTHORIZED": "Valeur d'autorisation invalide.",
     "VALIDATION_CHARGEPOINT_ID": "ID de borne invalide.",
     "VALIDATION_CONNECTOR_ID": "ID de connecteur invalide.",
+    "VALIDATION_EVSE_ID": "ID d'EVSE invalide.",
     "VALIDATION_TRANSACTION_STATUS": "Statut de transaction invalide.",
     "VALIDATION_DATE_FROM": "Date de debut invalide.",
     "VALIDATION_DATE_TO": "Date de fin invalide.",

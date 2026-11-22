@@ -3275,7 +3275,7 @@ async function renderConnectors() {
         let primaryHtml = '';
         let afterHtml = '';
         if (canStart) {
-          primaryHtml = `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+          primaryHtml = `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}, ${c.evse_id ?? 'null'}))">
                   ⚡ ${t('connectors.cStartCharge')}
                 </button>`;
         } else if (isCharging && c.active_transaction_id) {
@@ -3335,12 +3335,13 @@ async function renderConnectors() {
   }
 }
 
-async function mgrStartCharge(chargepointId, connectorId, cpName, connId) {
+async function mgrStartCharge(chargepointId, connectorId, cpName, connId, evseId = null) {
   if (!await confirmDialog(t('dashboard.cnStartCharge', { cpName, connId }))) return;
   try {
     const data = await api('POST', '/connectors/start-charge', {
       chargepoint_id: chargepointId,
       connector_id: connectorId,
+      ...(evseId != null ? { evse_id: evseId } : {}),
     });
     if (data.result && data.result.status === 'Accepted') {
       toast(`${t('dashboard.cnStartChargeOk', { cpName, connId })}`, 'success');
@@ -3459,7 +3460,7 @@ async function renderUserDashboard() {
             ${isSuspended
           ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">🚫 ${t('dashboard.siteAccessSuspended')}</div>`
           : canChargeConn
-            ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => userStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+            ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => userStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}, ${c.evse_id ?? 'null'}))">
                   ⚡ ${t('connectors.cStartCharge')}
                 </button>`
             : isOwnCharge
@@ -3506,12 +3507,13 @@ function filterCpMode(mode) {
   return map[mode] || `${t('common.modeUnknown')} ${mode}`;
 }
 
-async function userStartCharge(chargepointId, connectorId, cpName, connId) {
+async function userStartCharge(chargepointId, connectorId, cpName, connId, evseId = null) {
   if (!await confirmDialog(t('dashboard.cnStartCharge', { cpName, connId }))) return;
   try {
     const data = await api('POST', '/user/start-charge', {
       chargepoint_id: chargepointId,
       connector_id: connectorId,
+      ...(evseId != null ? { evse_id: evseId } : {}),
     });
     if (data.result && data.result.status === 'Accepted') {
       toast(`${t('dashboard.cnStartChargeOk', { cpName, connId })}`, 'success');

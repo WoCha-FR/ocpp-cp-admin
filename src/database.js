@@ -815,6 +815,7 @@ function getAllConnectorsGrouped(siteIds) {
     JOIN chargepoints cp ON c.chargepoint_id = cp.id
     LEFT JOIN sites s ON cp.site_id = s.id
     LEFT JOIN transactions t ON t.chargepoint_id = cp.id AND t.connector_id = c.connector_id AND t.status = 'Active'
+      AND (t.evse_id IS NULL OR c.evse_id IS NULL OR t.evse_id = c.evse_id)
     WHERE c.connector_id > 0
   `;
   const params = [];
@@ -1332,12 +1333,33 @@ function getTransactionFull(transactionId) {
     .get(String(transactionId));
 }
 
-function getActiveTransactionByConnector(chargepointId, connectorId) {
+// evseId (OCPP 2.0.1) : les connectorId sont numérotés par EVSE (connecteur 1 sur chaque EVSE),
+// connector_id seul est donc ambigu sur une borne multi-EVSE. Les transactions 1.6 ont evse_id NULL.
+function getActiveTransactionByConnector(chargepointId, connectorId, evseId = null) {
+  if (evseId != null) {
+    return db
+      .prepare(
+        `SELECT * FROM transactions WHERE chargepoint_id = ? AND connector_id = ? AND status = 'Active'
+         AND (evse_id IS NULL OR evse_id = ?) ORDER BY id DESC LIMIT 1`
+      )
+      .get(chargepointId, connectorId, evseId);
+  }
   return db
     .prepare(
       `SELECT * FROM transactions WHERE chargepoint_id = ? AND connector_id = ? AND status = 'Active' ORDER BY id DESC LIMIT 1`
     )
     .get(chargepointId, connectorId);
+}
+
+// Renseigne le badge d'une transaction démarrée sans identification (2.0.1 : câble branché puis
+// badge présenté dans un TransactionEvent Updated). Sans effet si un badge est déjà enregistré.
+function setTransactionIdTag(transactionId, idTag, idTokenType = null) {
+  return db
+    .prepare(
+      `UPDATE transactions SET id_tag = ?, id_token_type = COALESCE(?, id_token_type)
+       WHERE transaction_id = ? AND status = 'Active' AND (id_tag IS NULL OR id_tag = '')`
+    )
+    .run(idTag, idTokenType, String(transactionId)).changes;
 }
 
 function getTransactionValues(transactionId) {
@@ -1998,6 +2020,7 @@ function getAvailableConnectorsForUser(userId) {
     JOIN sites s ON cp.site_id = s.id
     JOIN user_sites us ON us.site_id = s.id AND us.user_id = ?
     LEFT JOIN transactions t ON t.chargepoint_id = cp.id AND t.connector_id = c.connector_id AND t.status = 'Active'
+      AND (t.evse_id IS NULL OR c.evse_id IS NULL OR t.evse_id = c.evse_id)
     LEFT JOIN id_tags it ON it.id = (
       SELECT it2.id FROM id_tags it2
       JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
@@ -2956,6 +2979,7 @@ module.exports = {
   getTransactionByTransactionId,
   getTransactionFull,
   getActiveTransactionByConnector,
+  setTransactionIdTag,
   getTransactionValues,
   updateChargepointMeterValue,
   updateConnectorMeterValue,

@@ -4,6 +4,7 @@ const { getConfig } = require('./config');
 const db = require('./database');
 const notifications = require('./notifications');
 const { verifyClientCertMatchesIdentity } = require('./certAuthority');
+const { lastKnownMeterStop } = require('./txRecovery');
 const logger = require('./logger').scope('OCPP');
 
 // ── État partagé ──
@@ -503,7 +504,7 @@ function createOCPPServerBase(options = {}) {
         for (const tx of activeTxs) {
           db.stopTransaction(
             tx.transaction_id,
-            tx.meter_start || 0,
+            lastKnownMeterStop(tx),
             new Date().toISOString(),
             'PowerLoss'
           );
@@ -693,13 +694,18 @@ function disconnectChargepoint(identity, reason = null) {
   if (client) {
     logger.info(`Forced disconnection (de-authorisation) for ${identity}`);
     if (reason) client._disconnectReason = reason;
+    // Un timeout de heartbeat n'est pas une fin de session : la borne peut continuer à charger
+    // hors ligne puis envoyer son StopTransaction/TransactionEvent(Ended) réel à la reconnexion.
+    // Clore ici figerait le coût sur une énergie fausse et ferait ignorer l'arrêt tardif
+    // (stopTransaction ne met à jour que les transactions « Active »).
+    // Seule une dé-autorisation explicite clôt les transactions côté serveur.
     const cp = db.getChargepointByIdentity(identity);
-    if (cp) {
+    if (cp && reason !== 'heartbeat_timeout') {
       const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
       for (const tx of activeTxs) {
         db.stopTransaction(
           tx.transaction_id,
-          tx.meter_start || 0,
+          lastKnownMeterStop(tx),
           new Date().toISOString(),
           'DeAuthorized'
         );
@@ -938,14 +944,17 @@ async function remoteStopTransaction(identity, transactionId) {
   return callClient(identity, 'RemoteStopTransaction', { transactionId: Number(transactionId) });
 }
 
-async function remoteStartTransaction(identity, connectorId, idToken) {
+// evseId (2.0.1) : identifiant de l'EVSE à démarrer. Les connectorId sont numérotés par EVSE
+// (connecteur 1 sur chaque EVSE) : sur une borne multi-EVSE, connectorId ne désigne donc pas
+// l'EVSE. À défaut d'evseId explicite, on retombe sur connectorId (borne mono-connecteur par EVSE).
+async function remoteStartTransaction(identity, connectorId, idToken, evseId = null) {
   const cp = db.getChargepointByIdentity(identity);
   if (cp?.ocpp_version === '2.0.1') {
     const tag = db.getIdTagByTag(idToken, cp.site_id);
     const tokenType = tag?.token_type || 'ISO14443';
     return callClient(identity, 'RequestStartTransaction', {
       remoteStartId: Math.floor(Math.random() * 2147483647),
-      evseId: connectorId,
+      evseId: evseId ?? connectorId,
       idToken: { idToken, type: tokenType },
     });
   }

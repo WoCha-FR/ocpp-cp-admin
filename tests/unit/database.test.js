@@ -2345,3 +2345,66 @@ describe('database — catégorie des badges et rapport de remboursement', () =>
     expect(db.getReimbursementReport({ to: '2026-01-01' })).toEqual([]);
   });
 });
+
+// ── Transactions : recherche par connecteur (multi-EVSE 2.0.1) et rattachement tardif du badge ──
+describe('database — transactions multi-EVSE et badge tardif', () => {
+  let cpId;
+  const START = '2026-06-01T10:00:00Z';
+
+  beforeAll(() => {
+    db.upsertChargepoint('CP-MULTI-EVSE', { cpstatus: 'Available', connected: 0 });
+    cpId = db.getChargepointByIdentity('CP-MULTI-EVSE').id;
+    // Deux EVSE ayant chacun un connecteur numéroté 1 (numérotation par EVSE, cas standard 2.0.1)
+    db.upsertConnector(cpId, 1, 'Available', 'NoError', null, null, null, 1, 'Available');
+    db.upsertConnector(cpId, 1, 'Available', 'NoError', null, null, null, 2, 'Available');
+  });
+
+  it('getActiveTransactionByConnector sans evseId : comportement historique (par connecteur)', () => {
+    const tx = db.createTransaction(cpId, 1, 'TAG-LEGACY', 0, START, 'rfid', {
+      transactionId: 'TX-LEG-1',
+      evse_id: 1,
+    });
+    expect(db.getActiveTransactionByConnector(cpId, 1).transaction_id).toBe(tx.transaction_id);
+    db.stopTransaction('TX-LEG-1', 0, START, 'Local');
+  });
+
+  it('getActiveTransactionByConnector avec evseId : ne confond pas deux EVSE', () => {
+    db.createTransaction(cpId, 1, 'TAG-E1', 0, START, 'rfid', { transactionId: 'TX-E1', evse_id: 1 });
+    db.createTransaction(cpId, 1, 'TAG-E2', 0, START, 'rfid', { transactionId: 'TX-E2', evse_id: 2 });
+    expect(db.getActiveTransactionByConnector(cpId, 1, 1).transaction_id).toBe('TX-E1');
+    expect(db.getActiveTransactionByConnector(cpId, 1, 2).transaction_id).toBe('TX-E2');
+    db.stopTransaction('TX-E1', 0, START, 'Local');
+    expect(db.getActiveTransactionByConnector(cpId, 1, 1)).toBeUndefined();
+    expect(db.getActiveTransactionByConnector(cpId, 1, 2).transaction_id).toBe('TX-E2');
+  });
+
+  it('getAllConnectorsGrouped : la transaction d\'un EVSE ne s\'affiche pas sur le connecteur 1 de l\'autre', () => {
+    const rows = db.getAllConnectorsGrouped(null).filter((r) => r.chargepoint_id === cpId);
+    const evse1 = rows.find((r) => r.evse_id === 1);
+    const evse2 = rows.find((r) => r.evse_id === 2);
+    expect(evse1.active_transaction_id).toBeNull();
+    expect(evse2.active_transaction_id).toBe('TX-E2');
+    db.stopTransaction('TX-E2', 0, START, 'Local');
+  });
+
+  it('setTransactionIdTag rattache le badge à une transaction démarrée sans identification', () => {
+    db.createTransaction(cpId, 1, '', 0, START, 'local', {
+      transactionId: 'TX-NOTAG',
+      evse_id: 1,
+      id_token_type: 'ISO14443',
+    });
+    expect(db.setTransactionIdTag('TX-NOTAG', 'TAG-LATE', 'KeyCode')).toBe(1);
+    const row = db.getTransactionByTransactionId('TX-NOTAG');
+    expect(row.id_tag).toBe('TAG-LATE');
+    expect(row.id_token_type).toBe('KeyCode');
+  });
+
+  it('setTransactionIdTag ne remplace jamais un badge déjà enregistré ni une transaction clôturée', () => {
+    expect(db.setTransactionIdTag('TX-NOTAG', 'AUTRE', null)).toBe(0);
+    expect(db.getTransactionByTransactionId('TX-NOTAG').id_tag).toBe('TAG-LATE');
+    db.stopTransaction('TX-NOTAG', 0, START, 'Local');
+    db.createTransaction(cpId, 1, null, 0, START, 'local', { transactionId: 'TX-NULLTAG', evse_id: 1 });
+    db.stopTransaction('TX-NULLTAG', 0, START, 'Local');
+    expect(db.setTransactionIdTag('TX-NULLTAG', 'TAG-X', null)).toBe(0);
+  });
+});

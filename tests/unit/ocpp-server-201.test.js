@@ -48,6 +48,7 @@ const mockDb = {
   insertErrorEvent: jest.fn(),
   updateConnectorCnstatus: jest.fn(),
   createIdTag: jest.fn(),
+  setTransactionIdTag: jest.fn(() => 1),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -618,6 +619,7 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
     mockDb.authorizeIdTag.mockReturnValue({ status: 'Accepted' });
     mockDb.createTransaction.mockReturnValue({ transaction_id: 'TX-ABC' });
     mockDb.getTransactions.mockReturnValue([]);
+    mockDb.getTransactionByTransactionId.mockReturnValue(undefined);
     mockDb.getIdTagByTag.mockReturnValue(null);
     mockDb.getConnectorsByChargepoint.mockReturnValue([]);
     register201Handlers(client, makeLoggedHandle(client));
@@ -772,8 +774,81 @@ describe('ocpp-server-201 — TransactionEvent Started', () => {
       meterValue: [],
       timestamp: TS,
     });
-    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-OLD', null, TS, 'Other');
+    // Pas de compteur connu : meter_stop = 0 (et non null, qui ferait perdre l'énergie)
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-OLD', 0, TS, 'Other');
     expect(mockDb.createTransaction).toHaveBeenCalled();
+  });
+
+  it('closes the orphan with the new session meter start when it is consistent', () => {
+    mockDb.getTransactions.mockReturnValue([
+      { transaction_id: 'TX-OLD', connector_id: 1, meter_start: 1000, energy: 500 },
+    ]);
+    client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-NEW' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [
+        { sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '1800' }] },
+      ],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-OLD', 1800, TS, 'Other');
+  });
+
+  it('closes the orphan with the last known meter when the new session meter is unusable', () => {
+    mockDb.getTransactions.mockReturnValue([
+      { transaction_id: 'TX-OLD', connector_id: 1, meter_start: 1000, energy: 500 },
+    ]);
+    client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-NEW' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-OLD', 1500, TS, 'Other');
+  });
+
+  it('does not close the transaction of another EVSE that also uses connectorId 1', () => {
+    mockDb.getTransactions.mockReturnValue([
+      { transaction_id: 'TX-EVSE1', connector_id: 1, evse_id: 1 },
+    ]);
+    client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-EVSE2' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evse: { id: 2, connectorId: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+    expect(mockDb.createTransaction).toHaveBeenCalled();
+  });
+
+  it('is idempotent on a retransmitted Started (transactionId already known)', () => {
+    mockDb.getTransactionByTransactionId.mockReturnValueOnce({
+      transaction_id: 'TX-DUP',
+      status: 'Active',
+      connector_id: 1,
+    });
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 'TX-DUP', connector_id: 1 }]);
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-DUP' },
+      idToken: { idToken: 'TAG001', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
+    expect(mockDb.createTransaction).not.toHaveBeenCalled();
+    expect(result).toEqual({ idTokenInfo: { status: 'Accepted' } });
   });
 
   it('does not close active transaction on a different connector', () => {
@@ -1080,6 +1155,100 @@ describe('ocpp-server-201 — TransactionEvent Updated', () => {
   });
 });
 
+// ── TransactionEvent Updated : badge présenté en cours de transaction ──
+describe('ocpp-server-201 — TransactionEvent Updated with idToken', () => {
+  let client;
+  let tx;
+  const TS = new Date().toISOString();
+  const updated = (idToken = { idToken: 'TAG001', type: 'ISO14443' }) =>
+    client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-001' },
+      idToken,
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    tx = { transaction_id: 'TX-001', status: 'Active', meter_start: 0, connector_id: 1, evse_id: 1, id_tag: null };
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    mockDb.getTransactionByTransactionId.mockReturnValue(tx);
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.getIdTagByTag.mockReturnValue(null);
+    mockDb.authorizeIdTag.mockReturnValue({ status: 'Accepted', tag: null });
+    mockDb.setTransactionIdTag.mockReturnValue(1);
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('authorizes the badge and attaches it to the tag-less transaction', () => {
+    const result = updated();
+    expect(mockDb.authorizeIdTag).toHaveBeenCalledWith('TAG001', 1, 'ISO14443');
+    expect(mockDb.setTransactionIdTag).toHaveBeenCalledWith('TX-001', 'TAG001', 'ISO14443');
+    expect(result).toEqual({ idTokenInfo: { status: 'Accepted' } });
+  });
+
+  it('refuses a rejected badge: idTokenInfo carries the status, nothing is attached', () => {
+    mockDb.authorizeIdTag.mockReturnValue({ status: 'Blocked', reason: 'inactive_tag', tag: null });
+    const result = updated();
+    expect(result).toEqual({ idTokenInfo: { status: 'Blocked' } });
+    expect(mockDb.setTransactionIdTag).not.toHaveBeenCalled();
+    expect(mockDb.addIdTagEvent).toHaveBeenCalledWith(1, null, 'TAG001', 'Blocked', 'inactive_tag', 'authorize');
+    expect(mockTrackRepeatedAuthReject).toHaveBeenCalled();
+  });
+
+  it('blocks auto-generated virtual tags presented on the reader', () => {
+    const result = updated({ idToken: 'MGR-1', type: 'ISO14443' });
+    expect(result).toEqual({ idTokenInfo: { status: 'Blocked' } });
+    expect(mockDb.authorizeIdTag).not.toHaveBeenCalled();
+  });
+
+  it('does not re-check the badge that already owns the transaction (e.g. stop with same badge)', () => {
+    tx.id_tag = 'TAG001';
+    const result = updated();
+    expect(mockDb.authorizeIdTag).not.toHaveBeenCalled();
+    expect(mockDb.setTransactionIdTag).not.toHaveBeenCalled();
+    expect(result).toEqual({ idTokenInfo: { status: 'Accepted' } });
+  });
+
+  it('answers a different badge without replacing the transaction owner', () => {
+    tx.id_tag = 'OWNER';
+    const result = updated({ idToken: 'OTHER', type: 'ISO14443' });
+    expect(mockDb.authorizeIdTag).toHaveBeenCalled();
+    expect(mockDb.setTransactionIdTag).not.toHaveBeenCalled();
+    expect(result).toEqual({ idTokenInfo: { status: 'Accepted' } });
+  });
+
+  it('accepts without controlling the badge when the charge point is not in mode 1', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 3, site_id: 1 });
+    const result = updated();
+    expect(mockDb.authorizeIdTag).not.toHaveBeenCalled();
+    expect(result).toEqual({ idTokenInfo: { status: 'Accepted' } });
+  });
+
+  it('notifies the badge owner once the badge is attached', () => {
+    mockDb.getIdTagByTag.mockReturnValue({ user_id: 7 });
+    updated();
+    expect(mockNotifications.emit).toHaveBeenCalledWith(
+      'transaction_started',
+      expect.objectContaining({ transaction_id: 'TX-001' }),
+      { userId: 7 }
+    );
+  });
+
+  it('returns {} (no idTokenInfo) when the event carries no idToken', () => {
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Updated',
+      transactionInfo: { transactionId: 'TX-001' },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result).toEqual({});
+  });
+});
+
 // ── TransactionEvent Ended ──
 describe('ocpp-server-201 — TransactionEvent Ended', () => {
   let client;
@@ -1103,15 +1272,144 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
     expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-001', null, TS, 'Local');
   });
 
-  it('maps triggerReason EVDisconnected → stop_reason EVDisconnected', () => {
+  it('reads the stop reason from transactionInfo.stoppedReason', () => {
     client._handlers['TransactionEvent']({
       eventType: 'Ended',
-      triggerReason: 'EVDisconnected',
-      transactionInfo: { transactionId: 'TX-002' },
+      triggerReason: 'EVDeparted',
+      transactionInfo: { transactionId: 'TX-002', stoppedReason: 'EVDisconnected' },
       meterValue: [],
       timestamp: TS,
     });
     expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-002', null, TS, 'EVDisconnected');
+  });
+
+  it('stoppedReason takes precedence over triggerReason', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Ended',
+      triggerReason: 'StopAuthorized',
+      transactionInfo: { transactionId: 'TX-PREC', stoppedReason: 'PowerLoss' },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-PREC', null, TS, 'PowerLoss');
+  });
+
+  it.each([
+    ['StopAuthorized', 'Local'],
+    ['RemoteStop', 'Remote'],
+    ['EVDeparted', 'EVDisconnected'],
+    ['EVCommunicationLost', 'Other'],
+  ])('falls back on triggerReason %s → stop_reason %s when stoppedReason is absent', (trigger, expected) => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Ended',
+      triggerReason: trigger,
+      transactionInfo: { transactionId: 'TX-FB' },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-FB', null, TS, expected);
+  });
+
+  it('never stores a triggerReason as stop reason (unknown value → Local)', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Ended',
+      triggerReason: 'MeterValuePeriodic',
+      transactionInfo: { transactionId: 'TX-UNK' },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-UNK', null, TS, 'Local');
+  });
+
+  it('uses the Transaction.End sample, not the Transaction.Begin one, as meterStop', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Ended',
+      triggerReason: 'StopAuthorized',
+      transactionInfo: { transactionId: 'TX-METER' },
+      meterValue: [
+        { sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '1000', context: 'Transaction.Begin' }] },
+        { sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '1000', context: 'Transaction.Begin' }] },
+        { sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '5500', context: 'Transaction.End' }] },
+      ],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-METER', 5500, TS, 'Local');
+  });
+
+  it('uses the last energy sample as meterStop when no context is given', () => {
+    client._handlers['TransactionEvent']({
+      eventType: 'Ended',
+      triggerReason: 'StopAuthorized',
+      transactionInfo: { transactionId: 'TX-METER2' },
+      meterValue: [
+        { sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '1000' }] },
+        { sampledValue: [{ measurand: 'Energy.Active.Import.Register', value: '4200' }] },
+      ],
+      timestamp: TS,
+    });
+    expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-METER2', 4200, TS, 'Local');
+  });
+
+  describe('unknown transactionId fallback', () => {
+    const active = (id, evse) => ({
+      transaction_id: id,
+      evse_id: evse,
+      connector_id: 1,
+      start_time: TS,
+      status: 'Active',
+    });
+
+    beforeEach(() => {
+      mockDb.getTransactionByTransactionId.mockImplementation((id) =>
+        id === 'TX-REJECTED' ? null : { transaction_id: id, chargepoint_id: 1, connector_id: 1, evse_id: 1, status: 'Active', meter_start: 0 }
+      );
+      mockDb.getChargepointById.mockReturnValue({ id: 1, site_id: 1, cpname: 'CP', site_name: 'S' });
+    });
+
+    afterEach(() => {
+      mockDb.getTransactionByTransactionId.mockReset();
+    });
+
+    it('does not close the transaction of another EVSE (rejected Started on EVSE 2)', () => {
+      mockDb.getTransactions.mockReturnValue([active('TX-EVSE1', 1)]);
+      client._handlers['TransactionEvent']({
+        eventType: 'Ended',
+        triggerReason: 'Deauthorized',
+        transactionInfo: { transactionId: 'TX-REJECTED' },
+        evse: { id: 2 },
+        meterValue: [],
+        timestamp: TS,
+      });
+      expect(mockDb.stopTransaction).toHaveBeenCalledTimes(1);
+      expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-REJECTED', null, TS, 'DeAuthorized');
+      expect(mockDb.stopTransaction).not.toHaveBeenCalledWith('TX-EVSE1', expect.anything(), expect.anything(), expect.anything());
+    });
+
+    it('does not guess when several transactions are active and no EVSE is given', () => {
+      mockDb.getTransactions.mockReturnValue([active('TX-A', 1), active('TX-B', 2)]);
+      client._handlers['TransactionEvent']({
+        eventType: 'Ended',
+        triggerReason: 'Deauthorized',
+        transactionInfo: { transactionId: 'TX-REJECTED' },
+        meterValue: [],
+        timestamp: TS,
+      });
+      expect(mockDb.stopTransaction).not.toHaveBeenCalledWith('TX-A', expect.anything(), expect.anything(), expect.anything());
+      expect(mockDb.stopTransaction).not.toHaveBeenCalledWith('TX-B', expect.anything(), expect.anything(), expect.anything());
+    });
+
+    it('closes the only active transaction when it is compatible (EVSE matches)', () => {
+      mockDb.getTransactions.mockReturnValue([active('TX-ONLY', 1)]);
+      client._handlers['TransactionEvent']({
+        eventType: 'Ended',
+        triggerReason: 'StopAuthorized',
+        transactionInfo: { transactionId: 'TX-REJECTED' },
+        evse: { id: 1 },
+        meterValue: [],
+        timestamp: TS,
+      });
+      expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-ONLY', null, TS, 'Local');
+    });
   });
 
   it('maps triggerReason Deauthorized → stop_reason DeAuthorized', () => {
@@ -1125,11 +1423,11 @@ describe('ocpp-server-201 — TransactionEvent Ended', () => {
     expect(mockDb.stopTransaction).toHaveBeenCalledWith('TX-003', null, TS, 'DeAuthorized');
   });
 
-  it('maps triggerReason ImmediateReset → stop_reason HardReset', () => {
+  it('maps stoppedReason ImmediateReset → stop_reason HardReset (UI vocabulary)', () => {
     client._handlers['TransactionEvent']({
       eventType: 'Ended',
-      triggerReason: 'ImmediateReset',
-      transactionInfo: { transactionId: 'TX-RESET' },
+      triggerReason: 'ResetCommand',
+      transactionInfo: { transactionId: 'TX-RESET', stoppedReason: 'ImmediateReset' },
       meterValue: [],
       timestamp: TS,
     });

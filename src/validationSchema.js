@@ -399,6 +399,14 @@ const StartCharge = {
     toInt: true,
     errorMessage: 'VALIDATION_CONNECTOR_ID',
   },
+  // OCPP 2.0.1 : EVSE ciblé (les connectorId sont numérotés par EVSE)
+  evse_id: {
+    in: ['body'],
+    optional: { options: { nullable: true } },
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_EVSE_ID',
+  },
 };
 
 const StopCharge = {
