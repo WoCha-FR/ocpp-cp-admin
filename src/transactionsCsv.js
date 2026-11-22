@@ -1,8 +1,18 @@
 const { trad } = require('./i18n');
 const { formatTariffDetail } = require('./tariff');
 
-// Cellule CSV : guillemets doublés, « ; » neutralisé
-const cell = (v) => `"${String(v).replace(/"/g, '""').replace(/;/g, ',')}"`;
+// Cellule CSV : guillemets doublés, « ; » neutralisé, et formules neutralisées (injection CSV,
+// CWE-1236). Excel / LibreOffice interprètent comme une formule une cellule commençant par
+// = + - @ (ou tabulation / retour chariot), même entre guillemets : badge renvoyé par une borne,
+// nom d'utilisateur, action OCPP… → préfixe « ' ». Les nombres (ex. -1.50) restent des nombres.
+const FORMULA_START = /^[=+\-@\t\r]/;
+const isNumber = (s) => s.trim() !== '' && Number.isFinite(Number(s));
+function csvCell(v) {
+  let s = String(v ?? '');
+  if (FORMULA_START.test(s) && !isNumber(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""').replace(/;/g, ',')}"`;
+}
+const cell = csvCell;
 
 /**
  * Construit le CSV d'export des transactions (vue gestionnaire ou utilisateur).
@@ -175,4 +185,4 @@ function buildReimbursementCsv(rows, { lng = 'fr' } = {}) {
   return '﻿' + csvRows.join('\r\n');
 }
 
-module.exports = { buildTransactionsCsv, buildReimbursementCsv };
+module.exports = { buildTransactionsCsv, buildReimbursementCsv, csvCell };

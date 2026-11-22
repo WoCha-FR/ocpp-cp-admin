@@ -43,7 +43,7 @@ const {
   normalizeProfileInput,
   buildSetChargingProfileParams,
 } = require('./chargingProfiles');
-const { buildTransactionsCsv, buildReimbursementCsv } = require('./transactionsCsv');
+const { buildTransactionsCsv, buildReimbursementCsv, csvCell } = require('./transactionsCsv');
 const logger = require('./logger').scope('AUTH');
 
 const router = express.Router();
@@ -2468,6 +2468,7 @@ router.get(
     ];
     const csvRows = [headers.join(';')];
     for (const m of messages) {
+      // Action et payload viennent de la borne : formules neutralisées (injection CSV)
       const row = [
         m.timestamp || '',
         m.chargepoint_identity || '',
@@ -2475,7 +2476,7 @@ router.get(
         m.message_type || '',
         m.action || '',
         m.payload || '',
-      ].map((v) => `"${String(v).replace(/"/g, '""').replace(/;/g, ',')}"`);
+      ].map(csvCell);
       csvRows.push(row.join(';'));
     }
 

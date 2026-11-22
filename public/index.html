@@ -1379,8 +1379,8 @@ async function renderChargepoints(keepState = false) {
                       <td class="td-meta">${p.password ? '•••••' : t('common.none') }</td>
                       <td class="td-date">${formatDate(p.timestamp)}</td>
                       <td>
-                        <button class="btn btn-success btn-sm" data-onclick="withBtn(this, () => acceptPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpAccept')}</button>
-                        <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => rejectPendingChargepoint('${escapeAttr(p.identity)}'))">${t('chargepoint.cpRefuse')}</button>
+                        <button class="btn btn-success btn-sm" data-onclick="withBtn(this, () => acceptPendingChargepoint(${jsArg(p.identity)}))">${t('chargepoint.cpAccept')}</button>
+                        <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => rejectPendingChargepoint(${jsArg(p.identity)}))">${t('chargepoint.cpRefuse')}</button>
                       </td>
                     </tr>
                   `).join('')}
@@ -1465,10 +1465,10 @@ async function renderChargepoints(keepState = false) {
                 <td class="td-date">${cp.last_heartbeat ? formatDate(cp.last_heartbeat) : '-'}</td>
                 <td>
                   ${adminManage() ? `
-                  <button class="btn btn-indigo btn-sm" data-onclick="assignCpToSite(${Number(cp.id) || 0}, '${escapeAttr(cp.identity)}', ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
+                  <button class="btn btn-indigo btn-sm" data-onclick="assignCpToSite(${Number(cp.id) || 0}, ${jsArg(cp.identity)}, ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
                   <button class="btn btn-teal btn-sm" data-onclick="showEditChargepointModal(${Number(cp.id) || 0})">${t('common.edit')}</button>
                   <button class="btn btn-orange btn-sm" data-onclick="reinitializeChargepoint(event,${Number(cp.id) || 0})">${t('common.reset')}</button>` : ''}
-                  ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteChargepoint(${Number(cp.id) || 0}, '${escapeAttr(cp.identity)}'))">${t('common.delete')}</button>` : ''}
+                  ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteChargepoint(${Number(cp.id) || 0}, ${jsArg(cp.identity)}))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
             `).join('')}
@@ -1648,7 +1648,7 @@ async function acceptPendingChargepoint(identity) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-success" data-onclick="withBtn(this, () => execAcceptPending('${escapeAttr(identity)}'))">${t('chargepoint.cpAccept')}</button>
+      <button class="btn btn-success" data-onclick="withBtn(this, () => execAcceptPending(${jsArg(identity)}))">${t('chargepoint.cpAccept')}</button>
     </div>
   `);
 }
@@ -1792,7 +1792,7 @@ async function renderDetailTabBorne(cp) {
               <span class="cmd-subgroup-label">🔧 ${t('chargepoint.cpManagement')}</span>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'ClearCache', {})">${t('chargepoint.cpClearCache')}</button>
               <button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, 'GetLocalListVersion', {})">${t('chargepoint.cpGetLocalListVersion')}</button>
-              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, ${cp.ocpp_version === '2.0.1' ? `'GetLog', {logType:'DiagnosticsLog', requestId:Math.floor(Math.random()*2147483647), log:{remoteLocation:'${ocppSettings.diagnosticsLocation || ''}'}}` : `'GetDiagnostics', {location:'${ocppSettings.diagnosticsLocation || ''}'}`})">${t('chargepoint.cpGetDiagnostics')}</button>
+              <button class="btn btn-purple btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendCommand(event,${cp.id}, ${cp.ocpp_version === '2.0.1' ? `'GetLog', {logType:'DiagnosticsLog', requestId:Math.floor(Math.random()*2147483647), log:{remoteLocation:${jsArg(ocppSettings.diagnosticsLocation || '')}}}` : `'GetDiagnostics', {location:${jsArg(ocppSettings.diagnosticsLocation || '')}}`})">${t('chargepoint.cpGetDiagnostics')}</button>
             </div>` : ''}
           </div>
         </div>` : ''}
@@ -1913,7 +1913,7 @@ async function renderDetailTabConnectors(cp) {
               <div class="detail-section${hasError ? ' detail-section-error' : ''}">
                 <div class="detail-section-title">
                   ${c.evse_id != null ? `⚡ EVSE ${c.evse_id}${c.evse_name ? ' · ' + escapeHtml(c.evse_name) : ''} · ` : ''}🔌 ${t('common.connector_one')} ${c.connector_id}${c.connector_name ? ' · ' + escapeHtml(c.connector_name) : ''}
-                  ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, '${escapeAttr(c.connector_name || '')}', '${c.connector_power != null ? c.connector_power : ''}', '${escapeAttr(c.connector_type || '')}')">✏️</button>` : ''}
+                  ${manage ? `<button style="background:none;border:none;cursor:pointer;padding:4px 8px;font-size:16px;color:var(--text-secondary);line-height:1" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditConnectorModal(${c.id}, ${c.connector_id}, ${jsArg(c.connector_name || '')}, '${c.connector_power != null ? c.connector_power : ''}', ${jsArg(c.connector_type || '')})">✏️</button>` : ''}
                   <span class="badge ${!cp.online && c.cnstatus !== 'pending' ? 'badge-gray' : statusBadgeClass(c.cnstatus)}" style="margin-left:auto">${!cp.online && c.cnstatus !== 'pending' ? t('common.unknown') : (c.cnstatus ? escapeHtml(c.cnstatus) : t('common.unknown'))}</span>
                   ${hasError ? `<span class="badge badge-red">⚠️ ${escapeHtml(c.error_code)}</span>` : ''}
                 </div>
@@ -2076,7 +2076,7 @@ async function renderDetailTabTransactions(cp) {
         <tbody>
           ${transactions.map(tx => `
             <tr>
-              <td><span class="mono-id">${tx.transaction_id}</span></td>
+              <td><span class="mono-id">${escapeHtml(tx.transaction_id)}</span></td>
               <td>${tx.connector_id}</td>
               <td>${renderIdTag(tx.id_tag)}</td>
               <td>${tx.tag_username ? `<span class="badge badge-blue">${escapeHtml(tx.tag_username)}</span>` : '<span class="text-muted">-</span>'}</td>
@@ -2084,7 +2084,7 @@ async function renderDetailTabTransactions(cp) {
               <td class="td-date">${formatDateShort(tx.start_time)}</td>
               <td class="td-date">${tx.stop_time ? formatDateShort(tx.stop_time) : '-'}</td>
               <td>${tx.meter_stop != null && tx.meter_start != null ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : '-'}</td>
-              <td><span class="badge ${tx.status === 'Active' ? 'badge-green' : 'badge-gray'}">${tx.status}</span></td>
+              <td><span class="badge ${tx.status === 'Active' ? 'badge-green' : 'badge-gray'}">${escapeHtml(tx.status)}</span></td>
             </tr>
           `).join('')}
         </tbody>
@@ -2177,7 +2177,7 @@ async function renderDetailTabLogs(cp) {
       <div class="msg-filters">
         <div class="form-group">
           <label>${t('filters.origin')}</label>
-          <select id="cpLogFilterOrigin" data-onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')">
+          <select id="cpLogFilterOrigin" data-onchange="applyCpLogFilters(${cp.id}, ${jsArg(cp.identity)})">
             <option value="">${t('filters.allf')}</option>
             <option value="chargepoint" ${cpLogsFilters.origin === 'chargepoint' ? 'selected' : ''}>${t('common.chargepoint_one')}</option>
             <option value="csms" ${cpLogsFilters.origin === 'csms' ? 'selected' : ''}>CSMS</option>
@@ -2186,7 +2186,7 @@ async function renderDetailTabLogs(cp) {
         </div>
         <div class="form-group">
           <label>${t('filters.type')}</label>
-          <select id="cpLogFilterMsgType" data-onchange="applyCpLogFilters(${cp.id}, '${escapeAttr(cp.identity)}')">
+          <select id="cpLogFilterMsgType" data-onchange="applyCpLogFilters(${cp.id}, ${jsArg(cp.identity)})">
             <option value="">${t('filters.all')}</option>
             <option value="CALL" ${cpLogsFilters.message_type === 'CALL' ? 'selected' : ''}>CALL</option>
             <option value="CALLRESULT" ${cpLogsFilters.message_type === 'CALLRESULT' ? 'selected' : ''}>CALLRESULT</option>
@@ -2198,7 +2198,7 @@ async function renderDetailTabLogs(cp) {
           <label>${t('chargepoint.cpLogsOperation')}</label>
           <div id="cpLogFilterActionTags" class="filter-tags-input">
             ${(cpLogsFilters.actions || []).map(a => `
-              <span class="filter-tag">${escapeHtml(a)}<span class="filter-tag-remove" data-onclick="removeCpLogActionTag(${cp.id}, '${escapeAttr(a)}')">×</span></span>
+              <span class="filter-tag">${escapeHtml(a)}<span class="filter-tag-remove" data-onclick="removeCpLogActionTag(${cp.id}, ${jsArg(a)})">×</span></span>
             `).join('')}
             <input type="text" id="cpLogFilterActionInput" placeholder="${(cpLogsFilters.actions || []).length ? '' : 'Ex: BootNotification'}" />
           </div>
@@ -2213,7 +2213,7 @@ async function renderDetailTabLogs(cp) {
         </div>
         <button class="btn btn-outline btn-sm" data-onclick="resetCpLogFilters(${cp.id})">${t('common.reset')}</button>
         <button class="btn btn-primary btn-sm" data-onclick="exportCpLogsCsv(${cp.id})">📥 ${t('common.csvExport')}</button>
-        ${adminManage() ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => clearCpLogMessages(${cp.id}, '${escapeAttr(cp.identity)}'))">${t('chargepoint.cpLogsDelete')}</button>` : ''}
+        ${adminManage() ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => clearCpLogMessages(${cp.id}, ${jsArg(cp.identity)}))">${t('chargepoint.cpLogsDelete')}</button>` : ''}
       </div>
     </div>
 
@@ -2228,7 +2228,7 @@ async function renderDetailTabLogs(cp) {
               <td class="td-date">${formatDate(m.timestamp)}</td>
               <td><span class="badge ${m.origin === 'chargepoint' ? 'badge-chargepoint' : m.origin === 'csms' ? 'badge-csms' : 'badge-gray'}">${m.origin === 'chargepoint' ? `← ${t('common.chargepoint_one')}` : m.origin === 'csms' ? `→ ${t('common.csms')}` : `⚙ ${t('common.system')}`}</span></td>
               <td><span class="badge badge-${m.message_type.toLowerCase()}">${m.message_type}</span></td>
-              <td class="msg-payload">${m.action || '-'}</td>
+              <td class="msg-payload">${escapeHtml(m.action || '-')}</td>
               <td class="msg-payload" title="${t('chargepoint.cpLogsMsgHint')}" data-onclick="showPayloadDetail(this)">${escapeHtml(m.payload || '{}')}</td>
             </tr>
           `).join('')}
@@ -2423,7 +2423,7 @@ async function loadChargingProfiles(cpId) {
                 <td>${p.stack_level}</td>
                 <td>${p.charging_rate_unit}</td>
                 <td class="text-muted" style="font-size:12px;white-space:nowrap">${p.valid_from ? formatDate(p.valid_from) : ''}${p.valid_from && p.valid_to ? ' → ' : ''}${p.valid_to ? formatDate(p.valid_to) : ''}</td>
-                <td><span class="badge ${p.status === 'Accepted' ? 'badge-green' : p.status === 'Rejected' ? 'badge-red' : 'badge-yellow'}">${p.status}</span></td>
+                <td><span class="badge ${p.status === 'Accepted' ? 'badge-green' : p.status === 'Rejected' ? 'badge-red' : 'badge-yellow'}">${escapeHtml(p.status ?? '')}</span></td>
                 ${canManage() ? `<td style="white-space:nowrap">
                   <button class="btn btn-secondary btn-sm" data-onclick="showProfileDetail(${p.id})">${t('common.view')}</button>
                   <button class="btn btn-teal btn-sm" data-onclick="showCopyProfileModal(${cpId}, ${p.id})">${t('chargepoint.cpProfileCopyBtn')}</button>
@@ -2543,7 +2543,7 @@ async function renderDetailTabEvses(cp) {
                 <button class="btn btn-teal btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'OnIdle',${e.evse_id})">${t('chargepoint.cpReset201OnIdle')}</button>
                 <button class="btn btn-orange btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="sendReset201(event,${cp.id},'Immediate',${e.evse_id})">${t('chargepoint.cpReset201Immediate')}</button>
               </td>
-              <td><button class="btn-icon" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditEvseModal(${cp.id}, ${e.evse_id}, '${escapeAttr(e.evse_name || '')}')">✏️</button></td>
+              <td><button class="btn-icon" title="${t('common.edit')}" aria-label="${t('common.edit')}" data-onclick="openEditEvseModal(${cp.id}, ${e.evse_id}, ${jsArg(e.evse_name || '')})">✏️</button></td>
             </tr>
           `).join('')}
         </tbody>
@@ -2692,7 +2692,7 @@ function showProfileDetail(profileDbId) {
         <div class="detail-row"><span class="detail-label">${t('chargepoint.cpProfileUnit')}</span><span class="detail-value">${p.charging_rate_unit}</span></div>
         ${p.valid_from ? `<div class="detail-row"><span class="detail-label">${t('common.start')}</span><span class="detail-value">${formatDate(p.valid_from)}</span></div>` : ''}
         ${p.valid_to ? `<div class="detail-row"><span class="detail-label">${t('common.end')}</span><span class="detail-value">${formatDate(p.valid_to)}</span></div>` : ''}
-        <div class="detail-row"><span class="detail-label">${t('common.status')}</span><span class="detail-value"><span class="badge ${p.status === 'Accepted' ? 'badge-green' : p.status === 'Rejected' ? 'badge-red' : 'badge-yellow'}">${p.status}</span></span></div>
+        <div class="detail-row"><span class="detail-label">${t('common.status')}</span><span class="detail-value"><span class="badge ${p.status === 'Accepted' ? 'badge-green' : p.status === 'Rejected' ? 'badge-red' : 'badge-yellow'}">${escapeHtml(p.status ?? '')}</span></span></div>
       </div>
     </div>
     <h3 style="margin:16px 0 8px">${t('chargepoint.cpProfilePeriods')}</h3>
@@ -3022,7 +3022,7 @@ async function renderDetailTabConfig(cp) {
         <h3>⚙️ ${t('chargepoint.cpConfTitle')}</h3>
         <div class="flex-gap">
           <input type="text" id="configSearchInput" placeholder="${t('chargepoint.cpConfSearchPlaceholder')}" data-oninput="filterConfigTable()" style="max-width:200px;width:100%;padding:4px 8px;font-size:13px;" />
-          ${adminManage() ? `<button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="showGetConfigKeyModal(${cp.id}, '${escapeAttr(cp.ocpp_version || '1.6')}')">🔍 ${t('chargepoint.cpConfGetKey')}</button>` : ''}
+          ${adminManage() ? `<button class="btn btn-secondary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="showGetConfigKeyModal(${cp.id}, ${jsArg(cp.ocpp_version || '1.6')})">🔍 ${t('chargepoint.cpConfGetKey')}</button>` : ''}
           ${canManage() ? `<button class="btn btn-primary btn-sm" ${!cp.online ? `disabled title="${t('chargepoint.cpOffline')}"` : ''} data-onclick="withBtn(this, () => refreshChargepointConfig(${cp.id}))">🔄 ${t('chargepoint.cpConfRefresh')}</button>` : ''}
         </div>
       </div>
@@ -3080,7 +3080,7 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
                 ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
                 : isAmbiguous
                 ? `<span class="text-muted" title="${t('chargepoint.cpConfAmbiguousHint', { defaultValue: 'Non modifiable : plusieurs instances partagent cette clé' })}">-</span>`
-                : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.component + '.' + c.variable)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
+                : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, ${jsArg(c.component + '.' + c.variable)}, ${jsArg(c.value || '')})">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, ${jsArg(c.component + '.' + c.variable)}, ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
               }
             </td>` : ''}
           </tr>
@@ -3105,7 +3105,7 @@ function renderConfigTable(cpId, config, isOnline, ocppVersion) {
           ${adminManage() ? `<td style="white-space:nowrap;">
             ${GLOBAL_ONLY_KEYS.includes(c.key)
               ? `<span class="text-muted" title="${t('initConfig.globalOnlyTooltip')}">⚙ ${t('initConfig.globalOnly')}</span>`
-              : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, '${escapeAttr(c.key)}', '${escapeAttr(c.value || '')}')">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, '${escapeAttr(c.key)}', ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
+              : `${isOnline && !c.readonly ? `<button class="btn btn-teal btn-sm" data-onclick="showEditConfigModal(${cpId}, ${jsArg(c.key)}, ${jsArg(c.value || '')})">${t('common.edit')}</button> ` : isOnline ? '<span class="text-muted">- </span>' : ''}${!c.readonly ? `<button class="btn btn-sm btn-secondary" data-onclick="toggleConfigOverride(${cpId}, ${jsArg(c.key)}, ${!c.is_override}, ${isOnline})" title="${t(c.is_override ? 'chargepoint.cpConfOverrideRemove' : 'chargepoint.cpConfOverrideSet')}">${c.is_override ? '🔒' : '🔓'}</button>` : ''}`
             }
           </td>` : ''}
         </tr>
@@ -3152,7 +3152,7 @@ function showEditConfigModal(cpId, key, currentValue) {
     <p class="text-muted" style="font-size:12px;">${t('chargepoint.cpConfEditHint')}</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" data-onclick="withBtn(this, () => updateChargepointConfig(${cpId}, '${escapeAttr(key)}'))">${t('common.save')}</button>
+      <button class="btn btn-primary" data-onclick="withBtn(this, () => updateChargepointConfig(${cpId}, ${jsArg(key)}))">${t('common.save')}</button>
     </div>
   `);
 }
@@ -3288,7 +3288,7 @@ async function renderConnectors() {
         let primaryHtml = '';
         let afterHtml = '';
         if (canStart) {
-          primaryHtml = `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}, ${c.evse_id ?? 'null'}))">
+          primaryHtml = `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => mgrStartCharge(${c.chargepoint_id}, ${c.connector_id}, ${jsArg(c.chargepoint_name || c.chargepoint_identity)}, ${c.connector_id}, ${c.evse_id ?? 'null'}))">
                   ⚡ ${t('connectors.cStartCharge')}
                 </button>`;
         } else if (isCharging && c.active_transaction_id) {
@@ -3297,7 +3297,7 @@ async function renderConnectors() {
                       <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
                       <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
                     </div>`;
-          primaryHtml = `<button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+          primaryHtml = `<button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => mgrStopCharge(${c.chargepoint_id}, ${jsArg(c.active_transaction_id)}, ${jsArg(c.chargepoint_name || c.chargepoint_identity)}, ${c.connector_id}))">
                       ⏹ ${t('connectors.cStopCharge')}
                     </button>`;
           afterHtml = hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : '';
@@ -3313,7 +3313,7 @@ async function renderConnectors() {
           afterHtml = hasError ? `<div style="text-align:center;padding:4px;color:var(--danger);font-size:12px;">⚠ ${escapeHtml(c.error_code)}${c.info ? ' — ' + escapeHtml(c.info) : ''}</div>` : '';
         }
         const unlockHtml = isOnline
-          ? `<button class="btn btn-purple btn-block" data-onclick="withBtn(this, () => mgrUnlockConnector(${c.chargepoint_id}, ${c.connector_id}, ${c.evse_id ?? 'null'}, '${c.ocpp_version || '1.6'}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">🔓 ${t('connectors.cUnlock')}</button>`
+          ? `<button class="btn btn-purple btn-block" data-onclick="withBtn(this, () => mgrUnlockConnector(${c.chargepoint_id}, ${c.connector_id}, ${c.evse_id ?? 'null'}, '${c.ocpp_version || '1.6'}', ${jsArg(c.chargepoint_name || c.chargepoint_identity)}, ${c.connector_id}))">🔓 ${t('connectors.cUnlock')}</button>`
           : '';
         return `
           <div class="connector-card" style="text-align:left;padding:14px 16px;${cardStyle}">
@@ -3418,7 +3418,7 @@ function chargeConnectorReason(status) {
     Unavailable: t('connectors.status.Unavailable'),
     Faulted: t('connectors.status.Faulted')
   };
-  return map[status] || `${t('connectors.status.Occupied')} (${status})`;
+  return map[status] || `${t('connectors.status.Occupied')} (${escapeHtml(status)})`;
 }
 
 // ══════════════════════════════════════
@@ -3473,7 +3473,7 @@ async function renderUserDashboard() {
             ${isSuspended
           ? `<div style="text-align:center;padding:8px;color:var(--gray-500);font-size:13px;">🚫 ${t('dashboard.siteAccessSuspended')}</div>`
           : canChargeConn
-            ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => userStartCharge(${c.chargepoint_id}, ${c.connector_id}, '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}, ${c.evse_id ?? 'null'}))">
+            ? `<button class="btn btn-success btn-block" data-onclick="withBtn(this, () => userStartCharge(${c.chargepoint_id}, ${c.connector_id}, ${jsArg(c.chargepoint_name || c.chargepoint_identity)}, ${c.connector_id}, ${c.evse_id ?? 'null'}))">
                   ⚡ ${t('connectors.cStartCharge')}
                 </button>`
             : isOwnCharge
@@ -3482,7 +3482,7 @@ async function renderUserDashboard() {
                     <span title="${t('common.power')}">⚡ ${c.active_power != null ? (c.active_power / 1000).toFixed(1) + ' kW' : '- kW'}</span>
                     <span title="${t('common.energy')}">🔋 ${c.active_energy != null ? (c.active_energy / 1000).toFixed(2) + ' kWh' : '- kWh'}</span>
                   </div>
-                  <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => userStopCharge(${c.chargepoint_id}, '${c.active_transaction_id}', '${escapeAttr(c.chargepoint_name || c.chargepoint_identity)}', ${c.connector_id}))">
+                  <button class="btn btn-danger btn-block" data-onclick="withBtn(this, () => userStopCharge(${c.chargepoint_id}, ${jsArg(c.active_transaction_id)}, ${jsArg(c.chargepoint_name || c.chargepoint_identity)}, ${c.connector_id}))">
                     ⏹ ${t('connectors.cStopCharge')}
                   </button>`
               : isAutoMode && isOnline
@@ -3690,7 +3690,7 @@ async function renderIdTags(tab, keepState = false) {
                 <td><div class="flex-gap">
                   ${!canEditTag(tag) ? (isAutoTag(tag) ? `<span class="badge badge-yellow" title="${t('idtags.rfVirtualHint')}">${t('idtags.rfVirtual')}</span>` : '') : `
                   <button class="btn btn-teal btn-sm" data-onclick="showEditIdTagModal(${tag.id})">${t('common.edit')}</button>
-                  <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteIdTag(${tag.id}, '${escapeAttr(tag.id_tag)}'))">${t('common.delete')}</button>`}
+                  <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteIdTag(${tag.id}, ${jsArg(tag.id_tag)}))">${t('common.delete')}</button>`}
                 </div></td>
               </tr>
             `).join('')}
@@ -4099,7 +4099,7 @@ async function renderUsers() {
                   <button class="btn btn-teal btn-sm" data-onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
                   <button class="btn btn-purple btn-sm" data-onclick="showUserNotificationsModal(${u.id})">${t('users.uNotifications')}</button>
                   ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
-                  ${canDelete ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteUser(${u.id}, '${escapeAttr(u.useremail)}'))">${t('common.delete')}</button>` : ''}
+                  ${canDelete ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteUser(${u.id}, ${jsArg(u.useremail)}))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
             `}).join('')}
@@ -4477,7 +4477,7 @@ async function renderTransactions(keepState = false) {
           <tbody>
             ${transactions.map(tx => `
               <tr>
-                <td><span class="mono-id">${tx.transaction_id}</span></td>
+                <td><span class="mono-id">${escapeHtml(tx.transaction_id)}</span></td>
                 <td>${tx.site_name ? escapeHtml(tx.site_name) : '-'}</td>
                 <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
                 <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
@@ -4717,7 +4717,7 @@ async function renderMyTransactions(keepState = false) {
           const energy = (tx.meter_stop != null && tx.meter_start != null) ? ((tx.meter_stop - tx.meter_start) / 1000).toFixed(2) + ' kWh' : tx.energy != null ? (tx.energy / 1000).toFixed(2) + ' kWh' : '-';
           return `
             <tr>
-              <td><span class="mono-id">${tx.transaction_id}</span></td>
+              <td><span class="mono-id">${escapeHtml(tx.transaction_id)}</span></td>
               <td>${tx.site_name || '-'}</td>
               <td>${escapeHtml(tx.chargepoint_name || tx.chargepoint_identity)}</td>
               <td>${tx.evse_id != null ? `${tx.evse_name ? escapeHtml(tx.evse_name) : 'EVSE ' + tx.evse_id} · ${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}` : `${tx.connector_name ? escapeHtml(tx.connector_name) : '#' + tx.connector_id}`}</td>
@@ -5910,7 +5910,7 @@ async function _renderInitConfig16() {
       <td>${escapeHtml(r.value)}</td>
       <td><input type="checkbox" ${r.enabled || isGlobalOnly ? 'checked' : ''} ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : `data-onchange="toggleInitConfig(${r.id}, this.checked)"`}></td>
       <td>
-        <button class="btn btn-sm btn-secondary" data-onclick="showEditInitConfigModal(${r.id}, '${escapeAttr(r.key)}', '${escapeAttr(r.value)}', ${!!r.enabled}, ${isGlobalOnly})">${t('common.edit')}</button>
+        <button class="btn btn-sm btn-secondary" data-onclick="showEditInitConfigModal(${r.id}, ${jsArg(r.key)}, ${jsArg(r.value)}, ${!!r.enabled}, ${isGlobalOnly})">${t('common.edit')}</button>
         ${isGlobalOnly ? '' : `<button class="btn btn-sm btn-danger" data-onclick="withBtn(this, () => deleteInitConfig(${r.id}))">${t('common.delete')}</button>`}
       </td>
     </tr>`;
@@ -5956,7 +5956,7 @@ async function _renderInitConfig201() {
       <td>${escapeHtml(r.value)}</td>
       <td><input type="checkbox" ${r.enabled || isGlobalOnly ? 'checked' : ''} ${isGlobalOnly ? `disabled title="${t('initConfig.globalOnlyTooltip')}"` : `data-onchange="toggleInitVariable(${r.id}, this.checked)"`}></td>
       <td>
-        <button class="btn btn-sm btn-secondary" data-onclick="showEditInitVariableModal(${r.id}, '${escapeAttr(r.component)}', '${escapeAttr(r.variable)}', '${escapeAttr(r.attribute || 'Actual')}', '${escapeAttr(r.value)}', ${!!r.enabled})">${t('common.edit')}</button>
+        <button class="btn btn-sm btn-secondary" data-onclick="showEditInitVariableModal(${r.id}, ${jsArg(r.component)}, ${jsArg(r.variable)}, ${jsArg(r.attribute || 'Actual')}, ${jsArg(r.value)}, ${!!r.enabled})">${t('common.edit')}</button>
         ${isGlobalOnly ? '' : `<button class="btn btn-sm btn-danger" data-onclick="withBtn(this, () => deleteInitVariable(${r.id}))">${t('common.delete')}</button>`}
       </td>
     </tr>`;
@@ -6161,7 +6161,7 @@ async function cascadeAllInitConfig() {
       labelKey: 'cascadeErrors',
       count: result.errors.length,
       rows: result.errors.map(e =>
-        `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
+        `<tr><td>${escapeHtml(e.identity)}</td><td><code>${escapeHtml(e.key)}</code></td><td><span class="badge badge-red">${escapeHtml(e.reason ?? '')}</span></td></tr>`
       ).join(''),
       cols: cpCol + keyReasonCols,
       open: true,
@@ -6170,14 +6170,14 @@ async function cascadeAllInitConfig() {
       labelKey: 'cascadeSkipped',
       count: result.skipped.length,
       rows: result.skipped.map(s =>
-        `<tr><td>${s.identity}</td><td><code>${s.key}</code></td><td><span class="badge">${s.reason}</span></td></tr>`
+        `<tr><td>${escapeHtml(s.identity)}</td><td><code>${escapeHtml(s.key)}</code></td><td><span class="badge">${escapeHtml(s.reason ?? '')}</span></td></tr>`
       ).join(''),
       cols: cpCol + keyReasonCols,
     },
     {
       labelKey: 'cascadeQueued',
       count: result.queued.length,
-      rows: result.queued.map(q => `<tr><td>${q.identity}</td></tr>`).join(''),
+      rows: result.queued.map(q => `<tr><td>${escapeHtml(q.identity)}</td></tr>`).join(''),
       cols: cpCol,
     },
   ];
@@ -6228,7 +6228,7 @@ async function cascadeAllInitVariables() {
       labelKey: 'cascadeErrors',
       count: result.errors.length,
       rows: result.errors.map(e =>
-        `<tr><td>${e.identity}</td><td><code>${e.key}</code></td><td><span class="badge badge-red">${e.reason}</span></td></tr>`
+        `<tr><td>${escapeHtml(e.identity)}</td><td><code>${escapeHtml(e.key)}</code></td><td><span class="badge badge-red">${escapeHtml(e.reason ?? '')}</span></td></tr>`
       ).join(''),
       cols: cpCol + keyReasonCols,
       open: true,
@@ -6236,7 +6236,7 @@ async function cascadeAllInitVariables() {
     {
       labelKey: 'cascadeQueued',
       count: result.queued.length,
-      rows: result.queued.map(q => `<tr><td>${q.identity}</td></tr>`).join(''),
+      rows: result.queued.map(q => `<tr><td>${escapeHtml(q.identity)}</td></tr>`).join(''),
       cols: cpCol,
     },
   ];
@@ -7019,14 +7019,14 @@ async function renderSites() {
               <td class="td-date">${formatDateShort(s.created_at)}</td>
               <td>
                 ${s.default_price_per_kwh != null ? `<span class="td-meta">${t('tariff.summaryDefault', { price: formatCost(s.default_price_per_kwh, s.currency, 4) })}</span>` : `<span class="text-muted">${t('tariff.notConfigured')}</span>`}
-                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => showSiteTariffModal(${s.id}, '${escapeAttr(s.sname)}'))">💶 ${t('tariff.button')}</button>` : ''}
+                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => showSiteTariffModal(${s.id}, ${jsArg(s.sname)}))">💶 ${t('tariff.button')}</button>` : ''}
               </td>
               <td>
-                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, '${escapeAttr(s.sname)}')">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
+                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, ${jsArg(s.sname)})">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>
               <td>
-                ${isAdmin ? `<button class="btn btn-teal btn-sm" data-onclick="showEditSiteModal(${s.id}, '${escapeAttr(s.sname)}', '${escapeAttr(s.address || '')}')">${t('common.edit')}</button>
-                <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteSite(${s.id}, '${escapeAttr(s.sname)}'))">${t('common.delete')}</button>` : ''}
+                ${isAdmin ? `<button class="btn btn-teal btn-sm" data-onclick="showEditSiteModal(${s.id}, ${jsArg(s.sname)}, ${jsArg(s.address || '')})">${t('common.edit')}</button>
+                <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteSite(${s.id}, ${jsArg(s.sname)}))">${t('common.delete')}</button>` : ''}
               </td>
             </tr>`;
     }).join('')}
@@ -7252,7 +7252,7 @@ async function renderSiteUsers(siteId, siteName, keepState = false) {
 
   document.getElementById('topbarActions').innerHTML =
     `<button class="btn btn-secondary" data-onclick="navigate('sites')">← ${t('sites.siteUserBackToSites')}</button>
-     <button class="btn btn-primary" data-onclick="showAddUserToSiteModal(${sid}, '${escapeAttr(sname)}')">+ ${t('sites.siteUserAdd')}</button>`;
+     <button class="btn btn-primary" data-onclick="showAddUserToSiteModal(${sid}, ${jsArg(sname)})">+ ${t('sites.siteUserAdd')}</button>`;
 
   try {
     const data = await api('GET', `/sites/${sid}/users/stats`);
@@ -7295,12 +7295,12 @@ async function renderSiteUsers(siteId, siteName, keepState = false) {
           : `<span class="badge badge-green">${t('common.yes')}</span>`;
         const actions = `
           ${isSuspended
-            ? `<button class="btn btn-sm" style="background:var(--success);color:#fff;" data-onclick="toggleUserSiteAuth(${u.id}, ${sid}, 1, '${escapeAttr(sname)}')">${t('sites.siteUserUnsuspend')}</button>`
-            : `<button class="btn btn-sm" style="background:var(--warning);color:#fff;" data-onclick="toggleUserSiteAuth(${u.id}, ${sid}, 0, '${escapeAttr(sname)}')">${t('sites.siteUserSuspend')}</button>`}
+            ? `<button class="btn btn-sm" style="background:var(--success);color:#fff;" data-onclick="toggleUserSiteAuth(${u.id}, ${sid}, 1, ${jsArg(sname)})">${t('sites.siteUserUnsuspend')}</button>`
+            : `<button class="btn btn-sm" style="background:var(--warning);color:#fff;" data-onclick="toggleUserSiteAuth(${u.id}, ${sid}, 0, ${jsArg(sname)})">${t('sites.siteUserSuspend')}</button>`}
           ${!isSelf ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
-          ${!isSelf && !isGlobalAdmin && !isManager ? `<button class="btn btn-indigo btn-sm" data-onclick="toggleUserSiteRole(${u.id}, ${sid}, 'manager', '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteUserPromote')}</button>` : ''}
-          ${!isSelf && !isGlobalAdmin && isManager && !isLastManager ? `<button class="btn btn-indigo btn-sm" style="background:var(--orange);color:#fff;" data-onclick="toggleUserSiteRole(${u.id}, ${sid}, 'user', '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteUserDemote')}</button>` : ''}
-          ${!isSelf && !isLastManager ? `<button class="btn btn-danger btn-sm" data-onclick="removeUserFromSite(${u.id}, ${sid}, '${escapeAttr(sname)}', '${escapeAttr(u.useremail)}')">${t('sites.siteBtnRemove')}</button>` : ''}
+          ${!isSelf && !isGlobalAdmin && !isManager ? `<button class="btn btn-indigo btn-sm" data-onclick="toggleUserSiteRole(${u.id}, ${sid}, 'manager', ${jsArg(sname)}, ${jsArg(u.useremail)})">${t('sites.siteUserPromote')}</button>` : ''}
+          ${!isSelf && !isGlobalAdmin && isManager && !isLastManager ? `<button class="btn btn-indigo btn-sm" style="background:var(--orange);color:#fff;" data-onclick="toggleUserSiteRole(${u.id}, ${sid}, 'user', ${jsArg(sname)}, ${jsArg(u.useremail)})">${t('sites.siteUserDemote')}</button>` : ''}
+          ${!isSelf && !isLastManager ? `<button class="btn btn-danger btn-sm" data-onclick="removeUserFromSite(${u.id}, ${sid}, ${jsArg(sname)}, ${jsArg(u.useremail)})">${t('sites.siteBtnRemove')}</button>` : ''}
         `;
         return `
         <tr>
@@ -7355,7 +7355,7 @@ async function renderSiteUsers(siteId, siteName, keepState = false) {
       <div class="card">
         <div class="card-header">
           <h3>${t('sites.siteUsers')} (${filtered.length})</h3>
-          ${!isSelfMember ? `<button class="btn btn-secondary btn-sm" data-onclick="addSelfToSite(${sid}, '${escapeAttr(sname)}')">${t('sites.siteUserAddSelf')}</button>` : ''}
+          ${!isSelfMember ? `<button class="btn btn-secondary btn-sm" data-onclick="addSelfToSite(${sid}, ${jsArg(sname)})">${t('sites.siteUserAddSelf')}</button>` : ''}
         </div>
         <table>
           <thead><tr>
@@ -7399,7 +7399,7 @@ function showAddUserToSiteModal(siteId, siteName) {
     <p class="text-muted" style="font-size:12px;margin-bottom:8px;">${t('sites.siteUserPwdHint')}</p>
     <div class="modal-actions">
       <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
-      <button class="btn btn-primary" data-onclick="addUserToSite(${siteId}, '${escapeAttr(siteName)}')">${t('common.add')}</button>
+      <button class="btn btn-primary" data-onclick="addUserToSite(${siteId}, ${jsArg(siteName)})">${t('common.add')}</button>
     </div>
   `);
 }
@@ -7555,6 +7555,16 @@ function escapeAttr(str) {
     .replace(/>/g, '&gt;');
 }
 
+// Argument texte d'un attribut data-on* (exécuté par runDataHandler) : chaîne littérale entre
+// apostrophes dont \ et ' sont échappés, puis échappée pour l'attribut HTML. escapeAttr seul ne
+// suffit pas : le navigateur décode &#39; en ' avant l'interprétation, et une valeur contenant
+// une apostrophe (clé de configuration ou transactionId venant d'une borne, nom de site…)
+// fermerait la chaîne et pourrait enchaîner un autre appel (`'); deleteSite(1); ('`).
+function jsArg(value) {
+  const s = String(value ?? '');
+  return escapeAttr(`'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`);
+}
+
 function splitTopLevel(str, sep) {
   const out = [];
   let cur = '';
@@ -7562,10 +7572,15 @@ function splitTopLevel(str, sep) {
   let quote = null;
   for (let i = 0; i < str.length; i++) {
     const ch = str[i];
-    const prev = i > 0 ? str[i - 1] : '';
     if (quote) {
+      // Échappement dans une chaîne : le caractère suivant (\' \" \\) ne ferme jamais la chaîne
+      if (ch === '\\' && i + 1 < str.length) {
+        cur += ch + str[i + 1];
+        i++;
+        continue;
+      }
       cur += ch;
-      if (ch === quote && prev !== '\\') quote = null;
+      if (ch === quote) quote = null;
       continue;
     }
     if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
@@ -7595,7 +7610,7 @@ function parseLiteral(token, ctx) {
   if (tkn === 'null') return null;
   if (/^-?\d+(\.\d+)?$/.test(tkn)) return Number(tkn);
   if ((tkn.startsWith("'") && tkn.endsWith("'")) || (tkn.startsWith('"') && tkn.endsWith('"'))) {
-    return tkn.slice(1, -1).replace(/\\'/g, "'").replace(/\\"/g, '"');
+    return tkn.slice(1, -1).replace(/\\(.)/g, '$1');
   }
   if (tkn.startsWith('{') && tkn.endsWith('}')) {
     const obj = {};

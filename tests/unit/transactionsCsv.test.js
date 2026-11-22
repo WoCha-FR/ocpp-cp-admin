@@ -12,7 +12,7 @@ jest.mock('../../src/i18n', () => {
   };
 });
 
-const { buildTransactionsCsv, buildReimbursementCsv } = require('../../src/transactionsCsv');
+const { buildTransactionsCsv, buildReimbursementCsv, csvCell } = require('../../src/transactionsCsv');
 const { formatTariffDetail, normalizeTariffInput, validateTariff } = require('../../src/tariff');
 
 const details = {
@@ -305,5 +305,62 @@ describe('normalizeTariffInput', () => {
     const codes = validateTariff(t).errors.map((e) => e.code);
     expect(codes).toContain('ERR_TARIFF_TIME_FORMAT');
     expect(codes).toContain('ERR_TARIFF_DAYS');
+  });
+});
+
+describe('M10 — neutralisation des formules (injection CSV)', () => {
+  it.each(['=HYPERLINK("http://x","clic")', '+1+cmd|calc', '-2+3', '@SUM(A1:A2)', '\t=1', '\r=1'])(
+    'préfixe %p d’une apostrophe',
+    (value) => {
+      const c = csvCell(value);
+      expect(c.startsWith(`"'`)).toBe(true);
+    }
+  );
+
+  it.each([['-1.50'], ['-3'], ['+2'], ['12'], ['TAG123'], [''], ['Maison']])(
+    'laisse intact %p (nombre ou texte ordinaire)',
+    (value) => {
+      expect(csvCell(value)).toBe(`"${value}"`);
+    }
+  );
+
+  it('garde le doublement des guillemets et la neutralisation du « ; »', () => {
+    expect(csvCell('=A1;"x"')).toBe(`"'=A1,""x"""`);
+  });
+
+  it('null / undefined → cellule vide', () => {
+    expect(csvCell(null)).toBe('""');
+    expect(csvCell(undefined)).toBe('""');
+  });
+
+  it('export transactions : badge (renvoyé par une borne) et utilisateur neutralisés', () => {
+    const csv = buildTransactionsCsv(
+      [{ ...baseRow, id_tag: '=cmd|calc', tag_username: '@evil' }],
+      { withUser: true, lng: 'fr' }
+    );
+    const [, row] = parse(csv);
+    expect(row).toContain("'=cmd|calc");
+    expect(row).toContain("'@evil");
+  });
+
+  it('export remboursement : nom de site et utilisateur neutralisés', () => {
+    const csv = buildReimbursementCsv(
+      [
+        {
+          site_id: 1,
+          site_name: '=Site',
+          user_name: '+Bob',
+          category: 'pro',
+          sessions: 1,
+          energy_kwh: 2,
+          cost: 1,
+          currency: 'EUR',
+        },
+      ],
+      { lng: 'fr' }
+    );
+    const [, row] = parse(csv);
+    expect(row[0]).toBe("'=Site");
+    expect(row[1]).toBe("'+Bob");
   });
 });
