@@ -530,6 +530,9 @@
   },
   "transac": {
     "transacGraphTitle": "Transaction #{{id}}",
+    "closeManually": "Close manually",
+    "closeManuallyConfirm": "Close transaction #{{id}} in the database?\n\nCharging is NOT stopped on the charge point (use \"Stop charging\" on the Connectors page for that). The session is closed with the last known meter reading; if the charge point later sends its actual stop, the session will be corrected.",
+    "closeManuallyOk": "Transaction #{{id}} closed",
     "transactions_one": "Transaction ({{count}})",
     "transactions_other": "Transactions ({{count}})",
     "noTransactions": "No transactions",
@@ -1071,6 +1074,7 @@
     "ERR_EMAIL_ALREADY_USED": "This email address is already in use",
     "ERR_TRANSACTION_NOT_FOUND": "Transaction not found",
     "ERR_TRANSACTION_NOT_OWNED": "This transaction does not belong to you",
+    "ERR_TRANSACTION_NOT_ACTIVE": "This transaction is no longer in progress",
     "ERR_NO_PENDING_CHARGEPOINT": "No pending charge point with this identity",
     "ERR_USER_NOT_AUTHORIZED_IN_SITE": "Not authorized to charge on this site",
     "ERR_NO_VALID_ID_TAG": "No valid badge for this charge point (expired, disabled or not authorized on this site) — contact the administrator",

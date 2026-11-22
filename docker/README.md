@@ -332,6 +332,16 @@ docker compose -f docker/docker-compose.tls-ext.yml up -d
 
 ---
 
+## Updating the Image
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Stopping the container does not interrupt ongoing charging: charge points keep charging offline during the outage, reconnect, then send their queued messages; sessions are reconciled on reconnection (see [Transaction handling](../README.md#transaction-handling)).
+
+---
+
 ## Mounted Volume Permissions
 
 The entrypoint runs as root to seed default files into empty volumes (`config/`, `public/img/`) and fix their ownership. It then drops privileges to a dedicated non-root user (`app`, **UID/GID 10001**) via `su-exec` before starting the application.

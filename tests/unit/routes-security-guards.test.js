@@ -64,6 +64,22 @@ describe('Backend access control guards', () => {
     expect(values.slice(0, 600)).toMatch(/canViewTransaction\(req, tx\)/);
   });
 
+  it('POST /transactions/:id/close : requireManager + site géré, sans commande à la borne', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const start = src.indexOf("'/transactions/:id/close',");
+    expect(start).toBeGreaterThan(-1);
+    const route = src.slice(start, src.indexOf('\n);', start));
+    expect(route).toMatch(/'\/transactions\/:id\/close',\s*requireManager/);
+    expect(route).toMatch(/validateSchema\(schema\.IdParam\)/);
+    expect(route).toMatch(/const managedIds = getUserManagedSiteIds\(req\)/);
+    expect(route).toMatch(/!managedIds\.includes\(cp\.site_id\)/);
+    expect(route).toMatch(/ERR_SITE_NOT_MANAGED/);
+    expect(route).toMatch(/db\.closeTransactionManually\(tx\.id\)/);
+    expect(route).toMatch(/status\(409\)\.json\(\{ error: 'ERR_TRANSACTION_NOT_ACTIVE' \}\)/);
+    // clôture en base uniquement : aucune commande OCPP envoyée à la borne
+    expect(route).not.toMatch(/remoteStopTransaction|callClient/);
+  });
+
   it('POST /user/start-charge : badge contrôlé, pas de repli web si les badges sont invalides', () => {
     const src = fs.readFileSync(routesPath, 'utf8');
     const start = src.indexOf("'/user/start-charge',");

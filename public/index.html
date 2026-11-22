@@ -4892,10 +4892,33 @@ async function showTransactionDetail(txRowId, lastPage) {
     txDetailContext.tx = tx;
     txDetailContext.data = data;
     document.getElementById('pageTitle').textContent = t('transac.transacGraphTitle', { id: tx.transaction_id });
+    if (tx.status === 'Active' && canCloseTransaction(tx)
+      && currentPage === 'transactiondetail' && txDetailContext.transactionId === transactionId) {
+      document.getElementById('topbarActions').insertAdjacentHTML('beforeend',
+        ` <button class="btn btn-danger" data-onclick="withBtn(this, () => closeTransactionManually(${tx.id}, ${jsArg(tx.transaction_id)}))">${t('transac.closeManually')}</button>`);
+    }
     renderTransactionDetail(tx, data);
   } catch (err) {
     const el = document.getElementById('txDetailLoading');
     if (el) el.textContent = `${t('common.error')}: ${err.message}`;
+  }
+}
+
+// Clôture manuelle : admin, ou manager du site de la borne (même contrôle que la route)
+function canCloseTransaction(tx) {
+  if (!currentUser) return false;
+  if (currentUser.role === 'admin') return true;
+  return (currentUser.sites || []).some(s => s.role === 'manager' && s.site_id === tx.chargepoint_site_id);
+}
+
+async function closeTransactionManually(txRowId, transactionId) {
+  if (!await confirmDialog(t('transac.closeManuallyConfirm', { id: transactionId }), { danger: true })) return;
+  try {
+    await api('POST', `/transactions/${txRowId}/close`);
+    toast(t('transac.closeManuallyOk', { id: transactionId }), 'success');
+    showTransactionDetail(txRowId, txDetailContext.lastPage);
+  } catch (err) {
+    toast(`${t('common.error')}: ${err.message}`, 'error');
   }
 }
 

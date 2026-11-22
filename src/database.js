@@ -4,6 +4,7 @@ const path = require('path');
 const { getConfig, getConfigDir } = require('./config');
 const { runMigrations, initNewDatabase } = require('./migrator');
 const tariff = require('./tariff');
+const { lastKnownMeterStop } = require('./txRecovery');
 const logger = require('./logger').scope('SQLDB');
 
 const config = getConfig();
@@ -945,6 +946,26 @@ function stopTransaction(
 }
 
 /**
+ * Clôture manuelle (admin/manager) d'une transaction restée active alors que la borne ne la
+ * renverra jamais. Rien n'est envoyé à la borne. Clôture closed_by = server avec le dernier
+ * relevé connu (meter_start + energy) : un arrêt réel envoyé plus tard par la borne la corrige.
+ * @param {number} id identifiant interne (transactions.id)
+ * @returns {{tx: object|undefined, closed: boolean}} closed = false : inconnue ou déjà close
+ */
+function closeTransactionManually(id) {
+  const tx = getTransactionById(id);
+  if (!tx || tx.status !== 'Active') return { tx, closed: false };
+  return stopTransaction(
+    tx.chargepoint_id,
+    tx.transaction_id,
+    lastKnownMeterStop(tx),
+    new Date().toISOString(),
+    'Other',
+    'server'
+  );
+}
+
+/**
  * Arrêt réel envoyé par la borne pour une transaction déjà close par le serveur (closed_by =
  * server) : l'arrêt de la borne fait foi (compteur, heure, raison) et le coût est recalculé.
  * Un compteur d'arrêt absent ou incohérent (≤ compteur de départ) garde l'estimation du serveur.
@@ -1172,7 +1193,7 @@ function getChargingKpi(siteIds = null, days = 30) {
 
 // Base commune des requêtes transactions
 const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity, cp.cpname as chargepoint_name,
-    s.sname as site_name,
+    cp.site_id as chargepoint_site_id, s.sname as site_name,
     it.user_id as tag_user_id, it.category as tag_category, COALESCE(u.shortname, u.useremail) as tag_username,
     CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values,
     cn.connector_name as connector_name,
@@ -2886,31 +2907,14 @@ function resetStateOnStartup() {
        SET connected = 0, connected_wss = 0, endpoint_address = NULL, cpstatus = NULL`
     )
     .run();
-  const activeIds = db
-    .prepare(`SELECT id FROM transactions WHERE status = 'Active'`)
-    .all()
-    .map((r) => r.id);
-  // Clôture heuristique (closed_by = server) : la borne a pu continuer à charger pendant
-  // l'arrêt du serveur, son StopTransaction / TransactionEvent(Ended) réel corrigera la session
+  // Les transactions actives restent actives : seule la borne termine une transaction. Elle a pu
+  // continuer à charger pendant l'arrêt du serveur ; son arrêt réel (mis en file) ou la
+  // réconciliation à la reconnexion (StatusNotification Available, GetTransactionStatus) la
+  // clôturera. Seules les valeurs instantanées périmées sont effacées ; `energy` est gardé
+  // (dernier relevé connu, utilisé par lastKnownMeterStop).
   const txResult = db
-    .prepare(
-      `UPDATE transactions
-       SET status = 'Completed',
-           closed_by = 'server',
-           stop_time = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
-           stop_reason = 'Other',
-           charging_state = NULL,
-           power = NULL,
-           meter_stop = CASE
-                          WHEN energy IS NOT NULL AND meter_start IS NOT NULL
-                          THEN meter_start + energy
-                          ELSE meter_stop
-                        END,
-           energy = NULL
-       WHERE status = 'Active'`
-    )
+    .prepare(`UPDATE transactions SET charging_state = NULL, power = NULL WHERE status = 'Active'`)
     .run();
-  for (const id of activeIds) finalizeTransactionCost(id);
   const cnResult = db
     .prepare(
       `UPDATE connectors
@@ -3133,6 +3137,7 @@ module.exports = {
   getTransactionById,
   getTransactionFullById,
   correctServerClosedTransaction,
+  closeTransactionManually,
   stopRejectedTransaction,
   getActiveTransactionByConnector,
   setTransactionIdTag,

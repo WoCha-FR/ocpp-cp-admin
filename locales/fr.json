@@ -530,6 +530,9 @@
   },
   "transac": {
     "transacGraphTitle": "Transaction #{{id}}",
+    "closeManually": "Clore manuellement",
+    "closeManuallyConfirm": "Clore la transaction #{{id}} en base ?\n\nLa charge n'est PAS arrêtée sur la borne (pour cela, utilisez « Arrêter la recharge » sur la page Connecteurs). La session est close avec le dernier relevé connu ; si la borne envoie plus tard son arrêt réel, la session sera corrigée.",
+    "closeManuallyOk": "Transaction #{{id}} close",
     "transactions_one": "Transaction ({{count}})",
     "transactions_other": "Transactions ({{count}})",
     "noTransactions": "Aucune transaction",
@@ -1071,6 +1074,7 @@
     "ERR_EMAIL_ALREADY_USED": "Cette adresse e-mail est déjà utilisée",
     "ERR_TRANSACTION_NOT_FOUND": "Transaction non trouvée",
     "ERR_TRANSACTION_NOT_OWNED": "Cette transaction ne vous appartient pas",
+    "ERR_TRANSACTION_NOT_ACTIVE": "Cette transaction n'est plus en cours",
     "ERR_NO_PENDING_CHARGEPOINT": "Aucune borne en attente avec cette identité",
     "ERR_USER_NOT_AUTHORIZED_IN_SITE": "Non autorisé à recharger sur ce site",
     "ERR_NO_VALID_ID_TAG": "Aucun badge valide pour cette borne (expiré, désactivé ou non autorisé sur ce site) — contactez l'administrateur",

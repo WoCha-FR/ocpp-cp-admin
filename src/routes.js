@@ -2348,6 +2348,42 @@ router.get('/transactions/:id', requireAuth, ...validateSchema(schema.IdParam), 
   res.json(tx);
 });
 
+// Clôture manuelle d'une transaction restée active en base alors que la borne ne la
+// renverra jamais (borne hors service, file hors ligne perdue…). Rien n'est envoyé à la borne :
+// ce n'est pas un arrêt de charge. Clôture closed_by = server, avec le dernier relevé connu :
+// un arrêt réel envoyé plus tard par la borne corrige encore la session.
+router.post(
+  '/transactions/:id/close',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const tx = db.getTransactionById(Number(req.params.id));
+    if (!tx) return res.status(404).json({ error: 'Not found' });
+    const cp = db.getChargepointById(tx.chargepoint_id);
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+
+    if (req.user.role !== 'admin') {
+      const managedIds = getUserManagedSiteIds(req);
+      if (managedIds !== null && !managedIds.includes(cp.site_id)) {
+        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
+      }
+    }
+
+    const { tx: closedTx, closed } = db.closeTransactionManually(tx.id);
+    if (!closed) return res.status(409).json({ error: 'ERR_TRANSACTION_NOT_ACTIVE' });
+
+    logger.info(
+      `Transaction ${tx.transaction_id} on ${cp.identity} closed manually by ${req.user.useremail}`
+    );
+    broadcast(
+      'transaction_stop',
+      { identity: cp.identity, transactionId: tx.transaction_id, reason: 'Other' },
+      cp.site_id ?? null
+    );
+    res.json({ transaction: closedTx });
+  }
+);
+
 // ══════════════════════════════════════
 //  TRANSACTION VALUES (graphiques)
 // ══════════════════════════════════════

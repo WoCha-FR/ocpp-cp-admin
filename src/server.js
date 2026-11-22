@@ -24,7 +24,6 @@ const {
   startReservationCleanupWatchdog,
   stopReservationCleanupWatchdog,
   getConnectedClients,
-  remoteStopTransaction,
   pendingChargepoints,
 } = require('./ocpp-common');
 
@@ -56,17 +55,23 @@ if (config.ocpp.v201?.enabled) require('./ocpp-server-201');
 // ── Initialiser la DB ──
 const sqliteDb = db.getDb();
 
-// ── RAZ au démarrage : nettoyer les états incohérents post-crash ──
+// ── RAZ au démarrage : états de connexion et statuts remis à zéro ──
+// Les transactions actives sont conservées : un redémarrage du serveur n'arrête pas les charges
+// (la borne continue hors ligne et renvoie son arrêt réel à la reconnexion ; la réconciliation
+// se fait sur StatusNotification / GetTransactionStatus).
 {
   const r = db.resetStateOnStartup();
-  if (r.chargepoints > 0 || r.transactions > 0 || r.connectors > 0) {
-    logger.warn(
-      `Startup cleanup: ${r.chargepoints} chargepoint(s) reset, ` +
-        `${r.transactions} orphan transaction(s) closed (Other), ` +
-        `${r.connectors} connector(s) reset`
+  if (r.chargepoints > 0 || r.connectors > 0) {
+    logger.info(
+      `Startup cleanup: ${r.chargepoints} chargepoint(s) reset, ${r.connectors} connector(s) reset`
     );
   } else {
     logger.debug('Startup cleanup: nothing to reset');
+  }
+  if (r.transactions > 0) {
+    logger.info(
+      `Startup: ${r.transactions} transaction(s) left active, waiting for the chargepoint to reconnect`
+    );
   }
 }
 
@@ -726,33 +731,9 @@ async function gracefulShutdown(signal) {
     for (const client of uiClients) {
       client.close(1001, 'Server shutting down');
     }
-    // 1bis. RemoteStopTransaction pour les bornes connectées avec transactions actives
-    try {
-      const connectedCps = getConnectedClients();
-      const stopPromises = [];
-      for (const [identity] of connectedCps) {
-        const cp = db.getChargepointByIdentity(identity);
-        if (!cp) continue;
-        const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
-        for (const tx of activeTxs) {
-          stopPromises.push(
-            Promise.race([
-              remoteStopTransaction(identity, tx.transaction_id).catch(() => {}),
-              new Promise((resolve) => setTimeout(resolve, 5000)),
-            ])
-          );
-        }
-      }
-      if (stopPromises.length > 0) {
-        await Promise.allSettled(stopPromises);
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        logger.info(
-          `Shutdown: RemoteStopTransaction envoyé pour ${stopPromises.length} transaction(s).`
-        );
-      }
-    } catch (err) {
-      logger.warn('Shutdown: RemoteStopTransaction échoué (non-bloquant):', err);
-    }
+    // Les charges en cours ne sont PAS arrêtées : seule la borne termine une transaction. Elle
+    // continue hors ligne pendant la coupure (mise à jour d'image, redémarrage) et renvoie ses
+    // messages de transaction à la reconnexion.
     // 2. Fermer le serveur OCPP WS
     await ocppServer.close();
     // 3. Fermer le serveur OCPP WSS (si actif)
@@ -765,17 +746,7 @@ async function gracefulShutdown(signal) {
     if (httpsServer) {
       await new Promise((resolve) => httpsServer.close(resolve));
     }
-    // 4bis. RAZ finale : statuts et connexions remis à NULL
-    try {
-      const r = db.resetStateOnStartup();
-      logger.info(
-        `Shutdown cleanup: ${r.chargepoints} chargepoint(s) reset, ` +
-          `${r.transactions} transaction(s) closed, ` +
-          `${r.connectors} connector(s) reset`
-      );
-    } catch (err) {
-      logger.warn('Shutdown cleanup failed (non-blocking):', err);
-    }
+    // (statuts et connexions remis à zéro au prochain démarrage : resetStateOnStartup)
     // 5. Fermer la base de données SQLite
     db.closeDb();
     // 6. Arrêt complet

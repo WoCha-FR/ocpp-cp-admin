@@ -1003,15 +1003,16 @@ describe('database — resetStateOnStartup', () => {
     expect(cp2.initialized).toBe(1);
   });
 
-  it('ferme les transactions Active avec stop_reason=Other', () => {
+  it('ne clôt PAS les transactions actives (la borne charge peut-être encore)', () => {
     const tx = db.getTransactionByTransactionId(cpId1, txId);
-    expect(tx.status).toBe('Completed');
-    expect(tx.stop_reason).toBe('Other');
-    expect(tx.stop_time).not.toBeNull();
+    expect(tx.status).toBe('Active');
+    expect(tx.stop_time).toBeNull();
+    expect(tx.stop_reason).toBeNull();
+    expect(tx.closed_by).toBeNull();
     expect(tx.charging_state).toBeNull();
   });
 
-  it('calcule meter_stop = meter_start + energy si energy est renseigné', () => {
+  it('efface la puissance instantanée mais garde energy (dernier relevé connu)', () => {
     // start_time dans le passé lointain pour ne pas polluer les tests KPI (filtre 7/30 jours)
     const oldDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
     db.upsertChargepoint('CP-RST-ENERGY', { connected: 1, initialized: 1 });
@@ -1021,21 +1022,22 @@ describe('database — resetStateOnStartup', () => {
     // donc on passe 12500 (absolu) → energy = 12500 - 10000 = 2500
     db.updateTransactionPowerEnergy(cpE, tx.transaction_id, 3000, 12500);
     db.resetStateOnStartup();
-    const closed = db.getTransactionByTransactionId(cpE, tx.transaction_id);
-    expect(closed.status).toBe('Completed');
-    expect(closed.meter_stop).toBe(12500); // meter_start(10000) + energy(2500)
-    expect(closed.energy).toBeNull();
-  });
-
-  it('laisse meter_stop à null si energy est null', () => {
-    const oldDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString();
-    db.upsertChargepoint('CP-RST-NOENERGY', { connected: 1, initialized: 1 });
-    const cpN = db.getChargepointByIdentity('CP-RST-NOENERGY').id;
-    const tx = db.createTransaction(cpN, 1, 'RSTNOENERGY', 5000, oldDate, 'rfid');
-    db.resetStateOnStartup();
-    const closed = db.getTransactionByTransactionId(cpN, tx.transaction_id);
-    expect(closed.status).toBe('Completed');
-    expect(closed.meter_stop).toBeNull();
+    const after = db.getTransactionByTransactionId(cpE, tx.transaction_id);
+    expect(after.status).toBe('Active');
+    expect(after.power).toBeNull();
+    expect(after.energy).toBe(2500);
+    expect(after.meter_stop).toBeNull();
+    // l'arrêt réel envoyé ensuite par la borne clôt normalement la session
+    const { closed, tx: stopped } = db.stopTransaction(
+      cpE,
+      tx.transaction_id,
+      14000,
+      new Date().toISOString(),
+      'Local'
+    );
+    expect(closed).toBe(true);
+    expect(stopped.closed_by).toBe('station');
+    expect(stopped.meter_stop).toBe(14000);
   });
 
   it('remet cnstatus=null sur tous les connecteurs', () => {
@@ -1043,19 +1045,27 @@ describe('database — resetStateOnStartup', () => {
     expect(connectors[0].cnstatus).toBeNull();
   });
 
-  it('retourne le nombre correct d\'enregistrements modifiés', () => {
+  it('retourne le nombre de bornes remises à zéro et de transactions laissées actives', () => {
     db.upsertChargepoint('CP-RST-COUNT', { connected: 1 });
     const cpCount = db.getChargepointByIdentity('CP-RST-COUNT').id;
-    db.createTransaction(cpCount, 1, 'RSTTAG2', 0, new Date().toISOString(), 'rfid');
+    const tx = db.createTransaction(cpCount, 1, 'RSTTAG2', 0, new Date().toISOString(), 'rfid');
     const result = db.resetStateOnStartup();
     expect(result.chargepoints).toBeGreaterThanOrEqual(1);
     expect(result.transactions).toBeGreaterThanOrEqual(1);
     expect(result.connectors).toBeGreaterThanOrEqual(0);
+    // un 2e appel compte toujours les mêmes transactions, toujours actives
+    expect(db.resetStateOnStartup().transactions).toBe(result.transactions);
+    expect(db.getTransactionByTransactionId(cpCount, tx.transaction_id).status).toBe('Active');
   });
 
-  it('est idempotent : un 2e appel ne ferme plus de transactions', () => {
-    const result = db.resetStateOnStartup();
-    expect(result.transactions).toBe(0);
+  afterAll(() => {
+    // ne pas laisser les sessions de ce bloc aux tests suivants (KPI, connecteurs…)
+    db.getDb()
+      .prepare(
+        `DELETE FROM transactions WHERE chargepoint_id IN
+           (SELECT id FROM chargepoints WHERE identity LIKE 'CP-RST-%')`
+      )
+      .run();
   });
 });
 
@@ -2204,15 +2214,18 @@ describe('database — tarification (coût figé à la clôture)', () => {
     expect(stopped.cost).toBeNull();
   });
 
-  it('resetStateOnStartup fige aussi le coût des sessions orphelines', () => {
+  it('resetStateOnStartup ne fige pas le coût : la session reste active', () => {
     const tx = db.createTransaction(cpId, 1, 'TAG-T6', 0, START, 'rfid');
     db.updateTransactionPowerEnergy(cpId, tx.transaction_id, null, 10000);
     db.resetStateOnStartup();
     const after = db.getTransactionByTransactionId(cpId, tx.transaction_id);
-    expect(after.status).toBe('Completed');
-    expect(after.meter_stop).toBe(10000);
-    expect(after.cost).not.toBeNull();
-    expect(after.cost_currency).toBe('EUR');
+    expect(after.status).toBe('Active');
+    expect(after.cost).toBeNull();
+    // le coût est figé à la vraie clôture
+    db.stopTransaction(cpId, tx.transaction_id, 10000, STOP, 'Local');
+    const stopped = db.getTransactionByTransactionId(cpId, tx.transaction_id);
+    expect(stopped.cost).not.toBeNull();
+    expect(stopped.cost_currency).toBe('EUR');
   });
 
   it('expose costByCurrency dans les stats paginées', () => {
@@ -2526,13 +2539,60 @@ describe('database — lot D (H1 / H4 / M7)', () => {
       expect(corrected.stop_reason).toBe('PowerLoss');
     });
 
-    it('resetStateOnStartup marque ses clôtures closed_by = server (corrigeables)', () => {
+    it('resetStateOnStartup laisse la session active : rien à corriger, l’arrêt réel la clôt', () => {
       db.createTransaction(cpA, 1, 'TAG-A', 0, START, 'rfid', { transactionId: 'H4-RESTART' });
       db.resetStateOnStartup();
-      expect(db.getTransactionByTransactionId(cpA, 'H4-RESTART').closed_by).toBe('server');
-      expect(
-        db.correctServerClosedTransaction(cpA, 'H4-RESTART', 2500, STOP, 'Local')
-      ).not.toBeNull();
+      const tx = db.getTransactionByTransactionId(cpA, 'H4-RESTART');
+      expect(tx.status).toBe('Active');
+      expect(tx.closed_by).toBeNull();
+      expect(db.correctServerClosedTransaction(cpA, 'H4-RESTART', 2500, STOP, 'Local')).toBeNull();
+      const { closed, tx: stopped } = db.stopTransaction(cpA, 'H4-RESTART', 2500, STOP, 'Local');
+      expect(closed).toBe(true);
+      expect(stopped.closed_by).toBe('station');
+    });
+  });
+
+  describe('closeTransactionManually — clôture manuelle (admin/manager)', () => {
+    it('clôt une transaction active avec le dernier relevé connu (closed_by = server)', () => {
+      const tx = db.createTransaction(cpA, 1, 'TAG-A', 10000, START, 'rfid', {
+        transactionId: 'MAN-1',
+      });
+      db.updateTransactionPowerEnergy(cpA, 'MAN-1', 7000, 15000); // energy = 5000 Wh
+      const { closed, tx: done } = db.closeTransactionManually(tx.id);
+      expect(closed).toBe(true);
+      expect(done.status).toBe('Completed');
+      expect(done.closed_by).toBe('server');
+      expect(done.stop_reason).toBe('Other');
+      expect(done.stop_time).not.toBeNull();
+      expect(done.meter_stop).toBe(15000);
+      expect(done.cost).toBe(1); // 5 kWh × 0,20
+    });
+
+    it("l'arrêt réel envoyé ensuite par la borne corrige la session", () => {
+      const corrected = db.correctServerClosedTransaction(cpA, 'MAN-1', 20000, STOP, 'Local');
+      expect(corrected.closed_by).toBe('station');
+      expect(corrected.meter_stop).toBe(20000);
+      expect(corrected.cost).toBe(2); // 10 kWh × 0,20
+    });
+
+    it('sans relevé, meter_stop = meter_start', () => {
+      const tx = db.createTransaction(cpA, 1, 'TAG-A', 3000, START, 'rfid', {
+        transactionId: 'MAN-2',
+      });
+      expect(db.closeTransactionManually(tx.id).tx.meter_stop).toBe(3000);
+    });
+
+    it('refuse une transaction déjà close ou inconnue (closed = false)', () => {
+      const tx = db.getTransactionByTransactionId(cpA, 'MAN-1');
+      const again = db.closeTransactionManually(tx.id);
+      expect(again.closed).toBe(false);
+      expect(again.tx.meter_stop).toBe(20000);
+      expect(db.closeTransactionManually(999999)).toEqual({ tx: undefined, closed: false });
+    });
+
+    it('getTransactionFullById expose le site de la borne', () => {
+      const tx = db.getTransactionByTransactionId(cpA, 'MAN-1');
+      expect(db.getTransactionFullById(tx.id).chargepoint_site_id).toBe(siteId);
     });
   });
 

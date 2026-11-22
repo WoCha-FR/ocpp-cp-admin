@@ -334,6 +334,16 @@ docker compose -f docker/docker-compose.tls-ext.yml up -d
 
 ---
 
+## Mise à jour de l'image
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+L'arrêt du conteneur n'interrompt pas les charges en cours : les bornes continuent hors ligne pendant la coupure, se reconnectent, puis renvoient leurs messages mis en file ; les sessions sont réconciliées à la reconnexion (voir [Gestion des transactions](../README.fr.md#gestion-des-transactions)).
+
+---
+
 ## Permissions des volumes montés
 
 L'entrypoint s'exécute en root pour copier les fichiers par défaut dans les volumes vides (`config/`, `public/img/`) et corriger leurs permissions. Il bascule ensuite vers un utilisateur non-root dédié (`app`, **UID/GID 10001**) via `su-exec` avant de lancer l'application.
