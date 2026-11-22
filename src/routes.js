@@ -21,6 +21,7 @@ const {
 } = require('./ocpp-common');
 const { OCPP16_STANDARD_KEYS } = require('./ocpp-server-16');
 const certAuthority = require('./certAuthority');
+const { checkCommandAllowed } = require('./ocppCommandPolicy');
 const { createBackupArchive } = require('./backupArchive');
 const { getWssRootCaBundle } = require('./wssRootCa');
 const schema = require('./validationSchema');
@@ -879,7 +880,10 @@ router.post(
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
     try {
-      await certAuthority.generateClientCertificate(cp.identity);
+      const { revokedPrevious } = await certAuthority.generateClientCertificate(cp.identity);
+      // L'ancien certificat est désormais révoqué : une session ouverte avec lui (certificat
+      // possiblement compromis) est coupée sans clore les sessions de charge en cours
+      if (revokedPrevious) disconnectChargepoint(cp.identity, 'cert_revoked');
       const clientCertExpiresAt = await certAuthority.getClientCertExpiry(cp.identity);
       res.json({ hasClientCert: true, clientCertExpiresAt });
     } catch (e) {
@@ -920,6 +924,8 @@ router.get(
       `attachment; filename="${cp.identity}-client${rootBundle ? '-with-root' : ''}.pem"`
     );
     res.setHeader('Content-Type', 'application/x-pem-file');
+    // Contient la clé privée de la borne : jamais de cache (navigateur, proxy)
+    res.setHeader('Cache-Control', 'no-store');
     res.send(pem);
   }
 );
@@ -1001,7 +1007,17 @@ router.delete(
   requireRole('admin'),
   ...validateSchema(schema.IdParam),
   (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
     db.deleteChargepoint(Number(req.params.id));
+    // Certificat révoqué + clé privée effacée : une identité réutilisée plus tard ne doit pas
+    // hériter d'un certificat encore valide dont l'ancienne borne détient la clé
+    if (cp) {
+      try {
+        certAuthority.removeClientCertificate(cp.identity);
+      } catch (e) {
+        logger.warn(`Client cert cleanup failed for ${cp.identity}: ${e.message}`);
+      }
+    }
     res.json({ ok: true });
   }
 );
@@ -1027,6 +1043,16 @@ router.post(
 
     const method = req.body.method;
     const params = req.body.params || {};
+
+    // Un manager ne dispose que des commandes d'exploitation (Reset, disponibilité…) : toute
+    // autre méthode OCPP (ChangeConfiguration, UpdateFirmware…) est réservée à l'admin
+    const policy = checkCommandAllowed(req.user.role, method, params, getConfig());
+    if (!policy.ok) {
+      logger.warn(
+        `OCPP command ${method} refused for ${req.user.useremail} (role ${req.user.role}) on ${cp.identity}`
+      );
+      return res.status(403).json({ error: policy.error });
+    }
 
     try {
       let callParams = params;
@@ -1996,6 +2022,22 @@ router.post('/init-config/variables/cascade-all', requireRole('admin'), async (r
     let cpQueued = false;
 
     for (const v of vars) {
+      // Variable verrouillée (override) sur cette borne : la valeur globale ne l'écrase pas
+      // (même règle que pour OCPP 1.6)
+      const existing = db.getChargepointVariableByKey(
+        cp.id,
+        v.component,
+        v.variable,
+        v.attribute || 'Actual'
+      );
+      if (existing?.is_override) {
+        skipped.push({
+          identity: cp.identity,
+          key: `${v.component}.${v.variable}`,
+          reason: 'override',
+        });
+        continue;
+      }
       if (isOnline) {
         try {
           const result = await callClient(cp.identity, 'SetVariables', {
@@ -2060,6 +2102,13 @@ router.post(
     if (cp.ocpp_version === '2.0.1') {
       const vars = db.getEnabledInitialChargepointVariables();
       for (const v of vars) {
+        // Variable verrouillée (override) : on ne touche pas (même règle que pour OCPP 1.6)
+        if (
+          db.getChargepointVariableByKey(cp.id, v.component, v.variable, v.attribute || 'Actual')
+            ?.is_override
+        ) {
+          continue;
+        }
         try {
           const result = await callClient(cp.identity, 'SetVariables', {
             setVariableData: [
@@ -3264,12 +3313,13 @@ router.get('/admin/info', requireRole('admin'), (req, res) => {
 // Archive ZIP : base SQLite + certificats critiques (CA locale, certs par borne, CA mTLS) + MANIFEST.txt
 router.get('/admin/db/backup', requireRole('admin'), async (req, res) => {
   const dateStamp = new Date().toISOString().slice(0, 10);
-  const id = crypto.randomUUID();
-  const sqlitePath = path.join(os.tmpdir(), `cpadmin-backup-${id}.sqlite`);
-  const zipPath = path.join(os.tmpdir(), `cpadmin-backup-${id}.zip`);
+  // L'archive contient la CA locale et les clés privées des bornes : dossier temporaire
+  // privé (0700, créé par mkdtemp) et non des fichiers lisibles de tous dans /tmp
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpadmin-backup-'));
+  const sqlitePath = path.join(tmpDir, 'db.sqlite');
+  const zipPath = path.join(tmpDir, 'backup.zip');
   const cleanup = () => {
-    fs.unlink(sqlitePath, () => {});
-    fs.unlink(zipPath, () => {});
+    fs.rm(tmpDir, { recursive: true, force: true }, () => {});
   };
   try {
     await db.backupDatabase(sqlitePath);

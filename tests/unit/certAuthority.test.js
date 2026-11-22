@@ -175,3 +175,123 @@ describe('certAuthority — génération de certificats (openssl requis)', () =>
   });
 });
 
+
+// ── Lot C : révocation des certificats clients, génération atomique, permissions ──
+describe('certAuthority — révocation (lot C)', () => {
+  const itIfOpenssl = (name, fn) => (opensslAvailableSync ? it(name, fn) : it.skip(name, fn));
+  const fingerprintOf = (identity) => {
+    const { certPath } = certAuthority.getClientCertPaths(identity);
+    return new crypto.X509Certificate(fs.readFileSync(certPath)).fingerprint256;
+  };
+  const revokedFile = () => path.join(tmpDir, 'certs', 'clients', 'revoked.json');
+
+  it("isClientCertRevoked : faux sans liste de révocation, sans empreinte ou sans certificat", () => {
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: 'AA:BB' })).toBe(false);
+    expect(certAuthority.isClientCertRevoked({})).toBe(false);
+    expect(certAuthority.isClientCertRevoked(null)).toBe(false);
+  });
+
+  it('isClientCertRevoked : lit la liste (insensible à la casse) ; liste corrompue = aucune révocation, sans exception', () => {
+    fs.mkdirSync(path.dirname(revokedFile()), { recursive: true });
+    fs.writeFileSync(revokedFile(), JSON.stringify({ 'AA:BB:CC': { identity: 'X' } }));
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: 'AA:BB:CC' })).toBe(true);
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: 'aa:bb:cc' })).toBe(true);
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: 'AA:BB:DD' })).toBe(false);
+    fs.writeFileSync(revokedFile(), '{ pas du json');
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: 'AA:BB:CC' })).toBe(false);
+    fs.writeFileSync(revokedFile(), '["tableau"]');
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: 'AA:BB:CC' })).toBe(false);
+  });
+
+  it('revokeClientCertificate : null (et aucun fichier) si la borne n\'a pas de certificat', () => {
+    expect(certAuthority.revokeClientCertificate('CP-NOCERT')).toBeNull();
+    expect(fs.existsSync(revokedFile())).toBe(false);
+  });
+
+  itIfOpenssl('la première génération ne révoque rien', async () => {
+    const res = await certAuthority.generateClientCertificate('CP-REV-001');
+    expect(res.revokedPrevious).toBeNull();
+    expect(fs.existsSync(revokedFile())).toBe(false);
+  });
+
+  itIfOpenssl('régénérer révoque l\'ancien certificat (empreinte) et pas le nouveau', async () => {
+    await certAuthority.generateClientCertificate('CP-REV-002');
+    const oldFp = fingerprintOf('CP-REV-002');
+
+    const res = await certAuthority.generateClientCertificate('CP-REV-002');
+    const newFp = fingerprintOf('CP-REV-002');
+
+    expect(newFp).not.toBe(oldFp);
+    expect(res.revokedPrevious).toBe(oldFp);
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: oldFp })).toBe(true);
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: newFp })).toBe(false);
+    const list = JSON.parse(fs.readFileSync(revokedFile(), 'utf8'));
+    expect(list[oldFp]).toMatchObject({ identity: 'CP-REV-002', reason: 'regenerated' });
+  });
+
+  itIfOpenssl('plusieurs régénérations : toutes les anciennes empreintes restent révoquées', async () => {
+    await certAuthority.generateClientCertificate('CP-REV-003');
+    const fp1 = fingerprintOf('CP-REV-003');
+    await certAuthority.generateClientCertificate('CP-REV-003');
+    const fp2 = fingerprintOf('CP-REV-003');
+    await certAuthority.generateClientCertificate('CP-REV-003');
+    const fp3 = fingerprintOf('CP-REV-003');
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: fp1 })).toBe(true);
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: fp2 })).toBe(true);
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: fp3 })).toBe(false);
+  });
+
+  itIfOpenssl('removeClientCertificate : révoque puis efface le dossier (clé privée comprise)', async () => {
+    await certAuthority.generateClientCertificate('CP-REV-004');
+    const fp = fingerprintOf('CP-REV-004');
+    const dir = path.dirname(certAuthority.getClientCertPaths('CP-REV-004').certPath);
+
+    expect(certAuthority.removeClientCertificate('CP-REV-004')).toBe(fp);
+    expect(fs.existsSync(dir)).toBe(false);
+    expect(certAuthority.hasClientCert('CP-REV-004')).toBe(false);
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: fp })).toBe(true);
+    // identité réutilisée : un nouveau certificat est valide, l'ancien reste révoqué
+    await certAuthority.generateClientCertificate('CP-REV-004');
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: fingerprintOf('CP-REV-004') })).toBe(false);
+    expect(certAuthority.isClientCertRevoked({ fingerprint256: fp })).toBe(true);
+  });
+
+  it('removeClientCertificate sans certificat : sans effet ni exception', () => {
+    expect(() => certAuthority.removeClientCertificate('CP-NEVER')).not.toThrow();
+    expect(certAuthority.removeClientCertificate('CP-NEVER')).toBeNull();
+  });
+
+  itIfOpenssl('un échec de génération ne modifie ni le certificat actuel ni la liste de révocation', async () => {
+    await certAuthority.generateClientCertificate('CP-REV-005');
+    const { certPath, keyPath } = certAuthority.getClientCertPaths('CP-REV-005');
+    const certBefore = fs.readFileSync(certPath, 'utf8');
+    const keyBefore = fs.readFileSync(keyPath, 'utf8');
+
+    // CA illisible → openssl x509 -req échoue après la création de la clé
+    const { certPath: caCert } = certAuthority.clientCaPaths();
+    fs.writeFileSync(caCert, 'pas un certificat');
+
+    await expect(certAuthority.generateClientCertificate('CP-REV-005')).rejects.toBeDefined();
+    expect(fs.readFileSync(certPath, 'utf8')).toBe(certBefore);
+    expect(fs.readFileSync(keyPath, 'utf8')).toBe(keyBefore);
+    expect(fs.existsSync(revokedFile())).toBe(false);
+  });
+
+  itIfOpenssl('aucun fichier temporaire (clé privée) ne subsiste après la génération', async () => {
+    const before = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('cpadmin-csr-'));
+    await certAuthority.generateClientCertificate('CP-REV-006');
+    const after = fs.readdirSync(os.tmpdir()).filter((f) => f.startsWith('cpadmin-csr-'));
+    expect(after.length).toBe(before.length);
+  });
+
+  // Les droits POSIX n'ont pas de sens sous Windows
+  const posixIt = (name, fn) => (process.platform !== 'win32' && opensslAvailableSync ? it(name, fn) : it.skip(name, fn));
+  posixIt('clés privées (CA et borne) en 0600, dossiers en 0700', async () => {
+    await certAuthority.generateClientCertificate('CP-REV-007');
+    const { keyPath: caKey } = certAuthority.clientCaPaths();
+    const { keyPath } = certAuthority.getClientCertPaths('CP-REV-007');
+    expect(fs.statSync(caKey).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(keyPath).mode & 0o777).toBe(0o600);
+    expect(fs.statSync(path.dirname(keyPath)).mode & 0o777).toBe(0o700);
+  });
+});

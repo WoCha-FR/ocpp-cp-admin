@@ -16,8 +16,11 @@ const configMock = {
   },
 };
 
+// Dossier de config pointé par le test de révocation (revoked.json) ; inexistant par défaut
+let mockConfigDir = '/nonexistent-cpadmin-config';
 jest.mock('../../src/config', () => ({
   getConfig: jest.fn(() => configMock),
+  getConfigDir: jest.fn(() => mockConfigDir),
 }));
 
 jest.mock('../../src/logger', () => ({
@@ -250,6 +253,16 @@ describe('ocpp-common — disconnectChargepoint', () => {
     mockDb.getTransactions.mockReturnValue([{ transaction_id: 43, meter_start: 100, energy: 2500 }]);
     ocppCommon.disconnectChargepoint('CP_NRJ');
     expect(mockDb.stopTransaction).toHaveBeenCalledWith(43, 2600, expect.any(String), 'DeAuthorized');
+  });
+
+  it('cert_revoked: coupe la session du certificat révoqué sans clore les sessions de charge', () => {
+    const mockClient = { close: jest.fn() };
+    ocppCommon.getConnectedClients().set('CP_REV', mockClient);
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, site_id: 1 });
+    mockDb.getTransactions.mockReturnValue([{ transaction_id: 45, meter_start: 100, energy: 900 }]);
+    ocppCommon.disconnectChargepoint('CP_REV', 'cert_revoked');
+    expect(mockClient.close).toHaveBeenCalled();
+    expect(mockDb.stopTransaction).not.toHaveBeenCalled();
   });
 
   it('heartbeat_timeout: closes the connection but leaves active transactions open', () => {
@@ -1371,6 +1384,68 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 2.0.1', () 
     });
     expect(reject).not.toHaveBeenCalled();
     expect(accept).toHaveBeenCalled();
+  });
+
+  describe('certificat client révoqué (régénéré ou borne supprimée)', () => {
+    const FP = 'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99';
+    let cfgDir;
+
+    beforeEach(() => {
+      cfgDir = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'cpadmin-revoked-'));
+      require('fs').mkdirSync(require('path').join(cfgDir, 'certs', 'clients'), { recursive: true });
+      mockConfigDir = cfgDir;
+    });
+    afterEach(() => {
+      mockConfigDir = '/nonexistent-cpadmin-config';
+      require('fs').rmSync(cfgDir, { recursive: true, force: true });
+    });
+
+    const socketWith = (fingerprint256) => ({
+      getPeerCertificate: () => ({ subject: { CN: 'CP201-MTLS-REV' }, fingerprint256 }),
+      authorized: true,
+    });
+    const connect = (socket) => {
+      const server = ocppCommon.createOCPPServerBase({ protocols: PROTOCOLS, isWSS: true });
+      const accept = jest.fn();
+      const reject = jest.fn();
+      server._authFn(accept, reject, {
+        identity: 'CP201-MTLS-REV',
+        remoteAddress: '10.99.0.7',
+        protocols: new Set(['ocpp2.0.1']),
+        request: { socket },
+      });
+      return { accept, reject };
+    };
+
+    it("rejette un certificat dont l'empreinte est révoquée (mtls_invalid), CN pourtant correct", () => {
+      require('fs').writeFileSync(
+        require('path').join(cfgDir, 'certs', 'clients', 'revoked.json'),
+        JSON.stringify({ [FP]: { identity: 'CP201-MTLS-REV', reason: 'regenerated' } })
+      );
+      const { accept, reject } = connect(socketWith(FP));
+      expect(reject).toHaveBeenCalledWith(401, 'OCPP 2.0.1 security profile not met');
+      expect(accept).not.toHaveBeenCalled();
+      expect(mockNotifications.emit).toHaveBeenCalledWith(
+        'chargepoint_refused',
+        expect.objectContaining({ identity: 'CP201-MTLS-REV', reason: 'mtls_invalid' })
+      );
+    });
+
+    it('accepte le nouveau certificat (autre empreinte) de la même borne', () => {
+      require('fs').writeFileSync(
+        require('path').join(cfgDir, 'certs', 'clients', 'revoked.json'),
+        JSON.stringify({ [FP]: { identity: 'CP201-MTLS-REV' } })
+      );
+      const { accept, reject } = connect(socketWith('11:22:33'));
+      expect(reject).not.toHaveBeenCalled();
+      expect(accept).toHaveBeenCalled();
+    });
+
+    it('sans liste de révocation : comportement inchangé', () => {
+      const { accept, reject } = connect(socketWith(FP));
+      expect(reject).not.toHaveBeenCalled();
+      expect(accept).toHaveBeenCalled();
+    });
   });
 
   it('rejette une tentative 2.0.1 en WSS sans certificat ni mot de passe (wss_no_auth)', () => {

@@ -3,7 +3,7 @@ const bcrypt = require('bcryptjs');
 const { getConfig } = require('./config');
 const db = require('./database');
 const notifications = require('./notifications');
-const { verifyClientCertMatchesIdentity } = require('./certAuthority');
+const { verifyClientCertMatchesIdentity, isClientCertRevoked } = require('./certAuthority');
 const { lastKnownMeterStop, parseHeartbeatInterval } = require('./txRecovery');
 const logger = require('./logger').scope('OCPP');
 
@@ -242,7 +242,8 @@ function createOCPPServerBase(options = {}) {
         clientCertVerified =
           hasClientCert &&
           socket.authorized === true &&
-          verifyClientCertMatchesIdentity(peerCert, handshake.identity);
+          verifyClientCertMatchesIdentity(peerCert, handshake.identity) &&
+          !isClientCertRevoked(peerCert);
         // eslint-disable-next-line no-unused-vars
       } catch (e) {
         // Pas de certificat client disponible
@@ -689,6 +690,11 @@ function createOCPPServerBase(options = {}) {
 }
 
 // ── Déconnexion forcée ──
+// Raisons de déconnexion qui ne terminent PAS les sessions de charge : coupure réseau présumée
+// (heartbeat) ou révocation du certificat (la borne peut continuer à charger hors ligne puis
+// envoyer son arrêt réel à la reconnexion). Toute autre raison = dé-autorisation explicite.
+const NO_TX_CLOSE_REASONS = new Set(['heartbeat_timeout', 'cert_revoked']);
+
 function disconnectChargepoint(identity, reason = null) {
   const client = connectedClients.get(identity);
   if (client) {
@@ -700,7 +706,7 @@ function disconnectChargepoint(identity, reason = null) {
     // (stopTransaction ne met à jour que les transactions « Active »).
     // Seule une dé-autorisation explicite clôt les transactions côté serveur.
     const cp = db.getChargepointByIdentity(identity);
-    if (cp && reason !== 'heartbeat_timeout') {
+    if (cp && !NO_TX_CLOSE_REASONS.has(reason)) {
       const activeTxs = db.getTransactions({ chargepoint_id: cp.id, status: 'Active' });
       for (const tx of activeTxs) {
         db.stopTransaction(
@@ -984,6 +990,7 @@ function describeClientCert(socket, identity) {
     tlsAuthorized: socket.authorized === true,
     tlsAuthorizationError: socket.authorizationError ? String(socket.authorizationError) : null,
     cnMatchesIdentity: verifyClientCertMatchesIdentity(peer, identity),
+    revoked: isClientCertRevoked(peer),
   };
 }
 
@@ -1061,7 +1068,7 @@ function formatClientCert(cert) {
     `client_cert={subject_CN=${cert.subjectCN}, issuer_CN=${cert.issuerCN}, serial=${cert.serial}, ` +
     `valid=${cert.validFrom} -> ${cert.validTo}, sha256=${cert.fingerprint256}, ` +
     `tls_authorized=${cert.tlsAuthorized}, tls_authorization_error=${cert.tlsAuthorizationError}, ` +
-    `cn_matches_identity=${cert.cnMatchesIdentity}}`
+    `cn_matches_identity=${cert.cnMatchesIdentity}, revoked=${cert.revoked}}`
   );
 }
 
@@ -1119,6 +1126,11 @@ function explainSecurityProfileRefusal({ isWSS, cert, hasPassword, caFileConfigu
         'ocpp.wss.caFile is EMPTY: only the default public CAs are trusted, so a certificate signed by the local client CA cannot be verified — set ocpp.wss.caFile to certs/clients/ca.crt and restart'
       );
     }
+  }
+  if (cert.revoked) {
+    causes.push(
+      'client certificate has been revoked (regenerated or charge point deleted) — install the current certificate on the charge point'
+    );
   }
   if (!cert.cnMatchesIdentity) {
     causes.push(

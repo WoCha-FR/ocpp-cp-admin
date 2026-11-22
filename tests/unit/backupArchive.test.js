@@ -72,6 +72,23 @@ describe('backupArchive', () => {
       expect(warnings).toEqual([]);
     });
 
+    it('inclut la liste de révocation des certificats clients (sinon une restauration les réactive)', () => {
+      write('certs/clients/ca.crt');
+      write('certs/clients/ca.key');
+      write('certs/clients/revoked.json', '{}');
+      const { files } = listBackupCertFiles({ ocpp: { wss: {} } }, configDir);
+      const revoked = files.find((f) => f.entryName === 'certs/clients/revoked.json');
+      expect(revoked).toBeDefined();
+      expect(revoked.source).toBe('revoked client certificates');
+    });
+
+    it('sans liste de révocation : rien de plus dans l’archive', () => {
+      write('certs/clients/ca.crt');
+      write('certs/clients/ca.key');
+      const { files } = listBackupCertFiles({ ocpp: { wss: {} } }, configDir);
+      expect(files.some((f) => f.entryName.endsWith('revoked.json'))).toBe(false);
+    });
+
     it('avertit si la CA locale est incomplète', () => {
       write('certs/clients/ca.crt');
       const { warnings } = listBackupCertFiles({ ocpp: { wss: {} } }, configDir);

@@ -49,6 +49,7 @@ const mockDb = {
   updateConnectorCnstatus: jest.fn(),
   createIdTag: jest.fn(),
   setTransactionIdTag: jest.fn(() => 1),
+  getChargepointVariableByKey: jest.fn(),
 };
 
 jest.mock('../../src/database', () => mockDb);
@@ -2095,6 +2096,28 @@ describe('ocpp-server-201 — BootNotification init sequence', () => {
         attributeValue: '60',
       }],
     });
+  });
+
+  it("n'écrase pas une variable verrouillée (override) par la valeur globale, mais la ré-applique à l'étape 5/5", async () => {
+    const locked = { component: 'OCPPCommCtrlr', variable: 'HeartbeatInterval', attribute: 'Actual', value: '60' };
+    mockDb.getEnabledInitialChargepointVariables.mockReturnValue([
+      locked,
+      { component: 'TxCtrlr', variable: 'EVConnectionTimeOut', attribute: 'Actual', value: '30' },
+    ]);
+    mockDb.getChargepointVariableByKey.mockImplementation((_cp, component, variable) =>
+      component === 'OCPPCommCtrlr' && variable === 'HeartbeatInterval' ? { is_override: 1 } : undefined
+    );
+    mockDb.getChargepointOverrideVariables.mockReturnValue([{ ...locked, value: '120' }]);
+    client.call.mockResolvedValue({ setVariableResult: [{ attributeStatus: 'Accepted' }] });
+    client._handlers['BootNotification']({ chargingStation: { vendorName: 'X' } });
+    await flushThroughInit();
+
+    const sets = client.call.mock.calls.filter(([m]) => m === 'SetVariables');
+    const values = sets.map(([, p]) => `${p.setVariableData[0].variable.name}=${p.setVariableData[0].attributeValue}`);
+    // valeur globale (60) jamais envoyée pour la variable verrouillée ; seule la valeur locale (120) l'est
+    expect(values).toEqual(['EVConnectionTimeOut=30', 'HeartbeatInterval=120']);
+    mockDb.getChargepointVariableByKey.mockReset();
+    mockDb.getChargepointOverrideVariables.mockReturnValue([]);
   });
 
   it('upsert la variable en DB après SetVariables Accepted', async () => {

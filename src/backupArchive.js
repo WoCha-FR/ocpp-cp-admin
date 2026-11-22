@@ -112,6 +112,8 @@ function listBackupCertFiles(config, configDir) {
   // (dossier fixe, cf. getClientCertDir dans certAuthority.js)
   for (const f of listClientCertFiles(resolve('certs/clients')))
     add(f, 'charge point client certificate');
+  // Liste de révocation (empreintes) : sans elle, une restauration réactiverait les certificats révoqués
+  add(resolve('certs/clients/revoked.json'), 'revoked client certificates');
 
   // CA manuelle (security profile 3)
   if (wss.caFile) {

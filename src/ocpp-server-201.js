@@ -424,6 +424,18 @@ function register201Handlers(client, loggedHandle) {
         const rebootVars = [];
         for (const v of vars) {
           if (isSuperseded()) break;
+          // Variable verrouillée (override) : la valeur globale ne l'écrase pas (l'étape 5/5
+          // l'appliquera) — même règle que pour OCPP 1.6
+          if (
+            db.getChargepointVariableByKey(
+              cpSnap.id,
+              v.component,
+              v.variable,
+              v.attribute || 'Actual'
+            )?.is_override
+          ) {
+            continue;
+          }
           try {
             logger.debug(
               `[InitSeq201] ${identity} step 4/5 — SetVariables ${v.component}.${v.variable}`

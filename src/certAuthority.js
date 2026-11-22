@@ -4,6 +4,7 @@
 // Aucune dépendance ajoutée : utilise le binaire `openssl` du système via execFile
 // (jamais `exec`, pour éviter toute injection shell sur l'identité de la borne).
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -64,7 +65,7 @@ async function ensureLocalCaInitialized() {
   const { certPath, keyPath } = clientCaPaths();
   if (fs.existsSync(certPath) && fs.existsSync(keyPath)) return true;
 
-  fs.mkdirSync(path.dirname(certPath), { recursive: true });
+  fs.mkdirSync(path.dirname(certPath), { recursive: true, mode: 0o700 });
   const { certValidityDays } = clientCaConfig();
 
   await execFileAsync('openssl', [
@@ -82,8 +83,19 @@ async function ensureLocalCaInitialized() {
     '-subj',
     `/CN=${CA_CN}`,
   ]);
+  restrictPrivateKey(keyPath);
   logger.info(`CA locale initialisée : ${certPath}`);
   return true;
+}
+
+// Clé privée lisible par le seul propriétaire (0600). OpenSSL le fait déjà avec -keyout
+// récent ; ce chmod explicite ne dépend ni de la version d'OpenSSL ni de l'umask.
+function restrictPrivateKey(keyPath) {
+  try {
+    fs.chmodSync(keyPath, 0o600);
+  } catch (e) {
+    logger.warn(`chmod 0600 impossible sur ${keyPath}: ${e.message}`);
+  }
 }
 
 function getClientCertDir(identity) {
@@ -101,6 +113,72 @@ function getClientCertPaths(identity) {
 function hasClientCert(identity) {
   const { certPath, keyPath } = getClientCertPaths(identity);
   return fs.existsSync(certPath) && fs.existsSync(keyPath);
+}
+
+// ── Révocation des certificats clients ──
+// Le serveur ne vérifie que « signé par la CA + CN == identité » : sans liste de révocation, un
+// certificat régénéré (compromission supposée) ou d'une borne supprimée resterait valide
+// jusqu'à son expiration. La liste (empreintes SHA-256) est consultée à chaque connexion mTLS :
+// effet immédiat, sans redémarrage. Seuls les certificats générés par l'application y figurent ;
+// ceux d'une CA manuelle (ocpp.wss.caFile) ne sont pas concernés.
+function revokedListPath() {
+  return path.resolve(getConfigDir(), 'certs', 'clients', 'revoked.json');
+}
+
+function readRevokedList() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(revokedListPath(), 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (e) {
+    if (e.code !== 'ENOENT' && e.name !== 'TypeError') {
+      logger.error(
+        `Liste de révocation illisible (${e.message}) : aucun certificat n'est révoqué !`
+      );
+    }
+    return {};
+  }
+}
+
+function writeRevokedList(list) {
+  const file = revokedListPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const tmp = `${file}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(list, null, 2), { mode: 0o600 });
+  fs.renameSync(tmp, file); // écriture atomique : jamais de liste tronquée
+}
+
+function certFingerprint(certPath) {
+  try {
+    return new crypto.X509Certificate(fs.readFileSync(certPath)).fingerprint256;
+  } catch {
+    return null;
+  }
+}
+
+// Révoque le certificat actuellement en place pour cette identité ; retourne son empreinte ou null
+function revokeClientCertificate(identity, reason = 'regenerated') {
+  const { certPath } = getClientCertPaths(identity);
+  const fingerprint = certFingerprint(certPath);
+  if (!fingerprint) return null;
+  const list = readRevokedList();
+  list[fingerprint] = { identity, reason, revokedAt: new Date().toISOString() };
+  writeRevokedList(list);
+  logger.warn(`Certificat client révoqué pour ${identity} (${reason}) : ${fingerprint}`);
+  return fingerprint;
+}
+
+// Certificat présenté par une borne (objet de socket.getPeerCertificate()) révoqué ?
+function isClientCertRevoked(peerCert) {
+  const fingerprint = peerCert && peerCert.fingerprint256;
+  if (!fingerprint) return false;
+  return Object.prototype.hasOwnProperty.call(readRevokedList(), String(fingerprint).toUpperCase());
+}
+
+// Suppression d'une borne : le certificat est révoqué puis les fichiers (dont la clé) effacés
+function removeClientCertificate(identity) {
+  const revoked = revokeClientCertificate(identity, 'chargepoint_deleted');
+  fs.rmSync(getClientCertDir(identity), { recursive: true, force: true });
+  return revoked;
 }
 
 // ── Date d'expiration du certificat client (lecture, sans dépendance) ──
@@ -140,11 +218,16 @@ async function generateClientCertificate(identity) {
   const { certPath: caCertPath, keyPath: caKeyPath } = clientCaPaths();
   const { certValidityDays } = clientCaConfig();
   const dir = getClientCertDir(identity);
-  fs.mkdirSync(dir, { recursive: true });
   const { certPath, keyPath } = getClientCertPaths(identity);
 
+  // Tout est généré dans un dossier temporaire (0700) puis installé : un échec openssl ne
+  // laisse jamais une paire clé/certificat à moitié remplacée, et l'ancien certificat n'est
+  // révoqué qu'une fois le nouveau prêt.
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cpadmin-csr-'));
   const csrPath = path.join(tmpDir, 'client.csr');
+  const newKeyPath = path.join(tmpDir, 'key.pem');
+  const newCertPath = path.join(tmpDir, 'cert.pem');
+  let revokedPrevious;
   try {
     await execFileAsync('openssl', [
       'req',
@@ -153,7 +236,7 @@ async function generateClientCertificate(identity) {
       'rsa:2048',
       '-nodes',
       '-keyout',
-      keyPath,
+      newKeyPath,
       '-out',
       csrPath,
       '-subj',
@@ -171,16 +254,22 @@ async function generateClientCertificate(identity) {
       caKeyPath,
       '-CAcreateserial',
       '-out',
-      certPath,
+      newCertPath,
       '-days',
       String(certValidityDays),
     ]);
+
+    revokedPrevious = revokeClientCertificate(identity, 'regenerated');
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    fs.copyFileSync(newKeyPath, keyPath);
+    restrictPrivateKey(keyPath);
+    fs.copyFileSync(newCertPath, certPath);
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 
   logger.info(`Certificat client généré pour ${identity}`);
-  return { certPath, keyPath };
+  return { certPath, keyPath, revokedPrevious };
 }
 
 // ── PEM combiné (cert + clé) pour le téléchargement ──
@@ -234,6 +323,9 @@ module.exports = {
   hasClientCert,
   getClientCertExpiry,
   getCombinedClientCertPem,
+  revokeClientCertificate,
+  isClientCertRevoked,
+  removeClientCertificate,
   verifyClientCertMatchesIdentity,
   clientCaPaths,
   _resetOpensslCache,

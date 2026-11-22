@@ -1851,6 +1851,8 @@ function downloadClientCert(cpId, withRoot = false) {
 }
 
 async function generateClientCert(cpId, isRegenerate) {
+  // Régénérer révoque l'ancien certificat et coupe la session : confirmation explicite
+  if (isRegenerate && !await confirmDialog(t('chargepoint.cpClientCertRegenerateConfirm'), { danger: true })) return;
   await api('POST', `/chargepoints/${cpId}/client-cert`);
   toast(t(isRegenerate ? 'chargepoint.cpClientCertRegenerated' : 'chargepoint.cpClientCertGenerated'), 'success');
   await showChargepointDetail(cpId, 'infos', false);

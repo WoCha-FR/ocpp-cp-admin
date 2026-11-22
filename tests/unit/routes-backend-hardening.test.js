@@ -118,3 +118,58 @@ describe('Lot B — conformité OCPP : régressions routes', () => {
     expect(route).toMatch(/idToken: \{ idToken: id_tag, type: tokenType \}/);
   });
 });
+
+describe('Lot C — sécurité : régressions routes', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/routes.js'), 'utf8');
+  const routeBlock = (startMarker, endMarker) => {
+    const start = src.indexOf(startMarker);
+    expect(start).toBeGreaterThan(-1);
+    return src.slice(start, src.indexOf(endMarker, start));
+  };
+
+  it('POST /chargepoints/:id/command : la politique est appliquée AVANT tout envoi à la borne', () => {
+    const route = routeBlock("'/chargepoints/:id/command'", '// ── Charging Profiles ──');
+    const policyAt = route.indexOf('checkCommandAllowed(req.user.role, method, params, getConfig())');
+    expect(policyAt).toBeGreaterThan(-1);
+    expect(route).toMatch(/return res\.status\(403\)\.json\(\{ error: policy\.error \}\)/);
+    expect(policyAt).toBeLessThan(route.indexOf('await callClient('));
+    // la route reste réservée aux managers (et admins) : jamais ouverte à un simple utilisateur
+    expect(route).toMatch(/requireManager/);
+  });
+
+  it('régénération du certificat : l\'ancienne session (certificat révoqué) est coupée sans clore les sessions de charge', () => {
+    const route = routeBlock("'/chargepoints/:id/client-cert',\n  requireRole('admin')", "'/chargepoints/:id/client-cert/download'");
+    expect(route).toMatch(/const \{ revokedPrevious \} = await certAuthority\.generateClientCertificate/);
+    expect(route).toMatch(/if \(revokedPrevious\) disconnectChargepoint\(cp\.identity, 'cert_revoked'\)/);
+  });
+
+  it('suppression d\'une borne : certificat révoqué et clé privée effacée', () => {
+    const route = routeBlock("router.delete(\n  '/chargepoints/:id',", '// ── Commandes OCPP vers la borne ──');
+    expect(route).toMatch(/certAuthority\.removeClientCertificate\(cp\.identity\)/);
+    // une erreur de nettoyage ne doit pas faire échouer la suppression
+    expect(route).toMatch(/catch \(e\)/);
+  });
+
+  it('téléchargement du certificat client (clé privée) : jamais mis en cache', () => {
+    const route = routeBlock("'/chargepoints/:id/client-cert/download'", "router.put(\n  '/chargepoints/:id',");
+    expect(route).toMatch(/res\.setHeader\('Cache-Control', 'no-store'\)/);
+  });
+
+  it('sauvegarde : fichiers temporaires dans un dossier privé (mkdtemp), nettoyé en fin de requête', () => {
+    const route = routeBlock("'/admin/db/backup'", '// ── Nettoyage des données ──');
+    expect(route).toMatch(/fs\.mkdtempSync\(path\.join\(os\.tmpdir\(\), 'cpadmin-backup-'\)\)/);
+    expect(route).toMatch(/fs\.rm\(tmpDir, \{ recursive: true, force: true \}/);
+    // plus de fichiers directement dans /tmp (lisibles de tous les utilisateurs locaux)
+    expect(route).not.toMatch(/path\.join\(os\.tmpdir\(\), `cpadmin-backup-/);
+  });
+
+  it('init-config 2.0.1 (cascade-all et apply) : une variable verrouillée (override) n\'est pas écrasée', () => {
+    const cascade = routeBlock("router.post('/init-config/variables/cascade-all'", "router.post(\n  '/init-config/chargepoint/:id/apply'");
+    expect(cascade).toMatch(/db\.getChargepointVariableByKey\(/);
+    expect(cascade).toMatch(/existing\?\.is_override/);
+    expect(cascade).toMatch(/reason: 'override'/);
+    const apply = routeBlock("'/init-config/chargepoint/:id/apply'", "router.post('/init-config/cascade-all'");
+    expect(apply).toMatch(/getChargepointVariableByKey\(cp\.id, v\.component, v\.variable/);
+    expect(apply).toMatch(/\?\.is_override/);
+  });
+});
