@@ -2,12 +2,12 @@ name: Build and push Container image
 
 on:
   workflow_dispatch:
-  #push:
-  #  branches:
-  #    - 'dev'
-  #    - 'feature/**'
-  #  tags:
-  #    - 'v*'
+  push:
+    branches:
+      - 'dev'
+      - 'feature/**'
+    tags:
+      - 'v*'
 
 jobs:
   check:
