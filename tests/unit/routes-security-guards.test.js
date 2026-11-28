@@ -334,3 +334,41 @@ describe('Lot 4 — tarif saisi en retard, correction du badge, régularisations
     expect(csv).toMatch(/adjustments: db\.getReimbursementAdjustments\(filters\)/);
   });
 });
+
+// ── Lot 5 : rétention automatique ──
+describe('Lot 5 — rétention automatique', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/routes.js'), 'utf8');
+  const block = (marker, len = 900) => {
+    const start = src.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    return src.slice(start, start + len);
+  };
+
+  it('routes admin seulement ; activation par la configuration seulement ; passage si active', () => {
+    expect(block("router.get('/admin/retention'", 120)).toMatch(/requireRole\('admin'\)/);
+    // aucun réglage stocké en base : pas de route d'activation
+    expect(src).not.toContain('/admin/retention/enabled');
+    const run = block("router.post('/admin/retention/run'");
+    expect(run).toMatch(/requireRole\('admin'\)/);
+    expect(run).toMatch(/!retention\.getRetentionActivation\(\)\.enabled[\s\S]{0,100}ERR_RETENTION_DISABLED/);
+  });
+
+  it('tâche quotidienne démarrée et arrêtée avec le serveur ; variables d’environnement déclarées', () => {
+    const server = fs.readFileSync(path.join(__dirname, '../../src/server.js'), 'utf8');
+    expect(server).toMatch(/startRetentionScheduler\(\)/);
+    expect(server).toMatch(/stopRetentionScheduler\(\)/);
+    const config = fs.readFileSync(path.join(__dirname, '../../src/config.js'), 'utf8');
+    for (const v of [
+      'ENABLED',
+      'OCPP_MESSAGES_DAYS',
+      'REJECTIONS_DAYS',
+      'ERROR_EVENTS_DAYS',
+      'RESERVATIONS_DAYS',
+      'NOTIFICATIONS_DAYS',
+      'METER_VALUES_DAYS',
+      'SESSIONS_DAYS',
+    ]) {
+      expect(config).toContain(`CPADMIN_RETENTION_${v}`);
+    }
+  });
+});

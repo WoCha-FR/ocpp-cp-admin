@@ -95,5 +95,15 @@
   },
   "metrics": {
     "bearerToken": ""
+  },
+  "retention": {
+    "enabled": true,
+    "ocppMessagesDays": 90,
+    "rejectionsDays": 365,
+    "errorEventsDays": 365,
+    "reservationsDays": 365,
+    "notificationsDays": 365,
+    "meterValuesDays": 730,
+    "sessionsDays": 1825
   }
 }

@@ -468,6 +468,21 @@ Values from `config.json` can be overridden by environment variables (the JSON f
 
 > If not set, `/metrics` is accessible without authentication (suitable for private/Docker networks).
 
+### Data Retention
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_RETENTION_ENABLED` | `retention.enabled` | `true` |
+| `CPADMIN_RETENTION_OCPP_MESSAGES_DAYS` | `retention.ocppMessagesDays` | `90` |
+| `CPADMIN_RETENTION_REJECTIONS_DAYS` | `retention.rejectionsDays` | `365` |
+| `CPADMIN_RETENTION_ERROR_EVENTS_DAYS` | `retention.errorEventsDays` | `365` |
+| `CPADMIN_RETENTION_RESERVATIONS_DAYS` | `retention.reservationsDays` | `365` |
+| `CPADMIN_RETENTION_NOTIFICATIONS_DAYS` | `retention.notificationsDays` | `365` |
+| `CPADMIN_RETENTION_METER_VALUES_DAYS` | `retention.meterValuesDays` | `730` |
+| `CPADMIN_RETENTION_SESSIONS_DAYS` | `retention.sessionsDays` | `1825` (sessions anonymized, never deleted) |
+
+> Durations in days, `0` = never. A **new installation** gets `config.json` from `config.sample.json` (created by the entrypoint), where retention is enabled. An **upgraded instance** keeps its `config.json` without the `retention` key: automatic deletion stays **disabled** until you enable it — check what would be deleted in **System Administration → Cleanup**, make a backup, then set `CPADMIN_RETENTION_ENABLED=true` in the compose file (or `retention.enabled` in the configuration editor). See *Data Lifecycle* in the main README.
+
 > Booleans (`true`/`false`) and numbers are automatically converted.
 > Secrets are always treated as strings.
 

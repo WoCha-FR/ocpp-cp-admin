@@ -38,7 +38,9 @@ The following information is recorded by the application when managing your acco
 If one or more RFID tokens (or other charging identifiers) are assigned to you by an administrator, the following information is recorded and linked to your account:
 
 - Identifier(s) of the token(s) (RFID, code, MAC address, etc.)
-- Charging session history initiated with these tokens: chargepoint used, connector, start and end date/time, energy consumed, measured power, stop reason
+- Charging session history initiated with these tokens: chargepoint and site used, connector, start and end date/time, energy consumed, measured power, stop reason, cost computed with the site's tariff
+- For each session, your name and the badge category (business or personal) as they were when the session started, so that reimbursements stay accurate even if the badge or the account changes later
+- Any corrections of a session (badge corrected, cost recalculated after a tariff change), with their author, date and reason
 
 This data is only recorded when a token is explicitly assigned to you. Sessions initiated without an identified token are not linked to your profile.
 
@@ -81,6 +83,7 @@ The data collected is used for the following purposes:
 - **Access management**: control access rights to supervised sites and chargepoints
 - **Infrastructure supervision**: manage and monitor OCPP charging stations
 - **Notifications**: alert users to events related to chargepoints and charging sessions
+- **Reimbursements**: produce business charging statements (expense claims, reimbursement of electricity contract holders)
 - **Access recovery**: enable secure password reset
 
 Your data is not sold, shared with third parties for commercial purposes, or used for profiling or marketing.
@@ -95,7 +98,12 @@ Processing is based on the legitimate interest of the operator in securing acces
 
 ## Retention Period
 
-Your data is retained for as long as your account is active in the application. It is deleted upon your request or at the discretion of the system administrator.
+- **Account**: kept as long as it is used. It can be disabled (login and badges suspended, nothing is erased) or deleted, at your request or at the administrator's discretion.
+- **Account deletion**: immediate, it anonymizes your data. Your account, site memberships, notification preferences and subscriptions are deleted; your badges are disabled and detached from you; your charging sessions are kept without your name ("Deleted user"), as they are part of the sites' totals and reimbursements.
+- **Charging sessions**: kept 5 years, then automatically anonymized (the badge and your name are erased; energy, cost and site stay in the statistics).
+- **Technical data**: log of the exchanges with the chargepoints 90 days; badge events (authorizations, refusals), chargepoint alerts, finished reservations and notification history 1 year; session meter curves 2 years.
+
+These are the default durations; the operator can adapt them (see the application configuration). Reimbursement statements exported by the operator and archived in its accounting tool follow its own retention obligations. Database backups are kept according to the operator's backup policy.
 
 ## Your Rights (GDPR)
 
@@ -103,7 +111,7 @@ Under the General Data Protection Regulation (GDPR), you have the following righ
 
 - **Access**: obtain a copy of your data
 - **Rectification**: correct inaccurate data
-- **Erasure**: request deletion of your data
+- **Erasure**: request deletion of your data (your sessions are then anonymized, see above)
 - **Objection**: object to the processing
 
 To exercise these rights, contact the system administrator at: [contact email address]

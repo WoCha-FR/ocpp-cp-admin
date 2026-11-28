@@ -611,6 +611,42 @@
     "noOwner": "no owner",
     "inactive": "inactive"
   },
+  "retention": {
+    "title": "Automatic retention",
+    "status": "Automatic deletion",
+    "enabled": "Enabled",
+    "disabled": "Disabled",
+    "setByEnv": "Activation set by the CPADMIN_RETENTION_ENABLED environment variable.",
+    "upgradeHint": "Upgraded instance: automatic deletion stays disabled until you enable it. Check below what would be deleted, make a backup (Information tab), adjust the durations if needed, then set retention.enabled to true in the configuration editor (Data retention section, with a restart) or with CPADMIN_RETENTION_ENABLED=true.",
+    "help": "One run per day. Expired technical data is deleted; expired sessions are anonymized (badge, employee and name erased), never deleted: site, category, energy and cost stay in the totals. Durations in days, 0 = never.",
+    "colDuration": "Kept for",
+    "colBefore": "Older than",
+    "colPending": "Affected today",
+    "colAction": "Action",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "never": "Never",
+    "actionDelete": "Deleted",
+    "actionAnonymize": "Anonymized",
+    "enableBtn": "Enable in the configuration",
+    "configBtn": "Change in the configuration",
+    "runBtn": "Run now",
+    "runConfirm": "Delete and anonymize the expired data shown right now? This cannot be undone.",
+    "runDone_one": "{{count}} row processed",
+    "runDone_other": "{{count}} rows processed",
+    "lastRun_one": "Last run: {{date}} ({{count}} row)",
+    "lastRun_other": "Last run: {{date}} ({{count}} rows)",
+    "neverRun": "No run yet",
+    "targets": {
+      "ocppMessages": "OCPP log",
+      "rejections": "Badge events (authorizations, rejections)",
+      "errorEvents": "Charge point alerts and errors",
+      "reservations": "Finished reservations",
+      "notifications": "Notification log",
+      "meterValues": "Session meter curves (the frozen cost stays)",
+      "sessions": "Sessions (anonymized)"
+    }
+  },
   "transac": {
     "transacGraphTitle": "Transaction #{{id}}",
     "closeManually": "Close manually",
@@ -1126,6 +1162,7 @@
     }
   },
   "apiErrors": {
+    "ERR_RETENTION_DISABLED": "Automatic retention is disabled",
     "ERR_TARIFF_VALID_FROM": "Invalid grid date (the first grid applies since the beginning, the next ones from a YYYY-MM-DD date)",
     "ERR_TARIFF_VALID_FROM_DUPLICATE": "Two grids start on the same day",
     "ERR_TARIFF_TOO_MANY_GRIDS": "Too many price grids (50 maximum)",
@@ -1328,6 +1365,7 @@
     "restarting": "Restarting server...",
     "reconnecting": "Reconnecting...",
     "sections": {
+      "retention": "Data retention",
       "general": "General",
       "webui": "Web Interface",
       "ocpp": "OCPP Server",

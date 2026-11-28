@@ -137,6 +137,12 @@ services:
       # - CPADMIN_LANGUAGE=fr
       # - CPADMIN_CPO_NAME=Mon CPO
 
+      # ── Rétention des données (durées en jours, 0 = jamais) ──
+      # Instance mise à jour : inactive tant que non activée (voir README, Cycle de vie des données)
+      # - CPADMIN_RETENTION_ENABLED=true
+      # - CPADMIN_RETENTION_OCPP_MESSAGES_DAYS=90
+      # - CPADMIN_RETENTION_SESSIONS_DAYS=1825
+
       # ── Notifications e-mail (optionnel) ────────────────────
       # - CPADMIN_MAIL_ENABLED=true
       # - CPADMIN_MAIL_HOST=smtp.example.com

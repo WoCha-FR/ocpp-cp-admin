@@ -611,6 +611,42 @@
     "noOwner": "sans titulaire",
     "inactive": "inactif"
   },
+  "retention": {
+    "title": "Rétention automatique",
+    "status": "Effacement automatique",
+    "enabled": "Actif",
+    "disabled": "Inactif",
+    "setByEnv": "Activation fixée par la variable d'environnement CPADMIN_RETENTION_ENABLED.",
+    "upgradeHint": "Instance mise à jour : l'effacement automatique reste inactif tant que vous ne l'activez pas. Vérifiez ci-dessous ce qui serait effacé, faites une sauvegarde (onglet Informations), ajustez si besoin les durées, puis passez retention.enabled à true dans l'éditeur de configuration (section Rétention des données, avec redémarrage) ou avec CPADMIN_RETENTION_ENABLED=true.",
+    "help": "Un passage par jour. Les données techniques échues sont supprimées ; les sessions échues sont anonymisées (badge, salarié et nom effacés), jamais supprimées : site, catégorie, énergie et coût restent dans les totaux. Durées en jours, 0 = jamais.",
+    "colDuration": "Conservation",
+    "colBefore": "Antérieur au",
+    "colPending": "Concerné aujourd’hui",
+    "colAction": "Traitement",
+    "days_one": "{{count}} jour",
+    "days_other": "{{count}} jours",
+    "never": "Jamais",
+    "actionDelete": "Supprimé",
+    "actionAnonymize": "Anonymisée",
+    "enableBtn": "Activer dans la configuration",
+    "configBtn": "Modifier dans la configuration",
+    "runBtn": "Exécuter maintenant",
+    "runConfirm": "Supprimer et anonymiser dès maintenant les données échues indiquées ? Cette opération est irréversible.",
+    "runDone_one": "{{count}} ligne traitée",
+    "runDone_other": "{{count}} lignes traitées",
+    "lastRun_one": "Dernier passage : {{date}} ({{count}} ligne)",
+    "lastRun_other": "Dernier passage : {{date}} ({{count}} lignes)",
+    "neverRun": "Aucun passage pour l’instant",
+    "targets": {
+      "ocppMessages": "Journal OCPP",
+      "rejections": "Événements de badge (autorisations, rejets)",
+      "errorEvents": "Alertes et erreurs des bornes",
+      "reservations": "Réservations terminées",
+      "notifications": "Journal des notifications",
+      "meterValues": "Courbes de mesure des sessions (le coût figé reste)",
+      "sessions": "Sessions (anonymisées)"
+    }
+  },
   "transac": {
     "transacGraphTitle": "Transaction #{{id}}",
     "closeManually": "Clore manuellement",
@@ -1126,6 +1162,7 @@
     }
   },
   "apiErrors": {
+    "ERR_RETENTION_DISABLED": "La rétention automatique est inactive",
     "ERR_TARIFF_VALID_FROM": "Date de grille invalide (la première grille s'applique depuis l'origine, les suivantes à partir d'une date AAAA-MM-JJ)",
     "ERR_TARIFF_VALID_FROM_DUPLICATE": "Deux grilles commencent le même jour",
     "ERR_TARIFF_TOO_MANY_GRIDS": "Trop de grilles de prix (50 au maximum)",
@@ -1328,6 +1365,7 @@
     "restarting": "Redémarrage du serveur...",
     "reconnecting": "Reconnexion en cours...",
     "sections": {
+      "retention": "Rétention des données",
       "general": "Général",
       "webui": "Interface Web",
       "ocpp": "Serveur OCPP",

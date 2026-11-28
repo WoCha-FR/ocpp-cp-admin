@@ -24,6 +24,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
   - [Serveur OCPP](#serveur-ocpp)
   - [Notifications](#notifications)
   - [Authentification Google OAuth](#authentification-google-oauth)
+  - [Rétention des données](#rétention-des-données)
   - [Pages légales](#pages-légales)
 - [Certificats TLS](#certificats-tls)
   - [HTTPS — Interface Web](#https--interface-web)
@@ -31,6 +32,11 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - [Démarrage](#démarrage)
 - [Tarification de l'énergie](#tarification-de-lénergie)
 - [Badges professionnels / personnels et exports de remboursement](#badges-professionnels--personnels-et-exports-de-remboursement)
+- [Cycle de vie des données](#cycle-de-vie-des-données)
+  - [Principes](#principes)
+  - [Règles par élément](#règles-par-élément)
+  - [Procédures courantes](#procédures-courantes)
+  - [Rétention automatique](#rétention-automatique)
 - [Rôles et permissions](#rôles-et-permissions)
 - [Protocole OCPP (1.6 et 2.0.1)](#protocole-ocpp-16-et-201)
   - [Opérations supportées — OCPP 1.6](#opérations-supportées--ocpp-16)
@@ -56,7 +62,8 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 ### Gestion des bornes de recharge
 - Enregistrement manuel ou découverte automatique des bornes
 - Approbation des bornes en attente de connexion
-- Affectation des bornes à des sites
+- Affectation des bornes à des sites (une borne sans site est inactive : aucune recharge n'y démarre)
+- Archivage et restauration d'une borne, remplacement d'une borne par changement d'identifiant OCPP en gardant son historique — voir [Cycle de vie des données](#cycle-de-vie-des-données)
 - Bornes OCPP 1.6 et OCPP 2.0.1 côte à côte (bornes multi-EVSE prises en charge en 2.0.1)
 - Supervision en temps réel (statut connecteur, heartbeat, erreurs)
 - Configuration à distance des bornes (GetConfiguration / ChangeConfiguration en 1.6, GetBaseReport / SetVariables en 2.0.1) et configuration par défaut appliquée automatiquement à la première connexion
@@ -68,6 +75,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Autorisation par site et par utilisateur
 - Authentification locale (email / mot de passe) ou Google OAuth 2.0
 - Réinitialisation de mot de passe par email avec jeton sécurisé
+- Archivage des sites, désactivation des comptes, suppression d'un compte par anonymisation — voir [Cycle de vie des données](#cycle-de-vie-des-données)
 
 ### Transactions et suivi de charge
 - Suivi des transactions actives et terminées
@@ -76,7 +84,9 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Un redémarrage du serveur (mise à jour d'image…) n'interrompt pas les charges en cours : les sessions restent actives et sont réconciliées à la reconnexion des bornes
 - Sessions clôturées par le serveur (message de fin perdu, connecteur revenu disponible…) corrigées par l'arrêt réel de la borne quand il arrive ensuite ; clôture manuelle d'une session restée active (borne qui ne revient pas)
 - Export CSV des transactions (avec les colonnes de coût lorsqu'un tarif est configuré) ; les cellules qui pourraient être lues comme une formule de tableur (`=`, `+`, `-`, `@`…) sont précédées d'une apostrophe
-- Tarification du kWh par site (tranches horaires et jours de la semaine), coût de chaque session figé à la clôture — voir [Tarification de l'énergie](#tarification-de-lénergie)
+- Tarification du kWh par site (tranches horaires, jours de la semaine, grilles datées), coût de chaque session figé à la clôture — voir [Tarification de l'énergie](#tarification-de-lénergie)
+- Site, salarié et catégorie du badge figés au démarrage de chaque session : modifier ensuite un badge, un compte ou une borne ne réécrit pas l'historique
+- Correction tracée du badge d'une session, régularisations dans l'export remboursement
 - Tableau de bord personnel pour les utilisateurs
 
 ### Historique des événements d'erreur
@@ -136,6 +146,7 @@ OCPP CP Admin permet de superviser et piloter une infrastructure de recharge pou
 - Informations système : version de l'application, uptime, mémoire Node.js, taille de la base SQLite, bornes connectées, compteurs d'enregistrements par table
 - Archive de sauvegarde (ZIP) téléchargeable : base SQLite (sûre en WAL, sans interruption de service) + certificats critiques (CA cliente locale, certificats par borne, CA mTLS manuelle)
 - Nettoyage des données historiques avec filtre par date : courbes de mesures (les transactions elles-mêmes sont conservées), messages OCPP, événements ID tags, événements d'erreur, journal des notifications, réservations expirées — ainsi qu'un VACUUM de la base
+- Rétention automatique quotidienne (durées configurables, aperçu de ce qui serait effacé) — voir [Rétention automatique](#rétention-automatique)
 - Console OCPP brute : envoi de n'importe quelle commande avec des paramètres JSON libres à une borne connectée, avec un historique en session
 - Comparaison des paramètres OCPP entre bornes de même version OCPP, avec mise en évidence des écarts et des valeurs forcées (overrides)
 - Réservée aux administrateurs
@@ -428,6 +439,21 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 
 > Si non défini, `/metrics` est accessible sans authentification (adapté aux réseaux privés/Docker).
 
+### Durées de rétention
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_RETENTION_ENABLED` | `retention.enabled` | `true` — active l'effacement automatique quotidien (absent du fichier : inactif) |
+| `CPADMIN_RETENTION_OCPP_MESSAGES_DAYS` | `retention.ocppMessagesDays` | `90` |
+| `CPADMIN_RETENTION_REJECTIONS_DAYS` | `retention.rejectionsDays` | `365` (événements de badge : autorisations, rejets) |
+| `CPADMIN_RETENTION_ERROR_EVENTS_DAYS` | `retention.errorEventsDays` | `365` |
+| `CPADMIN_RETENTION_RESERVATIONS_DAYS` | `retention.reservationsDays` | `365` (réservations terminées) |
+| `CPADMIN_RETENTION_NOTIFICATIONS_DAYS` | `retention.notificationsDays` | `365` |
+| `CPADMIN_RETENTION_METER_VALUES_DAYS` | `retention.meterValuesDays` | `730` (courbes de mesure ; le coût figé reste) |
+| `CPADMIN_RETENTION_SESSIONS_DAYS` | `retention.sessionsDays` | `1825` (sessions anonymisées, jamais supprimées) |
+
+> Durées en jours ; `0` = jamais. Voir [Rétention automatique](#rétention-automatique).
+
 > Les booléens (`true`/`false`) et les nombres sont convertis automatiquement.
 > Les secrets sont toujours traités comme des chaînes de caractères.
 
@@ -607,6 +633,34 @@ Les champs obligatoires sont validés avant l'enregistrement. L'application red�
 ```
 
 Si activé, les utilisateurs peuvent se connecter via leur compte Google. Le compte Google est associé par adresse email à un utilisateur existant. L'URL de callback OAuth est dérivée de `webui.publicUrl`.
+
+### Rétention des données
+
+```json
+"retention": {
+  "enabled": true,
+  "ocppMessagesDays": 90,
+  "rejectionsDays": 365,
+  "errorEventsDays": 365,
+  "reservationsDays": 365,
+  "notificationsDays": 365,
+  "meterValuesDays": 730,
+  "sessionsDays": 1825
+}
+```
+
+| Paramètre | Défaut | Description |
+|---|---|---|
+| `enabled` | `false` si la clé est absente | Active l'effacement automatique (un passage par jour). `config.sample.json` l'active : une **installation neuve** le démarre actif, une **instance mise à jour** (dont le `config.json` n'a pas cette clé) le garde inactif jusqu'à ce que l'admin l'active |
+| `ocppMessagesDays` | `90` | Journal OCPP (messages échangés avec les bornes) |
+| `rejectionsDays` | `365` | Événements de badge (autorisations et rejets) |
+| `errorEventsDays` | `365` | Alertes et erreurs des bornes |
+| `reservationsDays` | `365` | Réservations terminées (honorées, annulées, expirées) |
+| `notificationsDays` | `365` | Journal des notifications envoyées |
+| `meterValuesDays` | `730` | Courbes de mesure des sessions (le coût figé et son détail restent) |
+| `sessionsDays` | `1825` | Sessions : **anonymisées**, jamais supprimées |
+
+Durées en jours, `0` = jamais. Fonctionnement détaillé : [Rétention automatique](#rétention-automatique).
 
 ---
 
@@ -857,7 +911,7 @@ Chaque site peut disposer de sa propre **grille de prix du kWh**. Elle sert à e
 
 ### Configurer un tarif
 
-Sur la page **Sites**, le bouton **Tarif** (managers du site et administrateurs) ouvre l'éditeur de grille :
+Sur la page **Sites**, le bouton **Tarif** (managers du site et administrateurs) ouvre l'éditeur. Un site a une grille « depuis l'origine » et, au besoin, des **grilles datées** (voir [Tarifs datés](#tarifs-datés)). Chaque grille contient :
 
 | Champ | Description |
 |---|---|
@@ -878,12 +932,22 @@ Règles :
   | Week-end | sam–dim | `06:00 → 24:00` | 0,10 |
   | *(défaut)* | toutes les autres heures | | 0,25 |
 
+### Tarifs datés
+
+- Une **grille datée** s'applique **à partir de son jour** (minuit, heure du site) jusqu'à la grille datée suivante ; avant la première, c'est la grille « depuis l'origine ». Le bouton **+ Tarif daté** crée une grille à partir d'une date, initialisée avec la grille affichée.
+- **Une hausse connue à l'avance** (nouveau contrat d'électricité au 1er février…) se saisit avant sa date : elle s'applique d'elle-même aux sessions de ce jour-là, sans rien recalculer.
+- Une session à cheval sur deux grilles est découpée à minuit, chaque part au prix de sa grille.
+- Une grille sans prix par défaut signifie « pas de tarif à partir de cette date » : une session qui consomme ce jour-là n'a pas de coût.
+- **Tarif saisi en retard** : si l'enregistrement change le coût de sessions **déjà clôturées**, l'application affiche d'abord un aperçu (nombre de sessions, ancien et nouveau total, écart, exemples) et n'enregistre qu'après confirmation. Les sessions concernées sont alors recalculées et **chaque écart est tracé** (journal des corrections de la session) ; celles déjà exportées ressortent dans la section [Régularisations](#corriger-le-badge-dune-session-et-régularisations) de l'export remboursement suivant. Seuls les jours dont la grille change sont recalculés.
+- Si les courbes de mesure d'une session ont été purgées, le recalcul repart du détail du coût figé, qui garde la répartition horaire de l'énergie.
+
 ### Calcul du coût
 
 - Le coût est calculé **à la clôture de la session** (tous les chemins de clôture : StopTransaction / TransactionEvent `Ended`, sessions orphelines, clôture manuelle) puis **figé** sur la transaction (`cost`, `cost_currency`, `cost_details`). Seule exception : une session clôturée par le serveur (message de fin non reçu) est recalculée une fois quand l'arrêt réel de la borne arrive ensuite — voir [Gestion des transactions](#gestion-des-transactions).
 - Les sessions refusées au démarrage (statut *Refusée*) n'ont jamais de coût.
 - L'énergie est répartie entre les tranches à partir des **MeterValues** reçus pendant la session (courbe d'énergie cumulée linéaire par morceaux). Si la borne n'en a envoyé aucun, l'énergie est **répartie au prorata de la durée** (la méthode utilisée est indiquée dans le détail de la session).
-- Modifier la grille ensuite **ne change jamais les sessions passées**, et les sessions clôturées avant l'existence d'un tarif ne sont **pas recalculées** : le coût d'une session doit rester un justificatif fiable.
+- Le coût d'une session ne change ensuite que par un [tarif saisi en retard](#tarifs-datés), après confirmation et avec une trace de l'écart. Les index de la borne ne sont jamais corrigés.
+- Le tarif appliqué est celui du **site où la session a eu lieu** (figé au démarrage) : déplacer la borne ensuite ne change pas le site ni le tarif de ses sessions passées.
 - Un échec du calcul n'empêche jamais la clôture d'une session (elle n'a simplement pas de coût).
 
 ### Où trouver les coûts
@@ -908,17 +972,113 @@ Chaque badge RFID possède une **catégorie** : `personnel` (par défaut) ou `pr
 
 ### Configuration type : entreprise multi-sites
 
-- Un **site** par lieu (siège, domiciles des salariés…) avec son propre [tarif](#tarification-de-lénergie).
-- Créez les badges **sans site** (*Tous les sites*) : un badge est alors valable partout. Deux badges par salarié (pro + perso) sont simplement deux badges liés au même utilisateur.
-- **Liez chaque salarié à tous les sites** où il peut charger (gestion des utilisateurs) : sinon l'autorisation est refusée avec `user_not_linked`.
+Exemple : une entreprise avec un siège et des bornes chez trois salariés, ajoutée à une instance qui gère déjà d'autres sites.
+
+- **Un site par contrat d'électricité** (siège, domicile de chaque salarié) avec son propre [tarif](#tarification-de-lénergie) : l'export remboursement regroupe par site, donc par titulaire de contrat.
+- Le **responsable de l'entreprise est manager** de ces sites ; le salarié qui héberge une borne reste **simple utilisateur** de son domicile (il ne doit pas être manager, sinon il pourrait s'attribuer des badges professionnels).
+- **Liez chaque salarié à tous les sites** où il peut charger : sinon l'autorisation est refusée avec `user_not_linked`.
+- **Badge professionnel global** (*Tous les sites*) : valable au siège et chez les collègues, l'hébergeur de la borne est remboursé. **Badge personnel limité au domicile** : accepté chez soi, non remboursé.
+- Sur un domicile, décochez **« Badge web automatique »** dans la fiche du site (admin) : un démarrage depuis le web n'est alors possible qu'avec un badge enregistré.
+
+### Règles des badges
+
+- **Code figé** : le code d'un badge ne se modifie pas (le titulaire, la catégorie, le site et l'expiration oui). Un code est **soit global, soit limité à des sites**, jamais les deux ; les doublons hérités sont signalés à l'admin.
+- **Badge déjà utilisé** : il ne se supprime pas (son historique en dépend) ; l'application propose de le **désactiver**.
+- **Badges générés** (`ADMIN`, `MGR-*`, `WEB-*`) : réservés à l'application, ni modifiables ni supprimables ; ces préfixes ne peuvent pas servir de code.
+- **Gestionnaire** : il crée et modifie les badges de ses sites, rattachés aux salariés de ses sites. Il gère le badge global d'un salarié seulement si **tous les sites de ce salarié sont parmi les siens** (jamais celui d'un administrateur) ; il ne voit que ces badges globaux-là.
+- Un compte **désactivé** a ses badges refusés.
 
 ### Filtres et exports
 
 - Page **Transactions** (managers/admins) : filtre *Catégorie*, également appliqué à l'export CSV, et colonne `Catégorie`.
 - Page **Mes transactions** (tous les utilisateurs) : même filtre *Catégorie*, appliqué à la liste, aux KPI et à l'export CSV. Le CSV personnel se termine par une **ligne de total** (kWh et coût par devise) : filtré sur *professionnel*, c'est une note de frais prête à l'emploi.
-- **Export remboursement** (bouton de la page **Transactions**, managers/admins) : CSV agrégé **par site puis par salarié** — nombre de sessions terminées, énergie (kWh) et coût par devise, avec un total par site. Il suit les filtres de la page (site, catégorie — **professionnel** par défaut — et dates). Un manager n'obtient que les sites qu'il gère. Les sessions d'un site sans tarif ont un coût vide.
+- **Export remboursement** (bouton de la page **Transactions**, managers/admins) : CSV agrégé **par site puis par salarié** — nombre de sessions terminées, énergie (kWh) et coût par devise, avec un total par site. Il suit les filtres de la page (site, catégorie — **professionnel** par défaut — et dates). Un manager n'obtient que les sites qu'il gère. Les sessions d'un site sans tarif ont un coût vide. Avec une date de début, il se termine par une section **Régularisations** (voir ci-dessous).
+- Le site, le salarié et la catégorie d'une session sont **figés à son démarrage** : modifier ou supprimer ensuite le badge, renommer le salarié ou déplacer la borne ne change pas les exports passés.
+
+> L'application n'est pas la pièce comptable : c'est le relevé exporté, archivé avec le paiement dans l'outil comptable, qui fait foi (et qui doit être conservé selon vos obligations comptables).
+
+### Corriger le badge d'une session et régularisations
+
+- **Erreur de badge** (badge prêté, mauvais badge présenté, session sans badge) : sur la fiche de la session, **Corriger le badge** (admin, ou manager du site de la session, y compris sur ses propres sessions). On choisit le bon badge parmi ceux enregistrés pour le site, avec un **motif obligatoire** ; le salarié et la catégorie suivent le badge. Le coût et les index de la borne ne changent pas. Impossible sur une session refusée ou un site archivé.
+- Chaque correction (badge ou tarif) est **tracée** sur la fiche de la session : date, auteur, avant / après, motif. Le badge présenté à la borne y reste visible.
+- **Régularisations** : l'export remboursement d'une période (avec une date de début) ajoute les corrections **saisies pendant la période sur des sessions antérieures**, donc déjà exportées : écart de montant (tarif recalculé) ou transfert de la session (retirée de l'ancien salarié ou de l'ancienne catégorie, ajoutée au nouveau), avec un total par devise. Une correction sur une session de la période même est déjà dans les totaux de la section principale. Exportez chaque période après sa fin : une correction faite après l'export d'une période, sur une session de cette période, n'apparaît que dans l'export suivant si elle est saisie pendant la période suivante.
 
 > Confidentialité : les sessions des badges personnels restent visibles des managers du site (l'entreprise paie les bornes) ; seuls les exports séparent les deux catégories.
+
+---
+
+## Cycle de vie des données
+
+### Principes
+
+- Une session **fige à son démarrage** son site, son salarié et sa catégorie ; son coût est **figé à sa clôture**. Les changements faits ensuite sur les sites, bornes, badges ou comptes ne valent que pour l'avenir.
+- Après coup, une session ne change que dans deux cas, **tracés** : une [erreur de badge](#corriger-le-badge-dune-session-et-régularisations) ou un [tarif saisi en retard](#tarifs-datés). Les index de la borne ne sont jamais corrigés.
+- Ce qui porte un historique se **retire** (archivage, désactivation) au lieu d'être supprimé.
+- Les données techniques ont une durée de conservation ; les sessions sont anonymisées au bout de la leur ([rétention automatique](#rétention-automatique)).
+
+### Règles par élément
+
+| Élément | Modifiable | Retrait | Suppression définitive |
+|---|---|---|---|
+| **Site** | nom, adresse, tarifs, badge web automatique (admin) | **archivage** avec ses bornes : lecture et export pour l'admin et ses managers, aucune modification ; **restaurable** | seulement sans aucune session (ses badges limités au site partent avec lui) |
+| **Borne** | nom, identifiant OCPP, site, mode | **archivage** : connexion OCPP refusée, certificat révoqué, identifiant réservé, historique conservé ; **restaurable** | seulement sans aucune session (les démarrages refusés ne comptent pas) |
+| **Badge** | titulaire, catégorie, site, expiration — **code figé** | désactivation | seulement s'il n'a jamais servi |
+| **Compte** | e-mail (unique, sans tenir compte des majuscules), nom, rôle, sites | **désactivation** : connexion, session ouverte et badges suspendus ; réversible | **anonymisation immédiate** (voir ci-dessous) |
+| **Session** | badge seulement (motif), coût par un tarif saisi en retard | — | jamais : anonymisée à l'échéance de la rétention |
+
+Autres règles :
+
+- **Borne sans site : inactive.** Sa connexion est acceptée (pour la configurer et l'affecter) mais tout démarrage est refusé, quel que soit son mode ; une session qu'elle lancerait malgré tout est enregistrée refusée, jamais facturée. L'admin en est averti par un bandeau.
+- **Changement d'identifiant, déplacement ou archivage d'une borne** : refusés pendant une recharge en cours.
+- **Dernier manager actif d'un site** : impossible de le retirer, de le rétrograder, de le désactiver ou de le supprimer (nommez d'abord un autre manager). Un site sans aucun manager reste permis.
+- **Rôle global** : `admin` ou `user` ; « manager » est un rôle par site.
+
+### Procédures courantes
+
+**Un site n'est plus supervisé (contrat résilié, salarié parti…)**
+1. Exportez au besoin son historique (Transactions, filtre site ; export remboursement).
+2. Page **Sites** → **Archiver** : le site et ses bornes sont retirés, leurs connexions refusées et leurs certificats révoqués. L'historique reste consultable et exportable par l'admin et les managers du site.
+3. **Restaurer** le ramène avec les bornes archivées en même temps que lui (nouveaux certificats générés). **Supprimer** n'est possible que pour un site sans aucune session : sinon l'application propose l'archivage.
+
+**Remplacer une borne (panne, nouveau matériel) ou corriger une erreur de saisie de l'identifiant**
+1. Si la nouvelle borne s'est déjà présentée, elle peut apparaître en attente : ne l'acceptez pas.
+2. Page **Bornes** → **Modifier** la borne existante → nouvel **identifiant OCPP** (hors recharge en cours).
+3. L'historique reste sur la borne ; l'ancienne connexion est coupée, l'ancien certificat client révoqué et un nouveau généré : réinstallez-le si la borne utilise le mTLS. L'ancien identifiant est refusé ensuite.
+
+**Retirer une borne sans la remplacer** : **Archiver** (identifiant réservé, restauration possible). **Supprimer** seulement une borne sans aucune session (borne de test, erreur de création).
+
+**Un salarié quitte l'entreprise**
+- **Désactiver** le compte (page Utilisateurs) : connexion et badges refusés immédiatement, rien n'est effacé, réactivation possible.
+- **Supprimer** le compte : la fenêtre propose d'abord l'**export CSV de ses sessions** (à archiver si vous devez les garder nominativement). La suppression est définitive et **anonymise** : ses sessions restent dans les totaux et les remboursements sous le nom « Utilisateur supprimé #n », ses badges sont désactivés, détachés et vidés de leur description, son nom disparaît du journal des corrections.
+- S'il est le dernier manager d'un site, nommez d'abord un autre manager.
+
+**Badge perdu ou volé** : désactivez-le (page Badges). Créez un nouveau badge avec le nouveau code : l'ancien code ne peut être ni modifié ni réattribué.
+
+**Session attribuée au mauvais salarié** : [corrigez le badge](#corriger-le-badge-dune-session-et-régularisations) de la session, avec un motif.
+
+**Nouveau prix de l'électricité** : ajoutez une [grille datée](#tarifs-datés) à la date du changement, idéalement avant. Saisie en retard, elle recalcule après confirmation les sessions concernées, et l'écart ressort en régularisation.
+
+**Droit à l'effacement (RGPD)** : supprimez le compte (anonymisation immédiate). Les sauvegardes ZIP déjà produites restent ce qu'elles sont : traitez-les selon votre politique de sauvegarde.
+
+### Rétention automatique
+
+Un passage par jour (le premier quelques minutes après le démarrage) supprime les données techniques échues et anonymise les sessions échues :
+
+| Données | Conservation par défaut | Traitement |
+|---|---|---|
+| Journal OCPP | 90 jours | supprimé |
+| Événements de badge (autorisations, rejets) | 1 an | supprimés |
+| Alertes et erreurs des bornes | 1 an | supprimées |
+| Réservations terminées | 1 an | supprimées |
+| Journal des notifications | 1 an | supprimé |
+| Courbes de mesure des sessions | 2 ans | supprimées (le coût figé et son détail restent) |
+| Sessions | 5 ans | **anonymisées** : badge, salarié et nom effacés de la session et de son journal de corrections ; site, catégorie, énergie et coût restent dans les totaux |
+
+- Les durées se règlent dans la [configuration](#rétention-des-données) (`retention.*Days`) ou par les variables `CPADMIN_RETENTION_*` ; `0` = jamais. Une session en cours n'est jamais touchée.
+- **Activation** : `retention.enabled` (ou `CPADMIN_RETENTION_ENABLED`). Une **installation neuve** part de `config.sample.json`, où elle est active. Une **instance mise à jour** garde son `config.json`, sans cette clé : l'effacement reste **inactif** jusqu'à ce que l'admin l'active.
+- **Après une mise à jour** : page **Administration système → Nettoyage**, le panneau *Rétention automatique* montre pour chaque donnée la durée, la date limite et le nombre de lignes qui seraient traitées aujourd'hui. Faites une **sauvegarde** (onglet Informations), ajustez les durées si besoin, puis passez `retention.enabled` à `true` (bouton *Activer dans la configuration* → éditeur de configuration, section *Rétention des données*, avec redémarrage ; ou `CPADMIN_RETENTION_ENABLED=true`). Une fois active, **Exécuter maintenant** lance un passage immédiat.
+- Chaque passage est tracé dans le journal de l'application ; les purges manuelles par date restent disponibles dans le même onglet.
+- La conservation de 5 ans couvre les besoins de l'application (statistiques, contestations) ; la pièce comptable à conserver plus longtemps est le relevé exporté, archivé dans votre outil comptable.
 
 ---
 
@@ -929,7 +1089,8 @@ L'application repose sur trois niveaux de rôles hiérarchiques :
 ### Administrateur (`admin`)
 
 Accès complet à toutes les fonctionnalités :
-- Gestion de tous les sites, utilisateurs et bornes
+- Gestion de tous les sites, utilisateurs et bornes : archivage et restauration des sites et des bornes, désactivation et suppression (anonymisation) des comptes
+- Réglage « badge web automatique » des sites
 - Configuration globale de l'application
 - Approbation des bornes en attente
 - Visualisation de toutes les transactions et messages OCPP
@@ -947,7 +1108,10 @@ Gestion restreinte aux sites autorisés :
 - Opérations courantes sur les bornes : `Reset`, `ChangeAvailability`, `UnlockConnector`, `TriggerMessage`, `ClearCache`, `GetLocalListVersion`, et l'envoi des diagnostics / journaux vers l'`ocpp.diagnosticsLocation` configuré uniquement (la route générique `POST /api/chargepoints/:id/command` refuse toute autre commande OCPP à un manager — configuration, firmware, certificats… sont réservés à l'admin)
 - Visualisation des transactions de ses sites
 - Export CSV de ses sites
-- Configuration du tarif de l'énergie (prix du kWh) de ses sites
+- Configuration du tarif de l'énergie (prix du kWh) de ses sites, grilles datées comprises
+- Badges de ses sites, rattachés aux salariés de ses sites ; badge global d'un salarié dont tous les sites sont les siens
+- Correction du badge des sessions de ses sites (y compris les siennes), export remboursement de ses sites
+- Les pages de gestion (transactions, badges, alertes…) sont limitées aux sites qu'il **gère** ; un site où il n'est que simple utilisateur n'y apparaît pas
 - Peut également être utilisateur sur un ou plusieurs sites
 
 ### Utilisateur (`user`)
@@ -967,10 +1131,16 @@ Accès limité à la recharge :
 |---|---|---|---|
 | `GET` | `/api/error-events` | manager+ | Journal paginé des événements d'erreur. Paramètres : `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`\|`security_event`\|`notify_event`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
 | `GET` | `/api/transactions`, `/api/transactions/csv`, `/api/user/transactions`, `/api/user/transactions/stats`, `/api/user/transactions/csv` | manager+ / utilisateur | Acceptent un filtre `category` (`pro`\|`perso`) sur le badge utilisé pour la session, et un filtre `status` (`Active`\|`Completed`\|`Rejected`). Les sessions refusées (`Rejected`) ne sont renvoyées que si elles sont explicitement filtrées |
-| `GET` | `/api/sites/:siteId/tariff` | manager du site / admin | Tarif d'un site : `currency`, `timezone`, `default_price_per_kwh` et `periods[]` (`label`, `days` en jours ISO `1`–`7`, `start_time`, `end_time`, `price_per_kwh`) |
-| `PUT` | `/api/sites/:siteId/tariff` | manager du site / admin | Remplace atomiquement le tarif d'un site (même corps que la réponse du `GET`). `400` avec des codes `ERR_TARIFF_*` si invalide (format, chevauchement, prix par défaut manquant…) |
-| `GET` | `/api/transactions/reimbursement/csv` | manager du site / admin | CSV de remboursement par site puis salarié. Paramètres : `site_id`, `category` (`pro`\|`perso`, défaut `pro`), `from`, `to` (ISO 8601) |
-| `GET` | `/api/transactions/:id` | admin / manager du site / propriétaire du badge | Détail d'une session, avec le coût figé `cost`, `cost_currency` et `cost_details`. `:id` est l'**identifiant interne** de la session (champ `id` des listes), et non le `transaction_id` OCPP — unique seulement par borne en OCPP 2.0.1 |
+| `GET` | `/api/sites/:siteId/tariff` | manager du site / admin | Tarif d'un site : `currency`, `timezone` et `grids[]` (la première « depuis l'origine » avec `valid_from: null`, puis les grilles datées) ; chaque grille a `default_price_per_kwh` et `periods[]` (`label`, `days` en jours ISO `1`–`7`, `start_time`, `end_time`, `price_per_kwh`). `default_price_per_kwh` / `periods` à la racine = grille « depuis l'origine » |
+| `PUT` | `/api/sites/:siteId/tariff` | manager du site / admin | Remplace atomiquement le tarif (`grids[]` ; sans `grids`, seule la grille « depuis l'origine » est remplacée). `dry_run: true` renvoie l'aperçu des sessions clôturées dont le coût changerait ; sans `confirm: true`, un tel changement est refusé (`409 ERR_TARIFF_RECALC_CONFIRM_REQUIRED` avec l'aperçu). `400` avec des codes `ERR_TARIFF_*` si invalide. `409 ERR_SITE_ARCHIVED` sur un site archivé |
+| `POST` | `/api/sites/:id/archive`, `/api/sites/:id/restore` | admin | Archive (avec ses bornes) / restaure un site. `DELETE /api/sites/:id` : `409 ERR_SITE_HAS_SESSIONS` s'il a des sessions |
+| `POST` | `/api/chargepoints/:id/archive`, `/api/chargepoints/:id/restore` | admin | Archive / restaure une borne. `DELETE /api/chargepoints/:id` : `409 ERR_CHARGEPOINT_HAS_SESSIONS` si elle a des sessions |
+| `PUT` | `/api/users/:id/disabled` | admin | `{ "disabled": true\|false }` : désactive / réactive un compte. `DELETE /api/users/:id` anonymise le compte |
+| `GET` | `/api/transactions/:id/badge-candidates` | admin / manager du site de la session | Badges proposés pour corriger la session |
+| `POST` | `/api/transactions/:id/badge-correction` | admin / manager du site de la session | `{ "id_tag_id": n, "reason": "…" }` : corrige le badge (motif de 3 à 500 caractères) |
+| `GET` | `/api/admin/retention` | admin | État de la rétention : activation et sa source (`env`, `config`, `default`), durées, dates limites, aperçu, dernier passage. `POST /api/admin/retention/run` : passage immédiat (rétention active) |
+| `GET` | `/api/transactions/reimbursement/csv` | manager du site / admin | CSV de remboursement par site puis salarié, suivi des régularisations de la période quand `from` est donné. Paramètres : `site_id`, `category` (`pro`\|`perso`, défaut `pro`), `from`, `to` (ISO 8601) |
+| `GET` | `/api/transactions/:id` | admin / manager du site / propriétaire du badge | Détail d'une session, avec le coût figé `cost`, `cost_currency` et `cost_details`, et le journal `corrections[]`. `:id` est l'**identifiant interne** de la session (champ `id` des listes), et non le `transaction_id` OCPP — unique seulement par borne en OCPP 2.0.1 |
 | `GET` | `/api/transactions/:id/values` | admin / manager du site / propriétaire du badge | Séries de comptage d'une transaction (même `:id`) : `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
 | `GET` | `/metrics` | token optionnel | Métriques au format Prometheus |
 | `GET` | `/healthz` | public | Vérification de santé |
@@ -1395,7 +1565,8 @@ backup:
 | Table | Description |
 |---|---|
 | `sites` | Sites de recharge (avec les réglages de tarif `currency`, `timezone`, `default_price_per_kwh`) |
-| `site_tariff_periods` | Tranches tarifaires d'un site (libellé, jours, heures de début/fin, prix du kWh) |
+| `site_tariff_periods` | Tranches tarifaires d'un site (libellé, jours, heures de début/fin, prix du kWh) ; `version_id` NULL = grille « depuis l'origine » |
+| `site_tariff_versions` | Grilles datées d'un site (`valid_from`, prix par défaut) |
 | `users` | Comptes utilisateurs |
 | `user_sites` | Association utilisateurs ↔ sites (avec rôle) |
 | `chargepoints` | Bornes de recharge enregistrées |
@@ -1406,8 +1577,9 @@ backup:
 | `chargepoint_init_config` / `chargepoint_init_variables` | Configuration OCPP par défaut appliquée aux bornes (clés 1.6 / variables 2.0.1) |
 | `id_tags` | Badges RFID (propriétaire, site, expiration, catégorie pro/perso, type de jeton) |
 | `id_tags_events` | Refus d'autorisation des badges |
-| `transactions` | Sessions de charge, identifiées par borne (`chargepoint_id`, `transaction_id`) : statut `Active` / `Completed` / `Rejected`, coût figé (`cost`, `cost_currency`, `cost_details`), `closed_by` (`station` ou `server`) |
+| `transactions` | Sessions de charge, identifiées par borne (`chargepoint_id`, `transaction_id`) : statut `Active` / `Completed` / `Rejected`, site, salarié et catégorie figés au démarrage (`site_id`, `user_id`, `user_name`, `tag_category`), coût figé (`cost`, `cost_currency`, `cost_details`), `closed_by` (`station` ou `server`) |
 | `transactions_values` | Données de comptage temps réel d'une session |
+| `transaction_corrections` | Journal des corrections d'une session (badge corrigé, coût recalculé) : auteur, motif, avant / après |
 | `ocpp_messages` | Journal des messages OCPP |
 | `users_password_resets` | Jetons de réinitialisation de mot de passe |
 | `charging_profiles` | Profils de charge appliqués sur les bornes |

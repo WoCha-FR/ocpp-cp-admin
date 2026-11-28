@@ -3817,6 +3817,89 @@ function vacuumDatabase() {
   db.exec('VACUUM');
 }
 
+// ── Rétention automatique (src/retention.js) ──
+// Sessions échues : jamais supprimées (totaux des sites, coûts), seulement anonymisées. Le badge,
+// le salarié et son nom disparaissent de la session et de son journal de corrections ; site,
+// catégorie, énergie et coût restent. Une session en cours n'est jamais touchée.
+const EXPIRED_SESSIONS_WHERE = `status != 'Active' AND COALESCE(stop_time, start_time) < ?`;
+
+function anonymizeSessionsBefore(before) {
+  return db.transaction(() => {
+    db.prepare(
+      `UPDATE transaction_corrections SET old_id_tag = NULL, new_id_tag = NULL,
+         old_user_id = NULL, new_user_id = NULL, old_user_name = NULL, new_user_name = NULL,
+         reason = NULL, author_id = NULL, author_name = NULL
+       WHERE transaction_id IN (SELECT id FROM transactions WHERE ${EXPIRED_SESSIONS_WHERE})
+         AND (old_id_tag IS NOT NULL OR new_id_tag IS NOT NULL OR old_user_id IS NOT NULL
+           OR new_user_id IS NOT NULL OR old_user_name IS NOT NULL OR new_user_name IS NOT NULL
+           OR reason IS NOT NULL OR author_id IS NOT NULL OR author_name IS NOT NULL)`
+    ).run(before);
+    return db
+      .prepare(
+        `UPDATE transactions SET id_tag = NULL, id_token_type = NULL, user_id = NULL, user_name = NULL
+         WHERE ${EXPIRED_SESSIONS_WHERE}
+           AND (id_tag IS NOT NULL OR user_id IS NOT NULL OR user_name IS NOT NULL)`
+      )
+      .run(before).changes;
+  })();
+}
+
+// Cibles de la rétention : comptage (aperçu) et effacement, avec les fonctions de purge manuelle
+const RETENTION_TARGETS = {
+  ocppMessages: {
+    count: 'SELECT COUNT(*) AS n FROM ocpp_messages WHERE timestamp < ?',
+    apply: (before) => clearOcppMessages(null, before),
+  },
+  rejections: {
+    count: 'SELECT COUNT(*) AS n FROM id_tags_events WHERE timestamp < ?',
+    apply: (before) => deleteIdTagEventsBefore(before),
+  },
+  errorEvents: {
+    count: 'SELECT COUNT(*) AS n FROM error_events WHERE created_at < ?',
+    apply: (before) => deleteErrorEventsBefore(before),
+  },
+  reservations: {
+    count: `SELECT COUNT(*) AS n FROM reservations
+            WHERE status IN ('Fulfilled','Cancelled','Expired') AND expiry_date < ?`,
+    apply: (before) => deleteExpiredReservations(before),
+  },
+  notifications: {
+    count: 'SELECT COUNT(*) AS n FROM notification_log WHERE created_at < ?',
+    apply: (before) => deleteNotificationLogBefore(before),
+  },
+  meterValues: {
+    count: `SELECT COUNT(*) AS n FROM transactions_values tv
+            JOIN transactions t
+              ON t.chargepoint_id = tv.chargepoint_id AND t.transaction_id = tv.transaction_id
+            WHERE t.stop_time IS NOT NULL AND t.stop_time < ?`,
+    apply: (before) => deleteTransactionValuesBefore(before),
+  },
+  sessions: {
+    count: `SELECT COUNT(*) AS n FROM transactions WHERE ${EXPIRED_SESSIONS_WHERE}
+            AND (id_tag IS NOT NULL OR user_id IS NOT NULL OR user_name IS NOT NULL)`,
+    apply: (before) => anonymizeSessionsBefore(before),
+  },
+};
+
+/** Lignes concernées par cible ; `cutoffs` : { cible: 'AAAA-MM-JJ' | null (jamais) } */
+function countRetention(cutoffs) {
+  const out = {};
+  for (const [key, target] of Object.entries(RETENTION_TARGETS)) {
+    const before = cutoffs[key];
+    out[key] = before ? db.prepare(target.count).get(before).n : 0;
+  }
+  return out;
+}
+
+function applyRetention(cutoffs) {
+  const out = {};
+  for (const [key, target] of Object.entries(RETENTION_TARGETS)) {
+    const before = cutoffs[key];
+    out[key] = before ? target.apply(before) : 0;
+  }
+  return out;
+}
+
 module.exports = {
   getDb,
   closeDb,
@@ -3830,6 +3913,9 @@ module.exports = {
   deleteExpiredReservations,
   deleteNotificationLogBefore,
   vacuumDatabase,
+  anonymizeSessionsBefore,
+  countRetention,
+  applyRetention,
   getAllSites,
   getSiteById,
   getSiteTariff,

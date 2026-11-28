@@ -38,7 +38,9 @@ Les informations suivantes sont enregistrées par l'application lors de la gesti
 Si un ou plusieurs tokens RFID (ou autres identifiants de charge) vous sont attribués par un administrateur, les informations suivantes sont enregistrées et associées à votre compte :
 
 - Identifiant(s) du ou des tokens (RFID, code, adresse MAC, etc.)
-- Historique des sessions de recharge démarrées avec ces tokens : borne utilisée, connecteur, date et heure de début et de fin, énergie consommée, puissance mesurée, raison d'arrêt
+- Historique des sessions de recharge démarrées avec ces tokens : borne et site utilisés, connecteur, date et heure de début et de fin, énergie consommée, puissance mesurée, raison d'arrêt, coût calculé selon le tarif du site
+- Pour chaque session, votre nom et la catégorie du badge (professionnel ou personnel) tels qu'au démarrage de la session, afin que les remboursements restent exacts même si le badge ou le compte change ensuite
+- Les éventuelles corrections d'une session (badge corrigé, coût recalculé après un changement de tarif), avec leur auteur, leur date et leur motif
 
 Ces données ne sont enregistrées que lorsqu'un token vous est explicitement assigné. Les sessions initiées sans token identifié ne sont pas rattachées à votre profil.
 
@@ -81,6 +83,7 @@ Les données collectées sont utilisées pour les finalités suivantes :
 - **Gestion des accès** : contrôler les droits d'accès aux sites et aux bornes supervisées
 - **Supervision de l'infrastructure** : gérer et surveiller les bornes de recharge OCPP
 - **Envoi de notifications** : alerter les utilisateurs d'événements liés aux bornes et aux sessions de recharge
+- **Remboursements** : établir les relevés de recharge professionnelle (notes de frais, remboursement des titulaires de contrats d'électricité)
 - **Récupération d'accès** : permettre la réinitialisation sécurisée d'un mot de passe oublié
 
 Vos données ne sont ni vendues, ni partagées avec des tiers à des fins commerciales, ni utilisées à des fins de profilage ou de marketing.
@@ -95,7 +98,12 @@ Le traitement est fondé sur l'intérêt légitime de l'opérateur à sécuriser
 
 ## Durée de conservation
 
-Vos données sont conservées tant que votre compte est actif dans l'application. Elles sont supprimées à votre demande ou sur décision de l'administrateur système.
+- **Compte** : conservé tant qu'il est utilisé. Il peut être désactivé (connexion et badges suspendus, rien n'est effacé) ou supprimé, à votre demande ou sur décision de l'administrateur.
+- **Suppression du compte** : elle est immédiate et anonymise vos données. Votre compte, vos rattachements aux sites, vos préférences et abonnements de notification sont supprimés ; vos badges sont désactivés et détachés de vous ; vos sessions de recharge sont conservées sans votre nom (« Utilisateur supprimé »), car elles entrent dans les totaux et les remboursements des sites.
+- **Sessions de recharge** : conservées 5 ans, puis anonymisées automatiquement (le badge et votre nom sont effacés ; l'énergie, le coût et le site restent dans les statistiques).
+- **Données techniques** : journal des échanges avec les bornes 90 jours ; événements de badge (autorisations, refus), alertes des bornes, réservations terminées et historique des notifications 1 an ; courbes de mesure des sessions 2 ans.
+
+Ces durées sont celles proposées par défaut ; l'opérateur peut les adapter (voir la configuration de l'application). Les relevés de remboursement exportés par l'opérateur et archivés dans son outil comptable suivent ses propres obligations de conservation. Les sauvegardes de la base sont conservées selon la politique de sauvegarde de l'opérateur.
 
 ## Vos droits (RGPD)
 
@@ -103,7 +111,7 @@ Conformément au Règlement Général sur la Protection des Données (RGPD), vou
 
 - **Accès** : obtenir une copie de vos données
 - **Rectification** : corriger des données inexactes
-- **Suppression** : demander l'effacement de vos données
+- **Suppression** : demander l'effacement de vos données (vos sessions sont alors anonymisées, voir ci-dessus)
 - **Opposition** : vous opposer au traitement
 
 Pour exercer ces droits, contactez l'administrateur système à : [adresse e-mail de contact]

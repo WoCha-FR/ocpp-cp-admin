@@ -89,6 +89,30 @@ test.describe('Page Administration système', () => {
     await expect(page.locator('.toast-success')).toBeVisible({ timeout: 5000 });
   });
 
+  test('rétention automatique : inactive sans la clé (instance mise à jour), activation par la configuration', async ({ loggedInPage: page }) => {
+    const cookies = await page.context().cookies();
+    const headers = { 'x-xsrf-token': cookies.find((c) => c.name === 'XSRF-TOKEN')?.value ?? '' };
+    // config.e2e.json n'a pas de section retention : cas d'une instance mise à jour
+    const status = await (await page.request.get('/api/admin/retention')).json();
+    expect(status).toMatchObject({ enabled: false, source: 'default' });
+    expect(status.days).toMatchObject({ ocppMessages: 90, meterValues: 730, sessions: 1825 });
+    // Passage immédiat refusé tant qu'elle est inactive
+    expect((await page.request.post('/api/admin/retention/run', { headers })).status()).toBe(409);
+    expect((await page.request.put('/api/admin/retention/enabled', { headers })).status()).toBe(404);
+
+    await page.locator('#navAdmin').click();
+    await page.locator(`[data-onclick="switchAdminTab('cleanup')"]`).click();
+    const table = page.locator('#retentionTable');
+    await expect(table).toBeVisible({ timeout: 10000 });
+    await expect(table.locator('tr[data-retention="sessions"]')).toContainText(/1825/);
+    await expect(page.locator('#retentionBody .push-prompt-banner')).toBeVisible();
+    await expect(page.locator('#retentionBody [data-onclick*="runRetentionNow"]')).toHaveCount(0);
+
+    // « Activer » mène à l'éditeur de configuration, section Rétention des données
+    await page.locator('#retentionConfigBtn').click();
+    await expect(page.locator('#configTabContent')).toContainText('retention.enabled', { timeout: 10000 });
+  });
+
   test('console OCPP : formulaire masqué et message adapté sans borne connectée', async ({ loggedInPage: page }) => {
     await page.locator('#navAdmin').click();
     await page.locator('[data-onclick="switchAdminTab(\'console\')"]').click();

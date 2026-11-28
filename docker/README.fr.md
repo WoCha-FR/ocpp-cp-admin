@@ -470,6 +470,21 @@ Les valeurs de `config.json` peuvent être surchargées par variables d'environn
 
 > Si non défini, `/metrics` est accessible sans authentification (adapté aux réseaux privés/Docker).
 
+### Rétention des données
+
+| Variable | Config JSON | Exemple |
+|---|---|---|
+| `CPADMIN_RETENTION_ENABLED` | `retention.enabled` | `true` |
+| `CPADMIN_RETENTION_OCPP_MESSAGES_DAYS` | `retention.ocppMessagesDays` | `90` |
+| `CPADMIN_RETENTION_REJECTIONS_DAYS` | `retention.rejectionsDays` | `365` |
+| `CPADMIN_RETENTION_ERROR_EVENTS_DAYS` | `retention.errorEventsDays` | `365` |
+| `CPADMIN_RETENTION_RESERVATIONS_DAYS` | `retention.reservationsDays` | `365` |
+| `CPADMIN_RETENTION_NOTIFICATIONS_DAYS` | `retention.notificationsDays` | `365` |
+| `CPADMIN_RETENTION_METER_VALUES_DAYS` | `retention.meterValuesDays` | `730` |
+| `CPADMIN_RETENTION_SESSIONS_DAYS` | `retention.sessionsDays` | `1825` (sessions anonymisées, jamais supprimées) |
+
+> Durées en jours, `0` = jamais. Une **installation neuve** reçoit un `config.json` copié de `config.sample.json` (par l'entrypoint), où la rétention est active. Une **instance mise à jour** garde son `config.json` sans clé `retention` : l'effacement automatique reste **inactif** jusqu'à son activation — vérifiez ce qui serait effacé dans **Administration système → Nettoyage**, faites une sauvegarde, puis ajoutez `CPADMIN_RETENTION_ENABLED=true` au fichier compose (ou `retention.enabled` dans l'éditeur de configuration). Voir *Cycle de vie des données* dans le README principal.
+
 > Les booléens (`true`/`false`) et les nombres sont convertis automatiquement.
 > Les secrets sont toujours traités comme des chaînes de caractères.
 

@@ -24,6 +24,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
   - [OCPP Server](#ocpp-server)
   - [Notifications](#notifications)
   - [Google OAuth Authentication](#google-oauth-authentication)
+  - [Data Retention](#data-retention)
   - [Legal Pages](#legal-pages)
 - [TLS Certificates](#tls-certificates)
   - [HTTPS — Web Interface](#https--web-interface)
@@ -31,6 +32,11 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - [Getting Started](#getting-started)
 - [Energy Tariffs](#energy-tariffs)
 - [Business / Personal Badges and Reimbursement Exports](#business--personal-badges-and-reimbursement-exports)
+- [Data Lifecycle](#data-lifecycle)
+  - [Principles](#principles)
+  - [Rules per item](#rules-per-item)
+  - [Common procedures](#common-procedures)
+  - [Automatic retention](#automatic-retention)
 - [Roles and Permissions](#roles-and-permissions)
 - [OCPP Protocol (1.6 and 2.0.1)](#ocpp-protocol-16-and-201)
   - [Supported Operations — OCPP 1.6](#supported-operations--ocpp-16)
@@ -55,7 +61,8 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 ### Charge Point Management
 - Manual registration or automatic discovery of charge points
 - Approval of pending charge points
-- Assignment of charge points to sites
+- Assignment of charge points to sites (a charge point without a site is inactive: no charging session starts on it)
+- Archiving and restoring a charge point, replacing a charge point by changing its OCPP identity while keeping its history — see [Data Lifecycle](#data-lifecycle)
 - OCPP 1.6 and OCPP 2.0.1 charge points side by side (multi-EVSE stations supported in 2.0.1)
 - Real-time monitoring (connector status, heartbeat, errors)
 - Remote charge point configuration (GetConfiguration / ChangeConfiguration in 1.6, GetBaseReport / SetVariables in 2.0.1) and a default configuration applied automatically on first connection
@@ -67,6 +74,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - Per-site and per-user authorization
 - Local authentication (email / password) or Google OAuth 2.0
 - Password reset via email with secure token
+- Site archiving, account deactivation, account deletion by anonymization — see [Data Lifecycle](#data-lifecycle)
 
 ### Transactions and Charge Monitoring
 - Active and completed transaction tracking
@@ -75,7 +83,9 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - A server restart (image update…) does not interrupt ongoing charging: sessions stay active and are reconciled when the charge points reconnect
 - Sessions closed by the server (lost end message, connector back to available…) corrected by the charge point's real stop when it arrives later; manual closing of a session left active (charge point that never comes back)
 - CSV export of transactions (including cost columns when a tariff is configured); cells that could be read as a spreadsheet formula (`=`, `+`, `-`, `@`…) are prefixed with an apostrophe
-- Per-site energy tariffs (time slots and weekdays) with the cost of each session frozen at closing — see [Energy Tariffs](#energy-tariffs)
+- Per-site energy tariffs (time slots, weekdays, dated grids) with the cost of each session frozen at closing — see [Energy Tariffs](#energy-tariffs)
+- Site, employee and badge category frozen when each session starts: changing a badge, an account or a charge point afterwards does not rewrite history
+- Recorded correction of a session's badge, adjustments in the reimbursement export
 - Personal dashboard for users
 
 ### Error Event History
@@ -135,6 +145,7 @@ OCPP CP Admin enables monitoring and managing electric vehicle charging infrastr
 - System information: app version, uptime, Node.js memory usage, SQLite database size, connected charge points, per-table record counts
 - Downloadable backup archive (ZIP): SQLite database (WAL-safe, no service interruption) + critical certificates (local client CA, per-charge-point certificates, manual mTLS CA)
 - Historical data cleanup with a date filter: meter values (transaction curves, transactions themselves are kept), OCPP messages, ID tag events, error events, notification log, expired reservations — plus a database VACUUM
+- Daily automatic retention (configurable durations, preview of what would be deleted) — see [Automatic retention](#automatic-retention)
 - Raw OCPP console: send any command with arbitrary JSON parameters to a connected charge point, with an in-session history
 - Comparison of OCPP parameters between charge points of the same OCPP version, with discrepancies highlighted and forced (override) values flagged
 - Restricted to administrators only
@@ -434,6 +445,21 @@ Values from `config.json` can be overridden by environment variables. The JSON f
 
 > If not set, `/metrics` is accessible without authentication (suitable for private/Docker networks).
 
+### Retention Durations
+
+| Variable | JSON Config | Example |
+|---|---|---|
+| `CPADMIN_RETENTION_ENABLED` | `retention.enabled` | `true` — enables the daily automatic deletion (missing from the file: disabled) |
+| `CPADMIN_RETENTION_OCPP_MESSAGES_DAYS` | `retention.ocppMessagesDays` | `90` |
+| `CPADMIN_RETENTION_REJECTIONS_DAYS` | `retention.rejectionsDays` | `365` (badge events: authorizations, rejections) |
+| `CPADMIN_RETENTION_ERROR_EVENTS_DAYS` | `retention.errorEventsDays` | `365` |
+| `CPADMIN_RETENTION_RESERVATIONS_DAYS` | `retention.reservationsDays` | `365` (finished reservations) |
+| `CPADMIN_RETENTION_NOTIFICATIONS_DAYS` | `retention.notificationsDays` | `365` |
+| `CPADMIN_RETENTION_METER_VALUES_DAYS` | `retention.meterValuesDays` | `730` (meter curves; the frozen cost stays) |
+| `CPADMIN_RETENTION_SESSIONS_DAYS` | `retention.sessionsDays` | `1825` (sessions anonymized, never deleted) |
+
+> Durations in days; `0` = never. See [Automatic retention](#automatic-retention).
+
 > Booleans (`true`/`false`) and numbers are automatically converted.
 > Secrets are always treated as strings.
 
@@ -613,6 +639,34 @@ Required fields are validated before saving. The application restarts automatica
 ```
 
 When enabled, users can sign in with their Google account. The Google account is matched by email address to an existing user. The OAuth callback URL is derived from `webui.publicUrl`.
+
+### Data Retention
+
+```json
+"retention": {
+  "enabled": true,
+  "ocppMessagesDays": 90,
+  "rejectionsDays": 365,
+  "errorEventsDays": 365,
+  "reservationsDays": 365,
+  "notificationsDays": 365,
+  "meterValuesDays": 730,
+  "sessionsDays": 1825
+}
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `enabled` | `false` when the key is missing | Enables the automatic deletion (one run per day). `config.sample.json` enables it: a **new installation** starts with it enabled, an **upgraded instance** (whose `config.json` has no such key) keeps it disabled until the admin enables it |
+| `ocppMessagesDays` | `90` | OCPP log (messages exchanged with the charge points) |
+| `rejectionsDays` | `365` | Badge events (authorizations and rejections) |
+| `errorEventsDays` | `365` | Charge point alerts and errors |
+| `reservationsDays` | `365` | Finished reservations (fulfilled, cancelled, expired) |
+| `notificationsDays` | `365` | Log of sent notifications |
+| `meterValuesDays` | `730` | Session meter curves (the frozen cost and its breakdown stay) |
+| `sessionsDays` | `1825` | Sessions: **anonymized**, never deleted |
+
+Durations in days, `0` = never. How it works: [Automatic retention](#automatic-retention).
 
 ---
 
@@ -863,7 +917,7 @@ Each site can have its own **price per kWh grid**. It is used to estimate the sh
 
 ### Configuring a tariff
 
-On the **Sites** page, the **Tariff** button (managers of the site and administrators) opens the grid editor:
+On the **Sites** page, the **Tariff** button (managers of the site and administrators) opens the editor. A site has a "since the beginning" grid and, when needed, **dated grids** (see [Dated tariffs](#dated-tariffs)). Each grid contains:
 
 | Field | Description |
 |---|---|
@@ -884,12 +938,22 @@ Rules:
   | Weekend | Sat–Sun | `06:00 → 24:00` | 0.10 |
   | *(default)* | all other hours | | 0.25 |
 
+### Dated tariffs
+
+- A **dated grid** applies **from its day** (midnight, site time) until the next dated grid; before the first one, the "since the beginning" grid applies. The **+ Dated tariff** button creates a grid from a date, initialized with the grid on display.
+- **A price increase known in advance** (new electricity contract on February 1st…) is entered before its date: it applies by itself to the sessions of that day, nothing is recalculated.
+- A session spanning two grids is split at midnight, each part at the price of its grid.
+- A grid without a default price means "no tariff from this date": a session consuming energy on that day has no cost.
+- **Tariff entered late**: when saving changes the cost of sessions **already closed**, the application first shows a preview (number of sessions, old and new total, difference, examples) and only saves after confirmation. The sessions concerned are then recalculated and **each difference is recorded** (the session's correction log); sessions already exported appear in the [Adjustments](#correcting-a-sessions-badge-and-adjustments) section of the next reimbursement export. Only the days whose grid changes are recalculated.
+- When the meter curves of a session have been purged, the recalculation starts from the frozen cost breakdown, which keeps the hourly distribution of the energy.
+
 ### How the cost is computed
 
 - The cost is computed **when the session is closed** (all closing paths: StopTransaction / TransactionEvent `Ended`, orphan sessions, manual closing) and then **frozen** on the transaction (`cost`, `cost_currency`, `cost_details`). Single exception: a session closed by the server (end message not received) is computed again once when the charge point's real stop arrives later — see [Transaction handling](#transaction-handling).
 - Sessions refused at start (*Rejected* status) never have a cost.
 - The energy is split across slots using the **MeterValues** received during the session (piecewise-linear cumulated energy curve). If the charge point sent none, the energy is **spread proportionally to the duration** (the calculation method is shown in the session detail).
-- Changing the grid afterwards **never changes past sessions**, and sessions closed before a tariff existed are **not back-filled**: the cost of a session is meant to stay a reliable supporting document.
+- The cost of a session then only changes through a [tariff entered late](#dated-tariffs), after confirmation and with a record of the difference. Charge point meter readings are never corrected.
+- The tariff used is the one of the **site where the session took place** (frozen at start): moving the charge point afterwards changes neither the site nor the tariff of its past sessions.
 - A calculation failure never prevents a session from being closed (the session simply has no cost).
 
 ### Where costs appear
@@ -914,17 +978,113 @@ Each RFID badge has a **category**: `personal` (default) or `business`. It lets 
 
 ### Typical set-up: company with several sites
 
-- One **site** per location (headquarters, employees' homes…) with its own [tariff](#energy-tariffs).
-- Create the badges with **no site** (*All sites*): a badge is then valid everywhere. Two badges per employee (business + personal) are simply two badges linked to the same user.
-- **Link each employee to every site** where they may charge (user management): otherwise authorization is refused with `user_not_linked`.
+Example: a company with a headquarters and charge points at three employees' homes, added to an instance that already manages other sites.
+
+- **One site per electricity contract** (headquarters, each employee's home) with its own [tariff](#energy-tariffs): the reimbursement export groups by site, hence by contract holder.
+- The **company manager is manager** of these sites; the employee hosting a charge point stays a **plain user** of their home (they must not be manager, otherwise they could give themselves business badges).
+- **Link each employee to every site** where they may charge: otherwise authorization is refused with `user_not_linked`.
+- **Global business badge** (*All sites*): valid at the headquarters and at colleagues' homes, the host of the charge point is reimbursed. **Personal badge limited to the home**: accepted at home, not reimbursed.
+- On a home, untick **"Automatic web badge"** in the site form (admin): a start from the web is then only possible with a registered badge.
+
+### Badge rules
+
+- **Frozen code**: a badge code cannot be changed (owner, category, site and expiry can). A code is **either global or limited to sites**, never both; inherited duplicates are flagged to the admin.
+- **Badge already used**: it cannot be deleted (its history depends on it); the application offers to **deactivate** it instead.
+- **Generated badges** (`ADMIN`, `MGR-*`, `WEB-*`): reserved to the application, neither editable nor deletable; these prefixes cannot be used as a code.
+- **Manager**: creates and edits the badges of their sites, linked to the employees of their sites. They manage an employee's global badge only if **all of that employee's sites are theirs** (never an administrator's); they only see those global badges.
+- A **disabled** account has its badges refused.
 
 ### Filters and exports
 
 - **Transactions** page (managers/admins): *Category* filter, also applied to the CSV export, plus a `Category` column.
 - **My transactions** page (all users): same *Category* filter, applied to the list, KPIs and CSV export. The personal CSV ends with a **total row** (kWh and cost per currency): filtered on *business*, it is a ready-to-use expense report.
-- **Reimbursement export** (button on the **Transactions** page, managers/admins): CSV aggregated **by site, then by employee** — number of completed sessions, energy (kWh) and cost per currency, with a total per site. It follows the site, category (**business** by default) and date filters of the page. A manager only gets the sites they manage. Sessions of a site with no tariff have an empty cost.
+- **Reimbursement export** (button on the **Transactions** page, managers/admins): CSV aggregated **by site, then by employee** — number of completed sessions, energy (kWh) and cost per currency, with a total per site. It follows the site, category (**business** by default) and date filters of the page. A manager only gets the sites they manage. Sessions of a site with no tariff have an empty cost. With a start date, it ends with an **Adjustments** section (see below).
+- The site, employee and category of a session are **frozen when it starts**: editing or deleting the badge afterwards, renaming the employee or moving the charge point does not change past exports.
+
+> The application is not the accounting record: the exported statement, archived with the payment in the accounting tool, is what counts (and must be kept according to your accounting obligations).
+
+### Correcting a session's badge and adjustments
+
+- **Badge error** (lent badge, wrong badge presented, session without badge): on the session detail, **Correct badge** (admin, or manager of the site of the session, including on their own sessions). Choose the right badge among those registered for the site, with a **mandatory reason**; the employee and category follow the badge. The cost and the charge point meter readings do not change. Not possible on a refused session or an archived site.
+- Every correction (badge or tariff) is **recorded** on the session detail: date, author, before / after, reason. The badge presented at the charge point stays visible there.
+- **Adjustments**: the reimbursement export of a period (with a start date) adds the corrections **entered during the period on earlier sessions**, hence already exported: amount difference (tariff recalculated) or transfer of the session (removed from the former employee or category, added to the new one), with a total per currency. A correction on a session of the period itself is already in the totals of the main section. Export each period after it ends: a correction made after a period has been exported, on a session of that period, only appears in the next export if it is entered during the next period.
 
 > Confidentiality: sessions of personal badges remain visible to site managers (the company pays for the charge points); only the exports separate the two categories.
+
+---
+
+## Data Lifecycle
+
+### Principles
+
+- A session **freezes when it starts** its site, employee and category; its cost is **frozen when it closes**. Later changes to sites, charge points, badges or accounts only apply to the future.
+- Afterwards, a session only changes in two **recorded** cases: a [badge error](#correcting-a-sessions-badge-and-adjustments) or a [tariff entered late](#dated-tariffs). Charge point meter readings are never corrected.
+- What carries history is **withdrawn** (archiving, deactivation) instead of being deleted.
+- Technical data has a retention period; sessions are anonymized at the end of theirs ([automatic retention](#automatic-retention)).
+
+### Rules per item
+
+| Item | Editable | Withdrawal | Permanent deletion |
+|---|---|---|---|
+| **Site** | name, address, tariffs, automatic web badge (admin) | **archiving** with its charge points: read and export for the admin and its managers, no changes; **restorable** | only with no session at all (its site-limited badges go with it) |
+| **Charge point** | name, OCPP identity, site, mode | **archiving**: OCPP connection refused, certificate revoked, identity reserved, history kept; **restorable** | only with no session at all (refused starts do not count) |
+| **Badge** | owner, category, site, expiry — **frozen code** | deactivation | only if it was never used |
+| **Account** | email (unique, case-insensitive), name, role, sites | **deactivation**: login, open session and badges suspended; reversible | **immediate anonymization** (see below) |
+| **Session** | badge only (with a reason), cost through a tariff entered late | — | never: anonymized when the retention period ends |
+
+Other rules:
+
+- **Charge point without a site: inactive.** Its connection is accepted (to configure and assign it) but every start is refused, whatever its mode; a session it would start anyway is recorded as refused, never billed. The admin is warned by a banner.
+- **Identity change, move or archiving of a charge point**: refused during an ongoing charging session.
+- **Last active manager of a site**: cannot be removed, demoted, disabled or deleted (appoint another manager first). A site with no manager at all is still allowed.
+- **Global role**: `admin` or `user`; "manager" is a per-site role.
+
+### Common procedures
+
+**A site is no longer supervised (contract terminated, employee gone…)**
+1. Export its history if needed (Transactions with the site filter; reimbursement export).
+2. **Sites** page → **Archive**: the site and its charge points are withdrawn, their connections refused and their certificates revoked. The history stays viewable and exportable by the admin and the managers of the site.
+3. **Restore** brings it back with the charge points archived together with it (new certificates generated). **Delete** is only possible for a site with no session at all: otherwise the application offers to archive it.
+
+**Replace a charge point (failure, new hardware) or fix a typing error in its identity**
+1. If the new charge point already connected, it may appear as pending: do not accept it.
+2. **Charge points** page → **Edit** the existing charge point → new **OCPP identity** (not during a charging session).
+3. The history stays on the charge point; the old connection is closed, the old client certificate revoked and a new one generated: install it again if the charge point uses mTLS. The old identity is then refused.
+
+**Withdraw a charge point without replacing it**: **Archive** (identity reserved, can be restored). **Delete** only a charge point with no session at all (test charge point, creation mistake).
+
+**An employee leaves the company**
+- **Disable** the account (Users page): login and badges refused immediately, nothing is erased, can be enabled again.
+- **Delete** the account: the dialog first offers the **CSV export of their sessions** (to archive if you must keep them with the name). Deletion is permanent and **anonymizes**: their sessions stay in totals and reimbursements under the name "Deleted user #n", their badges are disabled, detached and emptied of their description, their name disappears from the correction log.
+- If they are the last manager of a site, appoint another manager first.
+
+**Lost or stolen badge**: deactivate it (Badges page). Create a new badge with the new code: the old code can be neither changed nor reassigned.
+
+**Session attributed to the wrong employee**: [correct the badge](#correcting-a-sessions-badge-and-adjustments) of the session, with a reason.
+
+**New electricity price**: add a [dated grid](#dated-tariffs) at the date of the change, ideally beforehand. Entered late, it recalculates the sessions concerned after confirmation, and the difference appears as an adjustment.
+
+**Right to erasure (GDPR)**: delete the account (immediate anonymization). ZIP backups already produced stay as they are: handle them according to your backup policy.
+
+### Automatic retention
+
+One run per day (the first a few minutes after start-up) deletes expired technical data and anonymizes expired sessions:
+
+| Data | Default retention | Action |
+|---|---|---|
+| OCPP log | 90 days | deleted |
+| Badge events (authorizations, rejections) | 1 year | deleted |
+| Charge point alerts and errors | 1 year | deleted |
+| Finished reservations | 1 year | deleted |
+| Notification log | 1 year | deleted |
+| Session meter curves | 2 years | deleted (the frozen cost and its breakdown stay) |
+| Sessions | 5 years | **anonymized**: badge, employee and name erased from the session and its correction log; site, category, energy and cost stay in the totals |
+
+- Durations are set in the [configuration](#data-retention) (`retention.*Days`) or with the `CPADMIN_RETENTION_*` variables; `0` = never. A session in progress is never touched.
+- **Activation**: `retention.enabled` (or `CPADMIN_RETENTION_ENABLED`). A **new installation** starts from `config.sample.json`, where it is enabled. An **upgraded instance** keeps its `config.json`, without this key: deletion stays **disabled** until the admin enables it.
+- **After an upgrade**: **System Administration → Cleanup** page, the *Automatic retention* panel shows for each kind of data the duration, the cut-off date and the number of rows that would be processed today. Make a **backup** (Information tab), adjust the durations if needed, then set `retention.enabled` to `true` (*Enable in the configuration* button → configuration editor, *Data retention* section, with a restart; or `CPADMIN_RETENTION_ENABLED=true`). Once enabled, **Run now** starts an immediate run.
+- Each run is recorded in the application log; manual purges by date remain available in the same tab.
+- The 5-year retention covers the application's needs (statistics, disputes); the accounting record to keep longer is the exported statement, archived in your accounting tool.
 
 ---
 
@@ -935,7 +1095,8 @@ The application uses three hierarchical role levels:
 ### Administrator (`admin`)
 
 Full access to all features:
-- Management of all sites, users, and charge points
+- Management of all sites, users, and charge points: archiving and restoring sites and charge points, disabling and deleting (anonymizing) accounts
+- "Automatic web badge" setting of the sites
 - Global application configuration
 - Approval of pending charge points
 - View all transactions and OCPP messages
@@ -953,7 +1114,10 @@ Management restricted to authorized sites:
 - Everyday charge point operations: `Reset`, `ChangeAvailability`, `UnlockConnector`, `TriggerMessage`, `ClearCache`, `GetLocalListVersion`, and diagnostics / log upload to the configured `ocpp.diagnosticsLocation` only (the generic command route `POST /api/chargepoints/:id/command` refuses any other OCPP command to a manager — configuration, firmware, certificates… are admin-only)
 - View transactions on assigned sites
 - CSV export for assigned sites
-- Configure the energy tariff (price per kWh) of assigned sites
+- Configure the energy tariff (price per kWh) of assigned sites, dated grids included
+- Badges of assigned sites, linked to the employees of these sites; global badge of an employee whose sites are all theirs
+- Badge correction of the sessions of assigned sites (including their own), reimbursement export of assigned sites
+- Management pages (transactions, badges, alerts…) are limited to the sites they **manage**; a site where they are only a plain user does not appear there
 - Can also be a user on one or more sites
 
 ### User (`user`)
@@ -973,10 +1137,16 @@ Limited access for charging:
 |---|---|---|---|
 | `GET` | `/api/error-events` | manager+ | Paginated error event log. Query params: `chargepoint_id`, `event_type` (`status_error`\|`disconnect`\|`heartbeat_timeout`\|`security_event`\|`notify_event`), `ocpp_version` (`1.6`\|`2.0.1`), `from`, `to` (ISO 8601), `limit` (max 500), `offset` |
 | `GET` | `/api/transactions`, `/api/transactions/csv`, `/api/user/transactions`, `/api/user/transactions/stats`, `/api/user/transactions/csv` | manager+ / user | Accept a `category` filter (`pro`\|`perso`) on the badge used for the session, and a `status` filter (`Active`\|`Completed`\|`Rejected`). Refused (`Rejected`) sessions are only returned when explicitly filtered |
-| `GET` | `/api/sites/:siteId/tariff` | manager of the site / admin | Tariff of a site: `currency`, `timezone`, `default_price_per_kwh` and `periods[]` (`label`, `days` as ISO weekdays `1`–`7`, `start_time`, `end_time`, `price_per_kwh`) |
-| `PUT` | `/api/sites/:siteId/tariff` | manager of the site / admin | Atomically replaces the tariff of a site (same body as the `GET` response). `400` with `ERR_TARIFF_*` codes when invalid (format, overlap, missing default price…) |
-| `GET` | `/api/transactions/reimbursement/csv` | manager of the site / admin | Reimbursement CSV by site then employee. Query params: `site_id`, `category` (`pro`\|`perso`, default `pro`), `from`, `to` (ISO 8601) |
-| `GET` | `/api/transactions/:id` | admin / site manager / badge owner | Session detail, including the frozen `cost`, `cost_currency` and `cost_details`. `:id` is the **internal identifier** of the session (`id` field of the lists), not the OCPP `transaction_id` — only unique per charge point in OCPP 2.0.1 |
+| `GET` | `/api/sites/:siteId/tariff` | manager of the site / admin | Tariff of a site: `currency`, `timezone` and `grids[]` (first the "since the beginning" grid with `valid_from: null`, then the dated grids); each grid has `default_price_per_kwh` and `periods[]` (`label`, `days` as ISO weekdays `1`–`7`, `start_time`, `end_time`, `price_per_kwh`). `default_price_per_kwh` / `periods` at the root = "since the beginning" grid |
+| `PUT` | `/api/sites/:siteId/tariff` | manager of the site / admin | Atomically replaces the tariff (`grids[]`; without `grids`, only the "since the beginning" grid is replaced). `dry_run: true` returns the preview of closed sessions whose cost would change; without `confirm: true`, such a change is refused (`409 ERR_TARIFF_RECALC_CONFIRM_REQUIRED` with the preview). `400` with `ERR_TARIFF_*` codes when invalid. `409 ERR_SITE_ARCHIVED` on an archived site |
+| `POST` | `/api/sites/:id/archive`, `/api/sites/:id/restore` | admin | Archives (with its charge points) / restores a site. `DELETE /api/sites/:id`: `409 ERR_SITE_HAS_SESSIONS` when it has sessions |
+| `POST` | `/api/chargepoints/:id/archive`, `/api/chargepoints/:id/restore` | admin | Archives / restores a charge point. `DELETE /api/chargepoints/:id`: `409 ERR_CHARGEPOINT_HAS_SESSIONS` when it has sessions |
+| `PUT` | `/api/users/:id/disabled` | admin | `{ "disabled": true\|false }`: disables / enables an account. `DELETE /api/users/:id` anonymizes the account |
+| `GET` | `/api/transactions/:id/badge-candidates` | admin / manager of the session's site | Badges offered to correct the session |
+| `POST` | `/api/transactions/:id/badge-correction` | admin / manager of the session's site | `{ "id_tag_id": n, "reason": "…" }`: corrects the badge (reason of 3 to 500 characters) |
+| `GET` | `/api/admin/retention` | admin | Retention status: activation and its source (`env`, `config`, `default`), durations, cut-off dates, preview, last run. `POST /api/admin/retention/run`: immediate run (retention enabled) |
+| `GET` | `/api/transactions/reimbursement/csv` | manager of the site / admin | Reimbursement CSV by site then employee, followed by the adjustments of the period when `from` is given. Query params: `site_id`, `category` (`pro`\|`perso`, default `pro`), `from`, `to` (ISO 8601) |
+| `GET` | `/api/transactions/:id` | admin / site manager / badge owner | Session detail, including the frozen `cost`, `cost_currency` and `cost_details`, and the `corrections[]` log. `:id` is the **internal identifier** of the session (`id` field of the lists), not the OCPP `transaction_id` — only unique per charge point in OCPP 2.0.1 |
 | `GET` | `/api/transactions/:id/values` | admin / site manager / badge owner | Real-time metering series for a transaction (same `:id`): `energie`, `courant`, `soc`, `temperature`, `tension`, `frequence` |
 | `GET` | `/metrics` | optional token | Prometheus-format metrics |
 | `GET` | `/healthz` | public | Health check |
@@ -1401,7 +1571,8 @@ backup:
 | Table | Description |
 |---|---|
 | `sites` | Charging sites (with the tariff settings `currency`, `timezone`, `default_price_per_kwh`) |
-| `site_tariff_periods` | Tariff slots of a site (label, days, start/end time, price per kWh) |
+| `site_tariff_periods` | Tariff slots of a site (label, days, start/end time, price per kWh); `version_id` NULL = "since the beginning" grid |
+| `site_tariff_versions` | Dated grids of a site (`valid_from`, default price) |
 | `users` | User accounts |
 | `user_sites` | User ↔ site association (with role) |
 | `chargepoints` | Registered charge points |
@@ -1412,8 +1583,9 @@ backup:
 | `chargepoint_init_config` / `chargepoint_init_variables` | Default OCPP configuration applied to charge points (1.6 keys / 2.0.1 variables) |
 | `id_tags` | RFID badges (owner, site, expiry, business/personal category, token type) |
 | `id_tags_events` | Authorization rejections of badges |
-| `transactions` | Charging sessions, identified by charge point (`chargepoint_id`, `transaction_id`): status `Active` / `Completed` / `Rejected`, frozen cost (`cost`, `cost_currency`, `cost_details`), `closed_by` (`station` or `server`) |
+| `transactions` | Charging sessions, identified by charge point (`chargepoint_id`, `transaction_id`): status `Active` / `Completed` / `Rejected`, site, employee and category frozen at start (`site_id`, `user_id`, `user_name`, `tag_category`), frozen cost (`cost`, `cost_currency`, `cost_details`), `closed_by` (`station` or `server`) |
 | `transactions_values` | Real-time metering data of a session |
+| `transaction_corrections` | Correction log of a session (badge corrected, cost recalculated): author, reason, before / after |
 | `ocpp_messages` | OCPP message log |
 | `users_password_resets` | Password reset tokens |
 | `charging_profiles` | Charging profiles applied to charge points |

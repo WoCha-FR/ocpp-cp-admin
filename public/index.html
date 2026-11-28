@@ -6062,7 +6062,7 @@ async function renderConfigTabApp() {
   }
   if (_cfgRenderVer !== myVer || currentConfigTab !== 'app') return;
 
-  const sectionOrder = ['general', 'webui', 'ocpp', 'notifs', 'auth', 'metrics'];
+  const sectionOrder = ['general', 'webui', 'ocpp', 'notifs', 'auth', 'metrics', 'retention'];
   const bySection = {};
   for (const f of data.fields) {
     if (!bySection[f.section]) bySection[f.section] = [];
@@ -6800,6 +6800,10 @@ async function renderAdminTabCleanup() {
   const contentEl = document.getElementById('adminTabContent');
   contentEl.innerHTML = `
     <div class="card">
+      <div class="card-header"><h3>⏳ ${t('retention.title')}</h3></div>
+      <div id="retentionBody"><p class="text-muted" style="padding:12px 16px">${t('common.loading', { defaultValue: 'Chargement…' })}</p></div>
+    </div>
+    <div class="card">
       <div class="card-header">
         <h3>${t('admin.cleanupTitle')}</h3>
         <button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, refreshCleanupStats)">${t('common.refresh')}</button>
@@ -6812,7 +6816,66 @@ async function renderAdminTabCleanup() {
         <button class="btn btn-primary btn-sm" data-onclick="withBtn(this, runDbVacuum)">🧹 ${t('admin.vacuumButton')}</button>
       </div>
     </div>`;
-  await refreshCleanupStats();
+  await Promise.all([refreshRetention(), refreshCleanupStats()]);
+}
+
+// Rétention automatique : état, durées, aperçu de ce que le prochain passage effacerait
+const RETENTION_ROWS = ['ocppMessages', 'rejections', 'errorEvents', 'reservations', 'notifications', 'meterValues', 'sessions'];
+
+async function refreshRetention(status) {
+  const bodyEl = document.getElementById('retentionBody');
+  if (!bodyEl) return;
+  let st = status;
+  if (!st) {
+    try { st = await api('GET', '/admin/retention'); } catch (err) {
+      bodyEl.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+      return;
+    }
+  }
+  // Activation : retention.enabled dans le fichier de configuration (éditeur de configuration,
+  // avec redémarrage), ou CPADMIN_RETENTION_ENABLED qui l'emporte
+  const stateBadge = st.enabled
+    ? `<span class="badge badge-green">${t('retention.enabled')}</span>`
+    : `<span class="badge badge-gray">${t('retention.disabled')}</span>`;
+  const actions = st.source === 'env'
+    ? `<span class="text-muted" style="font-size:13px;">${t('retention.setByEnv')}</span>`
+    : `<button class="btn ${st.enabled ? 'btn-secondary' : 'btn-primary'} btn-sm" id="retentionConfigBtn" data-onclick="navigate('configeditor')">⚙️ ${t(st.enabled ? 'retention.configBtn' : 'retention.enableBtn')}</button>`;
+  const lastRun = st.lastRun
+    ? t('retention.lastRun', { date: formatDate(st.lastRun.at), count: Object.values(st.lastRun.counts || {}).reduce((a, b) => a + b, 0) })
+    : t('retention.neverRun');
+  bodyEl.innerHTML = `
+    <div style="padding:12px 16px">
+      <p>${t('retention.status')} : ${stateBadge}</p>
+      ${!st.enabled && st.source === 'default' ? `<div class="push-prompt-banner push-prompt-banner-warning"><div class="push-prompt-text"><p>${t('retention.upgradeHint')}</p></div></div>` : ''}
+      <p class="text-muted" style="font-size:13px;">${t('retention.help')}</p>
+    </div>
+    <table class="table" id="retentionTable">
+      <thead><tr><th>${t('admin.cleanupColData')}</th><th>${t('retention.colDuration')}</th><th>${t('retention.colBefore')}</th><th>${t('retention.colPending')}</th><th>${t('retention.colAction')}</th></tr></thead>
+      <tbody>
+        ${RETENTION_ROWS.map(key => `
+          <tr data-retention="${key}">
+            <td>${t(`retention.targets.${key}`)}</td>
+            <td>${st.days[key] > 0 ? t('retention.days', { count: st.days[key] }) : t('retention.never')}</td>
+            <td class="td-date">${st.cutoffs[key] ? formatDateShort(st.cutoffs[key]) : '-'}</td>
+            <td class="td-primary">${st.preview[key] || 0}</td>
+            <td>${t(key === 'sessions' ? 'retention.actionAnonymize' : 'retention.actionDelete')}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="padding:12px 16px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      ${actions}
+      ${st.enabled ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, runRetentionNow)">${t('retention.runBtn')}</button>` : ''}
+      <span class="text-muted" style="font-size:12px;">${lastRun}</span>
+    </div>`;
+}
+
+async function runRetentionNow() {
+  if (!await confirmDialog(t('retention.runConfirm'), { danger: true, confirmText: t('retention.runBtn') })) return;
+  try {
+    const st = await api('POST', '/admin/retention/run');
+    toast(t('retention.runDone', { count: Object.values(st.counts || {}).reduce((a, b) => a + b, 0) }), 'success');
+    await Promise.all([refreshRetention(st), refreshCleanupStats()]);
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 async function refreshCleanupStats() {

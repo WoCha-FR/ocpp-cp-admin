@@ -23,6 +23,7 @@ const { OCPP16_STANDARD_KEYS } = require('./ocpp-server-16');
 const { buildSetVariableData } = require('./ocppVariables');
 const { isGeneratedTag } = require('./remoteStarts');
 const certAuthority = require('./certAuthority');
+const retention = require('./retention');
 const { checkCommandAllowed } = require('./ocppCommandPolicy');
 const { startBlockReason } = require('./chargepointPolicy');
 const { canAccessIdTag, idTagWriteError, canOwnGlobalTag } = require('./idTagPolicy');
@@ -3806,6 +3807,21 @@ router.delete(
     res.json({ deleted: db.deleteNotificationLogBefore(req.query.before) });
   }
 );
+
+// ── Rétention automatique ──
+// État : activation (et sa source), durées, aperçu de ce que le prochain passage effacerait
+router.get('/admin/retention', requireRole('admin'), (req, res) => {
+  res.json(retention.getRetentionStatus());
+});
+
+// Passage immédiat (rétention active seulement)
+router.post('/admin/retention/run', requireRole('admin'), (req, res) => {
+  if (!retention.getRetentionActivation().enabled) {
+    return res.status(409).json({ error: 'ERR_RETENTION_DISABLED' });
+  }
+  const run = retention.runRetention();
+  res.json({ ...retention.getRetentionStatus(), counts: run.counts });
+});
 
 router.post('/admin/db/vacuum', requireRole('admin'), (req, res) => {
   db.vacuumDatabase();

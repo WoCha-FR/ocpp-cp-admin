@@ -29,6 +29,7 @@ const {
 } = require('./ocpp-common');
 
 const certAuthority = require('./certAuthority');
+const { startRetentionScheduler, stopRetentionScheduler } = require('./retention');
 const { buildServerChain } = require('./wssRootCa');
 const { checkSessionSecret } = require('./sessionSecretCheck');
 const routes = require('./routes');
@@ -697,6 +698,9 @@ async function start() {
   // Démarrer le scheduler de nettoyage des réservations expirées non libérées
   startReservationCleanupWatchdog();
   logOCPP.info('Reservation cleanup watchdog started');
+  // Rétention automatique (passage quotidien ; inactive tant que l'admin ne l'a pas activée sur
+  // une instance mise à jour)
+  startRetentionScheduler();
   // Secret de session absent, d'exemple (« change-me… ») ou trop court : avertissement dans les
   // logs et dans la notification de démarrage envoyée aux admins (l'application démarre quand même)
   const sessionSecretIssue = checkSessionSecret(config.webui.sessionSecret);
@@ -735,6 +739,7 @@ async function gracefulShutdown(signal) {
     // 0. Arrêter les watchdogs et la surveillance des certificats
     stopHeartbeatWatchdog();
     stopReservationCleanupWatchdog();
+    stopRetentionScheduler();
     for (const p of watchedCertPaths) fs.unwatchFile(p);
     if (certReloadTimer) clearTimeout(certReloadTimer);
     await notifications.emit('server_stopping', { signal });
