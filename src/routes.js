@@ -172,9 +172,10 @@ function getUserManagedSiteIds(req) {
   return (user.sites || []).filter((s) => s.role === 'manager').map((s) => s.site_id);
 }
 
-// Filtre les données selon les sites de l'utilisateur
+// Filtre les données des pages de gestion sur les sites GÉRÉS par l'utilisateur (un site où il
+// n'est que simple utilisateur n'y apparaît pas)
 function filterBySite(req, data) {
-  const siteIds = getUserSiteIds(req);
+  const siteIds = getUserManagedSiteIds(req);
   if (siteIds === null) return data; // admin
   if (siteIds.length === 0) return [];
   return data.filter((item) => siteIds.includes(item.site_id));
@@ -2245,7 +2246,7 @@ router.get(
 
     const user = req.user;
     if (user.role !== 'admin') {
-      const siteIds = getUserSiteIds(req);
+      const siteIds = getUserManagedSiteIds(req);
       if (siteIds && siteIds.length > 0) {
         filters.site_ids = siteIds;
       } else if (siteIds && siteIds.length === 0) {
@@ -2276,7 +2277,7 @@ router.get(
 
     const user = req.user;
     if (user.role !== 'admin') {
-      const siteIds = getUserSiteIds(req);
+      const siteIds = getUserManagedSiteIds(req);
       if (siteIds && siteIds.length > 0) {
         filters.site_ids = siteIds;
       } else if (siteIds && siteIds.length === 0) {
@@ -2330,13 +2331,12 @@ router.get(
 // ══════════════════════════════════════
 //  TRANSACTION DETAIL (métadonnées)
 // ══════════════════════════════════════
-// Admin, manager du site de la borne, ou propriétaire du tag de la transaction
+// Admin, manager du site où la session a eu lieu (site figé au démarrage), ou titulaire du badge
 function canViewTransaction(req, tx) {
   if (req.user.role === 'admin') return true;
   if (tx.tag_user_id != null && tx.tag_user_id === req.user.id) return true;
-  const cp = db.getChargepointById(tx.chargepoint_id);
   const managedIds = getUserManagedSiteIds(req);
-  return !!(cp && cp.site_id && managedIds && managedIds.includes(cp.site_id));
+  return !!(tx.site_id && managedIds && managedIds.includes(tx.site_id));
 }
 
 // :id = identifiant interne de la transaction (transactions.id) : le transaction_id OCPP n'est
@@ -2444,7 +2444,7 @@ router.get(
 
     // Empêcher un manager de voir tous les messages hors de ses sites
     if (req.user.role !== 'admin') {
-      const siteIds = getUserSiteIds(req);
+      const siteIds = getUserManagedSiteIds(req);
       if (siteIds && siteIds.length > 0) {
         filters.site_ids = siteIds;
       } else if (siteIds && siteIds.length === 0) {
@@ -2484,7 +2484,7 @@ router.get(
     if (req.query.date_to) filters.date_to = req.query.date_to;
 
     if (req.user.role !== 'admin') {
-      const siteIds = getUserSiteIds(req);
+      const siteIds = getUserManagedSiteIds(req);
       if (siteIds && siteIds.length > 0) {
         filters.site_ids = siteIds;
       } else if (siteIds && siteIds.length === 0) {
@@ -2682,8 +2682,8 @@ router.get(
     if (req.query.status) filters.status = req.query.status;
     const pagination = parsePagination(req);
     filters.limit = pagination.limit;
-    // Filtrer par sites accessibles
-    const siteIds = getUserSiteIds(req);
+    // Filtrer par sites gérés
+    const siteIds = getUserManagedSiteIds(req);
     if (siteIds !== null) filters.site_ids = siteIds;
     const events = db.getIdTagEvents(filters);
     res.json(events);
@@ -2732,7 +2732,7 @@ router.get(
       filters.limit = Number(req.query.limit);
     }
     if (req.query.offset) filters.offset = Number(req.query.offset);
-    const siteIds = getUserSiteIds(req);
+    const siteIds = getUserManagedSiteIds(req);
     if (siteIds !== null) filters.site_ids = siteIds;
     res.json(db.getErrorEvents(filters));
   }
@@ -2766,7 +2766,7 @@ router.get('/dashboard', requireManager, (req, res) => {
   const allCps = db.getAllChargepoints();
   const filtered = filterBySite(req, allCps);
   const connected = filtered.filter((cp) => getConnectedClients().has(cp.identity));
-  const siteIds = getUserSiteIds(req);
+  const siteIds = getUserManagedSiteIds(req);
   const sitesCount = siteIds === null ? db.getAllSites().length : siteIds.length;
 
   // Filtrer les transactions actives par sites
@@ -2818,14 +2818,14 @@ router.get('/dashboard', requireManager, (req, res) => {
 });
 
 router.get('/dashboard/chart-data', requireManager, (req, res) => {
-  const siteIds = getUserSiteIds(req);
+  const siteIds = getUserManagedSiteIds(req);
   const rawDays = Number(req.query.days);
   const days = isNaN(rawDays) || rawDays < 0 ? 30 : rawDays === 0 ? 0 : Math.min(rawDays, 365);
   res.json(db.getDashboardChartData(siteIds, days));
 });
 
 router.get('/dashboard/kpi', requireManager, (req, res) => {
-  const siteIds = getUserSiteIds(req);
+  const siteIds = getUserManagedSiteIds(req);
   const rawDays = Number(req.query.days);
   const days = isNaN(rawDays) || rawDays < 0 ? 30 : rawDays === 0 ? 0 : Math.min(rawDays, 365);
   res.json(db.getChargingKpi(siteIds, days));
@@ -3070,12 +3070,9 @@ router.post(
     const tx = transactions.find((t) => t.transaction_id === transaction_id);
     if (!tx) return res.status(404).json({ error: 'ERR_TRANSACTION_NOT_FOUND' });
 
-    // Vérifier que le tag de la transaction est lié à l'utilisateur (sauf admin)
-    if (req.user.role !== 'admin') {
-      const tag = tx.id_tag ? db.getIdTagByTag(tx.id_tag, cp.site_id) : null;
-      if (!tag || tag.user_id !== req.user.id) {
-        return res.status(403).json({ error: 'ERR_TRANSACTION_NOT_OWNED' });
-      }
+    // Vérifier que la session appartient à l'utilisateur (titulaire figé au démarrage, sauf admin)
+    if (req.user.role !== 'admin' && tx.tag_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'ERR_TRANSACTION_NOT_OWNED' });
     }
 
     const client = getConnectedClients().get(cp.identity);

@@ -4426,11 +4426,12 @@ async function renderTransactions(keepState = false) {
     if (txFilters.to) queryParams.set('to', txFilters.to);
     queryParams.set('limit', txFilters.limit || '50');
 
-    const [sites, chargepoints, txResult] = await Promise.all([
+    const [allSites, chargepoints, txResult] = await Promise.all([
       api('GET', '/sites'),
       api('GET', '/chargepoints'),
       api('GET', '/transactions?' + queryParams.toString()),
     ]);
+    const sites = managedSitesOnly(allSites);
     const { data: transactions, total: txTotal, stats: txStats } = txResult;
 
     // Filtrer les bornes selon le site sélectionné
@@ -5246,7 +5247,7 @@ async function renderErrorEvents(keepState = false) {
     const cpMap = new Map();
     events.forEach(e => { if (e.chargepoint_id) cpMap.set(e.chargepoint_id, e.chargepoint_name || e.chargepoint_identity || String(e.chargepoint_id)); });
     const uniqueCps = [...cpMap.entries()].sort((a, b) => a[1].localeCompare(b[1]));
-    const uniqueSites = [...allSites].sort((a, b) => a.sname.localeCompare(b.sname));
+    const uniqueSites = managedSitesOnly([...allSites]).sort((a, b) => a.sname.localeCompare(b.sname));
 
     const activeFilterCount = Object.entries(errorEventsFilters).filter(([k, v]) => v !== '' && k !== 'limit').length;
 
@@ -7537,6 +7538,13 @@ async function removeUserFromSite(userId, siteId, siteName, userEmail) {
 // ══════════════════════════════════════
 function adminManage() {
   return currentUser && currentUser.role === 'admin';
+}
+// Sites des pages de gestion : tous pour l'admin, sinon ceux où l'utilisateur est manager
+// (même périmètre que les routes de gestion côté serveur)
+function managedSitesOnly(sites) {
+  if (!currentUser || currentUser.role === 'admin') return sites;
+  const managed = new Set((currentUser.sites || []).filter(s => s.role === 'manager').map(s => s.site_id));
+  return sites.filter(s => managed.has(s.id));
 }
 function canManage() {
   if (!currentUser) return false;

@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS sites (
   currency TEXT DEFAULT 'EUR',
   timezone TEXT DEFAULT 'Europe/Paris',
   default_price_per_kwh REAL,
+  archived_at TEXT,
+  auto_web_badge INTEGER NOT NULL DEFAULT 1 CHECK (auto_web_badge IN (0, 1)),
   created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -34,7 +36,8 @@ CREATE TABLE IF NOT EXISTS users (
   ntif_pushuser TEXT DEFAULT NULL,
   ntif_pushtokn TEXT DEFAULT NULL,
   created_at TEXT DEFAULT (datetime('now')),
-  last_login TEXT DEFAULT NULL
+  last_login TEXT DEFAULT NULL,
+  disabled_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS user_sites (
@@ -95,6 +98,7 @@ CREATE TABLE IF NOT EXISTS chargepoints (
   feat_smartcharging INTEGER DEFAULT 0,
   has_connector0 INTEGER DEFAULT 0,
   initialized INTEGER DEFAULT 0,
+  archived_at TEXT,
   created_at TEXT DEFAULT (datetime('now')),
   FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE SET NULL
 );
@@ -217,6 +221,8 @@ CREATE TABLE IF NOT EXISTS reservations (
 -- status : Active | Completed | Rejected (démarrage refusé par le CSMS : énergie gardée, jamais facturée)
 -- closed_by : station (arrêt envoyé par la borne) | server (clôture heuristique du serveur,
 -- corrigeable par l'arrêt réel de la borne) | NULL (en cours ou antérieure à la migration 010)
+-- site_id / user_id / user_name / tag_category : figés au démarrage (site de la borne, titulaire
+-- et catégorie du badge), sans clé étrangère pour survivre aux suppressions (migration 013)
 CREATE TABLE IF NOT EXISTS transactions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   transaction_id TEXT(36),
@@ -239,10 +245,16 @@ CREATE TABLE IF NOT EXISTS transactions (
   cost_currency TEXT,
   cost_details TEXT,
   closed_by TEXT CHECK (closed_by IN ('station', 'server')),
+  site_id INTEGER,
+  user_id INTEGER,
+  user_name TEXT,
+  tag_category TEXT CHECK (tag_category IN ('pro', 'perso')),
   UNIQUE (chargepoint_id, transaction_id),
   FOREIGN KEY (chargepoint_id) REFERENCES chargepoints(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_cp_status ON transactions(chargepoint_id, status);
+CREATE INDEX IF NOT EXISTS idx_transactions_site ON transactions(site_id, start_time);
+CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id, start_time);
 
 CREATE TABLE IF NOT EXISTS transactions_values (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

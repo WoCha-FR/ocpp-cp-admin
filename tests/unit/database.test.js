@@ -2360,6 +2360,126 @@ describe('database — catégorie des badges et rapport de remboursement', () =>
   });
 });
 
+// ── Historique figé : site, titulaire et catégorie enregistrés au démarrage de la session ──
+describe('database — historique figé des sessions', () => {
+  let siteA;
+  let siteB;
+  let cpId;
+  let paul;
+  let julie;
+  let tagId;
+  const START = '2026-04-10T10:00:00Z';
+  const STOP = '2026-04-10T12:00:00Z';
+
+  const sessionsOf = (cp) =>
+    db.getTransactions({ chargepoint_id: cp }).filter((t) => t.id_tag === 'FIGE-PAUL');
+  const report = () =>
+    db
+      .getReimbursementReport({ site_id: siteA })
+      .map(({ site_id, user_id, user_name, sessions, energy_kwh }) => ({
+        site_id,
+        user_id,
+        user_name,
+        sessions,
+        energy_kwh,
+      }));
+
+  beforeAll(() => {
+    siteA = db.createSite('Siège figé', null).id;
+    siteB = db.createSite('Domicile figé', null).id;
+    cpId = db.createChargepoint('CP-FIGE', 'Fige', null, 1, siteA).id;
+    paul = db.createUser('paul-fige@test.com', 'Passw0rd!x', 'user', 'Paul').id;
+    julie = db.createUser('julie-fige@test.com', 'Passw0rd!x', 'user', 'Julie').id;
+    tagId = db.createIdTag(
+      'FIGE-PAUL',
+      paul,
+      null,
+      'Paul pro',
+      null,
+      1,
+      'ISO14443',
+      null,
+      'pro'
+    ).id;
+    const tx = db.createTransaction(cpId, 1, 'FIGE-PAUL', 0, START, 'rfid');
+    db.stopTransaction(cpId, tx.transaction_id, 8000, STOP, 'Local');
+  });
+
+  it('enregistre au démarrage le site, le titulaire, son nom et la catégorie', () => {
+    const [tx] = sessionsOf(cpId);
+    expect(tx).toMatchObject({
+      site_id: siteA,
+      user_id: paul,
+      user_name: 'Paul',
+      tag_category: 'pro',
+      tag_user_id: paul,
+      tag_username: 'Paul',
+      site_name: 'Siège figé',
+    });
+  });
+
+  it('changer la catégorie ou le titulaire du badge ne réécrit pas le passé', () => {
+    const before = report();
+    db.updateIdTag(tagId, { category: 'perso', user_id: julie });
+    expect(sessionsOf(cpId)[0]).toMatchObject({ tag_category: 'pro', tag_user_id: paul });
+    expect(report()).toEqual(before);
+    expect(db.getUserTransactions(paul, { limit: 50, offset: 0 }).total).toBe(1);
+    expect(db.getUserTransactions(julie, { limit: 50, offset: 0 }).total).toBe(0);
+    // Une nouvelle session suit le badge modifié
+    const tx = db.createTransaction(cpId, 2, 'FIGE-PAUL', 0, START, 'rfid');
+    expect(db.getTransactionById(tx.id)).toMatchObject({ user_id: julie, tag_category: 'perso' });
+    db.stopTransaction(cpId, tx.transaction_id, 1000, STOP, 'Local');
+    db.updateIdTag(tagId, { category: 'pro', user_id: paul });
+  });
+
+  it('un badge de même code créé ensuite sur le site ne capte pas les sessions passées', () => {
+    const before = report();
+    db.createIdTag('FIGE-PAUL', julie, siteA, 'doublon', null, 1, 'ISO14443', null, 'perso');
+    expect(report()).toEqual(before);
+  });
+
+  it('supprimer le badge garde la session dans le remboursement et dans « Mes transactions »', () => {
+    const before = report();
+    db.deleteIdTag(tagId);
+    expect(report()).toEqual(before);
+    expect(db.getUserTransactions(paul, { category: 'pro', limit: 50, offset: 0 }).total).toBe(1);
+  });
+
+  it('déplacer la borne laisse la session (et son tarif) au site de démarrage', () => {
+    const before = report();
+    db.assignChargepointToSite(cpId, siteB);
+    expect(report()).toEqual(before);
+    expect(db.getReimbursementReport({ site_id: siteB }).some((r) => r.user_id === paul)).toBe(
+      false
+    );
+    const [tx] = sessionsOf(cpId).filter((t) => t.user_id === paul);
+    expect(tx).toMatchObject({
+      site_id: siteA,
+      chargepoint_site_id: siteB,
+      site_name: 'Siège figé',
+    });
+  });
+
+  it('supprimer le compte garde le nom enregistré sur ses sessions', () => {
+    db.deleteUser(paul);
+    expect(report()).toEqual([
+      expect.objectContaining({ site_id: siteA, user_id: paul, user_name: 'Paul', sessions: 1 }),
+    ]);
+    expect(sessionsOf(cpId).find((t) => t.user_id === paul).tag_username).toBe('Paul');
+  });
+
+  it('site_ids (périmètre) et site_id (filtre choisi) s’appliquent ensemble', () => {
+    const both = db.getTransactions({
+      site_ids: [siteA, siteB],
+      site_id: siteB,
+      limit: 50,
+      offset: 0,
+    });
+    expect(both.data.every((t) => t.site_id === siteB)).toBe(true);
+    expect(db.getReimbursementReport({ site_ids: [siteB], site_id: siteA })).toEqual([]);
+  });
+});
+
 // ── Transactions : recherche par connecteur (multi-EVSE 2.0.1) et rattachement tardif du badge ──
 describe('database — transactions multi-EVSE et badge tardif', () => {
   let cpId;
@@ -2411,6 +2531,26 @@ describe('database — transactions multi-EVSE et badge tardif', () => {
     const row = db.getTransactionByTransactionId(cpId, 'TX-NOTAG');
     expect(row.id_tag).toBe('TAG-LATE');
     expect(row.id_token_type).toBe('KeyCode');
+  });
+
+  it('setTransactionIdTag fige le titulaire et la catégorie du badge présenté', () => {
+    const owner = db.createUser('late-badge@test.com', 'Passw0rd!x', 'user', 'Tardif').id;
+    db.createIdTag('TAG-LATE-PRO', owner, null, null, null, 1, 'ISO14443', null, 'pro');
+    db.createTransaction(cpId, 1, '', 0, START, 'local', {
+      transactionId: 'TX-LATE-PRO',
+      evse_id: 2,
+    });
+    expect(db.getTransactionByTransactionId(cpId, 'TX-LATE-PRO')).toMatchObject({
+      user_id: null,
+      tag_category: null,
+    });
+    expect(db.setTransactionIdTag(cpId, 'TX-LATE-PRO', 'TAG-LATE-PRO')).toBe(1);
+    expect(db.getTransactionByTransactionId(cpId, 'TX-LATE-PRO')).toMatchObject({
+      user_id: owner,
+      user_name: 'Tardif',
+      tag_category: 'pro',
+    });
+    db.stopTransaction(cpId, 'TX-LATE-PRO', 0, START, 'Local');
   });
 
   it('setTransactionIdTag ne remplace jamais un badge déjà enregistré ni une transaction clôturée', () => {

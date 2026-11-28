@@ -50,12 +50,49 @@ describe('Backend access control guards', () => {
     expect(src).toMatch(/tariff\.validateTariff\(input\)/);
   });
 
+  it('pages de gestion : périmètre limité aux sites GÉRÉS (jamais aux sites où l’on est simple utilisateur)', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    // getUserSiteIds (tous les sites de l'utilisateur) n'est plus utilisé que par GET /sites et /sites/:id
+    const uses = [...src.matchAll(/(?<!function )getUserSiteIds\(req\)/g)].map((m) => m.index);
+    expect(uses).toHaveLength(2);
+    for (const idx of uses) {
+      const before = src.slice(0, idx);
+      const route = before.slice(before.lastIndexOf('router.'));
+      expect(route).toMatch(/^router\.get\('\/sites(\/:id)?', requireAuth/);
+    }
+    const filter = src.slice(src.indexOf('function filterBySite'));
+    expect(filter.slice(0, 200)).toMatch(/getUserManagedSiteIds\(req\)/);
+    for (const path of [
+      "'/transactions',",
+      "'/transactions/csv',",
+      "'/ocpp-messages',",
+      "'/ocpp-messages/csv',",
+      "'/id-tags-events',",
+      "'/error-events',",
+      "'/dashboard/chart-data'",
+      "'/dashboard/kpi'",
+    ]) {
+      const start = src.indexOf(path);
+      expect(start).toBeGreaterThan(-1);
+      expect(src.slice(start, start + 1500)).toMatch(/getUserManagedSiteIds\(req\)/);
+    }
+  });
+
+  it('/user/stop-charge : titulaire figé de la session, pas le badge relu en direct', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const start = src.indexOf("'/user/stop-charge',");
+    const route = src.slice(start, src.indexOf('\n);', start));
+    expect(route).toMatch(/tx\.tag_user_id !== req\.user\.id/);
+    expect(route).not.toMatch(/getIdTagByTag/);
+  });
+
   it('restricts GET /transactions/:id (+ /values) to admin, site manager or tag owner', () => {
     const src = fs.readFileSync(routesPath, 'utf8');
     const helper = src.slice(src.indexOf('function canViewTransaction'));
     expect(helper).toMatch(/req\.user\.role === 'admin'/);
     expect(helper).toMatch(/tx\.tag_user_id === req\.user\.id/);
-    expect(helper).toMatch(/managedIds\.includes\(cp\.site_id\)/);
+    // site où la session a eu lieu (figé au démarrage), pas le site actuel de la borne
+    expect(helper).toMatch(/managedIds\.includes\(tx\.site_id\)/);
     const detail = src.slice(src.indexOf("router.get('/transactions/:id',"));
     expect(detail.slice(0, 500)).toMatch(/canViewTransaction\(req, tx\)/);
     const values = src.slice(src.indexOf("'/transactions/:id/values'"));

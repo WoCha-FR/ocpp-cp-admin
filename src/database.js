@@ -121,8 +121,9 @@ function finalizeTransactionCost(txRowId) {
   try {
     const tx = db
       .prepare(
+        // Tarif du site figé au démarrage : une borne déplacée depuis reste facturée à ce site
         `SELECT t.id, t.transaction_id, t.chargepoint_id, t.status, t.start_time, t.stop_time,
-           t.meter_start, t.meter_stop, cp.site_id
+           t.meter_start, t.meter_stop, COALESCE(t.site_id, cp.site_id) AS site_id
          FROM transactions t JOIN chargepoints cp ON cp.id = t.chargepoint_id
          WHERE t.id = ?`
       )
@@ -351,24 +352,16 @@ function getSiteUsersWithStats(siteId) {
     FROM user_sites us
     JOIN users u ON us.user_id = u.id
     LEFT JOIN (
-      SELECT it.user_id,
+      SELECT t.user_id,
         COUNT(*) as charges_month,
         ROUND(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
           THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 2) as energy_month_kwh,
         MAX(t.start_time) as last_charge
       FROM transactions t
-      JOIN chargepoints cp ON t.chargepoint_id = cp.id
-      LEFT JOIN id_tags it ON it.id = (
-        SELECT it2.id FROM id_tags it2
-        JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
-        WHERE it2.id_tag = t.id_tag
-        ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
-        LIMIT 1
-      )
-      WHERE cp.site_id = ?
+      WHERE t.site_id = ?
         AND t.status = 'Completed'
         AND t.start_time >= date('now', 'start of month')
-      GROUP BY it.user_id
+      GROUP BY t.user_id
     ) stats ON stats.user_id = u.id
     LEFT JOIN (
       SELECT it.user_id, COUNT(*) as tag_count
@@ -390,8 +383,7 @@ function getSiteUsersWithStats(siteId) {
       ROUND(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 2) as energy_month_kwh
     FROM transactions t
-    JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    WHERE cp.site_id = ?
+    WHERE t.site_id = ?
       AND t.status = 'Completed'
       AND t.start_time >= date('now', 'start of month')
   `
@@ -835,6 +827,39 @@ function getAllConnectorsGrouped(siteIds) {
 }
 
 // ── Transactions ──
+
+// Badge retenu pour une session : badge du site de la borne, puis badge global, puis badge d'un
+// autre site (même ordre que le rattrapage de la migration 013).
+function resolveTagAttribution(idTag, siteId) {
+  if (!idTag) return { user_id: null, user_name: null, tag_category: null };
+  const tag = db
+    .prepare(
+      `SELECT it.user_id, it.category, COALESCE(u.shortname, u.useremail) AS user_name
+       FROM id_tags it LEFT JOIN users u ON u.id = it.user_id
+       WHERE it.id_tag = ?
+       ORDER BY CASE WHEN it.site_id = ? THEN 0 WHEN it.site_id IS NULL THEN 1 ELSE 2 END, it.id
+       LIMIT 1`
+    )
+    .get(idTag, siteId ?? null);
+  if (!tag) return { user_id: null, user_name: null, tag_category: null };
+  return {
+    user_id: tag.user_id ?? null,
+    user_name: tag.user_name ?? null,
+    tag_category: tag.category,
+  };
+}
+
+/**
+ * Attribution figée au démarrage d'une session : site de la borne, titulaire et catégorie du
+ * badge. Les modifications ultérieures (badge, compte, borne déplacée) ne valent que pour l'avenir.
+ * @returns {{site_id: number|null, user_id: number|null, user_name: string|null, tag_category: string|null}}
+ */
+function resolveTransactionAttribution(chargepointId, idTag) {
+  const cp = db.prepare('SELECT site_id FROM chargepoints WHERE id = ?').get(chargepointId);
+  const siteId = cp?.site_id ?? null;
+  return { site_id: siteId, ...resolveTagAttribution(idTag, siteId) };
+}
+
 function createTransaction(
   chargepointId,
   connectorId,
@@ -878,11 +903,13 @@ function createTransaction(
     }
 
     const source = startSource || 'rfid';
+    const attribution = resolveTransactionAttribution(chargepointId, idTag);
     const info = db
       .prepare(
         `INSERT INTO transactions
-      (chargepoint_id, connector_id, transaction_id, id_tag, meter_start, start_time, status, start_source, evse_id, charging_state, id_token_type)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (chargepoint_id, connector_id, transaction_id, id_tag, meter_start, start_time, status, start_source, evse_id, charging_state, id_token_type,
+       site_id, user_id, user_name, tag_category)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         chargepointId,
@@ -895,7 +922,11 @@ function createTransaction(
         source,
         evse_id,
         txStatus === 'Active' ? charging_state : null,
-        id_token_type
+        id_token_type,
+        attribution.site_id,
+        attribution.user_id,
+        attribution.user_name,
+        attribution.tag_category
       );
     return db.prepare('SELECT * FROM transactions WHERE id = ?').get(info.lastInsertRowid);
   })();
@@ -1014,7 +1045,7 @@ function getDashboardChartData(siteIds = null, days = 30) {
   const params = [];
   let siteFilter = '';
   if (siteIds !== null && siteIds.length > 0) {
-    siteFilter = ` AND cp.site_id IN (${siteIds.map(() => '?').join(',')})`;
+    siteFilter = ` AND t.site_id IN (${siteIds.map(() => '?').join(',')})`;
     params.push(...siteIds);
   } else if (siteIds !== null && siteIds.length === 0) {
     return { energyPerDay: [], transactionsPerDay: [] };
@@ -1051,7 +1082,7 @@ function getChargingKpi(siteIds = null, days = 30) {
   const params = [];
   let siteFilter = '';
   if (siteIds !== null && siteIds.length > 0) {
-    siteFilter = ` AND cp.site_id IN (${siteIds.map(() => '?').join(',')})`;
+    siteFilter = ` AND t.site_id IN (${siteIds.map(() => '?').join(',')})`;
     params.push(...siteIds);
   } else if (siteIds !== null && siteIds.length === 0) {
     return {
@@ -1191,24 +1222,19 @@ function getChargingKpi(siteIds = null, days = 30) {
   };
 }
 
-// Base commune des requêtes transactions
+// Base commune des requêtes transactions. Site, titulaire et catégorie sont ceux figés au
+// démarrage (t.site_id, t.user_id, t.tag_category) ; seuls les libellés (nom du site, nom
+// actuel du titulaire s'il existe encore) sont relus. chargepoint_site_id = site actuel de la borne.
 const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity, cp.cpname as chargepoint_name,
     cp.site_id as chargepoint_site_id, s.sname as site_name,
-    it.user_id as tag_user_id, it.category as tag_category, COALESCE(u.shortname, u.useremail) as tag_username,
+    t.user_id as tag_user_id, COALESCE(u.shortname, u.useremail, t.user_name) as tag_username,
     CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values,
     cn.connector_name as connector_name,
     ev.evse_name as evse_name
     FROM transactions t
     JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    LEFT JOIN sites s ON cp.site_id = s.id
-    LEFT JOIN id_tags it ON it.id = (
-      SELECT it2.id FROM id_tags it2
-      JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
-      WHERE it2.id_tag = t.id_tag
-      ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
-      LIMIT 1
-    )
-    LEFT JOIN users u ON it.user_id = u.id
+    LEFT JOIN sites s ON t.site_id = s.id
+    LEFT JOIN users u ON t.user_id = u.id
     LEFT JOIN transactions_values tv
       ON tv.chargepoint_id = t.chargepoint_id AND tv.transaction_id = t.transaction_id
     LEFT JOIN connectors cn ON cn.chargepoint_id = t.chargepoint_id AND cn.connector_id = t.connector_id AND cn.evse_id IS t.evse_id
@@ -1221,11 +1247,14 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
     whereClause += ' AND t.chargepoint_id = ?';
     params.push(filters.chargepoint_id);
   }
+  // Site figé au démarrage. site_ids = périmètre autorisé, site_id = filtre choisi : les deux
+  // s'appliquent (un manager qui filtre un site ne voit que ce site)
   if (filters.site_ids && filters.site_ids.length > 0) {
-    whereClause += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
+    whereClause += ` AND t.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
-  } else if (filters.site_id) {
-    whereClause += ' AND cp.site_id = ?';
+  }
+  if (filters.site_id) {
+    whereClause += ' AND t.site_id = ?';
     params.push(filters.site_id);
   }
   if (filters.status) {
@@ -1237,7 +1266,7 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
     whereClause += " AND t.status != 'Rejected'";
   }
   if (filters.category) {
-    whereClause += ' AND it.category = ?';
+    whereClause += ' AND t.tag_category = ?';
     params.push(filters.category);
   }
   if (filters.from) {
@@ -1258,11 +1287,6 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
   }
 
   // Chemin paginé : COUNT + stats agrégées + données
-  const ID_TAG_SUBQUERY = `(SELECT it2.id FROM id_tags it2
-      JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
-      WHERE it2.id_tag = t.id_tag
-      ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
-      LIMIT 1)`;
   const countQuery =
     `SELECT
     COUNT(*) as total,
@@ -1272,16 +1296,14 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
     COALESCE(SUM(CASE WHEN t.start_time IS NOT NULL AND t.stop_time IS NOT NULL
       THEN (julianday(t.stop_time) - julianday(t.start_time)) * 1440 ELSE 0 END), 0) as totalMinutes
     FROM transactions t
-    JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    LEFT JOIN id_tags it ON it.id = ${ID_TAG_SUBQUERY}` + whereClause;
+    JOIN chargepoints cp ON t.chargepoint_id = cp.id` + whereClause;
 
   const countResult = db.prepare(countQuery).get(...params);
   const costByCurrency = db
     .prepare(
       `SELECT t.cost_currency AS currency, ROUND(SUM(t.cost), 2) AS total
     FROM transactions t
-    JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    LEFT JOIN id_tags it ON it.id = ${ID_TAG_SUBQUERY}` +
+    JOIN chargepoints cp ON t.chargepoint_id = cp.id` +
         whereClause +
         ' AND t.cost IS NOT NULL GROUP BY t.cost_currency ORDER BY t.cost_currency'
     )
@@ -1313,7 +1335,7 @@ function getTransactions(filters = {}) {
 }
 
 function getUserTransactions(userId, filters = {}) {
-  return buildTransactionQuery('it.user_id = ?', [userId], filters);
+  return buildTransactionQuery('t.user_id = ?', [userId], filters);
 }
 
 /**
@@ -1323,13 +1345,14 @@ function getUserTransactions(userId, filters = {}) {
  */
 function getReimbursementReport(filters = {}) {
   const category = filters.category || 'pro';
-  let where = `t.status = 'Completed' AND it.category = ?`;
+  let where = `t.status = 'Completed' AND t.tag_category = ?`;
   const params = [category];
   if (filters.site_ids && filters.site_ids.length > 0) {
-    where += ` AND cp.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
+    where += ` AND t.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
     params.push(...filters.site_ids);
-  } else if (filters.site_id) {
-    where += ' AND cp.site_id = ?';
+  }
+  if (filters.site_id) {
+    where += ' AND t.site_id = ?';
     params.push(filters.site_id);
   }
   if (filters.from) {
@@ -1342,27 +1365,21 @@ function getReimbursementReport(filters = {}) {
   }
   return db
     .prepare(
-      `SELECT cp.site_id AS site_id, s.sname AS site_name,
-        it.user_id AS user_id, COALESCE(u.shortname, u.useremail) AS user_name,
-        it.category AS category,
+      // Site, salarié et catégorie figés au démarrage ; nom actuel du salarié s'il existe encore,
+      // sinon celui enregistré sur ses sessions
+      `SELECT t.site_id AS site_id, s.sname AS site_name,
+        t.user_id AS user_id, MAX(COALESCE(u.shortname, u.useremail, t.user_name)) AS user_name,
+        t.tag_category AS category,
         COUNT(*) AS sessions,
         ROUND(COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
           THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 0), 3) AS energy_kwh,
         ROUND(SUM(t.cost), 2) AS cost,
         t.cost_currency AS currency
       FROM transactions t
-      JOIN chargepoints cp ON t.chargepoint_id = cp.id
-      LEFT JOIN sites s ON cp.site_id = s.id
-      JOIN id_tags it ON it.id = (
-        SELECT it2.id FROM id_tags it2
-        JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
-        WHERE it2.id_tag = t.id_tag
-        ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
-        LIMIT 1
-      )
-      LEFT JOIN users u ON it.user_id = u.id
+      LEFT JOIN sites s ON t.site_id = s.id
+      LEFT JOIN users u ON t.user_id = u.id
       WHERE ${where}
-      GROUP BY cp.site_id, it.user_id, t.cost_currency
+      GROUP BY t.site_id, t.user_id, t.cost_currency
       ORDER BY s.sname, user_name, t.cost_currency`
     )
     .all(...params)
@@ -1452,14 +1469,30 @@ function getActiveTransactionByConnector(chargepointId, connectorId, evseId = nu
 
 // Renseigne le badge d'une transaction démarrée sans identification (2.0.1 : câble branché puis
 // badge présenté dans un TransactionEvent Updated). Sans effet si un badge est déjà enregistré.
+// Le titulaire et la catégorie du badge sont figés à ce moment, avec le site figé au démarrage.
 function setTransactionIdTag(chargepointId, transactionId, idTag, idTokenType = null) {
+  const tx = getTransactionByTransactionId(chargepointId, transactionId);
+  const siteId =
+    tx && tx.site_id != null
+      ? tx.site_id
+      : resolveTransactionAttribution(chargepointId, null).site_id;
+  const attribution = resolveTagAttribution(idTag, siteId);
   return db
     .prepare(
-      `UPDATE transactions SET id_tag = ?, id_token_type = COALESCE(?, id_token_type)
+      `UPDATE transactions SET id_tag = ?, id_token_type = COALESCE(?, id_token_type),
+         user_id = ?, user_name = ?, tag_category = ?
        WHERE chargepoint_id = ? AND transaction_id = ? AND status = 'Active'
          AND (id_tag IS NULL OR id_tag = '')`
     )
-    .run(idTag, idTokenType, chargepointId, String(transactionId)).changes;
+    .run(
+      idTag,
+      idTokenType,
+      attribution.user_id,
+      attribution.user_name,
+      attribution.tag_category,
+      chargepointId,
+      String(transactionId)
+    ).changes;
 }
 
 function getTransactionValues(chargepointId, transactionId) {
@@ -2031,15 +2064,7 @@ function getUserDashboardStats(userId) {
       ROUND(COALESCE(SUM(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE 0 END), 0), 2) as total_energy_kwh
     FROM transactions t
-    JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    LEFT JOIN id_tags it ON it.id = (
-      SELECT it2.id FROM id_tags it2
-      JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
-      WHERE it2.id_tag = t.id_tag
-      ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
-      LIMIT 1
-    )
-    WHERE it.user_id = ?
+    WHERE t.user_id = ?
       AND t.status = 'Completed'
       AND t.start_time >= date('now', 'start of month')
   `
@@ -2054,14 +2079,6 @@ function getUserDashboardStats(userId) {
 
 function getUserTransactionStats(userId, filters = {}) {
   const hasFilters = filters.from || filters.to || filters.status || filters.category;
-  const idTagJoin = `LEFT JOIN id_tags it ON it.id = (
-    SELECT it2.id FROM id_tags it2
-    JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
-    WHERE it2.id_tag = t.id_tag
-    ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
-    LIMIT 1
-  )`;
-
   const buildQuery = (extraWhere) => `
     SELECT
       COUNT(*) as totalSessions,
@@ -2075,17 +2092,13 @@ function getUserTransactionStats(userId, filters = {}) {
       ROUND(COALESCE(AVG(CASE WHEN t.meter_stop IS NOT NULL AND t.meter_start IS NOT NULL
         THEN (t.meter_stop - t.meter_start) / 1000.0 ELSE NULL END), 0), 2) as avgEnergy
     FROM transactions t
-    JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    ${idTagJoin}
-    WHERE it.user_id = ? AND t.status = 'Completed'${extraWhere}`;
+    WHERE t.user_id = ? AND t.status = 'Completed'${extraWhere}`;
 
   // Coût figé des sessions, par devise (on n'additionne jamais des devises différentes)
   const buildCostQuery = (extraWhere) => `
     SELECT t.cost_currency AS currency, ROUND(SUM(t.cost), 2) AS total
     FROM transactions t
-    JOIN chargepoints cp ON t.chargepoint_id = cp.id
-    ${idTagJoin}
-    WHERE it.user_id = ? AND t.status = 'Completed' AND t.cost IS NOT NULL${extraWhere}
+    WHERE t.user_id = ? AND t.status = 'Completed' AND t.cost IS NOT NULL${extraWhere}
     GROUP BY t.cost_currency ORDER BY t.cost_currency`;
   const withCost = (stats, extraWhere, params = [userId]) => ({
     ...stats,
@@ -2120,7 +2133,7 @@ function getUserTransactionStats(userId, filters = {}) {
       filterParams.push(filters.to);
     }
     if (filters.category) {
-      filterWhere += ' AND it.category = ?';
+      filterWhere += ' AND t.tag_category = ?';
       filterParams.push(filters.category);
     }
     filtered = withCost(
@@ -2142,20 +2155,13 @@ function getAvailableConnectorsForUser(userId) {
            s.sname as site_name, s.id as site_id, us.authorized as site_authorized,
            t.transaction_id as active_transaction_id, t.id_tag as active_id_tag,
            t.power as active_power, t.energy as active_energy,
-           it.user_id as active_user_id
+           t.user_id as active_user_id
     FROM connectors c
     JOIN chargepoints cp ON c.chargepoint_id = cp.id
     JOIN sites s ON cp.site_id = s.id
     JOIN user_sites us ON us.site_id = s.id AND us.user_id = ?
     LEFT JOIN transactions t ON t.chargepoint_id = cp.id AND t.connector_id = c.connector_id AND t.status = 'Active'
       AND (t.evse_id IS NULL OR c.evse_id IS NULL OR t.evse_id = c.evse_id)
-    LEFT JOIN id_tags it ON it.id = (
-      SELECT it2.id FROM id_tags it2
-      JOIN chargepoints cp2 ON cp2.id = t.chargepoint_id
-      WHERE it2.id_tag = t.id_tag
-      ORDER BY CASE WHEN it2.site_id = cp2.site_id THEN 0 WHEN it2.site_id IS NULL THEN 1 ELSE 2 END
-      LIMIT 1
-    )
     WHERE c.connector_id > 0
     ORDER BY s.sname, cp.identity, c.connector_id
   `
