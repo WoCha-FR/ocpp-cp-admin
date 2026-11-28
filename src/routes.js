@@ -279,8 +279,9 @@ router.post(
     const { useremail } = matchedData(req);
     const user = db.getUserByEmail(useremail);
 
-    // Réponse identique que l'utilisateur existe ou non (anti-énumération)
-    if (!user) {
+    // Réponse identique que l'utilisateur existe ou non (anti-énumération) ; un compte désactivé
+    // ne reçoit pas de lien (sa connexion reste refusée)
+    if (!user || user.disabled_at) {
       return res.json({ ok: true });
     }
     // Génération du token de réinitialisation et enregistrement dans la base
@@ -326,6 +327,7 @@ router.post(
     const data = matchedData(req);
     const result = db.getUserById(data.userId);
     if (!result) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+    if (result.disabled_at) return res.status(409).json({ error: 'ERR_ACCOUNT_DISABLED' });
     // Vérifier que le manager gère un site de l'utilisateur
     if (req.user.role !== 'admin') {
       const userSiteIds = db.getUserSiteIds(result.id);
@@ -1152,6 +1154,8 @@ router.put(
         revokeChargepointCert(before.identity, 'identity_changed');
         generateChargepointCert(cp.identity);
         pendingChargepoints.delete(cp.identity);
+        // Nouveau matériel : la configuration par défaut lui sera envoyée au premier BootNotification
+        db.resetChargepointInitialized(cp.id);
         logger.info(`Chargepoint #${cp.id} identity changed: ${before.identity} -> ${cp.identity}`);
       } else if (before.authorized && !cp.authorized) {
         // Si authorized passe de 1 à 0, déconnecter la borne immédiatement
@@ -2616,8 +2620,14 @@ function canCorrectTransaction(req, tx) {
   return !!(managedIds && managedIds.includes(tx.site_id));
 }
 
-function badgeCandidates(tx) {
-  return db.getBadgeCorrectionCandidates(tx.site_id).filter((t) => !isGeneratedTag(t.id_tag));
+// Badges du site de la session ; un gestionnaire n'y voit que ceux de son périmètre (mêmes règles
+// que la page Badges : badges globaux des salariés dont tous les sites sont les siens)
+function badgeCandidates(req, tx) {
+  const ctx = idTagPolicyContext(req);
+  return db
+    .getBadgeCorrectionCandidates(tx.site_id)
+    .filter((t) => !isGeneratedTag(t.id_tag))
+    .filter((t) => ctx.isAdmin || canAccessIdTag(ctx, t, db.getUserScope(t.user_id)));
 }
 
 router.get(
@@ -2630,7 +2640,7 @@ router.get(
     if (!canCorrectTransaction(req, tx)) {
       return res.status(403).json({ error: 'ERR_TRANSACTION_NOT_CORRECTABLE' });
     }
-    res.json(badgeCandidates(tx));
+    res.json(badgeCandidates(req, tx));
   }
 );
 
@@ -2650,7 +2660,7 @@ router.post(
       return res.status(403).json({ error: 'ERR_TRANSACTION_NOT_CORRECTABLE' });
     }
     // Uniquement un badge enregistré pour le site de la session
-    const tag = badgeCandidates(tx).find((t) => t.id === data.id_tag_id);
+    const tag = badgeCandidates(req, tx).find((t) => t.id === data.id_tag_id);
     if (!tag) return res.status(400).json({ error: 'ERR_CORRECTION_TAG_NOT_ALLOWED' });
     if (
       tag.id_tag === tx.id_tag &&

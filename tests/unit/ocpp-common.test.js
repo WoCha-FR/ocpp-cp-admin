@@ -878,6 +878,27 @@ describe('ocpp-common — période de grâce offline', () => {
     );
   });
 
+  it.each(['archived', 'identity_changed'])(
+    "déconnexion voulue (%s) : ni notification offline ni événement d'erreur",
+    async (reason) => {
+      const server = ocppCommon.createOCPPServerBase();
+      const client = makeClient(`CP_GRACE_${reason.toUpperCase()}`);
+      server.emit('client', client);
+      jest.clearAllMocks();
+
+      client._disconnectReason = reason;
+      client.emit('close');
+
+      await jest.advanceTimersByTimeAsync(120000);
+      expect(mockNotifications.emit).not.toHaveBeenCalledWith(
+        'chargepoint_offline',
+        expect.any(Object),
+        expect.any(Object)
+      );
+      expect(mockDb.insertErrorEvent).not.toHaveBeenCalled();
+    }
+  );
+
   it('journalise un EVENT/Disconnect immédiatement à la fermeture, sans attendre la période de grâce', () => {
     const server = ocppCommon.createOCPPServerBase();
     const client = makeClient('CP_GRACE_DISCONNECT_EVT');

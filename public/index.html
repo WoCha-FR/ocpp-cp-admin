@@ -4362,7 +4362,7 @@ async function updateUser(id) {
 function deleteUser(id, name) {
   if (id === currentUser.id) return toast(t('users.uCannotDeleteSelf'), 'error');
   openModal(`
-    <h3>🗑️ ${t('users.uDeleteTitle', { name })}</h3>
+    <h3>🗑️ ${t('users.uDeleteTitle', { name: escapeHtml(name) })}</h3>
     <p style="font-size:13px;">${t('users.uDeleteAnonymizeHint')}</p>
     <p style="font-size:13px;">${t('users.uDeleteExportHint')}</p>
     <div class="modal-actions">
@@ -5109,7 +5109,7 @@ async function showBadgeCorrectionModal(txRowId) {
   const candidates = await api('GET', `/transactions/${txRowId}/badge-candidates`);
   const cat = (c) => t(`idtags.rfCategory${c === 'pro' ? 'Pro' : 'Perso'}`);
   openModal(`
-    <h3>✏️ ${t('corrections.correctBadgeTitle', { id: tx ? tx.transaction_id : txRowId })}</h3>
+    <h3>✏️ ${t('corrections.correctBadgeTitle', { id: escapeHtml(String(tx ? tx.transaction_id : txRowId)) })}</h3>
     <p class="text-muted" style="font-size:13px;">${t('corrections.correctBadgeHint')}</p>
     ${candidates.length === 0 ? `<p class="text-muted">${t('corrections.noCandidate')}</p>` : `
     <div class="form-group">

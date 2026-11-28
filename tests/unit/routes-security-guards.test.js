@@ -320,10 +320,10 @@ describe('Lot 4 — tarif saisi en retard, correction du badge, régularisations
     expect(route).toMatch(/validateSchema\(schema\.IdParam, schema\.BadgeCorrection\)/);
     expect(route).toMatch(/canCorrectTransaction\(req, tx\)/);
     // badge choisi parmi ceux du site de la session (hors badges générés)
-    expect(route).toMatch(/badgeCandidates\(tx\)\.find\(\(t\) => t\.id === data\.id_tag_id\)/);
+    expect(route).toContain('badgeCandidates(req, tx).find((t) => t.id === data.id_tag_id)');
     expect(route).toMatch(/ERR_CORRECTION_TAG_NOT_ALLOWED/);
     expect(route).toMatch(/db\.correctTransactionBadge\(tx\.id, tag, \{[\s\S]{0,160}reason: data\.reason/);
-    expect(block('function badgeCandidates(tx)', 200)).toMatch(/!isGeneratedTag\(t\.id_tag\)/);
+    expect(block('function badgeCandidates(req, tx)', 500)).toMatch(/!isGeneratedTag\(t\.id_tag\)/);
     expect(block("'/transactions/:id/badge-candidates',", 500)).toMatch(/canCorrectTransaction\(req, tx\)/);
   });
 
@@ -370,5 +370,34 @@ describe('Lot 5 — rétention automatique', () => {
     ]) {
       expect(config).toContain(`CPADMIN_RETENTION_${v}`);
     }
+  });
+});
+
+// ── Relecture 1.1.0 ──
+describe('Relecture 1.1.0 — correctifs', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/routes.js'), 'utf8');
+  const block = (marker, len = 1500) => {
+    const start = src.indexOf(marker);
+    expect(start).toBeGreaterThan(-1);
+    return src.slice(start, start + len);
+  };
+
+  it('borne renommée : séquence d’initialisation rejouée pour le nouveau matériel', () => {
+    const route = block("router.put(\n  '/chargepoints/:id',", 3200);
+    const changed = route.slice(route.indexOf('if (identityChanged) {'));
+    expect(changed.slice(0, 900)).toContain('db.resetChargepointInitialized(cp.id)');
+  });
+
+  it('correction de badge : candidats limités au périmètre du gestionnaire', () => {
+    const helper = block('function badgeCandidates(req, tx)', 500);
+    expect(helper).toContain('ctx.isAdmin || canAccessIdTag(ctx, t, db.getUserScope(t.user_id))');
+    expect(src).not.toContain('badgeCandidates(tx)');
+  });
+
+  it('compte désactivé : pas de lien de mot de passe', () => {
+    expect(block("'/auth/forgot-password',", 900)).toContain('if (!user || user.disabled_at)');
+    expect(block("'/auth/resend-setup-password',", 900)).toContain(
+      "if (result.disabled_at) return res.status(409).json({ error: 'ERR_ACCOUNT_DISABLED' });"
+    );
   });
 });

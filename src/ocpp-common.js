@@ -705,7 +705,7 @@ function createOCPPServerBase(options = {}) {
           cpDisc.site_id ?? null
         );
       }
-      if (client._disconnectReason !== 'heartbeat_timeout') {
+      if (!NO_OFFLINE_ALERT_REASONS.has(client._disconnectReason)) {
         const cfg = getConfig();
         const graceMs = ((cfg.notifs && cfg.notifs.reconnectGracePeriodSeconds) ?? 60) * 1000;
         const timerId = setTimeout(() => {
@@ -743,6 +743,8 @@ function createOCPPServerBase(options = {}) {
 // envoyer son arrêt réel à la reconnexion). Toute autre raison = dé-autorisation explicite.
 // identity_changed / archived : refusés pendant une session (aucune transaction à clore), mais
 // une transaction ne doit jamais être close par ces opérations d'administration
+// Déconnexions voulues par l'admin : ni notification « hors ligne », ni événement d'erreur
+const NO_OFFLINE_ALERT_REASONS = new Set(['heartbeat_timeout', 'identity_changed', 'archived']);
 const NO_TX_CLOSE_REASONS = new Set([
   'heartbeat_timeout',
   'cert_revoked',

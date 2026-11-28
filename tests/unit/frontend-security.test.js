@@ -156,3 +156,13 @@ describe('Frontend — arguments data-on* (jsArg) et valeurs venant des bornes',
     expect(html).not.toMatch(/<code>\$\{e\.key\}<\/code>/);
   });
 });
+
+// Relecture 1.1.0 : i18next est initialisé avec escapeValue: false, une valeur interpolée puis
+// insérée en innerHTML doit être échappée (transaction_id 2.0.1 choisi par la borne, e-mail)
+describe('Frontend XSS hardening — interpolations échappées (relecture 1.1.0)', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../../public/index.html'), 'utf8');
+  it('titre de la correction de badge et titre de la suppression de compte', () => {
+    expect(html).toContain("t('corrections.correctBadgeTitle', { id: escapeHtml(");
+    expect(html).toContain("t('users.uDeleteTitle', { name: escapeHtml(name) })");
+  });
+});
