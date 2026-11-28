@@ -23,6 +23,8 @@ const { buildSetVariableData } = require('./ocppVariables');
 const { isGeneratedTag } = require('./remoteStarts');
 const certAuthority = require('./certAuthority');
 const { checkCommandAllowed } = require('./ocppCommandPolicy');
+const { startBlockReason } = require('./chargepointPolicy');
+const { canAccessIdTag, idTagWriteError, canOwnGlobalTag } = require('./idTagPolicy');
 const { createBackupArchive } = require('./backupArchive');
 const { getWssRootCaBundle } = require('./wssRootCa');
 const schema = require('./validationSchema');
@@ -414,7 +416,7 @@ router.post('/sites', requireRole('admin'), checkSchema(schema.Site), (req, res)
   }
   const data = matchedData(req);
   try {
-    const site = db.createSite(data.name, data.address);
+    const site = db.createSite(data.name, data.address, data.auto_web_badge ?? 1);
     res.status(201).json(site);
   } catch (e) {
     errorResponse(res, 400, e.message);
@@ -432,7 +434,13 @@ router.put(
     }
     const data = matchedData(req);
     try {
-      const site = db.updateSite(Number(req.params.id), data.name, data.address);
+      const site = db.updateSite(
+        Number(req.params.id),
+        data.name,
+        data.address,
+        data.auto_web_badge
+      );
+      if (!site) return res.status(404).json({ error: 'ERR_SITE_NOT_FOUND' });
       res.json(site);
     } catch (e) {
       errorResponse(res, 400, e.message);
@@ -1364,6 +1372,7 @@ router.post(
   async (req, res) => {
     const cp = db.getChargepointById(Number(req.params.id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (startBlockReason(cp)) return res.status(409).json({ error: 'ERR_CHARGEPOINT_NO_SITE' });
 
     if (req.user.role !== 'admin') {
       const managedIds = getUserManagedSiteIds(req);
@@ -1550,6 +1559,7 @@ router.post(
 
     const cp = db.getChargepointById(Number(chargepoint_id));
     if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (startBlockReason(cp)) return res.status(409).json({ error: 'ERR_CHARGEPOINT_NO_SITE' });
 
     // Vérifier que le manager gère ce site
     if (req.user.role !== 'admin') {
@@ -2530,27 +2540,57 @@ router.get(
 // ══════════════════════════════════════
 //  ID TAGS
 // ══════════════════════════════════════
+// Contexte des droits sur les badges (voir idTagPolicy.js)
+function idTagPolicyContext(req) {
+  return { isAdmin: req.user.role === 'admin', managedSiteIds: getUserManagedSiteIds(req) || [] };
+}
+
+// Badges générés par le CSMS (ADMIN, MGR-x, WEB-x) : ni modifiés ni supprimés à la main
+function generatedTagError(idTag, action) {
+  if (!isGeneratedTag(idTag)) return null;
+  return action === 'delete' ? 'ERR_AUTOTAG_NO_DELETE' : 'ERR_AUTOTAG_READONLY';
+}
+
 router.get('/id-tags', requireManager, (req, res) => {
-  let tags = db.getAllIdTags();
-  // Filtrer par sites gérés si l'utilisateur n'est pas admin
-  if (req.user.role !== 'admin') {
-    const managedSiteIds = getUserManagedSiteIds(req);
-    if (managedSiteIds !== null) {
-      tags = tags.filter((t) => !t.site_id || managedSiteIds.includes(t.site_id));
-    }
-  }
+  const ctx = idTagPolicyContext(req);
+  const conflicts = new Set(db.getIdTagScopeConflictCodes());
+  const tags = db
+    .getAllIdTags()
+    .map((t) => ({
+      ...t,
+      can_manage: !isGeneratedTag(t.id_tag) && canAccessIdTag(ctx, t, db.getUserScope(t.user_id)),
+      scope_conflict: conflicts.has(t.id_tag),
+    }))
+    // Un gestionnaire ne voit que les badges qu'il gère (badges de ses sites, badges globaux de
+    // ses salariés) et les badges générés de ses sites
+    .filter(
+      (t) => ctx.isAdmin || t.can_manage || (t.site_id && ctx.managedSiteIds.includes(t.site_id))
+    );
   res.json(tags);
+});
+
+// Titulaires possibles d'un badge : tous les utilisateurs pour l'admin, les salariés de ses
+// sites pour un gestionnaire. global_allowed : un badge global peut lui être rattaché
+router.get('/id-tags/assignable-users', requireManager, (req, res) => {
+  const ctx = idTagPolicyContext(req);
+  const users = db.getUsersWithSites(ctx.isAdmin ? null : ctx.managedSiteIds);
+  res.json(
+    users
+      .filter((u) => ctx.isAdmin || u.role !== 'admin')
+      .map((u) => ({
+        id: u.id,
+        name: u.shortname || u.useremail,
+        site_ids: u.site_ids,
+        global_allowed: canOwnGlobalTag(ctx, { role: u.role, site_ids: u.site_ids }),
+      }))
+  );
 });
 
 router.get('/id-tags/:id', requireManager, ...validateSchema(schema.IdParam), (req, res) => {
   const tag = db.getIdTagById(Number(req.params.id));
   if (!tag) return res.status(404).json({ error: 'ERR_TAG_NOT_FOUND' });
-  if (req.user.role !== 'admin') {
-    const managedSiteIds = getUserManagedSiteIds(req);
-    // Managers can access global tags (no site_id) or tags from managed sites only.
-    if (managedSiteIds !== null && tag.site_id && !managedSiteIds.includes(tag.site_id)) {
-      return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
-    }
+  if (!canAccessIdTag(idTagPolicyContext(req), tag, db.getUserScope(tag.user_id))) {
+    return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
   }
   res.json(tag);
 });
@@ -2561,30 +2601,22 @@ router.post('/id-tags', requireManager, checkSchema(schema.IdTag), (req, res) =>
     return res.status(400).json({ error: result.array().map((e) => e.msg) });
   }
   const data = matchedData(req);
-  // Un manager doit obligatoirement spécifier un site qu'il gère
-  if (req.user.role !== 'admin') {
-    if (!data.site_id) {
-      return res.status(400).json({ error: 'ERR_SITE_REQUIRED' });
-    }
-    const managedSiteIds = getUserManagedSiteIds(req);
-    if (managedSiteIds !== null && !managedSiteIds.includes(data.site_id)) {
-      return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
-    }
+  // Préfixes réservés aux badges générés (ADMIN, MGR-, WEB-)
+  if (isGeneratedTag(data.id_tag)) return res.status(400).json({ error: 'ERR_TAG_RESERVED' });
+  const next = { site_id: data.site_id || null, user_id: data.user_id ?? null };
+  const denied = idTagWriteError(idTagPolicyContext(req), next, db.getUserScope(next.user_id));
+  if (denied) {
+    return res.status(denied === 'ERR_SITE_REQUIRED' ? 400 : 403).json({ error: denied });
   }
-  // Vérifier l'unicité du couple (id_tag, site_id)
-  const existing = db.getIdTagByTag(data.id_tag, data.site_id || null);
-  if (
-    existing &&
-    existing.id_tag === data.id_tag &&
-    (existing.site_id || null) === (data.site_id || null)
-  ) {
+  // Un code est soit global, soit limité à des sites : jamais les deux, ni deux fois le même site
+  if (db.hasIdTagScopeConflict(data.id_tag, next.site_id)) {
     return res.status(400).json({ error: 'ERR_TAG_ALREADY_EXISTS' });
   }
   try {
     const tag = db.createIdTag(
       data.id_tag,
-      data.user_id,
-      data.site_id,
+      next.user_id,
+      next.site_id,
       data.description,
       data.expiry_date,
       data.active,
@@ -2603,22 +2635,10 @@ router.put(
   requireManager,
   ...validateSchema(schema.IdParam, schema.IdTag),
   (req, res) => {
-    // Vérifier si le tag est auto-généré (WEB-*)
     const existing = db.getIdTagById(Number(req.params.id));
     if (!existing) return res.status(404).json({ error: 'ERR_TAG_NOT_FOUND' });
-    if (existing.id_tag.startsWith('WEB-')) {
-      return res.status(403).json({ error: 'ERR_AUTOTAG_READONLY' });
-    }
-    // Un manager ne peut modifier que les tags de ses sites
-    if (req.user.role !== 'admin') {
-      const managedSiteIds = getUserManagedSiteIds(req);
-      if (
-        managedSiteIds !== null &&
-        (!existing.site_id || !managedSiteIds.includes(existing.site_id))
-      ) {
-        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
-      }
-    }
+    const generated = generatedTagError(existing.id_tag, 'update');
+    if (generated) return res.status(403).json({ error: generated });
     const result = validationResult(req);
     if (!result.isEmpty()) {
       return res.status(400).json({ error: result.array().map((e) => e.msg) });
@@ -2628,18 +2648,29 @@ router.put(
     if (req.body.site_id === null && data.site_id === undefined) data.site_id = null;
     if (req.body.user_id === null && data.user_id === undefined) data.user_id = null;
     if (req.body.expiry_date === null && data.expiry_date === undefined) data.expiry_date = null;
-    // Un manager ne peut pas changer le site du tag vers un site qu'il ne gère pas
-    if (req.user.role !== 'admin') {
-      if (!data.site_id) {
-        return res.status(400).json({ error: 'ERR_SITE_REQUIRED' });
-      }
-      const managedSiteIds = getUserManagedSiteIds(req);
-      if (managedSiteIds !== null && !managedSiteIds.includes(data.site_id)) {
-        return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
-      }
+    // Le code identifie la carte et son historique : il ne change pas (nouvelle carte = nouveau badge)
+    if (data.id_tag !== existing.id_tag) {
+      return res.status(400).json({ error: 'ERR_TAG_CODE_IMMUTABLE' });
+    }
+    const next = {
+      site_id: data.site_id !== undefined ? data.site_id || null : existing.site_id,
+      user_id: data.user_id !== undefined ? data.user_id : existing.user_id,
+    };
+    const denied = idTagWriteError(idTagPolicyContext(req), next, db.getUserScope(next.user_id), {
+      existing,
+      existingOwner: db.getUserScope(existing.user_id),
+    });
+    if (denied) {
+      return res.status(denied === 'ERR_SITE_REQUIRED' ? 400 : 403).json({ error: denied });
+    }
+    if (
+      next.site_id !== existing.site_id &&
+      db.hasIdTagScopeConflict(existing.id_tag, next.site_id, existing.id)
+    ) {
+      return res.status(400).json({ error: 'ERR_TAG_ALREADY_EXISTS' });
     }
     try {
-      const tag = db.updateIdTag(Number(req.params.id), data);
+      const tag = db.updateIdTag(existing.id, { ...data, ...next });
       if (!tag) return res.status(404).json({ error: 'ERR_TAG_NOT_FOUND' });
       res.json(tag);
     } catch (e) {
@@ -2649,22 +2680,17 @@ router.put(
 );
 
 router.delete('/id-tags/:id', requireManager, ...validateSchema(schema.IdParam), (req, res) => {
-  // Vérifier si le tag est auto-généré (WEB-*)
   const existing = db.getIdTagById(Number(req.params.id));
-  if (existing && existing.id_tag.startsWith('WEB-')) {
-    return res.status(403).json({ error: 'ERR_AUTOTAG_NO_DELETE' });
+  if (!existing) return res.status(404).json({ error: 'ERR_TAG_NOT_FOUND' });
+  const generated = generatedTagError(existing.id_tag, 'delete');
+  if (generated) return res.status(403).json({ error: generated });
+  if (!canAccessIdTag(idTagPolicyContext(req), existing, db.getUserScope(existing.user_id))) {
+    return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
   }
-  // Un manager ne peut supprimer que les tags de ses sites
-  if (req.user.role !== 'admin' && existing) {
-    const managedSiteIds = getUserManagedSiteIds(req);
-    if (
-      managedSiteIds !== null &&
-      (!existing.site_id || !managedSiteIds.includes(existing.site_id))
-    ) {
-      return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
-    }
-  }
-  db.deleteIdTag(Number(req.params.id));
+  // Un badge qui a servi reste référencé par l'historique : il se désactive, il ne se supprime pas
+  const sessions = db.countIdTagSessions(existing);
+  if (sessions > 0) return res.status(409).json({ error: 'ERR_TAG_USED', count: sessions });
+  db.deleteIdTag(existing.id);
   res.json({ ok: true });
 });
 
@@ -2884,6 +2910,8 @@ router.get('/user/available-connectors', requireAuth, (req, res) => {
 function getUserStartChargepoint(req, chargepointId) {
   const cp = db.getChargepointById(Number(chargepointId));
   if (!cp) return { status: 404, error: 'ERR_CHARGEPOINT_NOT_FOUND' };
+  // Borne sans site : inactive (voir chargepointPolicy.js)
+  if (startBlockReason(cp)) return { status: 409, error: 'ERR_CHARGEPOINT_NO_SITE' };
   // Vérifier que l'utilisateur est autorisé sur le site de la borne (l'admin l'est toujours)
   if (cp.site_id && req.user.role !== 'admin') {
     const userSite = (req.user.sites || []).find((s) => s.site_id === cp.site_id);
@@ -2900,9 +2928,16 @@ function getUserStartTags(req, cp) {
   });
 }
 
+// Badge web automatique autorisé sur le site de la borne (réglage du site, admin)
+function siteAllowsAutoWebBadge(cp) {
+  const site = cp.site_id ? db.getSiteById(cp.site_id) : null;
+  return !!site && site.auto_web_badge !== 0;
+}
+
 // Badges utilisables par l'utilisateur pour démarrer sur cette borne (choix dans la confirmation
 // quand il y en a plusieurs). autoWeb : aucun badge → badge web automatique au démarrage ;
-// blocked : des badges, mais aucun valide (expirés, désactivés…) → démarrage refusé.
+// blocked : des badges, mais aucun valide (expirés, désactivés…) → démarrage refusé ;
+// noBadge : aucun badge et badge web automatique interdit sur ce site → démarrage refusé.
 router.get(
   '/user/start-charge/id-tags',
   requireAuth,
@@ -2911,10 +2946,12 @@ router.get(
     const { cp, status, error } = getUserStartChargepoint(req, req.query.chargepoint_id);
     if (!cp) return res.status(status).json({ error });
     const { candidates, usable } = getUserStartTags(req, cp);
+    const autoWebAllowed = siteAllowsAutoWebBadge(cp);
     res.json({
       idTags: usable,
-      autoWeb: candidates === 0,
+      autoWeb: candidates === 0 && autoWebAllowed,
       blocked: candidates > 0 && usable.length === 0,
+      noBadge: candidates === 0 && !autoWebAllowed,
     });
   }
 );
@@ -2939,7 +2976,10 @@ router.post(
     const { candidates, usable } = getUserStartTags(req, cp);
     let idTag;
     if (candidates === 0) {
-      // Aucun badge pour ce site : badge web automatique lié à l'utilisateur
+      // Aucun badge pour ce site : badge web automatique lié à l'utilisateur, si le site le permet
+      if (!siteAllowsAutoWebBadge(cp)) {
+        return res.status(403).json({ error: 'ERR_NO_BADGE_FOR_SITE' });
+      }
       idTag = `WEB-${req.user.id}`;
       if (requested && requested !== idTag) {
         return res.status(400).json({ error: 'ERR_ID_TAG_NOT_USABLE' });

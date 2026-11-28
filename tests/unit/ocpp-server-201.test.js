@@ -3099,3 +3099,70 @@ describe('ocpp-server-201 — lot E démarrage à distance (H3)', () => {
     ).toBe('Accepted');
   });
 });
+
+// ── Lot 2 : borne sans site = inactive, quel que soit son mode ──
+describe('ocpp-server-201 — borne sans site (inactive)', () => {
+  let client;
+  const TS = new Date().toISOString();
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.authorizeIdTag.mockReturnValue({ status: 'Blocked', reason: 'chargepoint_no_site', tag: null });
+    mockDb.createTransaction.mockReturnValue({ transaction_id: 'TX-NS' });
+    mockDb.getTransactions.mockReturnValue([]);
+    mockDb.getTransactionByTransactionId.mockReturnValue(undefined);
+    mockDb.getIdTagByTag.mockReturnValue(null);
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    register201Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('Authorize : mode libre refusé sans site', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 3, site_id: null });
+    const result = client._handlers['Authorize']({ idToken: { idToken: 'ANY001', type: 'ISO14443' } });
+    expect(result.idTokenInfo.status).toBe('Blocked');
+  });
+
+  it.each([1, 3])('Started mode %i : session enregistrée refusée', (mode) => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode, site_id: null });
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'Authorized',
+      transactionInfo: { transactionId: 'TX-NS' },
+      idToken: { idToken: 'ANY001', type: 'ISO14443' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo.status).toBe('Blocked');
+    expect(mockDb.createTransaction).toHaveBeenCalledWith(
+      1, 1, 'ANY001', 0, TS, expect.any(String),
+      expect.objectContaining({ status: 'Rejected' })
+    );
+    expect(mockDb.addIdTagEvent).toHaveBeenCalledWith(1, null, 'ANY001', 'Blocked', 'chargepoint_no_site', 'authorize');
+  });
+
+  it('Started : un démarrage à distance (RemoteStart) est refusé aussi', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: null });
+    const result = client._handlers['TransactionEvent']({
+      eventType: 'Started',
+      triggerReason: 'RemoteStart',
+      transactionInfo: { transactionId: 'TX-NS2', remoteStartId: 12 },
+      idToken: { idToken: 'WEB-5', type: 'Central' },
+      evse: { id: 1 },
+      meterValue: [],
+      timestamp: TS,
+    });
+    expect(result.idTokenInfo.status).toBe('Blocked');
+  });
+
+  it('Plug & Charge (mode 2) : aucun RequestStartTransaction sans site', async () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 2, site_id: null });
+    mockDb.getActiveTransactionByConnector.mockReturnValue(null);
+    mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+    mockConnectedClients.set('CP001', client);
+    client._handlers['StatusNotification']({ evseId: 1, connectorId: 1, connectorStatus: 'Occupied', timestamp: TS });
+    await new Promise((r) => setImmediate(r));
+    expect(client.call).not.toHaveBeenCalledWith('RequestStartTransaction', expect.anything());
+    expect(mockDb.createIdTag).not.toHaveBeenCalled();
+  });
+});

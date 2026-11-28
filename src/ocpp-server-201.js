@@ -25,6 +25,7 @@ const {
 } = require('./remoteStarts');
 const { toIsoDateTime } = require('./chargingProfiles');
 const { buildSetVariableData } = require('./ocppVariables');
+const { startBlockReason } = require('./chargepointPolicy');
 
 // ── Constantes ──
 
@@ -137,7 +138,8 @@ function evaluateIdTokenOnUpdate({
   let authStatus = 'Accepted';
   let authReason = null;
   let authTag = null;
-  // Même règle qu'au démarrage : seul le mode 1 (badge contrôlé par le CSMS) refuse un badge
+  // Même règle qu'au démarrage : seul le mode 1 (badge contrôlé par le CSMS) refuse un badge,
+  // et une borne sans site refuse tout
   if (cp.mode === 1 && !isRemoteStart) {
     if (isGeneratedTag(idTag)) {
       authStatus = 'Blocked';
@@ -148,6 +150,11 @@ function evaluateIdTokenOnUpdate({
       authReason = authResult.reason;
       authTag = authResult.tag;
     }
+  }
+  const blockReason = startBlockReason(cp);
+  if (blockReason) {
+    authStatus = 'Blocked';
+    authReason = blockReason;
   }
 
   if (authStatus !== 'Accepted') {
@@ -631,7 +638,13 @@ function register201Handlers(client, loggedHandle) {
         // sur un NOUVEAU branchement. En 2.0.1 « Occupied » couvre aussi le câble resté branché
         // après la fin d'une session (équivalent du Finishing 1.6) : redémarrer là rendrait
         // impossible l'arrêt d'une recharge (arrêt → Occupied → redémarrage).
-        if (cp.mode === 2 && evseId > 0 && !activeTx && isNewPlugIn(previousStatus)) {
+        if (
+          cp.mode === 2 &&
+          !startBlockReason(cp) &&
+          evseId > 0 &&
+          !activeTx &&
+          isNewPlugIn(previousStatus)
+        ) {
           const idTag = `MGR-${cp.site_id}`;
           if (!db.getIdTagByTag(idTag)) {
             db.createIdTag(idTag, null, cp.site_id, `Tag manager site ${cp.site_id} auto`, null, 0);
@@ -813,7 +826,7 @@ function register201Handlers(client, loggedHandle) {
     const siteId = cp?.site_id ?? null;
     const authResult = db.authorizeIdTag(idTag, siteId, idTokenType);
 
-    if (cp && cp.mode === 3) {
+    if (cp && cp.mode === 3 && !startBlockReason(cp)) {
       logger.info(`[2.0.1] Authorize ${identity}: Accepted (free mode)`);
       return { idTokenInfo: { status: 'Accepted' } };
     }
@@ -894,6 +907,13 @@ function register201Handlers(client, loggedHandle) {
           authReason = authResult.reason;
           authTag = authResult.tag;
         }
+      }
+      // Borne sans site : démarrage refusé quel que soit le mode, y compris à distance. La
+      // session est enregistrée comme refusée (jamais facturée)
+      const blockReason = startBlockReason(cp);
+      if (blockReason) {
+        authStatus = 'Blocked';
+        authReason = blockReason;
       }
 
       // Retransmission : sans réponse dans le délai, la borne renvoie le même Started

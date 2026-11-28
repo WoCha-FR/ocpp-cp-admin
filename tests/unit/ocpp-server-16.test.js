@@ -1861,3 +1861,67 @@ describe('ocpp-server-16 — lot E autorisation', () => {
     });
   });
 });
+
+// ── Lot 2 : borne sans site = inactive, quel que soit son mode ──
+describe('ocpp-server-16 — borne sans site (inactive)', () => {
+  let client;
+
+  beforeEach(() => {
+    client = makeClient('CP001');
+    mockDb.createTransaction.mockReturnValue({ transaction_id: 200 });
+    mockDb.getConnectorsByChargepoint.mockReturnValue([]);
+    mockDb.getIdTagByTag.mockReturnValue(null);
+    mockDb.authorizeIdTag.mockReturnValue({ status: 'Blocked', reason: 'chargepoint_no_site', tag: null });
+    register16Handlers(client, makeLoggedHandle(client));
+  });
+
+  it('Authorize : mode libre refusé sans site', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 3, site_id: null });
+    const result = client._handlers['Authorize']({ idTag: 'ANY001' });
+    expect(result.idTagInfo.status).toBe('Blocked');
+  });
+
+  it.each([1, 3])('StartTransaction mode %i : session enregistrée refusée (jamais facturée)', (mode) => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode, site_id: null });
+    client._handlers['StartTransaction']({ connectorId: 1, idTag: 'ANY001', meterStart: 0, timestamp: new Date().toISOString() });
+    expect(mockDb.createTransaction).toHaveBeenCalledWith(
+      1, 1, 'ANY001', 0, expect.any(String), expect.any(String),
+      expect.objectContaining({ status: 'Rejected' })
+    );
+    expect(mockDb.addIdTagEvent).toHaveBeenCalledWith(1, null, 'ANY001', 'Blocked', 'chargepoint_no_site', 'authorize');
+  });
+
+  it('StartTransaction : un démarrage à distance en attente ne passe pas non plus', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 1, site_id: null });
+    mockPendingRemoteStarts.set('CP001_1', { source: 'web', userId: 5, idTag: 'WEB-5' });
+    client._handlers['StartTransaction']({ connectorId: 1, idTag: 'WEB-5', meterStart: 0, timestamp: new Date().toISOString() });
+    expect(mockDb.createTransaction).toHaveBeenCalledWith(
+      1, 1, 'WEB-5', 0, expect.any(String), 'web',
+      expect.objectContaining({ status: 'Rejected' })
+    );
+  });
+
+  it('Plug & Charge (mode 2) : aucun démarrage ni badge MGR-null sans site', () => {
+    mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 2, site_id: null, cpstatus: 'Available' });
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Preparing', errorCode: 'NoError' });
+    expect(mockDb.createIdTag).not.toHaveBeenCalled();
+    expect(mockPendingRemoteStarts.size).toBe(0);
+  });
+
+  it('Plug & Charge (mode 2) : démarrage normal avec un site (témoin)', () => {
+    mockDb.getConnectorByChargepointAndId.mockReturnValue(null);
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 2, site_id: 7, cpstatus: 'Available' });
+    client._handlers['StatusNotification']({ connectorId: 1, status: 'Preparing', errorCode: 'NoError' });
+    expect(mockPendingRemoteStarts.size).toBe(1);
+    expect([...mockPendingRemoteStarts.values()][0].idTag).toBe('MGR-7');
+  });
+
+  it('StopTransaction.conf : mode libre sans site → pas « Accepted » d’office', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({ id: 1, mode: 3, site_id: null });
+    mockDb.stopTransaction.mockReturnValue({ tx: { id: 9, transaction_id: 200 }, closed: true });
+    mockDb.getTransactionByTransactionId.mockReturnValue({ id: 9, transaction_id: 200, status: 'Active', id_tag: 'ANY001' });
+    const result = client._handlers['StopTransaction']({ transactionId: 200, idTag: 'ANY001', meterStop: 100, timestamp: new Date().toISOString() });
+    expect(result.idTagInfo.status).toBe('Blocked');
+  });
+});

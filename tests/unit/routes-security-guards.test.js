@@ -14,12 +14,53 @@ describe('Backend access control guards', () => {
     expect(src).toMatch(/ERR_ACCESS_DENIED/);
   });
 
-  it('protects GET /id-tags/:id with managed-site authorization check', () => {
+  it('protects GET /id-tags/:id with the badge policy (idTagPolicy.canAccessIdTag)', () => {
     const src = fs.readFileSync(routesPath, 'utf8');
-    expect(src).toMatch(/router\.get\('\/id-tags\/:id'/);
-    expect(src).toMatch(/const managedSiteIds = getUserManagedSiteIds\(req\)/);
-    expect(src).toMatch(/tag\.site_id && !managedSiteIds\.includes\(tag\.site_id\)/);
-    expect(src).toMatch(/ERR_SITE_NOT_MANAGED/);
+    const start = src.indexOf("router.get('/id-tags/:id'");
+    expect(start).toBeGreaterThan(-1);
+    const route = src.slice(start, src.indexOf('\n});', start));
+    expect(route).toMatch(
+      /canAccessIdTag\(idTagPolicyContext\(req\), tag, db\.getUserScope\(tag\.user_id\)\)/
+    );
+    expect(route).toMatch(/ERR_SITE_NOT_MANAGED/);
+  });
+
+  it('badges : liste filtrée, écriture contrôlée, code figé, suppression seulement si jamais utilisé', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const section = src.slice(
+      src.indexOf("router.get('/id-tags', requireManager"),
+      src.indexOf("//  ID TAGS EVENTS (rejets d'autorisation)")
+    );
+    // assignable-users déclarée avant /id-tags/:id (sinon capturée par le paramètre)
+    expect(section.indexOf("'/id-tags/assignable-users'")).toBeGreaterThan(-1);
+    expect(section.indexOf("'/id-tags/assignable-users'")).toBeLessThan(
+      section.indexOf("'/id-tags/:id'")
+    );
+    expect(section).toMatch(/can_manage: !isGeneratedTag\(t\.id_tag\) && canAccessIdTag/);
+    expect(section.match(/idTagWriteError\(idTagPolicyContext\(req\)/g)).toHaveLength(2);
+    expect(section.match(/db\.hasIdTagScopeConflict\(/g)).toHaveLength(2);
+    expect(section).toMatch(/isGeneratedTag\(data\.id_tag\)\) return res\.status\(400\)\.json\(\{ error: 'ERR_TAG_RESERVED' \}\)/);
+    expect(section).toMatch(
+      /data\.id_tag !== existing\.id_tag\) \{\s*return res\.status\(400\)\.json\(\{ error: 'ERR_TAG_CODE_IMMUTABLE' \}\)/
+    );
+    expect(section).toMatch(/db\.countIdTagSessions\(existing\)/);
+    expect(section).toMatch(/status\(409\)\.json\(\{ error: 'ERR_TAG_USED', count: sessions \}\)/);
+    // badges générés protégés côté serveur (modification et suppression), admin compris
+    expect(section.match(/generatedTagError\(existing\.id_tag, '(update|delete)'\)/g)).toHaveLength(2);
+  });
+
+  it('borne sans site : démarrages web, gestionnaire et réservations refusés', () => {
+    const src = fs.readFileSync(routesPath, 'utf8');
+    const helper = src.slice(src.indexOf('function getUserStartChargepoint'));
+    expect(helper.slice(0, 400)).toMatch(
+      /startBlockReason\(cp\)\) return \{ status: 409, error: 'ERR_CHARGEPOINT_NO_SITE' \}/
+    );
+    const blocked = /startBlockReason\(cp\)\) return res\.status\(409\)\.json\(\{ error: 'ERR_CHARGEPOINT_NO_SITE' \}\)/;
+    for (const path of ["'/connectors/start-charge',", "'/chargepoints/:id/reservations',\n  requireManager,\n  ...validateSchema(schema.IdParam, schema.CreateReservation)"]) {
+      const start = src.indexOf(path);
+      expect(start).toBeGreaterThan(-1);
+      expect(src.slice(start, start + 700)).toMatch(blocked);
+    }
   });
 
   it('protects DELETE /id-tags-events/:id with requireManager and managed-site authorization check', () => {
@@ -124,9 +165,10 @@ describe('Backend access control guards', () => {
     expect(route).toMatch(/validateSchema\(schema\.UserStartCharge\)/);
     expect(route).toMatch(/getUserStartChargepoint\(req, chargepoint_id\)/);
     expect(route).toMatch(/getUserStartTags\(req, cp\)/);
-    // badge web automatique seulement quand l'utilisateur n'a aucun badge pour ce site
+    // badge web automatique seulement quand l'utilisateur n'a aucun badge pour ce site, et si
+    // le site l'autorise
     expect(route).toMatch(
-      /if \(candidates === 0\) \{\s*\/\/[^\n]*\n\s*idTag = `WEB-\$\{req\.user\.id\}`/
+      /if \(candidates === 0\) \{[\s\S]*?if \(!siteAllowsAutoWebBadge\(cp\)\) \{\s*return res\.status\(403\)\.json\(\{ error: 'ERR_NO_BADGE_FOR_SITE' \}\);\s*\}\s*idTag = `WEB-\$\{req\.user\.id\}`/
     );
     expect(route).toMatch(/usable\.length === 0\) \{[\s\S]*?ERR_NO_VALID_ID_TAG/);
     expect(route).toMatch(/!usable\.some\(\(t\) => t\.id_tag === requested\)/);
@@ -143,7 +185,9 @@ describe('Backend access control guards', () => {
     expect(route).toMatch(/requireAuth/);
     expect(route).toMatch(/getUserStartChargepoint\(req, req\.query\.chargepoint_id\)/);
     const helper = src.slice(src.indexOf('function getUserStartChargepoint'));
-    expect(helper.slice(0, 600)).toMatch(/ERR_USER_NOT_AUTHORIZED_IN_SITE/);
+    expect(helper.slice(0, 900)).toMatch(/ERR_USER_NOT_AUTHORIZED_IN_SITE/);
     expect(src).toMatch(/ignoreUserSite: req\.user\.role === 'admin'/);
+    // aucun badge et badge web interdit sur le site : signalé à l'interface
+    expect(route).toMatch(/noBadge: candidates === 0 && !autoWebAllowed/);
   });
 });

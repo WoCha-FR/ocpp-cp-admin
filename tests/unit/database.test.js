@@ -2480,6 +2480,94 @@ describe('database — historique figé des sessions', () => {
   });
 });
 
+// ── Lot 2 : autorisation, portée des badges, usage, réglage du site ──
+describe('database — badges et autorisation (lot 2)', () => {
+  let siteA;
+  let siteB;
+  let worker;
+  let cpA;
+
+  beforeAll(() => {
+    siteA = db.createSite('Siège lot2', null).id;
+    siteB = db.createSite('Domicile lot2', null, 0).id;
+    cpA = db.createChargepoint('CP-LOT2-A', 'A', null, 1, siteA).id;
+    worker = db.createUser('lot2-worker@test.com', 'Passw0rd!x', 'user', 'Ouvrier').id;
+    db.setUserSites(worker, [
+      { site_id: siteA, role: 'user', authorized: 1 },
+      { site_id: siteB, role: 'user', authorized: 1 },
+    ]);
+    db.createIdTag('LOT2GLOBAL', worker, null, null, null, 1, 'ISO14443', null, 'pro');
+    db.createIdTag('LOT2SITEB', worker, siteB, null);
+  });
+
+  it('réglage « badge web automatique » : autorisé par défaut, modifiable, conservé si absent', () => {
+    expect(db.getSiteById(siteA).auto_web_badge).toBe(1);
+    expect(db.getSiteById(siteB).auto_web_badge).toBe(0);
+    expect(db.updateSite(siteB, 'Domicile lot2', null).auto_web_badge).toBe(0);
+    expect(db.updateSite(siteB, 'Domicile lot2', null, 1).auto_web_badge).toBe(1);
+    db.updateSite(siteB, 'Domicile lot2', null, 0);
+    expect(db.updateSite(999999, 'x', null)).toBeUndefined();
+  });
+
+  it('authorizeIdTag : borne sans site → refusée, même pour un badge global valide', () => {
+    expect(db.authorizeIdTag('LOT2GLOBAL', null)).toMatchObject({
+      status: 'Blocked',
+      reason: 'chargepoint_no_site',
+    });
+    expect(db.authorizeIdTag('LOT2GLOBAL', siteA).status).toBe('Accepted');
+  });
+
+  it('authorizeIdTag : compte désactivé → badges suspendus', () => {
+    db.getDb().prepare("UPDATE users SET disabled_at = datetime('now') WHERE id = ?").run(worker);
+    expect(db.authorizeIdTag('LOT2GLOBAL', siteA)).toMatchObject({
+      status: 'Blocked',
+      reason: 'user_disabled',
+    });
+    db.getDb().prepare('UPDATE users SET disabled_at = NULL WHERE id = ?').run(worker);
+    expect(db.authorizeIdTag('LOT2GLOBAL', siteA).status).toBe('Accepted');
+  });
+
+  it('portée : un code est global OU limité à des sites, jamais les deux', () => {
+    // LOT2GLOBAL existe en global : impossible de l'ajouter sur un site, ni en global
+    expect(db.hasIdTagScopeConflict('LOT2GLOBAL', siteA)).toBe(true);
+    expect(db.hasIdTagScopeConflict('LOT2GLOBAL', null)).toBe(true);
+    // LOT2SITEB existe sur le site B : possible sur le site A, pas en global, pas deux fois sur B
+    expect(db.hasIdTagScopeConflict('LOT2SITEB', siteA)).toBe(false);
+    expect(db.hasIdTagScopeConflict('LOT2SITEB', null)).toBe(true);
+    expect(db.hasIdTagScopeConflict('LOT2SITEB', siteB)).toBe(true);
+    // la fiche elle-même n'entre pas en conflit avec elle-même
+    const own = db.getIdTagByTag('LOT2SITEB', siteB);
+    expect(db.hasIdTagScopeConflict('LOT2SITEB', siteB, own.id)).toBe(false);
+  });
+
+  it('conflits hérités (global + site) listés pour l’admin', () => {
+    db.createIdTag('LOT2DOUBLE', null, null, null);
+    db.createIdTag('LOT2DOUBLE', null, siteA, null);
+    expect(db.getIdTagScopeConflictCodes()).toContain('LOT2DOUBLE');
+    expect(db.getIdTagScopeConflictCodes()).not.toContain('LOT2SITEB');
+  });
+
+  it('usage : sessions comptées hors démarrages refusés, par portée', () => {
+    const global = db.getIdTagByTag('LOT2GLOBAL', null);
+    expect(db.countIdTagSessions(global)).toBe(0);
+    const tx = db.createTransaction(cpA, 1, 'LOT2GLOBAL', 0, '2026-05-01T10:00:00Z', 'rfid');
+    db.stopTransaction(cpA, tx.transaction_id, 1000, '2026-05-01T11:00:00Z', 'Local');
+    db.createTransaction(cpA, 2, 'LOT2GLOBAL', 0, '2026-05-01T10:00:00Z', 'rfid', { status: 'Rejected' });
+    expect(db.countIdTagSessions(global)).toBe(1);
+    // la fiche du site B n'a servi nulle part (session faite sur le site A)
+    expect(db.countIdTagSessions(db.getIdTagByTag('LOT2SITEB', siteB))).toBe(0);
+  });
+
+  it('getUserScope / getUsersWithSites : rôle et sites du titulaire', () => {
+    expect(db.getUserScope(worker)).toEqual({ role: 'user', site_ids: expect.arrayContaining([siteA, siteB]) });
+    expect(db.getUserScope(null)).toBeNull();
+    expect(db.getUserScope(999999)).toBeNull();
+    const onB = db.getUsersWithSites([siteB]);
+    expect(onB.map((u) => u.id)).toContain(worker);
+    expect(db.getUsersWithSites([])).toEqual([]);
+  });
+});
+
 // ── Transactions : recherche par connecteur (multi-EVSE 2.0.1) et rattachement tardif du badge ──
 describe('database — transactions multi-EVSE et badge tardif', () => {
   let cpId;

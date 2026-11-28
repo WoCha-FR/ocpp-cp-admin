@@ -411,7 +411,9 @@ async function api(method, path, body) {
       throw new Error(data.error.map(code => translateError(code)).join('\n'));
     }
     const code = data.error || 'ERR_INTERNAL';
-    throw new Error(translateError(code, data.params));
+    const err = new Error(translateError(code, data.params));
+    err.code = code; // permet de réagir à un refus précis (ex. ERR_TAG_USED → désactiver)
+    throw err;
   }
   return sanitizeApiPayload(data);
 }
@@ -1473,7 +1475,7 @@ async function renderChargepoints(keepState = false) {
           <tbody>
             ${filtered.map(cp => `
               <tr>
-                <td>${cp.site_name ? escapeHtml(cp.site_name) : `<span class="text-muted">${t('chargepoint.cpNotAssigned')}</span>`}</td>
+                <td>${cp.site_name ? escapeHtml(cp.site_name) : `<span class="badge badge-red" title="${escapeAttr(t('chargepoint.cpNoSiteInactiveHint'))}">${t('chargepoint.cpNoSiteInactive')}</span>`}</td>
                 <td>
                   <span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span>
                   <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>${appSettings.v16Enabled && appSettings.v201Enabled && cp.ocpp_version ? (cp.ocpp_version === '2.0.1' ? ' <span class="badge badge-purple badge-xs">2.0.1</span>' : ' <span class="badge badge-blue badge-xs">1.6</span>') : ''}
@@ -1651,6 +1653,7 @@ async function execAssignSite(cpId) {
     await api('PUT', `/chargepoints/${cpId}/assign`, { site_id: siteId ? Number(siteId) : null });
     toast(t('chargepoint.cpAssigned'), 'success');
     navigate('chargepoints');
+    checkSitePrompt(); // l'alerte « bornes sans site » disparaît une fois toutes affectées
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -3554,6 +3557,10 @@ async function userStartCharge(chargepointId, connectorId, cpName, connId, evseI
     toast(translateError('ERR_NO_VALID_ID_TAG'), 'error');
     return;
   }
+  if (tags.noBadge) {
+    toast(translateError('ERR_NO_BADGE_FOR_SITE'), 'error');
+    return;
+  }
   const message = t('dashboard.cnStartCharge', { cpName, connId });
   let idTag = null;
   if (tags.idTags.length > 1) {
@@ -3622,7 +3629,6 @@ async function renderIdTags(tab, keepState = false) {
     idTagsEventsFilters = { status: '', chargepoint: '', id_tag: '', limit: '100' };
   }
   const isAdmin = currentUser.role === 'admin';
-  const managedSiteIds = isAdmin ? null : (currentUser.sites || []).filter(s => s.role === 'manager').map(s => s.site_id);
   document.getElementById('topbarActions').innerHTML = `<button class="btn btn-primary" data-onclick="showCreateIdTagModal()">+ ${t('idtags.rfBtnAdd')}</button>`;
 
   if (idTagsActiveTab === 'events') {
@@ -3633,11 +3639,9 @@ async function renderIdTags(tab, keepState = false) {
     const tags = await api('GET', '/id-tags');
     const isAutoTag = (tag) => tag.id_tag === 'ADMIN' || tag.id_tag.startsWith('MGR-') || tag.id_tag.startsWith('WEB-');
     const visibleTags = isAdmin ? tags : tags.filter(tag => !isAutoTag(tag));
-    const canEditTag = (tag) => {
-      if (isAutoTag(tag)) return false;
-      if (isAdmin) return true;
-      return managedSiteIds && tag.site_id && managedSiteIds.includes(tag.site_id);
-    };
+    // Droits calculés par le serveur (badges de ses sites, badges globaux de ses salariés)
+    const canEditTag = (tag) => !isAutoTag(tag) && !!tag.can_manage;
+    const conflictCodes = isAdmin ? [...new Set(tags.filter(tag => tag.scope_conflict).map(tag => tag.id_tag))] : [];
 
     // Extraire les valeurs uniques pour les filtres (inclure les sites via user_sites)
     const sitesMap = new Map();
@@ -3711,6 +3715,12 @@ async function renderIdTags(tab, keepState = false) {
           <button class="btn btn-outline btn-sm" data-onclick="resetIdTagsFilters()">${t('common.reset')}</button>
         </div>
       </div>
+      ${conflictCodes.length ? `<div class="push-prompt-banner push-prompt-banner-warning">
+        <div class="push-prompt-text">
+          <strong>⚠️ ${t('idtags.rfScopeConflictTitle', { count: conflictCodes.length })}</strong>
+          <p>${t('idtags.rfScopeConflictHint')} ${conflictCodes.map(c => `<span class="rfid-chip">${escapeHtml(c)}</span>`).join(' ')}</p>
+        </div>
+      </div>` : ''}
       <div class="card">
         <div class="card-header"><h3>${t('idtags.rfidsTag')} (${filtered.length}${filtered.length !== visibleTags.length ? ' / ' + visibleTags.length : ''})</h3></div>
         ${filtered.length === 0 ? `<p class="text-muted" style="padding: 16px;">${t('idtags.rfNoData')}</p>` : `
@@ -3723,7 +3733,7 @@ async function renderIdTags(tab, keepState = false) {
           <tbody>
             ${filtered.map(tag => `
               <tr>
-                <td><span class="rfid-chip">${escapeHtml(tag.id_tag)}</span></td>
+                <td><span class="rfid-chip">${escapeHtml(tag.id_tag)}</span>${tag.scope_conflict && isAdmin ? ` <span class="badge badge-yellow badge-xs" title="${escapeAttr(t('idtags.rfScopeConflictHint'))}">⚠️</span>` : ''}</td>
                 <td><span class="badge ${tag.active ? 'badge-green' : 'badge-red'}">${tag.active ? t('filters.active') : t('filters.inactive')}</span></td>
                 <td>${categoryBadge(tag.category)}</td>
                 <td>${tag.user_name ? `<span class="badge badge-blue">${escapeHtml(tag.user_name)}</span>` : '<span class="text-muted">-</span>'}</td>
@@ -3785,36 +3795,44 @@ function resetIdTagsFilters() {
   renderIdTags(idTagsActiveTab, true);
 }
 
-async function showCreateIdTagModal() {
+// Titulaires possibles et sites proposés dans les formulaires de badge (mêmes règles que le serveur)
+async function idTagFormOptions() {
   const isAdmin = currentUser.role === 'admin';
-  const sites = await api('GET', '/sites');
-  const managedSiteIds = isAdmin ? null : (currentUser.sites || []).filter(s => s.role === 'manager').map(s => s.site_id);
-  const availableSites = isAdmin ? sites : sites.filter(s => managedSiteIds.includes(s.id));
-  let usersHtml = '';
-  if (isAdmin) {
-    const users = await api('GET', '/users');
-    usersHtml = `
+  const [sites, users] = await Promise.all([api('GET', '/sites'), api('GET', '/id-tags/assignable-users')]);
+  return { isAdmin, users, availableSites: managedSitesOnly(sites) };
+}
+
+function idTagUserSelect(id, users, current = null) {
+  const list = current && current.id && !users.some(u => u.id === current.id)
+    ? [...users, { id: current.id, name: current.name || String(current.id) }]
+    : users;
+  return `
     <div class="form-group">
       <label>${t('common.user')} (${t('idtags.rfOptionnal')})</label>
-      <select id="tagUserId">
+      <select id="${id}">
         <option value="">${t('idtags.rfUserNone')}</option>
-        ${users.map(u => `<option value="${u.id}">${escapeHtml(u.shortname || u.useremail)}</option>`).join('')}
+        ${list.map(u => `<option value="${u.id}" ${current && u.id === current.id ? 'selected' : ''}>${escapeHtml(u.name)}</option>`).join('')}
       </select>
     </div>`;
-  }
+}
+
+async function showCreateIdTagModal() {
+  const { isAdmin, users, availableSites } = await idTagFormOptions();
+  const usersHtml = idTagUserSelect('tagUserId', users);
   openModal(`
     <h3>${t('idtags.rfBtnAdd')}</h3>
     <div class="form-group"><label>${t('idtags.rfTagIdent')}</label><input type="text" id="tagIdTag" required placeholder="${t('idtags.rfTagIdentPlaceHolder')}" /></div>
     <div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfTagIdentHint')}</div>
     ${usersHtml}
     <div class="form-group">
-      <label>${t('common.site_one')}${isAdmin ? '' : ` (${t('idtags.rfRequired')})`}</label>
+      <label>${t('common.site_one')}</label>
       <select id="tagSiteId">
         ${isAdmin ? `<option value="">${t('idtags.rfAllSites')}</option>` : ''}
         ${availableSites.map(s => `<option value="${s.id}">${escapeHtml(s.sname)}</option>`).join('')}
+        ${isAdmin ? '' : `<option value="">${t('idtags.rfAllSites')}</option>`}
       </select>
     </div>
-    ${isAdmin ? `<div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfAllSitesHint')}</div>` : ''}
+    <div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t(isAdmin ? 'idtags.rfAllSitesHint' : 'idtags.rfAllSitesManagerHint')}</div>
     ${categorySelect('tagCategory', 'perso')}
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="tagDescription" placeholder="${t('idtags.rfDescriptionHint')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')}))</label><input type="text" id="tagExpiry" placeholder="${t('common.select')}" /></div>
@@ -3850,27 +3868,14 @@ async function showCreateIdTagModal() {
 }
 
 async function showEditIdTagModal(id) {
-  const isAdmin = currentUser.role === 'admin';
   const tag = await api('GET', `/id-tags/${id}`);
   if (!tag) return;
-  const sites = await api('GET', '/sites');
-  const managedSiteIds = isAdmin ? null : (currentUser.sites || []).filter(s => s.role === 'manager').map(s => s.site_id);
-  const availableSites = isAdmin ? sites : sites.filter(s => managedSiteIds.includes(s.id));
-  let usersHtml = '';
-  if (isAdmin) {
-    const users = await api('GET', '/users');
-    usersHtml = `
-    <div class="form-group">
-      <label>${t('common.user')} (${t('idtags.rfOptionnal')})</label>
-      <select id="editTagUserId">
-        <option value="">${t('idtags.rfUserNone')}</option>
-        ${users.map(u => `<option value="${u.id}" ${u.id === tag.user_id ? 'selected' : ''}>${escapeHtml(u.shortname || u.useremail)}</option>`).join('')}
-      </select>
-    </div>`;
-  }
+  const { isAdmin, users, availableSites } = await idTagFormOptions();
+  const usersHtml = idTagUserSelect('editTagUserId', users, tag.user_id ? { id: tag.user_id, name: tag.user_name } : null);
   openModal(`
     <h3>${t('idtags.rfEditTitle')}</h3>
-    <div class="form-group"><label>${t('idtags.rfTagIdent')}</label><input type="text" id="editTagIdTag" value="${escapeAttr(tag.id_tag)}" /></div>
+    <div class="form-group"><label>${t('idtags.rfTagIdent')}</label><input type="text" id="editTagIdTag" value="${escapeAttr(tag.id_tag)}" readonly /></div>
+    <div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfTagIdentLocked')}</div>
     <div class="form-group">
       <label>${t('common.status')}</label>
       <select id="editTagActive">
@@ -3880,12 +3885,13 @@ async function showEditIdTagModal(id) {
     </div>
     ${usersHtml}
     <div class="form-group">
-      <label>${t('common.site_one')}${isAdmin ? '' : ` (${t('idtags.rfRequired')})`}</label>
+      <label>${t('common.site_one')}</label>
       <select id="editTagSiteId">
-        ${isAdmin ? `<option value="">${t('idtags.rfAllSites')}</option>` : ''}
+        <option value="" ${!tag.site_id ? 'selected' : ''}>${t('idtags.rfAllSites')}</option>
         ${availableSites.map(s => `<option value="${s.id}" ${s.id === tag.site_id ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
       </select>
     </div>
+    <div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('idtags.rfFutureOnlyHint')}${isAdmin ? '' : ` ${t('idtags.rfAllSitesManagerHint')}`}</div>
     ${categorySelect('editTagCategory', tag.category)}
     <div class="form-group"><label>${t('idtags.rfDescription')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagDescription" value="${escapeAttr(tag.description || '')}" /></div>
     <div class="form-group"><label>${t('idtags.rfExpiryDate')} (${t('idtags.rfOptionnal')})</label><input type="text" id="editTagExpiry" placeholder="${t('common.select')}" /></div>
@@ -3971,7 +3977,25 @@ async function deleteIdTag(id, name) {
     await api('DELETE', `/id-tags/${id}`);
     toast(t('idtags.rfDeleted'), 'success');
     renderIdTags(idTagsActiveTab, true);
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) {
+    if (err.code !== 'ERR_TAG_USED') { toast(err.message, 'error'); return; }
+    // Le badge a servi : l'historique le référence, on propose de le désactiver
+    if (!await confirmDialog(t('idtags.rfUsedDeactivateConfirm', { ident: name }))) return;
+    try {
+      const tag = await api('GET', `/id-tags/${id}`);
+      await api('PUT', `/id-tags/${id}`, {
+        id_tag: tag.id_tag,
+        active: 0,
+        user_id: tag.user_id ?? null,
+        site_id: tag.site_id ?? null,
+        category: tag.category,
+        description: tag.description || null,
+        expiry_date: tag.expiry_date || null,
+      });
+      toast(t('idtags.rfUpdated'), 'success');
+      renderIdTags(idTagsActiveTab, true);
+    } catch (err2) { toast(err2.message, 'error'); }
+  }
 }
 
 async function deleteIdTagEvent(id) {
@@ -4102,7 +4126,9 @@ const eventReasonLabels = {
   wrong_site: t('idtags.reason.wrongsite'),
   user_not_authorized: t('idtags.reason.usernotauthorized'),
   user_not_linked: t('idtags.reason.usernotlinked'),
-  auto_tag_rfid: t('idtags.reason.autotagrfid')
+  auto_tag_rfid: t('idtags.reason.autotagrfid'),
+  chargepoint_no_site: t('idtags.reason.chargepointnosite'),
+  user_disabled: t('idtags.reason.userdisabled')
 };
 
 const eventStatusBadge = (status) => {
@@ -5717,10 +5743,32 @@ async function checkSitePrompt() {
 
   if (!currentUser || currentUser.role !== 'admin') return;
 
+  let sites;
   try {
-    const sites = await api('GET', '/sites');
-    if (sites.length > 0) return;
+    sites = await api('GET', '/sites');
   } catch {
+    return;
+  }
+  if (sites.length > 0) {
+    // Bornes sans site : inactives (aucun démarrage) tant qu'elles ne sont pas affectées
+    let siteless = [];
+    try {
+      siteless = (await api('GET', '/chargepoints')).filter(cp => !cp.site_id);
+    } catch {
+      return;
+    }
+    if (siteless.length === 0) return;
+    container.innerHTML = `
+    <div class="push-prompt-banner push-prompt-banner-warning">
+      <div class="push-prompt-text">
+        <strong>🔌 ${t('sitePrompt.noSiteCpTitle', { count: siteless.length })}</strong>
+        <p>${t('sitePrompt.noSiteCpHint')} ${siteless.map(cp => `<span class="mono-id">${escapeHtml(cp.identity)}</span>`).join(' ')}</p>
+      </div>
+      <div class="push-prompt-actions">
+        <button class="btn btn-primary btn-sm" data-onclick="navigate('chargepoints')">${t('sitePrompt.noSiteCpBtn')}</button>
+      </div>
+    </div>
+  `;
     return;
   }
 
@@ -7087,7 +7135,7 @@ async function renderSites() {
       const isManagedSite = isAdmin || (currentUser.sites || []).some(us => us.site_id === s.id && us.role === 'manager');
       return `
             <tr>
-              <td class="td-primary">${escapeHtml(s.sname)}</td>
+              <td class="td-primary">${escapeHtml(s.sname)}${s.auto_web_badge === 0 ? ` <span class="badge badge-gray badge-xs" title="${escapeAttr(t('sites.siteAutoWebBadgeOffHint'))}">${t('sites.siteAutoWebBadgeOff')}</span>` : ''}</td>
               <td>${s.address ? escapeHtml(s.address) : '-'}</td>
               <td>${cpCount}</td>
               <td class="td-date">${formatDateShort(s.created_at)}</td>
@@ -7099,7 +7147,7 @@ async function renderSites() {
                 ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, ${jsArg(s.sname)})">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>
               <td>
-                ${isAdmin ? `<button class="btn btn-teal btn-sm" data-onclick="showEditSiteModal(${s.id}, ${jsArg(s.sname)}, ${jsArg(s.address || '')})">${t('common.edit')}</button>
+                ${isAdmin ? `<button class="btn btn-teal btn-sm" data-onclick="showEditSiteModal(${s.id}, ${jsArg(s.sname)}, ${jsArg(s.address || '')}, ${s.auto_web_badge === 0 ? 0 : 1})">${t('common.edit')}</button>
                 <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteSite(${s.id}, ${jsArg(s.sname)}))">${t('common.delete')}</button>` : ''}
               </td>
             </tr>`;
@@ -7113,11 +7161,22 @@ async function renderSites() {
   }
 }
 
+// Badge web automatique : démarrage depuis le web sans badge enregistré (à interdire sur le
+// domicile d'un salarié, où l'on ne veut que des badges nominatifs)
+function siteAutoWebBadgeField(checked) {
+  return `
+  <div class="form-group">
+    <label><input type="checkbox" id="siteAutoWebBadge" ${checked ? 'checked' : ''} /> ${t('sites.siteAutoWebBadge')}</label>
+    <div class="text-muted" style="font-size:12px;">${t('sites.siteAutoWebBadgeHint')}</div>
+  </div>`;
+}
+
 function showCreateSiteModal() {
   openModal(`
   <h3>${t('sites.siteBtnAdd')}</h3>
   <div class="form-group"><label>${t('sites.siteName')}</label><input type="text" id="siteName" required /></div>
   <div class="form-group"><label>${t('sites.siteAdress')}</label><input type="text" id="siteAddress" /></div>
+  ${siteAutoWebBadgeField(true)}
   <div class="modal-actions">
     <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
     <button class="btn btn-primary" data-onclick="withBtn(this, createSite)">${t('common.create')}</button>
@@ -7125,11 +7184,12 @@ function showCreateSiteModal() {
 `);
 }
 
-function showEditSiteModal(id, name, address) {
+function showEditSiteModal(id, name, address, autoWebBadge = 1) {
   openModal(`
   <h3>${t('sites.siteBtnEdit')}</h3>
   <div class="form-group"><label>${t('sites.siteName')}</label><input type="text" id="siteName" value="${escapeAttr(name)}" required /></div>
   <div class="form-group"><label>${t('sites.siteAdress')}</label><input type="text" id="siteAddress" value="${escapeAttr(address)}" /></div>
+  ${siteAutoWebBadgeField(!!autoWebBadge)}
   <div class="modal-actions">
     <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
     <button class="btn btn-primary" data-onclick="withBtn(this, () => updateSite(${id}))">${t('common.save')}</button>
@@ -7139,7 +7199,11 @@ function showEditSiteModal(id, name, address) {
 
 async function createSite() {
   try {
-    await api('POST', '/sites', { name: document.getElementById('siteName').value, address: document.getElementById('siteAddress').value });
+    await api('POST', '/sites', {
+      name: document.getElementById('siteName').value,
+      address: document.getElementById('siteAddress').value,
+      auto_web_badge: document.getElementById('siteAutoWebBadge').checked ? 1 : 0,
+    });
     closeModal();
     toast(t('sites.siteCreated'), 'success');
     renderSites();
@@ -7149,7 +7213,11 @@ async function createSite() {
 
 async function updateSite(id) {
   try {
-    await api('PUT', `/sites/${id}`, { name: document.getElementById('siteName').value, address: document.getElementById('siteAddress').value });
+    await api('PUT', `/sites/${id}`, {
+      name: document.getElementById('siteName').value,
+      address: document.getElementById('siteAddress').value,
+      auto_web_badge: document.getElementById('siteAutoWebBadge').checked ? 1 : 0,
+    });
     closeModal();
     toast(t('sites.siteUpdated'), 'success');
     renderSites();

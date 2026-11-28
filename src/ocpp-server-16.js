@@ -24,6 +24,7 @@ const {
   findPendingRemoteStart,
 } = require('./remoteStarts');
 const { toIsoDateTime } = require('./chargingProfiles');
+const { startBlockReason } = require('./chargepointPolicy');
 
 const OCPP16_STANDARD_KEYS = [
   'AllowOfflineTxForUnknownId',
@@ -140,7 +141,7 @@ function sanitizeEnum(value, allowed, fallback) {
 // idTagInfo est omis (champ facultatif).
 function stopTransactionResponse(cp, idTag, tx) {
   if (!idTag) return {};
-  if (cp.mode === 3) return { idTagInfo: { status: 'Accepted' } };
+  if (cp.mode === 3 && !startBlockReason(cp)) return { idTagInfo: { status: 'Accepted' } };
   if (isGeneratedTag(idTag)) {
     // Badge généré (démarrage à distance) : légitime seulement pour sa propre transaction
     return { idTagInfo: { status: tx && tx.id_tag === idTag ? 'Accepted' : 'Blocked' } };
@@ -696,7 +697,12 @@ function register16Handlers(client, loggedHandle) {
             .catch(() => {});
         }
       }
-      if (cp.mode === 2 && params.connectorId > 0 && safeStatus === 'Preparing') {
+      if (
+        cp.mode === 2 &&
+        !startBlockReason(cp) &&
+        params.connectorId > 0 &&
+        safeStatus === 'Preparing'
+      ) {
         const idTag = `MGR-${cp.site_id}`;
         const existingTag = db.getIdTagByTag(idTag);
         if (!existingTag) {
@@ -760,7 +766,7 @@ function register16Handlers(client, loggedHandle) {
     const siteId = cp ? cp.site_id : null;
     const authResult = db.authorizeIdTag(params.idTag, siteId);
 
-    if (cp && cp.mode === 3) {
+    if (cp && cp.mode === 3 && !startBlockReason(cp)) {
       logger.info(
         `Authorize result for ${identity}: Accepted (free mode, raw DB: ${authResult.status})`
       );
@@ -832,6 +838,13 @@ function register16Handlers(client, loggedHandle) {
         authStatus = authResult.status;
         authReason = authResult.reason;
       }
+    }
+    // Borne sans site : démarrage refusé quel que soit le mode, y compris à distance. La
+    // session est enregistrée comme refusée (jamais facturée)
+    const blockReason = startBlockReason(cp);
+    if (blockReason) {
+      authStatus = 'Blocked';
+      authReason = blockReason;
     }
     if (authStatus !== 'Accepted' && chargepointId) {
       db.addIdTagEvent(chargepointId, null, params.idTag, authStatus, authReason, 'authorize');

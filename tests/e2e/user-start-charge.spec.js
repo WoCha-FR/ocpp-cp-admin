@@ -229,7 +229,7 @@ test.describe.serial('Démarrage depuis le tableau de bord utilisateur', () => {
           ).chargepoint_id
         }`
       );
-      expect(tags.body).toEqual({ idTags: [], autoWeb: true, blocked: false });
+      expect(tags.body).toEqual({ idTags: [], autoWeb: true, blocked: false, noBadge: false });
 
       const startBtn = userPage.locator(
         `.connector-card:has-text("Borne start ${suffix}") [data-onclick*="userStartCharge"]`
@@ -251,7 +251,7 @@ test.describe.serial('Démarrage depuis le tableau de bord utilisateur', () => {
         'GET',
         `/user/start-charge/id-tags?chargepoint_id=${cpId}`
       );
-      expect(again.body).toEqual({ idTags: [], autoWeb: true, blocked: false });
+      expect(again.body).toEqual({ idTags: [], autoWeb: true, blocked: false, noBadge: false });
       const second = await apiCall(userPage, 'POST', '/user/start-charge', {
         chargepoint_id: cpId,
         connector_id: 1,

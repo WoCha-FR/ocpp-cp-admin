@@ -47,15 +47,24 @@ function getSiteById(id) {
   return db.prepare('SELECT * FROM sites WHERE id = ?').get(id);
 }
 
-function createSite(name, address) {
+// autoWebBadge : badge web automatique autorisé sur ce site (démarrage depuis le web sans badge)
+function createSite(name, address, autoWebBadge = 1) {
   const info = db
-    .prepare('INSERT INTO sites (sname, address) VALUES (?, ?)')
-    .run(name, address || null);
+    .prepare('INSERT INTO sites (sname, address, auto_web_badge) VALUES (?, ?, ?)')
+    .run(name, address || null, autoWebBadge ? 1 : 0);
   return getSiteById(info.lastInsertRowid);
 }
 
-function updateSite(id, name, address) {
-  db.prepare('UPDATE sites SET sname = ?, address = ? WHERE id = ?').run(name, address || null, id);
+function updateSite(id, name, address, autoWebBadge) {
+  const current = getSiteById(id);
+  if (!current) return undefined;
+  const autoWeb = autoWebBadge === undefined ? current.auto_web_badge : autoWebBadge ? 1 : 0;
+  db.prepare('UPDATE sites SET sname = ?, address = ?, auto_web_badge = ? WHERE id = ?').run(
+    name,
+    address || null,
+    autoWeb,
+    id
+  );
   return getSiteById(id);
 }
 
@@ -1984,6 +1993,80 @@ function getIdTagByTag(idTag, siteId) {
     .get(idTag);
 }
 
+// Un même code est soit global (tous les sites), soit limité à un ou plusieurs sites, jamais
+// les deux : sinon la fiche du site prendrait la priorité sur la fiche globale à l'insu de son
+// titulaire. Renvoie true si l'enregistrement (idTag, siteId) entrerait en conflit.
+function hasIdTagScopeConflict(idTag, siteId, excludeId = null) {
+  const row = siteId
+    ? db
+        .prepare(
+          'SELECT 1 FROM id_tags WHERE id_tag = ? AND (site_id IS NULL OR site_id = ?) AND id IS NOT ? LIMIT 1'
+        )
+        .get(idTag, siteId, excludeId)
+    : db
+        .prepare('SELECT 1 FROM id_tags WHERE id_tag = ? AND id IS NOT ? LIMIT 1')
+        .get(idTag, excludeId);
+  return !!row;
+}
+
+// Codes enregistrés à la fois en global et pour un site (antérieurs à la règle ci-dessus)
+function getIdTagScopeConflictCodes() {
+  return db
+    .prepare(
+      `SELECT id_tag FROM id_tags GROUP BY id_tag
+       HAVING SUM(CASE WHEN site_id IS NULL THEN 1 ELSE 0 END) > 0 AND COUNT(*) > 1
+       ORDER BY id_tag`
+    )
+    .all()
+    .map((r) => r.id_tag);
+}
+
+// Sessions (hors démarrages refusés) faites avec ce badge : un badge qui a servi ne se supprime
+// pas, il se désactive (l'historique le référence)
+function countIdTagSessions(tag) {
+  const row = tag.site_id
+    ? db
+        .prepare(
+          "SELECT COUNT(*) AS n FROM transactions WHERE id_tag = ? AND site_id = ? AND status != 'Rejected'"
+        )
+        .get(tag.id_tag, tag.site_id)
+    : db
+        .prepare("SELECT COUNT(*) AS n FROM transactions WHERE id_tag = ? AND status != 'Rejected'")
+        .get(tag.id_tag);
+  return row.n;
+}
+
+// Titulaire d'un badge, pour les contrôles de droits (idTagPolicy.js) : rôle et sites liés
+function getUserScope(userId) {
+  if (userId == null) return null;
+  const user = db.prepare('SELECT id, role FROM users WHERE id = ?').get(userId);
+  if (!user) return null;
+  const siteIds = db
+    .prepare('SELECT site_id FROM user_sites WHERE user_id = ?')
+    .all(userId)
+    .map((r) => r.site_id);
+  return { role: user.role, site_ids: siteIds };
+}
+
+// Utilisateurs liés aux sites donnés (null = tous les utilisateurs), avec leurs sites
+function getUsersWithSites(siteIds = null) {
+  const users =
+    siteIds === null
+      ? db.prepare('SELECT id, useremail, shortname, role FROM users ORDER BY useremail').all()
+      : siteIds.length === 0
+        ? []
+        : db
+            .prepare(
+              `SELECT DISTINCT u.id, u.useremail, u.shortname, u.role FROM users u
+               JOIN user_sites us ON us.user_id = u.id
+               WHERE us.site_id IN (${siteIds.map(() => '?').join(',')})
+               ORDER BY u.useremail`
+            )
+            .all(...siteIds);
+  const stmt = db.prepare('SELECT site_id FROM user_sites WHERE user_id = ?');
+  return users.map((u) => ({ ...u, site_ids: stmt.all(u.id).map((r) => r.site_id) }));
+}
+
 function createIdTag(
   idTag,
   userId,
@@ -2170,6 +2253,10 @@ function getAvailableConnectorsForUser(userId) {
 }
 
 function authorizeIdTag(idTag, siteId, tokenType) {
+  // Borne sans site : inactive, aucun badge n'y est accepté (voir chargepointPolicy.js)
+  if (siteId == null) {
+    return { status: 'Blocked', reason: 'chargepoint_no_site', tag: null };
+  }
   const tag = getIdTagByTag(idTag, siteId);
   if (!tag) {
     return { status: 'Invalid', reason: 'unknown_tag', tag: null };
@@ -2187,12 +2274,19 @@ function authorizeIdTag(idTag, siteId, tokenType) {
     }
   }
   // Vérifier le site : si site_id est défini sur le tag, il doit correspondre
-  if (tag.site_id && siteId && tag.site_id !== siteId) {
+  if (tag.site_id && tag.site_id !== siteId) {
     return { status: 'Blocked', reason: 'wrong_site', tag };
+  }
+  // Compte du titulaire désactivé : ses badges sont suspendus
+  if (tag.user_id) {
+    const owner = db.prepare('SELECT disabled_at FROM users WHERE id = ?').get(tag.user_id);
+    if (owner && owner.disabled_at) {
+      return { status: 'Blocked', reason: 'user_disabled', tag };
+    }
   }
   // Vérifier l'autorisation utilisateur sur le site
   // Un admin/manager peut configurer les bornes sans être autorisé à les utiliser
-  if (tag.user_id && siteId) {
+  if (tag.user_id) {
     const userSite = db
       .prepare('SELECT authorized FROM user_sites WHERE user_id = ? AND site_id = ?')
       .get(tag.user_id, siteId);
@@ -3185,6 +3279,11 @@ module.exports = {
   getAllIdTags,
   getIdTagById,
   getIdTagByTag,
+  hasIdTagScopeConflict,
+  getIdTagScopeConflictCodes,
+  countIdTagSessions,
+  getUserScope,
+  getUsersWithSites,
   createIdTag,
   updateIdTag,
   deleteIdTag,

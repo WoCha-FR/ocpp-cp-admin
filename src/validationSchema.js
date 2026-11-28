@@ -69,6 +69,14 @@ const Site = {
     trim: true,
     errorMessage: 'VALIDATION_SITE_ADDRESS',
   },
+  // Badge web automatique autorisé sur ce site (absent = inchangé, autorisé à la création)
+  auto_web_badge: {
+    in: ['body'],
+    optional: true,
+    isIn: { options: [['0', '1']] },
+    toInt: true,
+    errorMessage: 'VALIDATION_SITE_AUTO_WEB_BADGE',
+  },
 };
 
 const UserSite = {

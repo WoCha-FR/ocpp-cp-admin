@@ -175,12 +175,12 @@ describe('database — getUserStartIdTags()', () => {
     expect(r.rejected).toEqual([{ id_tag: 'SHARED', status: 'Invalid', reason: 'shadowed_tag' }]);
   });
 
-  it('borne sans site : seuls les badges multi-sites sont candidats', () => {
+  it('borne sans site : inactive, aucun badge utilisable (même multi-sites)', () => {
     const u = addUser({ sites: [[siteA, true]] });
     addTag('NOSITE', u);
     addTag('ONLYA1', u, { siteId: siteA });
     const r = db.getUserStartIdTags(u, null);
     expect(r.candidates).toBe(1);
-    expect(ids(r.usable)).toEqual(['NOSITE']);
+    expect(r.usable).toEqual([]);
   });
 });
