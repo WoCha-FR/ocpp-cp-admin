@@ -2944,19 +2944,23 @@ router.post(
       if (requested && requested !== idTag) {
         return res.status(400).json({ error: 'ERR_ID_TAG_NOT_USABLE' });
       }
-      // S'il existe déjà, il n'appartient pas à l'utilisateur (sinon ce serait un candidat) :
-      // ne pas démarrer avec le badge d'un autre
-      if (db.getIdTagByTag(idTag, cp.site_id)) {
-        return res.status(403).json({ error: 'ERR_NO_VALID_ID_TAG' });
+      // Déjà créé lors d'un démarrage précédent : réutilisé s'il appartient bien à l'utilisateur
+      // (fiche multi-sites) ; une fiche au nom d'un autre, ou propre à ce site, est refusée
+      const existingWebTag = db.getIdTagByTag(idTag, cp.site_id);
+      if (existingWebTag) {
+        if (existingWebTag.user_id !== req.user.id || existingWebTag.site_id) {
+          return res.status(403).json({ error: 'ERR_NO_VALID_ID_TAG' });
+        }
+      } else {
+        db.createIdTag(
+          idTag,
+          req.user.id,
+          null,
+          `Tag web auto (${req.user.shortname || req.user.useremail})`,
+          null,
+          0
+        );
       }
-      db.createIdTag(
-        idTag,
-        req.user.id,
-        null,
-        `Tag web auto (${req.user.shortname || req.user.useremail})`,
-        null,
-        0
-      );
     } else if (usable.length === 0) {
       // Badges expirés / désactivés / bloqués : pas de repli sur le badge web automatique,
       // qui contournerait le blocage décidé par l'administrateur

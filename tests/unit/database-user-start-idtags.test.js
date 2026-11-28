@@ -79,6 +79,28 @@ describe('database — getUserStartIdTags()', () => {
     expect(db.getUserStartIdTags(u, siteA)).toEqual({ candidates: 0, usable: [], rejected: [] });
   });
 
+  it('badge web automatique (inactif) seul : jamais compté → repli web à chaque démarrage', () => {
+    const u = addUser({ sites: [[siteA, true]] });
+    addTag(`WEB-${u}`, u, { active: 0 });
+    expect(db.getUserStartIdTags(u, siteA)).toEqual({ candidates: 0, usable: [], rejected: [] });
+  });
+
+  it('badge web automatique + badge désactivé : le badge désactivé bloque toujours', () => {
+    const u = addUser({ sites: [[siteA, true]] });
+    addTag(`WEB-${u}`, u, { active: 0 });
+    addTag('OFFWEB', u, { active: 0 });
+    const r = db.getUserStartIdTags(u, siteA);
+    expect(r.candidates).toBe(1);
+    expect(r.usable).toEqual([]);
+    expect(r.rejected).toEqual([{ id_tag: 'OFFWEB', status: 'Blocked', reason: 'inactive_tag' }]);
+  });
+
+  it("badge WEB d'un autre utilisateur attribué à cet utilisateur : compté normalement", () => {
+    const u = addUser({ sites: [[siteA, true]] });
+    addTag('WEB-999999', u, { active: 0 });
+    expect(db.getUserStartIdTags(u, siteA).candidates).toBe(1);
+  });
+
   it('badge expiré ou désactivé : écarté, avec le motif', () => {
     const u = addUser({ sites: [[siteA, true]] });
     addTag('EXP001', u, { expiry: past() });

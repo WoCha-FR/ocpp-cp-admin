@@ -2209,14 +2209,17 @@ function authorizeIdTag(idTag, siteId, tokenType) {
 // ignoreUserSite : un admin démarre sans être autorisé sur le site (même règle que la route).
 // Retourne { candidates, usable, rejected } — candidates = nombre de badges de l'utilisateur
 // pour ce site (0 → badge web automatique), usable = badges valides, rejected = les autres.
+// Le badge web automatique WEB-<userId> n'est jamais compté : il reste inactif en base (refusé en
+// RFID) et ne sert que de repli quand l'utilisateur n'a aucun autre badge. Le compter ferait
+// refuser tout démarrage web après le premier.
 const USER_SITE_REASONS = new Set(['user_not_authorized', 'user_not_linked']);
 
 function getUserStartIdTags(userId, siteId, { ignoreUserSite = false } = {}) {
   const tags = db
     .prepare(
-      'SELECT * FROM id_tags WHERE user_id = ? AND (site_id IS NULL OR site_id = ?) ORDER BY id_tag'
+      'SELECT * FROM id_tags WHERE user_id = ? AND (site_id IS NULL OR site_id = ?) AND id_tag != ? ORDER BY id_tag'
     )
-    .all(userId, siteId ?? null);
+    .all(userId, siteId ?? null, `WEB-${userId}`);
   const usable = [];
   const rejected = [];
   for (const t of tags) {

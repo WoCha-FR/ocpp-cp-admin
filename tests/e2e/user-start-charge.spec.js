@@ -238,10 +238,36 @@ test.describe.serial('Démarrage depuis le tableau de bord utilisateur', () => {
       await expect(userPage.locator('#confirmSelect')).toBeHidden();
       await userPage.locator('#confirmBtnOk').click();
       await expect(userPage.locator('.toast-success')).toBeVisible({ timeout: 10000 });
+      expect(remoteStarts[remoteStarts.length - 1]).toBe(`WEB-${userId}`);
+
+      // Second démarrage : le badge web, inactif en base, est réutilisé (non compté comme
+      // badge bloqué de l'utilisateur)
+      const startsBefore = remoteStarts.length;
+      const cpId = (await apiCall(userPage, 'GET', '/user/available-connectors')).body.find(
+        (c) => c.chargepoint_identity === identity
+      ).chargepoint_id;
+      const again = await apiCall(
+        userPage,
+        'GET',
+        `/user/start-charge/id-tags?chargepoint_id=${cpId}`
+      );
+      expect(again.body).toEqual({ idTags: [], autoWeb: true, blocked: false });
+      const second = await apiCall(userPage, 'POST', '/user/start-charge', {
+        chargepoint_id: cpId,
+        connector_id: 1,
+      });
+      expect(second.status).toBe(200);
+      expect(second.body.idTag).toBe(`WEB-${userId}`);
+      expect(remoteStarts).toHaveLength(startsBefore + 1);
+      expect(remoteStarts[remoteStarts.length - 1]).toBe(`WEB-${userId}`);
     } finally {
       await context.close();
     }
-    expect(remoteStarts[remoteStarts.length - 1]).toBe(`WEB-${userId}`);
+    const webTags = (await apiCall(page, 'GET', '/id-tags')).body.filter(
+      (t) => t.id_tag === `WEB-${userId}`
+    );
+    expect(webTags).toHaveLength(1);
+    expect(webTags[0].active).toBeFalsy();
   });
 
   test('nettoyage', async ({ loggedInPage: page }) => {
