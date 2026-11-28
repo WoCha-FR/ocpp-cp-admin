@@ -429,3 +429,101 @@ describe('tariff — validateTariff', () => {
     expect(validateTariff(t).valid).toBe(true);
   });
 });
+
+// ── Lot 4 : grilles datées ──
+describe('tariff — grilles datées', () => {
+  const dated = (grids) => ({ currency: 'EUR', timezone: 'Europe/Paris', grids });
+  const flat = (price, from = null) => ({ valid_from: from, default_price_per_kwh: price, periods: [] });
+
+  it('une session prend la grille en vigueur le jour local de la session', () => {
+    const t = dated([flat(0.2), flat(0.3, '2026-02-01')]);
+    const before = computeSessionCost({ startTime: '2026-01-31T10:00:00Z', stopTime: '2026-01-31T11:00:00Z', totalKwh: 10, tariff: t });
+    const after = computeSessionCost({ startTime: '2026-02-01T10:00:00Z', stopTime: '2026-02-01T11:00:00Z', totalKwh: 10, tariff: t });
+    expect(before.cost).toBe(2);
+    expect(before.details.segments[0].tariff_from).toBeUndefined();
+    expect(after.cost).toBe(3);
+    expect(after.details.segments[0].tariff_from).toBe('2026-02-01');
+    expect(after.details.default_price).toBe(0.3);
+  });
+
+  it('une session à cheval sur le changement est découpée à minuit, heure du site', () => {
+    // 31/01 23:00 → 01/02 01:00 à Paris (UTC+1) : 22:00Z → 00:00Z, 10 kWh répartis à moitié
+    const t = dated([flat(0.2), flat(0.4, '2026-02-01')]);
+    const r = computeSessionCost({ startTime: '2026-01-31T22:00:00Z', stopTime: '2026-02-01T00:00:00Z', totalKwh: 10, tariff: t });
+    expect(r.details.segments).toHaveLength(2);
+    expect(r.details.segments[0]).toMatchObject({ kwh: 5, price: 0.2 });
+    expect(r.details.segments[1]).toMatchObject({ kwh: 5, price: 0.4, tariff_from: '2026-02-01' });
+    expect(r.cost).toBe(3);
+  });
+
+  it('les tranches horaires de chaque grille s’appliquent', () => {
+    const hc = (from, price) => ({
+      valid_from: from,
+      default_price_per_kwh: 0.3,
+      periods: [{ label: 'HC', days: ALL, start_time: '22:00', end_time: '06:00', price_per_kwh: price }],
+    });
+    const t = dated([hc(null, 0.1), hc('2026-03-01', 0.12)]);
+    const r = computeSessionCost({ startTime: '2026-03-02T00:00:00Z', stopTime: '2026-03-02T02:00:00Z', totalKwh: 4, tariff: t });
+    expect(r.details.segments).toEqual([expect.objectContaining({ label: 'HC', price: 0.12, kwh: 4 })]);
+  });
+
+  it('pas de tarif sur une partie de la session (grille sans prix) : coût incalculable', () => {
+    const t = dated([flat(null), flat(0.3, '2026-02-01')]);
+    expect(computeSessionCost({ startTime: '2026-01-31T22:00:00Z', stopTime: '2026-02-01T00:00:00Z', totalKwh: 10, tariff: t })).toBeNull();
+    expect(computeSessionCost({ startTime: '2026-02-02T10:00:00Z', stopTime: '2026-02-02T11:00:00Z', totalKwh: 10, tariff: t }).cost).toBe(3);
+    expect(computeSessionCost({ startTime: '2026-02-02T10:00:00Z', stopTime: '2026-02-02T11:00:00Z', totalKwh: 10, tariff: dated([flat(null)]) })).toBeNull();
+  });
+
+  it('courbe reconstruite depuis le détail du coût : même répartition, même coût', () => {
+    const start = '2026-01-12T20:00:00Z';
+    const stop = '2026-01-13T02:00:00Z';
+    const points = [
+      { x: Date.parse('2026-01-12T21:00:00Z') / 1000, energy: 1000 },
+      { x: Date.parse('2026-01-12T23:00:00Z') / 1000, energy: 9000 },
+    ];
+    const first = computeSessionCost({ startTime: start, stopTime: stop, totalKwh: 12, points, tariff: HP_HC });
+    const rebuilt = tariffLib.pointsFromCostDetails(JSON.stringify(first.details));
+    const again = computeSessionCost({ startTime: start, stopTime: stop, totalKwh: 12, points: rebuilt, tariff: HP_HC });
+    expect(again.cost).toBe(first.cost);
+    expect(tariffLib.pointsFromCostDetails('pas du json')).toEqual([]);
+    expect(tariffLib.pointsFromCostDetails(null)).toEqual([]);
+  });
+
+  it('validation : première grille depuis l’origine, dates valides et distinctes', () => {
+    expect(validateTariff(dated([flat(0.2), flat(0.3, '2026-02-01')])).valid).toBe(true);
+    const errs = (grids) => validateTariff(dated(grids)).errors;
+    expect(errs([flat(0.2, '2026-01-01')])).toContainEqual({ code: 'ERR_TARIFF_VALID_FROM', grid: 0 });
+    expect(errs([flat(0.2), flat(0.3)])).toContainEqual({ code: 'ERR_TARIFF_VALID_FROM', grid: 1 });
+    expect(errs([flat(0.2), flat(0.3, '2026-02-30')])).toContainEqual({ code: 'ERR_TARIFF_VALID_FROM', grid: 1 });
+    expect(errs([flat(0.2), flat(0.3, '2026-02-01'), flat(0.4, '2026-02-01')])).toContainEqual({
+      code: 'ERR_TARIFF_VALID_FROM_DUPLICATE',
+      grid: 2,
+    });
+    // erreurs d'une grille rattachées à son rang
+    expect(errs([flat(0.2), flat(-1, '2026-02-01')])).toContainEqual({ code: 'ERR_TARIFF_PRICE', grid: 1 });
+  });
+
+  it('normalizeTariffInput : grilles (dates vides = origine), forme historique conservée', () => {
+    const n = tariffLib.normalizeTariffInput({
+      currency: 'eur',
+      timezone: 'UTC',
+      grids: [
+        { valid_from: '', default_price_per_kwh: '0.2', periods: [] },
+        { valid_from: ' 2026-02-01 ', default_price_per_kwh: '0.3' },
+      ],
+    });
+    expect(n).toEqual({
+      currency: 'EUR',
+      timezone: 'UTC',
+      grids: [
+        { valid_from: null, default_price_per_kwh: 0.2, periods: [] },
+        { valid_from: '2026-02-01', default_price_per_kwh: 0.3, periods: [] },
+      ],
+    });
+    expect(tariffLib.normalizeTariffInput({ grids: 'x' })).toBeNull();
+    expect(tariffLib.normalizeTariffInput({ currency: 'EUR', default_price_per_kwh: '1' })).toMatchObject({
+      default_price_per_kwh: 1,
+      periods: [],
+    });
+  });
+});

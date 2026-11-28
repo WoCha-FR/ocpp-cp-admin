@@ -354,6 +354,23 @@ const UserRole = {
   },
 };
 
+// Correction du badge d'une session : badge choisi + motif obligatoire (tracé)
+const BadgeCorrection = {
+  id_tag_id: {
+    in: ['body'],
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_CORRECTION_TAG',
+  },
+  reason: {
+    in: ['body'],
+    isString: true,
+    trim: true,
+    isLength: { options: { min: 3, max: 500 } },
+    errorMessage: 'VALIDATION_CORRECTION_REASON',
+  },
+};
+
 const UserDisabled = {
   disabled: {
     in: ['body'],
@@ -1198,6 +1215,7 @@ module.exports = {
   SiteUserParams,
   UserRole,
   UserDisabled,
+  BadgeCorrection,
   UserSitesAssignment,
   SiteUserPatch,
   StartCharge,

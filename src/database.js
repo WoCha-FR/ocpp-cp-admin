@@ -40,7 +40,7 @@ function closeDb() {
 
 // ── Sites ──
 function getAllSites() {
-  return db.prepare('SELECT * FROM sites ORDER BY sname').all();
+  return db.prepare('SELECT * FROM sites ORDER BY sname').all().map(attachCurrentTariff);
 }
 
 function getSiteById(id) {
@@ -128,6 +128,10 @@ function restoreSite(id) {
 }
 
 // ── Tarification du site ──
+// Grille « depuis l'origine » : sites.default_price_per_kwh + tranches sans version_id.
+// Grilles datées : site_tariff_versions (+ tranches rattachées), chacune à partir de valid_from.
+const PERIOD_COLUMNS = 'id, label, days, start_time, end_time, price_per_kwh';
+
 function getSiteTariff(siteId) {
   const site = db
     .prepare('SELECT id, currency, timezone, default_price_per_kwh FROM sites WHERE id = ?')
@@ -135,43 +139,160 @@ function getSiteTariff(siteId) {
   if (!site) return null;
   const periods = db
     .prepare(
-      `SELECT id, label, days, start_time, end_time, price_per_kwh
-       FROM site_tariff_periods WHERE site_id = ? ORDER BY start_time, id`
+      `SELECT ${PERIOD_COLUMNS} FROM site_tariff_periods
+       WHERE site_id = ? AND version_id IS NULL ORDER BY start_time, id`
     )
     .all(siteId);
+  const versionPeriods = db.prepare(
+    `SELECT ${PERIOD_COLUMNS} FROM site_tariff_periods WHERE version_id = ? ORDER BY start_time, id`
+  );
+  const versions = db
+    .prepare(
+      `SELECT id, valid_from, default_price_per_kwh FROM site_tariff_versions
+       WHERE site_id = ? ORDER BY valid_from`
+    )
+    .all(siteId)
+    .map((v) => ({
+      id: v.id,
+      valid_from: v.valid_from,
+      default_price_per_kwh: v.default_price_per_kwh ?? null,
+      periods: versionPeriods.all(v.id),
+    }));
+  const origin = {
+    valid_from: null,
+    default_price_per_kwh: site.default_price_per_kwh ?? null,
+    periods,
+  };
   return {
     site_id: site.id,
     currency: site.currency || 'EUR',
     timezone: site.timezone || 'Europe/Paris',
-    default_price_per_kwh: site.default_price_per_kwh ?? null,
+    // forme historique : grille « depuis l'origine »
+    default_price_per_kwh: origin.default_price_per_kwh,
     periods,
+    grids: [origin, ...versions],
   };
 }
 
-/** Remplace atomiquement la grille de tarifs d'un site (la validation est faite par l'appelant). */
-function replaceSiteTariff(siteId, { currency, timezone, default_price_per_kwh, periods = [] }) {
-  db.transaction(() => {
-    db.prepare(
-      'UPDATE sites SET currency = ?, timezone = ?, default_price_per_kwh = ? WHERE id = ?'
-    ).run(currency, timezone, default_price_per_kwh ?? null, siteId);
-    db.prepare('DELETE FROM site_tariff_periods WHERE site_id = ?').run(siteId);
-    const insert = db.prepare(
-      `INSERT INTO site_tariff_periods (site_id, label, days, start_time, end_time, price_per_kwh)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    );
-    for (const p of periods) {
+// Tarif complet tel qu'il sera après enregistrement de `input` : sans `grids` (forme
+// historique), seule la grille « depuis l'origine » est remplacée, les grilles datées restent.
+function resolveTariffInput(siteId, input) {
+  const current = getSiteTariff(siteId);
+  const grids = Array.isArray(input.grids)
+    ? input.grids
+    : [
+        {
+          valid_from: null,
+          default_price_per_kwh: input.default_price_per_kwh ?? null,
+          periods: input.periods || [],
+        },
+        ...(current ? current.grids.slice(1) : []),
+      ];
+  return {
+    currency: input.currency,
+    timezone: input.timezone,
+    grids: tariff.tariffGrids({ grids }),
+  };
+}
+
+/** Remplace atomiquement le tarif d'un site (la validation est faite par l'appelant). */
+function replaceSiteTariff(siteId, input) {
+  const full = resolveTariffInput(siteId, input);
+  const insertPeriod = db.prepare(
+    `INSERT INTO site_tariff_periods
+       (site_id, label, days, start_time, end_time, price_per_kwh, version_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insertPeriods = (periods, versionId) => {
+    for (const p of periods || []) {
       const days = tariff.parseDays(p.days) || tariff.ALL_DAYS;
-      insert.run(
+      insertPeriod.run(
         siteId,
         p.label ? String(p.label).trim() || null : null,
         days.join(','),
         p.start_time,
         p.end_time,
-        p.price_per_kwh
+        p.price_per_kwh,
+        versionId
       );
+    }
+  };
+  db.transaction(() => {
+    const [origin, ...dated] = full.grids;
+    db.prepare(
+      'UPDATE sites SET currency = ?, timezone = ?, default_price_per_kwh = ? WHERE id = ?'
+    ).run(full.currency, full.timezone, origin.default_price_per_kwh ?? null, siteId);
+    db.prepare('DELETE FROM site_tariff_periods WHERE site_id = ?').run(siteId);
+    db.prepare('DELETE FROM site_tariff_versions WHERE site_id = ?').run(siteId);
+    insertPeriods(origin.periods, null);
+    const insertVersion = db.prepare(
+      'INSERT INTO site_tariff_versions (site_id, valid_from, default_price_per_kwh) VALUES (?, ?, ?)'
+    );
+    for (const g of dated) {
+      const info = insertVersion.run(siteId, g.valid_from, g.default_price_per_kwh ?? null);
+      insertPeriods(g.periods, info.lastInsertRowid);
     }
   })();
   return getSiteTariff(siteId);
+}
+
+// Jour local du site (AAAA-MM-JJ) pour un instant donné
+function siteLocalDate(timezone, date = new Date()) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timezone }).format(date);
+  } catch {
+    return date.toISOString().slice(0, 10);
+  }
+}
+
+// Prix par défaut en vigueur aujourd'hui et prochaine grille datée (affichage de la liste des sites)
+function attachCurrentTariff(site) {
+  if (!site) return site;
+  const today = siteLocalDate(site.timezone || 'Europe/Paris');
+  const versions = db
+    .prepare(
+      'SELECT valid_from, default_price_per_kwh FROM site_tariff_versions WHERE site_id = ? ORDER BY valid_from'
+    )
+    .all(site.id);
+  const current = versions.filter((v) => v.valid_from <= today).pop();
+  const next = versions.find((v) => v.valid_from > today);
+  return {
+    ...site,
+    current_price_per_kwh: current ? current.default_price_per_kwh : site.default_price_per_kwh,
+    next_tariff_from: next ? next.valid_from : null,
+    next_price_per_kwh: next ? next.default_price_per_kwh : null,
+  };
+}
+
+// Courbe d'énergie d'une session : relevés MeterValues, sinon (relevés purgés) le détail du
+// coût figé, qui garde la répartition horaire de l'énergie
+function sessionEnergyPoints(tx) {
+  const values = db
+    .prepare(
+      'SELECT energie FROM transactions_values WHERE chargepoint_id = ? AND transaction_id = ?'
+    )
+    .get(tx.chargepoint_id, tx.transaction_id);
+  if (values && values.energie) {
+    try {
+      const points = JSON.parse(values.energie);
+      if (Array.isArray(points) && points.length > 0) return points;
+    } catch {
+      /* relevés illisibles : repli sur le détail du coût */
+    }
+  }
+  return tariff.pointsFromCostDetails(tx.cost_details);
+}
+
+function computeTransactionCost(tx, siteTariff) {
+  if (!tx.start_time || !tx.stop_time) return null;
+  if (tx.meter_start === null || tx.meter_stop === null) return null;
+  return tariff.computeSessionCost({
+    startTime: tx.start_time,
+    stopTime: tx.stop_time,
+    totalKwh: Math.max(0, tx.meter_stop - tx.meter_start) / 1000,
+    points: sessionEnergyPoints(tx),
+    tariff: siteTariff,
+  });
 }
 
 /**
@@ -187,39 +308,17 @@ function finalizeTransactionCost(txRowId) {
       .prepare(
         // Tarif du site figé au démarrage : une borne déplacée depuis reste facturée à ce site
         `SELECT t.id, t.transaction_id, t.chargepoint_id, t.status, t.start_time, t.stop_time,
-           t.meter_start, t.meter_stop, COALESCE(t.site_id, cp.site_id) AS site_id
+           t.meter_start, t.meter_stop, t.cost_details, COALESCE(t.site_id, cp.site_id) AS site_id
          FROM transactions t JOIN chargepoints cp ON cp.id = t.chargepoint_id
          WHERE t.id = ?`
       )
       .get(txRowId);
-    if (!tx || tx.status !== 'Completed') return null;
-    if (!tx.site_id || !tx.start_time || !tx.stop_time) return null;
-    if (tx.meter_start === null || tx.meter_stop === null) return null;
+    if (!tx || tx.status !== 'Completed' || !tx.site_id) return null;
 
     const siteTariff = getSiteTariff(tx.site_id);
-    if (!siteTariff || siteTariff.default_price_per_kwh === null) return null;
-
-    const values = db
-      .prepare(
-        'SELECT energie FROM transactions_values WHERE chargepoint_id = ? AND transaction_id = ?'
-      )
-      .get(tx.chargepoint_id, tx.transaction_id);
-    let points = [];
-    if (values && values.energie) {
-      try {
-        points = JSON.parse(values.energie);
-      } catch {
-        points = [];
-      }
-    }
-
-    const result = tariff.computeSessionCost({
-      startTime: tx.start_time,
-      stopTime: tx.stop_time,
-      totalKwh: Math.max(0, tx.meter_stop - tx.meter_start) / 1000,
-      points,
-      tariff: siteTariff,
-    });
+    if (!siteTariff) return null;
+    // à la clôture, la courbe est celle des relevés (pas l'ancien détail)
+    const result = computeTransactionCost({ ...tx, cost_details: null }, siteTariff);
     if (!result) return null;
 
     db.prepare(
@@ -230,6 +329,386 @@ function finalizeTransactionCost(txRowId) {
     logger.error(`Tariff computation failed for transaction row ${txRowId}: ${err.message}`);
     return null;
   }
+}
+
+// ── Tarif saisi en retard : aperçu puis recalcul tracé des sessions clôturées ──
+// Seules les journées dont la grille applicable change sont recalculées : une session hors de ces
+// journées garde son coût, même si l'algorithme de calcul a évolué depuis.
+function gridSignature(grid) {
+  const periods = tariff
+    .normalizePeriods(grid.periods)
+    .map((p) => [p.start, p.end, p.days.join(','), p.price, p.label])
+    .sort((a, b) => String(a).localeCompare(String(b)));
+  return JSON.stringify([grid.default_price_per_kwh ?? null, periods]);
+}
+
+// Plages de jours [from, to) (null = sans borne) où la grille applicable diffère
+function changedDateRanges(oldTariff, newTariff) {
+  if (oldTariff.currency !== newTariff.currency || oldTariff.timezone !== newTariff.timezone) {
+    return [[null, null]];
+  }
+  const oldGrids = tariff.tariffGrids(oldTariff);
+  const newGrids = tariff.tariffGrids(newTariff);
+  const gridAt = (grids, date) => {
+    let found = grids[0];
+    for (const g of grids) if (g.valid_from == null || g.valid_from <= date) found = g;
+    return found;
+  };
+  const breaks = [
+    ...new Set([...oldGrids, ...newGrids].map((g) => g.valid_from).filter(Boolean)),
+  ].sort();
+  const bounds = [null, ...breaks];
+  const ranges = [];
+  bounds.forEach((from, i) => {
+    const probe = from || '0000-01-01';
+    if (gridSignature(gridAt(oldGrids, probe)) !== gridSignature(gridAt(newGrids, probe))) {
+      ranges.push([from, bounds[i + 1] ?? null]);
+    }
+  });
+  return ranges;
+}
+
+const sameCost = (a, b) =>
+  (a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 0.005);
+
+/**
+ * Sessions clôturées du site dont le coût change avec `input` (tarif proposé).
+ * @returns {{changes: Array, totals: Array<{currency, old_cost, new_cost, delta}>}}
+ */
+function previewTariffChange(siteId, input) {
+  const current = getSiteTariff(siteId);
+  if (!current) return { changes: [], totals: [] };
+  const next = resolveTariffInput(siteId, input);
+  const ranges = changedDateRanges(current, next);
+  if (ranges.length === 0) return { changes: [], totals: [] };
+
+  // Marge d'un jour : date UTC de la session contre jours locaux du site
+  const rangeParams = [];
+  const rangeSql = ranges
+    .map(([from, to]) => {
+      const parts = [];
+      if (from) {
+        parts.push("date(t.stop_time, '+1 day') >= ?");
+        rangeParams.push(from);
+      }
+      if (to) {
+        parts.push("date(t.start_time, '-1 day') < ?");
+        rangeParams.push(to);
+      }
+      return `(${parts.length ? parts.join(' AND ') : '1'})`;
+    })
+    .join(' OR ');
+  const candidates = db
+    .prepare(
+      `SELECT t.id, t.transaction_id, t.chargepoint_id, t.start_time, t.stop_time, t.meter_start,
+         t.meter_stop, t.cost, t.cost_currency, t.cost_details, t.user_id, t.user_name,
+         t.tag_category, t.id_tag
+       FROM transactions t
+       WHERE t.site_id = ? AND t.status = 'Completed' AND t.start_time IS NOT NULL
+         AND t.stop_time IS NOT NULL AND (${rangeSql})
+       ORDER BY t.start_time`
+    )
+    .all(siteId, ...rangeParams);
+
+  const changes = [];
+  for (const tx of candidates) {
+    const result = computeTransactionCost(tx, next);
+    const newCost = result ? result.cost : null;
+    const newCurrency = result ? result.currency : null;
+    if (sameCost(tx.cost, newCost) && (newCost == null || tx.cost_currency === newCurrency)) {
+      continue;
+    }
+    changes.push({
+      id: tx.id,
+      transaction_id: tx.transaction_id,
+      start_time: tx.start_time,
+      user_id: tx.user_id,
+      user_name: tx.user_name,
+      tag_category: tx.tag_category,
+      id_tag: tx.id_tag,
+      energy_wh: Math.max(0, tx.meter_stop - tx.meter_start),
+      old_cost: tx.cost,
+      old_currency: tx.cost_currency,
+      new_cost: newCost,
+      new_currency: newCurrency,
+      new_details: result ? result.details : null,
+    });
+  }
+
+  const totals = new Map();
+  const add = (currency, key, amount) => {
+    if (amount == null) return;
+    const cur = currency || '';
+    const row = totals.get(cur) || { currency: cur, old_cost: 0, new_cost: 0, delta: 0 };
+    row[key] += amount;
+    row.delta = row.new_cost - row.old_cost;
+    totals.set(cur, row);
+  };
+  for (const c of changes) {
+    add(c.old_currency, 'old_cost', c.old_cost);
+    add(c.new_currency, 'new_cost', c.new_cost);
+  }
+  const round2 = (n) => Math.round(n * 100) / 100;
+  return {
+    changes,
+    totals: [...totals.values()].map((t) => ({
+      currency: t.currency,
+      old_cost: round2(t.old_cost),
+      new_cost: round2(t.new_cost),
+      delta: round2(t.delta),
+    })),
+  };
+}
+
+/**
+ * Enregistre le tarif et recalcule les sessions concernées, chaque écart étant journalisé
+ * (transaction_corrections, kind = tariff). Tout ou rien.
+ * @returns {{tariff: object, recalculated: number}}
+ */
+function applyTariffChange(
+  siteId,
+  input,
+  { authorId = null, authorName = null, reason = null } = {}
+) {
+  return db.transaction(() => {
+    const { changes } = previewTariffChange(siteId, input);
+    const saved = replaceSiteTariff(siteId, input);
+    const update = db.prepare(
+      'UPDATE transactions SET cost = ?, cost_currency = ?, cost_details = ? WHERE id = ?'
+    );
+    for (const c of changes) {
+      update.run(
+        c.new_cost,
+        c.new_currency,
+        c.new_details ? JSON.stringify(c.new_details) : null,
+        c.id
+      );
+      insertCorrection({
+        transaction_id: c.id,
+        site_id: siteId,
+        kind: 'tariff',
+        reason,
+        author_id: authorId,
+        author_name: authorName,
+        old_id_tag: c.id_tag,
+        new_id_tag: c.id_tag,
+        old_user_id: c.user_id,
+        new_user_id: c.user_id,
+        old_user_name: c.user_name,
+        new_user_name: c.user_name,
+        old_category: c.tag_category,
+        new_category: c.tag_category,
+        old_cost: c.old_cost,
+        new_cost: c.new_cost,
+        old_currency: c.old_currency,
+        new_currency: c.new_currency,
+        energy_wh: c.energy_wh,
+      });
+    }
+    return { tariff: saved, recalculated: changes.length };
+  })();
+}
+
+// ── Journal des corrections de session ──
+const CORRECTION_COLUMNS = [
+  'transaction_id',
+  'site_id',
+  'kind',
+  'reason',
+  'author_id',
+  'author_name',
+  'old_id_tag',
+  'new_id_tag',
+  'old_user_id',
+  'new_user_id',
+  'old_user_name',
+  'new_user_name',
+  'old_category',
+  'new_category',
+  'old_cost',
+  'new_cost',
+  'old_currency',
+  'new_currency',
+  'energy_wh',
+];
+
+function insertCorrection(row) {
+  db.prepare(
+    `INSERT INTO transaction_corrections (${CORRECTION_COLUMNS.join(', ')})
+     VALUES (${CORRECTION_COLUMNS.map(() => '?').join(', ')})`
+  ).run(...CORRECTION_COLUMNS.map((c) => row[c] ?? null));
+}
+
+function getTransactionCorrections(txRowId) {
+  return db
+    .prepare('SELECT * FROM transaction_corrections WHERE transaction_id = ? ORDER BY id')
+    .all(txRowId);
+}
+
+// Badges enregistrés pour le site d'une session : badges limités au site, et badges globaux des
+// salariés rattachés au site (le choix du bon badge donne le salarié et la catégorie)
+function getBadgeCorrectionCandidates(siteId) {
+  return db
+    .prepare(
+      `SELECT it.id, it.id_tag, it.category, it.description, it.active, it.site_id, it.user_id,
+         COALESCE(u.shortname, u.useremail) AS user_name
+       FROM id_tags it
+       LEFT JOIN users u ON u.id = it.user_id
+       WHERE it.site_id = ?
+          OR (it.site_id IS NULL AND it.user_id IN (SELECT user_id FROM user_sites WHERE site_id = ?))
+       ORDER BY user_name, it.id_tag`
+    )
+    .all(siteId, siteId);
+}
+
+/**
+ * Corrige le badge d'une session (erreur de badge) : le salarié et la catégorie suivent le badge
+ * choisi ; coût et index inchangés. Le badge présenté à la borne reste dans le journal.
+ */
+function correctTransactionBadge(txRowId, tag, { authorId, authorName, reason }) {
+  return db.transaction(() => {
+    const tx = db.prepare('SELECT * FROM transactions WHERE id = ?').get(txRowId);
+    if (!tx) return null;
+    const owner = tag.user_id
+      ? db.prepare('SELECT shortname, useremail FROM users WHERE id = ?').get(tag.user_id)
+      : null;
+    const newUserName = owner ? owner.shortname || owner.useremail : null;
+    insertCorrection({
+      transaction_id: tx.id,
+      site_id: tx.site_id,
+      kind: 'badge',
+      reason,
+      author_id: authorId,
+      author_name: authorName,
+      old_id_tag: tx.id_tag,
+      new_id_tag: tag.id_tag,
+      old_user_id: tx.user_id,
+      new_user_id: tag.user_id ?? null,
+      old_user_name: tx.user_name,
+      new_user_name: newUserName,
+      old_category: tx.tag_category,
+      new_category: tag.category,
+      old_cost: tx.cost,
+      new_cost: tx.cost,
+      old_currency: tx.cost_currency,
+      new_currency: tx.cost_currency,
+      energy_wh:
+        tx.meter_stop != null && tx.meter_start != null
+          ? Math.max(0, tx.meter_stop - tx.meter_start)
+          : null,
+    });
+    db.prepare(
+      'UPDATE transactions SET id_tag = ?, user_id = ?, user_name = ?, tag_category = ? WHERE id = ?'
+    ).run(tag.id_tag, tag.user_id ?? null, newUserName, tag.category, tx.id);
+    return getTransactionById(tx.id);
+  })();
+}
+
+/**
+ * Régularisations d'un export remboursement : corrections saisies pendant la période
+ * (from → to) sur des sessions antérieures à la période, déjà exportées. Une ligne signée par
+ * salarié touché : écart de coût (tarif) ou transfert de la session (badge : retirée de
+ * l'ancien salarié / catégorie, ajoutée au nouveau).
+ */
+function getReimbursementAdjustments(filters = {}) {
+  if (!filters.from) return [];
+  const category = filters.category || 'pro';
+  let where = 'substr(c.created_at, 1, 10) >= ? AND date(t.start_time) < ?';
+  const params = [filters.from, filters.from];
+  if (filters.to) {
+    where += ' AND substr(c.created_at, 1, 10) <= ?';
+    params.push(filters.to);
+  }
+  if (filters.site_ids && filters.site_ids.length > 0) {
+    where += ` AND c.site_id IN (${filters.site_ids.map(() => '?').join(',')})`;
+    params.push(...filters.site_ids);
+  }
+  if (filters.site_id) {
+    where += ' AND c.site_id = ?';
+    params.push(filters.site_id);
+  }
+  const rows = db
+    .prepare(
+      `SELECT c.*, t.transaction_id AS ocpp_transaction_id, t.start_time, s.sname AS site_name
+       FROM transaction_corrections c
+       JOIN transactions t ON t.id = c.transaction_id
+       LEFT JOIN sites s ON s.id = c.site_id
+       WHERE ${where}
+       ORDER BY s.sname, c.created_at, c.id`
+    )
+    .all(...params);
+
+  const lines = [];
+  const kwh = (wh) => (wh != null ? wh / 1000 : 0);
+  for (const c of rows) {
+    const base = {
+      correction_id: c.id,
+      site_id: c.site_id,
+      site_name: c.site_name,
+      transaction_id: c.ocpp_transaction_id,
+      start_time: c.start_time,
+      kind: c.kind,
+      reason: c.reason,
+      created_at: c.created_at,
+      category,
+    };
+    if (c.kind === 'tariff') {
+      if (c.new_category !== category) continue;
+      if ((c.old_currency || c.new_currency) === (c.new_currency || c.old_currency)) {
+        const delta = (c.new_cost ?? 0) - (c.old_cost ?? 0);
+        lines.push({
+          ...base,
+          user_id: c.new_user_id,
+          user_name: c.new_user_name,
+          energy_kwh: 0,
+          cost: Math.round(delta * 100) / 100,
+          currency: c.new_currency || c.old_currency,
+        });
+      } else {
+        // changement de devise : l'ancien montant est annulé, le nouveau ajouté
+        lines.push({
+          ...base,
+          user_id: c.old_user_id,
+          user_name: c.old_user_name,
+          energy_kwh: 0,
+          cost: -(c.old_cost ?? 0),
+          currency: c.old_currency,
+        });
+        lines.push({
+          ...base,
+          user_id: c.new_user_id,
+          user_name: c.new_user_name,
+          energy_kwh: 0,
+          cost: c.new_cost ?? 0,
+          currency: c.new_currency,
+        });
+      }
+    } else {
+      const sameSide = c.old_category === c.new_category && c.old_user_id === c.new_user_id;
+      if (sameSide) continue;
+      if (c.old_category === category) {
+        lines.push({
+          ...base,
+          user_id: c.old_user_id,
+          user_name: c.old_user_name,
+          energy_kwh: -kwh(c.energy_wh),
+          cost: c.old_cost != null ? -c.old_cost : null,
+          currency: c.old_currency,
+        });
+      }
+      if (c.new_category === category) {
+        lines.push({
+          ...base,
+          user_id: c.new_user_id,
+          user_name: c.new_user_name,
+          energy_kwh: kwh(c.energy_wh),
+          cost: c.new_cost,
+          currency: c.new_currency,
+        });
+      }
+    }
+  }
+  return lines;
 }
 
 // ── Users ──
@@ -335,6 +814,19 @@ function deleteUser(id, deletedLabel = null) {
     db.prepare(
       'UPDATE id_tags SET active = 0, user_id = NULL, description = NULL WHERE user_id = ?'
     ).run(id);
+    const anon = deletedLabel || `#${id}`;
+    db.prepare('UPDATE transaction_corrections SET old_user_name = ? WHERE old_user_id = ?').run(
+      anon,
+      id
+    );
+    db.prepare('UPDATE transaction_corrections SET new_user_name = ? WHERE new_user_id = ?').run(
+      anon,
+      id
+    );
+    db.prepare('UPDATE transaction_corrections SET author_name = ? WHERE author_id = ?').run(
+      anon,
+      id
+    );
     db.prepare('DELETE FROM user_sites WHERE user_id = ?').run(id);
     db.prepare('DELETE FROM users WHERE id = ?').run(id);
   })();
@@ -1393,6 +1885,7 @@ const TRANSACTIONS_BASE_QUERY = `SELECT t.*, cp.identity as chargepoint_identity
     cp.site_id as chargepoint_site_id, s.sname as site_name,
     t.user_id as tag_user_id, COALESCE(u.shortname, u.useremail, t.user_name) as tag_username,
     CASE WHEN tv.id IS NOT NULL THEN 1 ELSE 0 END as has_values,
+    (SELECT COUNT(*) FROM transaction_corrections tc WHERE tc.transaction_id = t.id) as corrections_count,
     cn.connector_name as connector_name,
     ev.evse_name as evse_name
     FROM transactions t
@@ -3342,6 +3835,13 @@ module.exports = {
   getSiteTariff,
   replaceSiteTariff,
   finalizeTransactionCost,
+  resolveTariffInput,
+  previewTariffChange,
+  applyTariffChange,
+  getTransactionCorrections,
+  getBadgeCorrectionCandidates,
+  correctTransactionBadge,
+  getReimbursementAdjustments,
   createSite,
   updateSite,
   deleteSite,

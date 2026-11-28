@@ -291,3 +291,46 @@ describe('Lot 3 — cycle de vie des sites, bornes et comptes', () => {
     expect(server).toMatch(/setUiSessionCloser\(/);
   });
 });
+
+// ── Lot 4 : tarifs datés, corrections et régularisations ──
+describe('Lot 4 — tarif saisi en retard, correction du badge, régularisations', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/routes.js'), 'utf8');
+  const block = (startMarker, len = 2500) => {
+    const start = src.indexOf(startMarker);
+    expect(start).toBeGreaterThan(-1);
+    return src.slice(start, start + len);
+  };
+
+  it('tarif : aperçu (dry_run), refus sans confirmation si des sessions clôturées changent', () => {
+    const route = block("router.put(\n  '/sites/:siteId/tariff',", 3000);
+    expect(route).toMatch(/assertSiteManaged\(req, res, siteId\)[\s\S]*siteArchivedError\(res, siteId\)/);
+    expect(route).toMatch(/db\.previewTariffChange\(siteId, input\)/);
+    expect(route).toMatch(/req\.body\.dry_run === true\) return res\.json\(\{ preview \}\)/);
+    expect(route).toMatch(/changes\.length > 0 && req\.body\.confirm !== true[\s\S]{0,120}ERR_TARIFF_RECALC_CONFIRM_REQUIRED/);
+    expect(route).toMatch(/db\.applyTariffChange\(siteId, input, \{/);
+    expect(route).not.toMatch(/db\.replaceSiteTariff\(/);
+  });
+
+  it('correction du badge : admin ou manager du site de la session, jamais refusée ni archivée', () => {
+    const helper = block('function canCorrectTransaction(req, tx)', 600);
+    expect(helper).toMatch(/\['Completed', 'Active'\]\.includes\(tx\.status\)/);
+    expect(helper).toMatch(/site\.archived_at\) return false/);
+    expect(helper).toMatch(/managedIds\.includes\(tx\.site_id\)/);
+    const route = block("'/transactions/:id/badge-correction',", 2200);
+    expect(route).toMatch(/validateSchema\(schema\.IdParam, schema\.BadgeCorrection\)/);
+    expect(route).toMatch(/canCorrectTransaction\(req, tx\)/);
+    // badge choisi parmi ceux du site de la session (hors badges générés)
+    expect(route).toMatch(/badgeCandidates\(tx\)\.find\(\(t\) => t\.id === data\.id_tag_id\)/);
+    expect(route).toMatch(/ERR_CORRECTION_TAG_NOT_ALLOWED/);
+    expect(route).toMatch(/db\.correctTransactionBadge\(tx\.id, tag, \{[\s\S]{0,160}reason: data\.reason/);
+    expect(block('function badgeCandidates(tx)', 200)).toMatch(/!isGeneratedTag\(t\.id_tag\)/);
+    expect(block("'/transactions/:id/badge-candidates',", 500)).toMatch(/canCorrectTransaction\(req, tx\)/);
+  });
+
+  it('détail d’une session : journal des corrections ; export remboursement : régularisations', () => {
+    const detail = block("router.get('/transactions/:id', requireAuth", 500);
+    expect(detail).toMatch(/canViewTransaction\(req, tx\)[\s\S]*corrections: db\.getTransactionCorrections\(tx\.id\)/);
+    const csv = block("'/transactions/reimbursement/csv',", 1500);
+    expect(csv).toMatch(/adjustments: db\.getReimbursementAdjustments\(filters\)/);
+  });
+});

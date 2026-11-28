@@ -192,7 +192,7 @@ test.describe.serial('Tarification du kWh', () => {
     expect(line).toContain('HP 5.00 kWh × 0.2500 = 1.25');
   });
 
-  test('modifier la grille ne change pas le coût de la session passée', async ({
+  test('modifier la grille d’une session passée exige une confirmation ; sans elle, rien ne change', async ({
     loggedInPage: page,
   }) => {
     const put = await apiCall(page, 'PUT', `/sites/${siteId}/tariff`, {
@@ -201,7 +201,9 @@ test.describe.serial('Tarification du kWh', () => {
       default_price_per_kwh: 1,
       periods: [],
     });
-    expect(put.status).toBe(200);
+    expect(put.status).toBe(409);
+    expect(put.body.error).toBe('ERR_TARIFF_RECALC_CONFIRM_REQUIRED');
+    expect(put.body.preview.count).toBe(1);
     const detail = await apiCall(page, 'GET', `/transactions/${txRowId}`);
     expect(detail.body.cost).toBe(2);
   });

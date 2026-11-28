@@ -246,6 +246,21 @@ describe('buildReimbursementCsv', () => {
       ['Site', 'User', 'Category', 'Sessions', 'Energy (kWh)', 'Cost', 'Currency'],
     ]);
   });
+  it('régularisations : section ajoutée après le rapport, lignes signées et total par devise', () => {
+    const adjustments = [
+      { site_name: 'Siège', user_name: 'Alice', category: 'pro', start_time: '2026-05-10T08:00:00Z', transaction_id: '12', kind: 'badge', reason: 'badge prêté', created_at: '2026-06-15T10:00:00.000Z', energy_kwh: -10, cost: -2, currency: 'EUR' },
+      { site_name: 'Siège', user_name: 'Bob', category: 'pro', start_time: '2026-05-12T08:00:00Z', transaction_id: '13', kind: 'tariff', reason: null, created_at: '2026-06-20T10:00:00.000Z', energy_kwh: 0, cost: 0.5, currency: 'EUR' },
+    ];
+    const out = parse(buildReimbursementCsv(rows, { lng: 'fr', adjustments }));
+    const title = out.findIndex((r) => r[0].startsWith('Régularisations'));
+    expect(title).toBe(7); // rapport (6 lignes) + ligne vide
+    expect(out[title + 1]).toEqual(['Site', 'Utilisateur', 'Catégorie', 'Début de la session', 'ID Transaction', 'Correction', 'Motif', 'Date de la correction', 'Énergie (kWh)', 'Coût', 'Devise']);
+    expect(out[title + 2]).toEqual(['Siège', 'Alice', 'Professionnel', '2026-05-10T08:00:00Z', '12', 'Badge corrigé', 'badge prêté', '2026-06-15T10:00:00.000Z', '-10.00', '-2.00', 'EUR']);
+    expect(out[title + 3][5]).toBe('Tarif recalculé');
+    expect(out[title + 4]).toEqual(['Total régularisations', '', '', '', '', '', '', '', '', '-1.50', 'EUR']);
+    // sans régularisation : pas de section
+    expect(parse(buildReimbursementCsv(rows, { lng: 'fr', adjustments: [] }))).toHaveLength(6);
+  });
 });
 
 describe('normalizeTariffInput', () => {

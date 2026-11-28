@@ -2718,6 +2718,188 @@ describe('database — sites, bornes et comptes (lot 3)', () => {
   });
 });
 
+// ── Lot 4 : tarifs datés, corrections de session et régularisations ──
+describe('database — tarifs datés, corrections et régularisations (lot 4)', () => {
+  let site;
+  let other;
+  let cp;
+  let paul;
+  let anne;
+  let outsider;
+  const flat = (price, from = null) => ({ valid_from: from, default_price_per_kwh: price, periods: [] });
+  const setTariff = (grids) => db.replaceSiteTariff(site, { currency: 'EUR', timezone: 'Europe/Paris', grids });
+  // Session de `kwh` kWh, de start à stop (UTC)
+  const session = (tag, start, stop, kwh) => {
+    const tx = db.createTransaction(cp, 1, tag, 0, start, 'rfid');
+    db.stopTransaction(cp, tx.transaction_id, kwh * 1000, stop, 'Local');
+    return db.getTransactionById(tx.id);
+  };
+
+  beforeAll(() => {
+    site = db.createSite('Site lot4', null).id;
+    other = db.createSite('Autre lot4', null).id;
+    cp = db.createChargepoint('CP-LOT4', 'Lot4', null, 1, site).id;
+    paul = db.createUser('lot4-paul@test.com', 'Passw0rd!x', 'user', 'Paul4').id;
+    anne = db.createUser('lot4-anne@test.com', 'Passw0rd!x', 'user', 'Anne4').id;
+    outsider = db.createUser('lot4-out@test.com', 'Passw0rd!x', 'user', 'Ext4').id;
+    db.setUserSites(paul, [{ site_id: site, role: 'user', authorized: 1 }]);
+    db.setUserSites(anne, [{ site_id: site, role: 'user', authorized: 1 }]);
+    db.setUserSites(outsider, [{ site_id: other, role: 'user', authorized: 1 }]);
+    db.createIdTag('L4PAULPRO', paul, null, null, null, 1, 'ISO14443', null, 'pro');
+    db.createIdTag('L4ANNEPRO', anne, null, null, null, 1, 'ISO14443', null, 'pro');
+    db.createIdTag('L4ANNEPER', anne, site, null, null, 1, 'ISO14443', null, 'perso');
+    db.createIdTag('L4OUTPRO', outsider, null, null, null, 1, 'ISO14443', null, 'pro');
+    db.createIdTag('L4OTHERSITE', null, other, null);
+    setTariff([flat(0.2)]);
+  });
+
+  it('getSiteTariff : grille « depuis l’origine » puis grilles datées ; forme historique conservée', () => {
+    setTariff([flat(0.2), flat(0.3, '2026-09-01')]);
+    const t = db.getSiteTariff(site);
+    expect(t.default_price_per_kwh).toBe(0.2);
+    expect(t.grids.map((g) => [g.valid_from, g.default_price_per_kwh])).toEqual([
+      [null, 0.2],
+      ['2026-09-01', 0.3],
+    ]);
+    // forme historique (sans grids) : l'origine est remplacée, les grilles datées restent
+    db.replaceSiteTariff(site, { currency: 'EUR', timezone: 'Europe/Paris', default_price_per_kwh: 0.25, periods: [] });
+    expect(db.getSiteTariff(site).grids.map((g) => g.default_price_per_kwh)).toEqual([0.25, 0.3]);
+    setTariff([flat(0.2)]);
+    expect(db.getSiteTariff(site).grids).toHaveLength(1);
+  });
+
+  it('clôture : le coût prend la grille en vigueur le jour de la session ; liste des sites', () => {
+    setTariff([flat(0.2), flat(0.3, '2026-09-01')]);
+    expect(session('L4PAULPRO', '2026-08-31T08:00:00Z', '2026-08-31T09:00:00Z', 10).cost).toBe(2);
+    expect(session('L4PAULPRO', '2026-09-01T08:00:00Z', '2026-09-01T09:00:00Z', 10).cost).toBe(3);
+    const listed = db.getAllSites().find((s) => s.id === site);
+    expect(listed).toHaveProperty('current_price_per_kwh');
+    setTariff([flat(0.2)]);
+  });
+
+  describe('tarif saisi en retard', () => {
+    let early;
+    let late;
+
+    beforeAll(() => {
+      db.getDb().prepare('DELETE FROM transactions WHERE chargepoint_id = ?').run(cp);
+      setTariff([flat(0.2)]);
+      early = session('L4PAULPRO', '2026-05-10T08:00:00Z', '2026-05-10T09:00:00Z', 10); // 2,00
+      late = session('L4ANNEPRO', '2026-06-10T08:00:00Z', '2026-06-10T09:00:00Z', 10); // 2,00
+    });
+
+    it('enregistrer le même tarif ne recalcule rien', () => {
+      expect(db.previewTariffChange(site, { currency: 'EUR', timezone: 'Europe/Paris', grids: [flat(0.2)] }).changes).toEqual([]);
+    });
+
+    it('une grille future ne touche aucune session passée', () => {
+      expect(db.previewTariffChange(site, { currency: 'EUR', timezone: 'Europe/Paris', grids: [flat(0.2), flat(0.5, '2099-01-01')] }).changes).toEqual([]);
+    });
+
+    it('aperçu : seules les sessions des jours dont la grille change, avec les totaux', () => {
+      const p = db.previewTariffChange(site, { currency: 'EUR', timezone: 'Europe/Paris', grids: [flat(0.2), flat(0.25, '2026-06-01')] });
+      expect(p.changes.map((c) => c.id)).toEqual([late.id]);
+      expect(p.changes[0]).toMatchObject({ old_cost: 2, new_cost: 2.5, user_name: 'Anne4', tag_category: 'pro' });
+      expect(p.totals).toEqual([{ currency: 'EUR', old_cost: 2, new_cost: 2.5, delta: 0.5 }]);
+      // rien n'est encore enregistré
+      expect(db.getTransactionById(late.id).cost).toBe(2);
+    });
+
+    it('confirmation : sessions recalculées et chaque écart journalisé', () => {
+      const r = db.applyTariffChange(
+        site,
+        { currency: 'EUR', timezone: 'Europe/Paris', grids: [flat(0.2), flat(0.25, '2026-06-01')] },
+        { authorId: paul, authorName: 'Paul4' }
+      );
+      expect(r.recalculated).toBe(1);
+      expect(db.getTransactionById(late.id).cost).toBe(2.5);
+      expect(db.getTransactionById(early.id).cost).toBe(2);
+      const [c] = db.getTransactionCorrections(late.id);
+      expect(c).toMatchObject({ kind: 'tariff', old_cost: 2, new_cost: 2.5, new_currency: 'EUR', author_name: 'Paul4', energy_wh: 10000 });
+      expect(db.getTransactions({ chargepoint_id: cp }).find((t) => t.id === late.id).corrections_count).toBe(1);
+    });
+
+    it('relevés purgés : le recalcul repart du détail du coût figé', () => {
+      db.getDb().prepare('DELETE FROM transactions_values WHERE chargepoint_id = ?').run(cp);
+      const p = db.previewTariffChange(site, { currency: 'EUR', timezone: 'Europe/Paris', grids: [flat(0.2), flat(0.3, '2026-06-01')] });
+      expect(p.changes).toHaveLength(1);
+      expect(p.changes[0].new_cost).toBe(3);
+    });
+  });
+
+  describe('correction du badge et régularisations', () => {
+    let tx;
+
+    beforeAll(() => {
+      db.getDb().prepare('DELETE FROM transactions WHERE chargepoint_id = ?').run(cp);
+      setTariff([flat(0.2)]);
+      // badge de Paul prêté à Anne, le 10 mai
+      tx = session('L4PAULPRO', '2026-05-10T08:00:00Z', '2026-05-10T09:00:00Z', 10);
+    });
+
+    it('badges proposés : ceux du site et les badges globaux des salariés du site', () => {
+      const codes = db.getBadgeCorrectionCandidates(site).map((t) => t.id_tag);
+      expect(codes).toEqual(expect.arrayContaining(['L4PAULPRO', 'L4ANNEPRO', 'L4ANNEPER']));
+      expect(codes).not.toContain('L4OUTPRO');
+      expect(codes).not.toContain('L4OTHERSITE');
+    });
+
+    it('le salarié et la catégorie suivent le badge, coût et index inchangés, badge présenté tracé', () => {
+      const tag = db.getBadgeCorrectionCandidates(site).find((t) => t.id_tag === 'L4ANNEPER');
+      const updated = db.correctTransactionBadge(tx.id, tag, { authorId: paul, authorName: 'Paul4', reason: 'badge prêté' });
+      expect(updated).toMatchObject({ id_tag: 'L4ANNEPER', user_id: anne, user_name: 'Anne4', tag_category: 'perso', cost: 2, meter_stop: 10000 });
+      expect(db.getTransactionCorrections(tx.id)[0]).toMatchObject({
+        kind: 'badge',
+        reason: 'badge prêté',
+        old_id_tag: 'L4PAULPRO',
+        old_user_id: paul,
+        old_category: 'pro',
+        new_category: 'perso',
+        old_cost: 2,
+        new_cost: 2,
+      });
+    });
+
+    it('régularisation : correction saisie pendant la période sur une session antérieure', () => {
+      db.getDb().prepare("UPDATE transaction_corrections SET created_at = '2026-06-15T10:00:00.000Z' WHERE transaction_id = ?").run(tx.id);
+      // juin : la session de mai, déjà exportée comme pro de Paul, sort du pro de Paul
+      const june = db.getReimbursementAdjustments({ category: 'pro', site_id: site, from: '2026-06-01', to: '2026-06-30' });
+      expect(june).toEqual([expect.objectContaining({ kind: 'badge', user_id: paul, user_name: 'Paul4', energy_kwh: -10, cost: -2, currency: 'EUR' })]);
+      // côté perso : ajoutée à Anne
+      const perso = db.getReimbursementAdjustments({ category: 'perso', site_id: site, from: '2026-06-01', to: '2026-06-30' });
+      expect(perso).toEqual([expect.objectContaining({ user_id: anne, energy_kwh: 10, cost: 2 })]);
+      // mai : la session est dans la période, déjà corrigée dans la section principale
+      expect(db.getReimbursementAdjustments({ category: 'pro', site_id: site, from: '2026-05-01', to: '2026-05-31' })).toEqual([]);
+      // juillet : correction hors période ; sans date de début : pas de section
+      expect(db.getReimbursementAdjustments({ category: 'pro', site_id: site, from: '2026-07-01' })).toEqual([]);
+      expect(db.getReimbursementAdjustments({ category: 'pro', site_id: site })).toEqual([]);
+      // autre site : rien
+      expect(db.getReimbursementAdjustments({ category: 'pro', site_ids: [other], from: '2026-06-01' })).toEqual([]);
+    });
+
+    it('régularisation tarifaire : écart de montant au salarié de la session', () => {
+      db.applyTariffChange(site, { currency: 'EUR', timezone: 'Europe/Paris', grids: [flat(0.2), flat(0.3, '2026-05-01')] }, {});
+      db.getDb().prepare("UPDATE transaction_corrections SET created_at = '2026-06-20T10:00:00.000Z' WHERE transaction_id = ? AND kind = 'tariff'").run(tx.id);
+      const perso = db.getReimbursementAdjustments({ category: 'perso', site_id: site, from: '2026-06-01', to: '2026-06-30' });
+      expect(perso).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: 'tariff', user_id: anne, energy_kwh: 0, cost: 1 })])
+      );
+    });
+
+    it('suppression d’un compte : noms du journal anonymisés aussi', () => {
+      const tmp = db.createUser('lot4-tmp@test.com', 'Passw0rd!x', 'user', 'Temporaire').id;
+      db.setUserSites(tmp, [{ site_id: site, role: 'user', authorized: 1 }]);
+      const tag = db.createIdTag('L4TMP', tmp, site, null, null, 1, 'ISO14443', null, 'pro');
+      const t2 = session('L4PAULPRO', '2026-05-11T08:00:00Z', '2026-05-11T09:00:00Z', 1);
+      db.correctTransactionBadge(t2.id, db.getIdTagById(tag.id), { authorId: tmp, authorName: 'Temporaire', reason: 'test' });
+      db.deleteUser(tmp, `Utilisateur supprimé #${tmp}`);
+      const [c] = db.getTransactionCorrections(t2.id);
+      expect(c.new_user_name).toBe(`Utilisateur supprimé #${tmp}`);
+      expect(c.author_name).toBe(`Utilisateur supprimé #${tmp}`);
+    });
+  });
+});
+
 // ── Transactions : recherche par connecteur (multi-EVSE 2.0.1) et rattachement tardif du badge ──
 describe('database — transactions multi-EVSE et badge tardif', () => {
   let cpId;

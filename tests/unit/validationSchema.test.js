@@ -621,3 +621,17 @@ describe('validationSchema — comptes (lot 3)', () => {
     expect(res.array().map((e) => e.msg)).toContain('VALIDATION_USER_ID');
   });
 });
+
+describe('validationSchema — correction du badge (lot 4)', () => {
+  it('badge entier positif et motif de 3 à 500 caractères', async () => {
+    expect((await runSchema(schema.BadgeCorrection, { id_tag_id: 3, reason: 'badge prêté' })).isEmpty()).toBe(true);
+    const short = await runSchema(schema.BadgeCorrection, { id_tag_id: 3, reason: '  a ' });
+    expect(short.array().map((e) => e.msg)).toContain('VALIDATION_CORRECTION_REASON');
+    const missing = await runSchema(schema.BadgeCorrection, { id_tag_id: 'x' });
+    expect(missing.array().map((e) => e.msg)).toEqual(
+      expect.arrayContaining(['VALIDATION_CORRECTION_TAG', 'VALIDATION_CORRECTION_REASON'])
+    );
+    const long = await runSchema(schema.BadgeCorrection, { id_tag_id: 3, reason: 'x'.repeat(501) });
+    expect(long.isEmpty()).toBe(false);
+  });
+});

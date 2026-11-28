@@ -568,7 +568,39 @@ router.put(
         details: errors,
       });
     }
-    res.json(db.replaceSiteTariff(siteId, input));
+    // Un tarif saisi en retard change le coût de sessions déjà clôturées (et peut-être déjà
+    // remboursées) : aperçu (dry_run), puis enregistrement seulement sur confirmation explicite.
+    // Chaque écart est journalisé et ressort en régularisation dans l'export remboursement.
+    const { changes, totals } = db.previewTariffChange(siteId, input);
+    const preview = {
+      count: changes.length,
+      totals,
+      sessions: changes.slice(0, 100).map((c) => ({
+        id: c.id,
+        transaction_id: c.transaction_id,
+        start_time: c.start_time,
+        user_name: c.user_name,
+        tag_category: c.tag_category,
+        old_cost: c.old_cost,
+        old_currency: c.old_currency,
+        new_cost: c.new_cost,
+        new_currency: c.new_currency,
+      })),
+    };
+    if (req.body.dry_run === true) return res.json({ preview });
+    if (changes.length > 0 && req.body.confirm !== true) {
+      return res.status(409).json({ error: 'ERR_TARIFF_RECALC_CONFIRM_REQUIRED', preview });
+    }
+    const { tariff: saved, recalculated } = db.applyTariffChange(siteId, input, {
+      authorId: req.user.id,
+      authorName: req.user.shortname || req.user.useremail,
+    });
+    if (recalculated > 0) {
+      logger.info(
+        `Tariff of site #${siteId} changed by ${req.user.useremail}: ${recalculated} session(s) recalculated`
+      );
+    }
+    res.json({ ...saved, recalculated });
   }
 );
 
@@ -2535,8 +2567,10 @@ router.get(
       }
     }
 
+    // Corrections saisies pendant la période sur des sessions antérieures (déjà exportées)
     const csv = buildReimbursementCsv(db.getReimbursementReport(filters), {
       lng: req.user.langue || 'fr',
+      adjustments: db.getReimbursementAdjustments(filters),
     });
     const filename = `remboursement-${filters.category}-${new Date().toISOString().slice(0, 10)}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -2562,8 +2596,79 @@ router.get('/transactions/:id', requireAuth, ...validateSchema(schema.IdParam), 
   const tx = db.getTransactionFullById(Number(req.params.id));
   if (!tx) return res.status(404).json({ error: 'Not found' });
   if (!canViewTransaction(req, tx)) return res.status(403).json({ error: 'ERR_ACCESS_DENIED' });
-  res.json(tx);
+  res.json({
+    ...tx,
+    corrections: db.getTransactionCorrections(tx.id),
+    can_correct: canCorrectTransaction(req, tx),
+  });
 });
+
+// Correction du badge d'une session : admin, ou manager du site de la session (site figé au
+// démarrage), y compris sur ses propres sessions. Jamais une session refusée, ni sur un site
+// archivé. Le coût et les index ne changent pas.
+function canCorrectTransaction(req, tx) {
+  if (!tx || !['Completed', 'Active'].includes(tx.status) || !tx.site_id) return false;
+  const site = db.getSiteById(tx.site_id);
+  if (!site || site.archived_at) return false;
+  if (req.user.role === 'admin') return true;
+  const managedIds = getUserManagedSiteIds(req);
+  return !!(managedIds && managedIds.includes(tx.site_id));
+}
+
+function badgeCandidates(tx) {
+  return db.getBadgeCorrectionCandidates(tx.site_id).filter((t) => !isGeneratedTag(t.id_tag));
+}
+
+router.get(
+  '/transactions/:id/badge-candidates',
+  requireManager,
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const tx = db.getTransactionById(Number(req.params.id));
+    if (!tx) return res.status(404).json({ error: 'Not found' });
+    if (!canCorrectTransaction(req, tx)) {
+      return res.status(403).json({ error: 'ERR_TRANSACTION_NOT_CORRECTABLE' });
+    }
+    res.json(badgeCandidates(tx));
+  }
+);
+
+router.post(
+  '/transactions/:id/badge-correction',
+  requireManager,
+  ...validateSchema(schema.IdParam, schema.BadgeCorrection),
+  (req, res) => {
+    const result = validationResult(req);
+    if (!result.isEmpty()) {
+      return res.status(400).json({ error: result.array().map((e) => e.msg) });
+    }
+    const data = matchedData(req);
+    const tx = db.getTransactionById(Number(req.params.id));
+    if (!tx) return res.status(404).json({ error: 'Not found' });
+    if (!canCorrectTransaction(req, tx)) {
+      return res.status(403).json({ error: 'ERR_TRANSACTION_NOT_CORRECTABLE' });
+    }
+    // Uniquement un badge enregistré pour le site de la session
+    const tag = badgeCandidates(tx).find((t) => t.id === data.id_tag_id);
+    if (!tag) return res.status(400).json({ error: 'ERR_CORRECTION_TAG_NOT_ALLOWED' });
+    if (
+      tag.id_tag === tx.id_tag &&
+      (tag.user_id ?? null) === (tx.user_id ?? null) &&
+      tag.category === tx.tag_category
+    ) {
+      return res.status(400).json({ error: 'ERR_CORRECTION_NO_CHANGE' });
+    }
+    const updated = db.correctTransactionBadge(tx.id, tag, {
+      authorId: req.user.id,
+      authorName: req.user.shortname || req.user.useremail,
+      reason: data.reason,
+    });
+    logger.info(
+      `Transaction #${tx.id} badge corrected by ${req.user.useremail}: ${tx.id_tag} -> ${tag.id_tag}`
+    );
+    res.json({ transaction: updated, corrections: db.getTransactionCorrections(tx.id) });
+  }
+);
 
 // Clôture manuelle d'une transaction restée active en base alors que la borne ne la
 // renverra jamais (borne hors service, file hors ligne perdue…). Rien n'est envoyé à la borne :

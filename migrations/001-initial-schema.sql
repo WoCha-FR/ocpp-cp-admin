@@ -13,6 +13,19 @@ CREATE TABLE IF NOT EXISTS sites (
   created_at TEXT DEFAULT (datetime('now'))
 );
 
+-- Grilles datées (migration 014) : chacune s'applique à partir de valid_from (jour local du site)
+-- jusqu'à la suivante ; avant la première, la grille « depuis l'origine » (sites.default_price_per_kwh
+-- et tranches sans version_id)
+CREATE TABLE IF NOT EXISTS site_tariff_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  site_id INTEGER NOT NULL,
+  valid_from TEXT NOT NULL,
+  default_price_per_kwh REAL,
+  created_at TEXT DEFAULT (datetime('now')),
+  FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE,
+  UNIQUE (site_id, valid_from)
+);
+
 CREATE TABLE IF NOT EXISTS site_tariff_periods (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   site_id INTEGER NOT NULL,
@@ -21,6 +34,7 @@ CREATE TABLE IF NOT EXISTS site_tariff_periods (
   start_time TEXT NOT NULL,
   end_time TEXT NOT NULL,
   price_per_kwh REAL NOT NULL,
+  version_id INTEGER REFERENCES site_tariff_versions(id) ON DELETE CASCADE,
   FOREIGN KEY (site_id) REFERENCES sites(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_site_tariff_periods_site ON site_tariff_periods(site_id);
@@ -255,6 +269,35 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS idx_transactions_cp_status ON transactions(chargepoint_id, status);
 CREATE INDEX IF NOT EXISTS idx_transactions_site ON transactions(site_id, start_time);
 CREATE INDEX IF NOT EXISTS idx_transactions_user ON transactions(user_id, start_time);
+
+-- Journal des corrections d'une session (migration 014) : badge corrigé ou coût recalculé
+-- après un tarif saisi en retard ; instantané avant / après pour les régularisations
+CREATE TABLE IF NOT EXISTS transaction_corrections (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transaction_id INTEGER NOT NULL,
+  site_id INTEGER,
+  kind TEXT NOT NULL CHECK (kind IN ('badge', 'tariff')),
+  reason TEXT,
+  author_id INTEGER,
+  author_name TEXT,
+  old_id_tag TEXT,
+  new_id_tag TEXT,
+  old_user_id INTEGER,
+  new_user_id INTEGER,
+  old_user_name TEXT,
+  new_user_name TEXT,
+  old_category TEXT,
+  new_category TEXT,
+  old_cost REAL,
+  new_cost REAL,
+  old_currency TEXT,
+  new_currency TEXT,
+  energy_wh INTEGER,
+  created_at TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY (transaction_id) REFERENCES transactions(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_tx_corrections_tx ON transaction_corrections(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_tx_corrections_site ON transaction_corrections(site_id, created_at);
 
 CREATE TABLE IF NOT EXISTS transactions_values (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

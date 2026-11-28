@@ -114,10 +114,12 @@ function buildTransactionsCsv(
  * Construit le CSV « remboursement » : une ligne par site, salarié et devise, suivie d'une
  * ligne de total par site (et par devise).
  * @param {Array} rows lignes issues de db.getReimbursementReport (triées par site puis salarié)
- * @param {{lng: string}} opts
+ * @param {{lng: string, adjustments: Array}} opts adjustments : lignes de
+ *   db.getReimbursementAdjustments, ajoutées dans une section « Régularisations » (corrections
+ *   saisies pendant la période sur des sessions antérieures, déjà exportées)
  * @returns {string} contenu CSV (BOM UTF-8, séparateur « ; », fins de ligne CRLF)
  */
-function buildReimbursementCsv(rows, { lng = 'fr' } = {}) {
+function buildReimbursementCsv(rows, { lng = 'fr', adjustments = [] } = {}) {
   const h = (key) => trad(`csvExportTitle.${key}`, { lng });
   const headers = [
     h('site'),
@@ -180,6 +182,56 @@ function buildReimbursementCsv(rows, { lng = 'fr' } = {}) {
           .join(';')
       );
     });
+  }
+
+  if (adjustments.length > 0) {
+    csvRows.push('', cell(h('adjustments_title')));
+    csvRows.push(
+      [
+        h('site'),
+        h('user'),
+        h('category'),
+        h('session_start'),
+        h('transaction_id'),
+        h('adjustment_kind'),
+        h('adjustment_reason'),
+        h('adjustment_date'),
+        h('energy'),
+        h('cost'),
+        h('currency'),
+      ].join(';')
+    );
+    const totals = new Map();
+    for (const a of adjustments) {
+      csvRows.push(
+        [
+          a.site_name || '',
+          a.user_name || '',
+          a.category ? h(`category_${a.category}`) : '',
+          a.start_time || '',
+          a.transaction_id ?? '',
+          h(`adjustment_${a.kind}`),
+          a.reason || '',
+          a.created_at || '',
+          Number(a.energy_kwh || 0).toFixed(2),
+          fmtCost(a.cost),
+          a.cost != null ? a.currency || '' : '',
+        ]
+          .map(cell)
+          .join(';')
+      );
+      if (a.cost != null) {
+        const cur = a.currency || '';
+        totals.set(cur, (totals.get(cur) || 0) + a.cost);
+      }
+    }
+    for (const [currency, cost] of totals) {
+      csvRows.push(
+        [h('adjustments_total'), '', '', '', '', '', '', '', '', cost.toFixed(2), currency]
+          .map(cell)
+          .join(';')
+      );
+    }
   }
 
   return '﻿' + csvRows.join('\r\n');

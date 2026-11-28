@@ -12,6 +12,9 @@
  *  - tranche avec end < start = passage de minuit ; elle appartient tout entière au jour de
  *    son début (vendredi 22:00→06:00 couvre vendredi 22:00 → samedi 06:00)
  *  - heures non couvertes par une tranche : `default_price_per_kwh`
+ *  - grilles datées (`grids`) : la première, sans date, s'applique « depuis l'origine » ; chaque
+ *    grille datée s'applique à partir de son jour (`valid_from`, AAAA-MM-JJ, minuit heure du site)
+ *    jusqu'à la suivante. Une session à cheval sur deux grilles est découpée à minuit.
  */
 
 const DAY_MS = 86400000;
@@ -19,6 +22,8 @@ const MINUTES_PER_DAY = 1440;
 const MINUTES_PER_WEEK = MINUTES_PER_DAY * 7;
 const MAX_PRICE = 1000;
 const MAX_PERIODS = 50;
+const MAX_GRIDS = 50;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ALL_DAYS = [1, 2, 3, 4, 5, 6, 7];
 const WEEKDAY_TO_ISO = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
 
@@ -33,6 +38,9 @@ const ERR = {
   DAYS: 'ERR_TARIFF_DAYS',
   OVERLAP: 'ERR_TARIFF_OVERLAP',
   TOO_MANY: 'ERR_TARIFF_TOO_MANY_PERIODS',
+  VALID_FROM: 'ERR_TARIFF_VALID_FROM',
+  VALID_FROM_DUPLICATE: 'ERR_TARIFF_VALID_FROM_DUPLICATE',
+  TOO_MANY_GRIDS: 'ERR_TARIFF_TOO_MANY_GRIDS',
 };
 
 // ── Utilitaires ──
@@ -74,6 +82,27 @@ function isValidTimezone(tz) {
   } catch {
     return false;
   }
+}
+
+/** Date locale « AAAA-MM-JJ » existante (pas de 2027-02-30) */
+function isValidDate(value) {
+  if (typeof value !== 'string' || !DATE_RE.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
+}
+
+/**
+ * Grilles d'un tarif, triées : la grille « depuis l'origine » (valid_from null) d'abord, puis par
+ * date. Un tarif sans `grids` (forme historique) n'a qu'une grille, depuis l'origine.
+ */
+function tariffGrids(tariff) {
+  const t = tariff || {};
+  const grids = Array.isArray(t.grids)
+    ? t.grids
+    : [{ valid_from: null, default_price_per_kwh: t.default_price_per_kwh, periods: t.periods }];
+  return [...grids].sort((a, b) =>
+    a.valid_from == null ? -1 : b.valid_from == null ? 1 : a.valid_from.localeCompare(b.valid_from)
+  );
 }
 
 function isValidPrice(p) {
@@ -118,13 +147,36 @@ function validateTariff(tariff) {
   }
   if (!isValidTimezone(t.timezone)) errors.push({ code: ERR.TIMEZONE });
 
+  if (!Array.isArray(t.grids)) {
+    validateGrid(t, errors);
+    return { valid: errors.length === 0, errors };
+  }
+  if (t.grids.length > MAX_GRIDS) errors.push({ code: ERR.TOO_MANY_GRIDS });
+  const seen = new Set();
+  t.grids.slice(0, MAX_GRIDS).forEach((g, grid) => {
+    const from = g ? g.valid_from : undefined;
+    // Exactement une grille « depuis l'origine », la première ; les autres datées et distinctes
+    if (grid === 0 ? from != null : !isValidDate(from)) {
+      errors.push({ code: ERR.VALID_FROM, grid });
+    } else if (from != null) {
+      if (seen.has(from)) errors.push({ code: ERR.VALID_FROM_DUPLICATE, grid });
+      seen.add(from);
+    }
+    validateGrid(g || {}, errors, grid);
+  });
+  return { valid: errors.length === 0, errors };
+}
+
+// Une grille : prix par défaut + tranches (`grid` = rang de la grille, ajouté aux erreurs)
+function validateGrid(t, errors, grid) {
+  const push = (e) => errors.push(grid === undefined ? e : { ...e, grid });
   const periods = Array.isArray(t.periods) ? t.periods : [];
   const hasDefault = t.default_price_per_kwh !== null && t.default_price_per_kwh !== undefined;
   if (hasDefault && !isValidPrice(t.default_price_per_kwh)) {
-    errors.push({ code: ERR.PRICE });
+    push({ code: ERR.PRICE });
   }
-  if (periods.length > 0 && !hasDefault) errors.push({ code: ERR.DEFAULT_REQUIRED });
-  if (periods.length > MAX_PERIODS) errors.push({ code: ERR.TOO_MANY });
+  if (periods.length > 0 && !hasDefault) push({ code: ERR.DEFAULT_REQUIRED });
+  if (periods.length > MAX_PERIODS) push({ code: ERR.TOO_MANY });
 
   const wellFormed = [];
   periods.slice(0, MAX_PERIODS).forEach((p, index) => {
@@ -132,18 +184,18 @@ function validateTariff(tariff) {
     const start = parseTime(p && p.start_time);
     const end = parseTime(p && p.end_time, true);
     if (start === null || end === null) {
-      errors.push({ code: ERR.TIME_FORMAT, index });
+      push({ code: ERR.TIME_FORMAT, index });
       ok = false;
     } else if (start === end) {
-      errors.push({ code: ERR.TIME_EMPTY, index });
+      push({ code: ERR.TIME_EMPTY, index });
       ok = false;
     }
     if (parseDays(p && p.days) === null) {
-      errors.push({ code: ERR.DAYS, index });
+      push({ code: ERR.DAYS, index });
       ok = false;
     }
     if (!isValidPrice(p && p.price_per_kwh)) {
-      errors.push({ code: ERR.PRICE, index });
+      push({ code: ERR.PRICE, index });
       ok = false;
     }
     if (ok) wellFormed.push({ index, intervals: weeklyIntervals(p) });
@@ -156,12 +208,10 @@ function validateTariff(tariff) {
         wellFormed[j].intervals.some(([a2, b2]) => a1 < b2 && a2 < b1)
       );
       if (overlap) {
-        errors.push({ code: ERR.OVERLAP, index: wellFormed[i].index, other: wellFormed[j].index });
+        push({ code: ERR.OVERLAP, index: wellFormed[i].index, other: wellFormed[j].index });
       }
     }
   }
-
-  return { valid: errors.length === 0, errors };
 }
 
 // ── Résolution du prix ──
@@ -245,7 +295,9 @@ function localParts(timezone, tMs) {
   v.hour %= 24;
   const msInSecond = ((tMs % 1000) + 1000) % 1000;
   const localAsUtc = Date.UTC(v.year, v.month - 1, v.day, v.hour, v.minute, v.second);
+  const pad = (n) => String(n).padStart(2, '0');
   return {
+    date: `${v.year}-${pad(v.month)}-${pad(v.day)}`,
     isoDay: WEEKDAY_TO_ISO[weekday] || 1,
     msOfDay: ((v.hour * 60 + v.minute) * 60 + v.second) * 1000 + msInSecond,
     offset: localAsUtc - (tMs - msInSecond),
@@ -299,14 +351,23 @@ function buildCurve(startMs, stopMs, totalKwh, points) {
  * @returns {{cost: number, currency: string, details: object}|null} null si pas de tarif
  */
 function computeSessionCost({ startTime, stopTime, totalKwh, points, tariff }) {
-  if (
-    !tariff ||
-    tariff.default_price_per_kwh === null ||
-    tariff.default_price_per_kwh === undefined
-  )
-    return null;
-  const defaultPrice = Number(tariff.default_price_per_kwh);
-  if (!Number.isFinite(defaultPrice)) return null;
+  if (!tariff) return null;
+  // Grilles normalisées ; une grille sans prix par défaut = pas de tarif à partir de sa date
+  const grids = tariffGrids(tariff).map((g) => {
+    const raw = g.default_price_per_kwh;
+    const price = raw === null || raw === undefined || raw === '' ? NaN : Number(raw);
+    return {
+      validFrom: g.valid_from ?? null,
+      defaultPrice: Number.isFinite(price) ? price : null,
+      periods: normalizePeriods(g.periods),
+    };
+  });
+  if (!grids.some((g) => g.defaultPrice !== null)) return null;
+  const gridFor = (date) => {
+    let found = grids[0];
+    for (const g of grids) if (g.validFrom === null || g.validFrom <= date) found = g;
+    return found;
+  };
   const kwhTotal = Number(totalKwh);
   if (!Number.isFinite(kwhTotal) || kwhTotal < 0) return null;
 
@@ -317,32 +378,50 @@ function computeSessionCost({ startTime, stopTime, totalKwh, points, tariff }) {
 
   const timezone = isValidTimezone(tariff.timezone) ? tariff.timezone : 'UTC';
   const currency = tariff.currency || 'EUR';
-  const periods = normalizePeriods(tariff.periods);
 
-  // Bornes de tranches dans la journée (ms depuis minuit local)
+  // Bornes de tranches dans la journée (ms depuis minuit local), toutes grilles confondues :
+  // chaque morceau reste dans une seule journée locale, donc une seule grille
   const boundarySet = new Set([0, DAY_MS]);
-  for (const p of periods) {
-    boundarySet.add(p.start * 60000);
-    boundarySet.add(p.end * 60000);
+  for (const g of grids) {
+    for (const p of g.periods) {
+      boundarySet.add(p.start * 60000);
+      boundarySet.add(p.end * 60000);
+    }
   }
   const boundaries = [...boundarySet].sort((a, b) => a - b);
 
   const segments = [];
+  let unpriced = false;
   const pushSegment = (fromMs, toMs, kwh) => {
-    const { isoDay, msOfDay } = localParts(timezone, fromMs);
+    const { date, isoDay, msOfDay } = localParts(timezone, fromMs);
+    const grid = gridFor(date);
+    if (grid.defaultPrice === null) {
+      // énergie consommée un jour sans tarif : coût incalculable
+      if (kwh > 1e-9) unpriced = true;
+      return;
+    }
     const { price, label } = resolvePrice(
-      periods,
+      grid.periods,
       isoDay,
       Math.floor(msOfDay / 60000),
-      defaultPrice
+      grid.defaultPrice
     );
+    const from = grid.validFrom;
     const last = segments[segments.length - 1];
-    if (last && last.price === price && last.label === label) {
+    if (last && last.price === price && last.label === label && last.validFrom === from) {
       last.to = toMs;
       last.kwh += kwh;
       last.amount += kwh * price;
     } else {
-      segments.push({ from: fromMs, to: toMs, label, price, kwh, amount: kwh * price });
+      segments.push({
+        from: fromMs,
+        to: toMs,
+        label,
+        price,
+        kwh,
+        amount: kwh * price,
+        validFrom: from,
+      });
     }
   };
 
@@ -380,8 +459,10 @@ function computeSessionCost({ startTime, stopTime, totalKwh, points, tariff }) {
     }
   }
 
+  if (unpriced) return null;
   const kept = segments.filter((s) => s.kwh > 1e-9);
   const total = kept.reduce((sum, s) => sum + s.amount, 0);
+  const startGrid = gridFor(localParts(timezone, startMs).date);
 
   return {
     cost: round(total, 2),
@@ -390,7 +471,7 @@ function computeSessionCost({ startTime, stopTime, totalKwh, points, tariff }) {
       method: intermediateCount > 0 ? 'meter' : 'prorata',
       timezone,
       total_kwh: round(kwhTotal, 6),
-      default_price: defaultPrice,
+      default_price: startGrid.defaultPrice,
       segments: kept.map((s) => ({
         from: new Date(s.from).toISOString(),
         to: new Date(s.to).toISOString(),
@@ -398,9 +479,36 @@ function computeSessionCost({ startTime, stopTime, totalKwh, points, tariff }) {
         kwh: round(s.kwh, 6),
         price: s.price,
         amount: round(s.amount, 6),
+        // grille datée appliquée (absente pour la grille « depuis l'origine »)
+        ...(s.validFrom ? { tariff_from: s.validFrom } : {}),
       })),
     },
   };
+}
+
+/**
+ * Courbe d'énergie à partir du détail d'un coût figé (cost_details), quand les relevés de la
+ * session ont été purgés : un point en fin de chaque morceau, énergie cumulée en Wh.
+ * Recalculer avec une autre grille garde ainsi la répartition horaire d'origine.
+ */
+function pointsFromCostDetails(details) {
+  let d = details;
+  if (typeof d === 'string') {
+    try {
+      d = JSON.parse(d);
+    } catch {
+      return [];
+    }
+  }
+  if (!d || !Array.isArray(d.segments)) return [];
+  const points = [];
+  let cumulative = 0;
+  for (const seg of d.segments) {
+    cumulative += Number(seg.kwh) || 0;
+    const t = Date.parse(seg.to);
+    if (Number.isFinite(t)) points.push({ x: t / 1000, energy: cumulative * 1000 });
+  }
+  return points;
 }
 
 /**
@@ -409,13 +517,40 @@ function computeSessionCost({ startTime, stopTime, totalKwh, points, tariff }) {
  */
 function normalizeTariffInput(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  if (body.grids !== undefined && !Array.isArray(body.grids)) return null;
+  const head = {
+    currency:
+      typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : body.currency,
+    timezone: typeof body.timezone === 'string' ? body.timezone.trim() : body.timezone,
+  };
+  if (Array.isArray(body.grids)) {
+    const grids = [];
+    for (const g of body.grids) {
+      const grid = normalizeGridInput(g);
+      if (!grid) return null;
+      grids.push({
+        valid_from:
+          g.valid_from === null || g.valid_from === undefined || g.valid_from === ''
+            ? null
+            : typeof g.valid_from === 'string'
+              ? g.valid_from.trim()
+              : g.valid_from,
+        ...grid,
+      });
+    }
+    return { ...head, grids };
+  }
+  const grid = normalizeGridInput(body);
+  return grid ? { ...head, ...grid } : null;
+}
+
+// Prix par défaut + tranches d'une grille (corps de requête), avant validation
+function normalizeGridInput(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
   if (body.periods !== undefined && !Array.isArray(body.periods)) return null;
   const rawDefault = body.default_price_per_kwh;
   const hasDefault = rawDefault !== null && rawDefault !== undefined && rawDefault !== '';
   return {
-    currency:
-      typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : body.currency,
-    timezone: typeof body.timezone === 'string' ? body.timezone.trim() : body.timezone,
     default_price_per_kwh: hasDefault ? Number(rawDefault) : null,
     periods: (body.periods || []).map((p) => {
       const period = p && typeof p === 'object' ? p : {};
@@ -472,6 +607,9 @@ module.exports = {
   formatTariffDetail,
   ALL_DAYS,
   ERR,
+  isValidDate,
+  tariffGrids,
+  pointsFromCostDetails,
   parseTime,
   parseDays,
   isValidTimezone,

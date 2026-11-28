@@ -413,6 +413,7 @@ async function api(method, path, body) {
     const code = data.error || 'ERR_INTERNAL';
     const err = new Error(translateError(code, data.params));
     err.code = code; // permet de réagir à un refus précis (ex. ERR_TAG_USED → désactiver)
+    err.data = data; // ex. aperçu des sessions recalculées (ERR_TARIFF_RECALC_CONFIRM_REQUIRED)
     throw err;
   }
   return sanitizeApiPayload(data);
@@ -4979,6 +4980,10 @@ async function showTransactionDetail(txRowId, lastPage) {
       document.getElementById('topbarActions').insertAdjacentHTML('beforeend',
         ` <button class="btn btn-danger" data-onclick="withBtn(this, () => closeTransactionManually(${tx.id}, ${jsArg(tx.transaction_id)}))">${t('transac.closeManually')}</button>`);
     }
+    if (tx.can_correct && currentPage === 'transactiondetail' && txDetailContext.transactionId === transactionId) {
+      document.getElementById('topbarActions').insertAdjacentHTML('beforeend',
+        ` <button class="btn btn-indigo" data-onclick="withBtn(this, () => showBadgeCorrectionModal(${tx.id}))">✏️ ${t('corrections.correctBadge')}</button>`);
+    }
     renderTransactionDetail(tx, data);
   } catch (err) {
     const el = document.getElementById('txDetailLoading');
@@ -5045,6 +5050,7 @@ function renderTransactionDetail(tx, data) {
       </div>
     </div>
     ${renderTxCostDetails(tx)}
+    ${renderTxCorrections(tx)}
     ${hasChartData ? `
     <div class="chart-grid" style="grid-template-columns: 1fr;">
       <div class="chart-card">
@@ -5069,6 +5075,72 @@ function renderTransactionDetail(tx, data) {
   if (hasChartData) {
     renderTransactionCharts(data);
   }
+}
+
+// Journal des corrections d'une session (badge corrigé, coût recalculé par un tarif saisi en retard)
+function renderTxCorrections(tx) {
+  const list = tx.corrections || [];
+  if (list.length === 0) return '';
+  const cat = (c) => (c ? t(`idtags.rfCategory${c === 'pro' ? 'Pro' : 'Perso'}`) : '-');
+  const cost = (v, cur) => (v != null ? formatCost(v, cur) : '—');
+  const who = (tag, name, category) => `${tag ? `<span class="mono-id">${escapeHtml(cleanIdTag(tag) || tag)}</span> ` : ''}${escapeHtml(name || '-')} · ${cat(category)}`;
+  return `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="card-header"><h3>✏️ ${t('corrections.title')}</h3></div>
+      <table>
+        <thead><tr><th>${t('common.datetime')}</th><th>${t('corrections.kind')}</th><th>${t('corrections.before')}</th><th>${t('corrections.after')}</th><th>${t('corrections.reason')}</th><th>${t('corrections.author')}</th></tr></thead>
+        <tbody>
+          ${list.map(c => `
+            <tr>
+              <td class="td-date">${formatDate(c.created_at)}</td>
+              <td>${t(c.kind === 'badge' ? 'corrections.kindBadge' : 'corrections.kindTariff')}</td>
+              <td>${c.kind === 'badge' ? who(c.old_id_tag, c.old_user_name, c.old_category) : cost(c.old_cost, c.old_currency)}</td>
+              <td>${c.kind === 'badge' ? who(c.new_id_tag, c.new_user_name, c.new_category) : cost(c.new_cost, c.new_currency)}</td>
+              <td>${c.reason ? escapeHtml(c.reason) : '-'}</td>
+              <td>${c.author_name ? escapeHtml(c.author_name) : '-'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function showBadgeCorrectionModal(txRowId) {
+  const tx = txDetailContext.tx;
+  const candidates = await api('GET', `/transactions/${txRowId}/badge-candidates`);
+  const cat = (c) => t(`idtags.rfCategory${c === 'pro' ? 'Pro' : 'Perso'}`);
+  openModal(`
+    <h3>✏️ ${t('corrections.correctBadgeTitle', { id: tx ? tx.transaction_id : txRowId })}</h3>
+    <p class="text-muted" style="font-size:13px;">${t('corrections.correctBadgeHint')}</p>
+    ${candidates.length === 0 ? `<p class="text-muted">${t('corrections.noCandidate')}</p>` : `
+    <div class="form-group">
+      <label for="corrTagId">${t('common.rfidTag')}</label>
+      <select id="corrTagId">
+        ${candidates.map(c => `<option value="${Number(c.id) || 0}" ${tx && c.id_tag === tx.id_tag ? 'selected' : ''}>${escapeHtml(c.id_tag)} — ${escapeHtml(c.user_name || t('corrections.noOwner'))} — ${cat(c.category)}${c.active ? '' : ` (${t('corrections.inactive')})`}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="corrReason">${t('corrections.reason')}</label>
+      <textarea id="corrReason" rows="3" maxlength="500" placeholder="${escapeAttr(t('corrections.reasonPlaceholder'))}"></textarea>
+    </div>`}
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      ${candidates.length ? `<button class="btn btn-primary" data-onclick="withBtn(this, () => submitBadgeCorrection(${Number(txRowId) || 0}))">${t('corrections.submit')}</button>` : ''}
+    </div>
+  `);
+}
+
+async function submitBadgeCorrection(txRowId) {
+  const reason = document.getElementById('corrReason').value.trim();
+  if (reason.length < 3) return toast(t('apiErrors.VALIDATION_CORRECTION_REASON'), 'error');
+  try {
+    await api('POST', `/transactions/${txRowId}/badge-correction`, {
+      id_tag_id: Number(document.getElementById('corrTagId').value),
+      reason,
+    });
+    closeModal();
+    toast(t('corrections.done'), 'success');
+    showTransactionDetail(txRowId, txDetailContext.lastPage);
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 function refreshTransactionDetail() {
@@ -7195,7 +7267,8 @@ async function renderSites() {
               <td>${cpCount}</td>
               <td class="td-date">${formatDateShort(s.created_at)}</td>
               <td>
-                ${s.default_price_per_kwh != null ? `<span class="td-meta">${t('tariff.summaryDefault', { price: formatCost(s.default_price_per_kwh, s.currency, 4) })}</span>` : `<span class="text-muted">${t('tariff.notConfigured')}</span>`}
+                ${(s.current_price_per_kwh ?? s.default_price_per_kwh) != null ? `<span class="td-meta">${t('tariff.summaryDefault', { price: formatCost(s.current_price_per_kwh ?? s.default_price_per_kwh, s.currency, 4) })}</span>` : `<span class="text-muted">${t('tariff.notConfigured')}</span>`}
+                ${s.next_tariff_from ? `<br /><span class="td-meta">${t('tariff.summaryNext', { date: formatDateShort(s.next_tariff_from), price: s.next_price_per_kwh != null ? formatCost(s.next_price_per_kwh, s.currency, 4) : t('tariff.notConfigured') })}</span>` : ''}
                 ${isManagedSite && !s.archived_at ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => showSiteTariffModal(${s.id}, ${jsArg(s.sname)}))">💶 ${t('tariff.button')}</button>` : ''}
               </td>
               <td>
@@ -7317,7 +7390,9 @@ async function restoreSite(id, name) {
 }
 
 // ── Tarification du kWh d'un site (managers du site + admin) ──
-let tariffEditor = { siteId: null, siteName: '', periods: [] };
+// grids[0] : grille « depuis l'origine » ; les suivantes s'appliquent à partir de valid_from.
+// periods désigne les tranches de la grille affichée (grids[current]).
+let tariffEditor = { siteId: null, siteName: '', grids: [], current: 0, periods: [] };
 
 function tariffTimezones() {
   let zones = [];
@@ -7327,17 +7402,22 @@ function tariffTimezones() {
 
 async function showSiteTariffModal(siteId, siteName) {
   const tf = await api('GET', `/sites/${siteId}/tariff`);
-  tariffEditor = {
-    siteId,
-    siteName,
-    periods: tf.periods.map(p => ({
+  const grids = (tf.grids || [{ valid_from: null, default_price_per_kwh: tf.default_price_per_kwh, periods: tf.periods }]).map(g => ({
+    valid_from: g.valid_from,
+    defaultPrice: g.default_price_per_kwh != null ? String(g.default_price_per_kwh) : '',
+    periods: g.periods.map(p => ({
       label: p.label || '',
       days: String(p.days).split(',').map(Number),
       start_time: p.start_time,
       end_time: p.end_time,
       price: String(p.price_per_kwh),
     })),
-  };
+  }));
+  // Grille affichée à l'ouverture : celle en vigueur aujourd'hui
+  const today = new Date().toISOString().slice(0, 10);
+  let current = 0;
+  grids.forEach((g, i) => { if (g.valid_from && g.valid_from <= today) current = i; });
+  tariffEditor = { siteId, siteName, grids, current, periods: grids[current].periods };
   openModal(`
   <div class="tariff-modal">
     <h3>${t('tariff.title', { site: escapeHtml(siteName) })}</h3>
@@ -7352,9 +7432,14 @@ async function showSiteTariffModal(siteId, siteName) {
         <input type="text" id="tariffTimezone" list="tariffTimezones" value="${escapeAttr(tf.timezone)}" autocomplete="off" />
         <datalist id="tariffTimezones">${tariffTimezones().map(z => `<option value="${escapeAttr(z)}"></option>`).join('')}</datalist>
       </div>
+    </div>
+    <h4 class="tariff-periods-title">${t('tariff.grids')}</h4>
+    <small class="text-muted">${t('tariff.gridsHelp')}</small>
+    <div id="tariffGrids" class="tariff-grids" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0;"></div>
+    <div class="tariff-global">
       <div class="form-group">
         <label for="tariffDefaultPrice">${t('tariff.defaultPrice')}</label>
-        <input type="number" id="tariffDefaultPrice" min="0" step="any" value="${tf.default_price_per_kwh != null ? escapeAttr(tf.default_price_per_kwh) : ''}" />
+        <input type="number" id="tariffDefaultPrice" min="0" step="any" value="${escapeAttr(tariffEditor.grids[tariffEditor.current].defaultPrice)}" />
       </div>
     </div>
     <small class="text-muted">${t('tariff.defaultPriceHelp')}</small>
@@ -7369,6 +7454,55 @@ async function showSiteTariffModal(siteId, siteName) {
     </div>
   </div>
 `);
+  renderTariffGrids();
+  renderTariffPeriods();
+}
+
+function tariffGridLabel(g) {
+  return g.valid_from ? t('tariff.gridFrom', { date: formatDateShort(g.valid_from) }) : t('tariff.gridOrigin');
+}
+
+function renderTariffGrids() {
+  const box = document.getElementById('tariffGrids');
+  if (!box) return;
+  const cur = tariffEditor.grids[tariffEditor.current];
+  box.innerHTML = tariffEditor.grids.map((g, i) => `
+    <button type="button" class="btn btn-sm ${i === tariffEditor.current ? 'btn-primary' : 'btn-outline'}" data-onclick="tariffSelectGrid(${i})">${escapeHtml(tariffGridLabel(g))}</button>`).join('') + `
+    <input type="date" id="tariffNewFrom" style="max-width:160px;" aria-label="${escapeAttr(t('tariff.gridNewFrom'))}" />
+    <button type="button" class="btn btn-outline btn-sm" data-onclick="tariffAddGrid()">+ ${t('tariff.gridAdd')}</button>
+    ${cur && cur.valid_from ? `<button type="button" class="btn btn-danger btn-sm" data-onclick="tariffRemoveGrid()">${t('tariff.gridRemove')}</button>` : ''}`;
+}
+
+function tariffSelectGrid(idx) {
+  tariffSyncDraft();
+  tariffEditor.current = idx;
+  tariffEditor.periods = tariffEditor.grids[idx].periods;
+  document.getElementById('tariffDefaultPrice').value = tariffEditor.grids[idx].defaultPrice;
+  renderTariffGrids();
+  renderTariffPeriods();
+}
+
+// Nouvelle grille datée, initialisée avec la grille affichée (cas courant : une hausse de prix)
+function tariffAddGrid() {
+  const from = document.getElementById('tariffNewFrom').value;
+  if (!from) return toast(t('tariff.gridDateRequired'), 'error');
+  tariffSyncDraft();
+  if (tariffEditor.grids.some(g => g.valid_from === from)) return toast(t('apiErrors.ERR_TARIFF_VALID_FROM_DUPLICATE'), 'error');
+  const base = tariffEditor.grids[tariffEditor.current];
+  const grid = { valid_from: from, defaultPrice: base.defaultPrice, periods: base.periods.map(p => ({ ...p, days: [...p.days] })) };
+  tariffEditor.grids.push(grid);
+  tariffEditor.grids.sort((a, b) => (a.valid_from == null ? -1 : b.valid_from == null ? 1 : a.valid_from.localeCompare(b.valid_from)));
+  tariffSelectGrid(tariffEditor.grids.indexOf(grid));
+}
+
+function tariffRemoveGrid() {
+  const cur = tariffEditor.grids[tariffEditor.current];
+  if (!cur || !cur.valid_from) return;
+  tariffEditor.grids.splice(tariffEditor.current, 1);
+  tariffEditor.current = 0;
+  tariffEditor.periods = tariffEditor.grids[0].periods;
+  document.getElementById('tariffDefaultPrice').value = tariffEditor.grids[0].defaultPrice;
+  renderTariffGrids();
   renderTariffPeriods();
 }
 
@@ -7404,6 +7538,9 @@ function renderTariffPeriods() {
 
 // Recopie les champs du formulaire dans le brouillon avant tout re-rendu
 function tariffSyncDraft() {
+  const grid = tariffEditor.grids[tariffEditor.current];
+  const priceEl = document.getElementById('tariffDefaultPrice');
+  if (grid && priceEl) grid.defaultPrice = priceEl.value;
   document.querySelectorAll('#tariffPeriods .tariff-period').forEach(row => {
     const p = tariffEditor.periods[Number(row.dataset.idx)];
     if (!p) return;
@@ -7437,23 +7574,54 @@ function tariffSetDays(idx, preset) {
 
 async function saveSiteTariff() {
   tariffSyncDraft();
-  const defaultPrice = document.getElementById('tariffDefaultPrice').value.trim();
   const body = {
     currency: document.getElementById('tariffCurrency').value,
     timezone: document.getElementById('tariffTimezone').value,
-    default_price_per_kwh: defaultPrice === '' ? null : defaultPrice,
-    periods: tariffEditor.periods.map(p => ({
-      label: p.label,
-      days: p.days,
-      start_time: p.start_time.trim(),
-      end_time: p.end_time.trim(),
-      price_per_kwh: p.price.trim(),
+    grids: tariffEditor.grids.map(g => ({
+      valid_from: g.valid_from,
+      default_price_per_kwh: String(g.defaultPrice).trim() === '' ? null : String(g.defaultPrice).trim(),
+      periods: g.periods.map(p => ({
+        label: p.label,
+        days: p.days,
+        start_time: p.start_time.trim(),
+        end_time: p.end_time.trim(),
+        price_per_kwh: p.price.trim(),
+      })),
     })),
   };
-  await api('PUT', `/sites/${tariffEditor.siteId}/tariff`, body);
+  const url = `/sites/${tariffEditor.siteId}/tariff`;
+  let saved;
+  try {
+    saved = await api('PUT', url, body);
+  } catch (err) {
+    // Tarif saisi en retard : les sessions déjà clôturées concernées sont recalculées sur
+    // confirmation, l'écart ressort en régularisation dans l'export remboursement
+    if (err.code !== 'ERR_TARIFF_RECALC_CONFIRM_REQUIRED' || !err.data?.preview) throw err;
+    if (!await confirmDialog(tariffRecalcMessage(err.data.preview), { confirmText: t('tariff.recalcConfirmBtn') })) return;
+    saved = await api('PUT', url, { ...body, confirm: true });
+  }
   closeModal();
-  toast(t('tariff.saved'), 'success');
+  toast(saved.recalculated ? t('tariff.savedRecalc', { count: saved.recalculated }) : t('tariff.saved'), 'success');
   renderSites();
+}
+
+function tariffRecalcMessage(preview) {
+  const lines = [t('tariff.recalcIntro', { count: preview.count })];
+  for (const tot of preview.totals || []) {
+    const sign = tot.delta > 0 ? '+' : '';
+    lines.push(`• ${formatCost(tot.old_cost, tot.currency)} → ${formatCost(tot.new_cost, tot.currency)} (${sign}${formatCost(tot.delta, tot.currency)})`);
+  }
+  const sample = (preview.sessions || []).slice(0, 5);
+  if (sample.length) {
+    lines.push('', t('tariff.recalcSample'));
+    for (const c of sample) {
+      const before = c.old_cost != null ? formatCost(c.old_cost, c.old_currency) : '—';
+      const after = c.new_cost != null ? formatCost(c.new_cost, c.new_currency) : '—';
+      lines.push(`${formatDateShort(c.start_time)} · ${c.user_name || '-'} : ${before} → ${after}`);
+    }
+  }
+  lines.push('', t('tariff.recalcOutro'));
+  return lines.join('\n');
 }
 
 // ── Gestion des utilisateurs d'un site (manager) ──
