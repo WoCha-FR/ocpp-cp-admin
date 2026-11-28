@@ -595,3 +595,29 @@ describe('validationSchema — dates OCPP normalisées (lot B)', () => {
     expect(result.array().map((e) => e.msg)).toContain('VALIDATION_EXPIRY_DATE');
   });
 });
+
+// ── Lot 3 : rôle global aligné sur la base, désactivation, export par salarié ──
+describe('validationSchema — comptes (lot 3)', () => {
+  it('rôle global : admin ou user seulement (« manager » est un rôle de site)', async () => {
+    for (const role of ['admin', 'user']) {
+      expect((await runSchema(schema.UserRole, { role })).isEmpty()).toBe(true);
+    }
+    const res = await runSchema(schema.UserRole, { role: 'manager' });
+    expect(res.array().map((e) => e.msg)).toContain('VALIDATION_USER_ROLE');
+  });
+
+  it('désactivation : booléen strict', async () => {
+    expect((await runSchema(schema.UserDisabled, { disabled: true })).isEmpty()).toBe(true);
+    expect((await runSchema(schema.UserDisabled, { disabled: false })).isEmpty()).toBe(true);
+    for (const disabled of ['yes', 2, undefined]) {
+      const res = await runSchema(schema.UserDisabled, { disabled });
+      expect(res.array().map((e) => e.msg)).toContain('VALIDATION_USER_DISABLED');
+    }
+  });
+
+  it('export des sessions : filtre user_id entier positif', async () => {
+    expect((await runSchema(schema.TransactionsQuery, {}, {}, { user_id: '12' })).isEmpty()).toBe(true);
+    const res = await runSchema(schema.TransactionsQuery, {}, {}, { user_id: 'abc' });
+    expect(res.array().map((e) => e.msg)).toContain('VALIDATION_USER_ID');
+  });
+});

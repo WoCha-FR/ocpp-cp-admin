@@ -68,8 +68,63 @@ function updateSite(id, name, address, autoWebBadge) {
   return getSiteById(id);
 }
 
+// Suppression définitive : réservée à un site sans aucune session (vérifié par l'appelant avec
+// countSiteSessions). Ses badges limités au site sont supprimés avec lui : sans cela la clé
+// étrangère (ON DELETE SET NULL) les transformerait en badges valables sur tous les sites.
 function deleteSite(id) {
-  db.prepare('DELETE FROM sites WHERE id = ?').run(id);
+  db.transaction(() => {
+    db.prepare('DELETE FROM id_tags WHERE site_id = ?').run(id);
+    db.prepare('DELETE FROM sites WHERE id = ?').run(id);
+  })();
+}
+
+// Sessions rattachées au site (site figé au démarrage). Les démarrages refusés (Rejected,
+// jamais facturés) ne comptent pas, comme pour les badges (countIdTagSessions).
+function countSiteSessions(siteId) {
+  return db
+    .prepare("SELECT COUNT(*) AS n FROM transactions WHERE site_id = ? AND status != 'Rejected'")
+    .get(siteId).n;
+}
+
+// Archivage : le site et ses bornes encore actives sont retirés ensemble, avec le même
+// horodatage, ce qui permet à la restauration de ne ramener que les bornes archivées avec lui.
+// Retourne les bornes archivées (déconnexion et révocation des certificats par l'appelant).
+function archiveSite(id) {
+  return db.transaction(() => {
+    // Horodatage strictement postérieur à celui d'une borne du site archivée séparément avant,
+    // pour que la restauration du site ne la ramène pas
+    const last = db
+      .prepare('SELECT MAX(archived_at) AS t FROM chargepoints WHERE site_id = ?')
+      .get(id)?.t;
+    let archivedAt = new Date().toISOString();
+    if (last && archivedAt <= last) {
+      archivedAt = new Date(new Date(last).getTime() + 1).toISOString();
+    }
+    const cps = db
+      .prepare('SELECT id, identity FROM chargepoints WHERE site_id = ? AND archived_at IS NULL')
+      .all(id);
+    db.prepare('UPDATE sites SET archived_at = ? WHERE id = ?').run(archivedAt, id);
+    db.prepare(
+      'UPDATE chargepoints SET archived_at = ? WHERE site_id = ? AND archived_at IS NULL'
+    ).run(archivedAt, id);
+    return cps;
+  })();
+}
+
+// Restauration : retourne les bornes restaurées (archivées en même temps que le site)
+function restoreSite(id) {
+  return db.transaction(() => {
+    const site = getSiteById(id);
+    if (!site || !site.archived_at) return [];
+    const cps = db
+      .prepare('SELECT id, identity FROM chargepoints WHERE site_id = ? AND archived_at = ?')
+      .all(id, site.archived_at);
+    db.prepare(
+      'UPDATE chargepoints SET archived_at = NULL WHERE site_id = ? AND archived_at = ?'
+    ).run(id, site.archived_at);
+    db.prepare('UPDATE sites SET archived_at = NULL WHERE id = ?').run(id);
+    return cps;
+  })();
 }
 
 // ── Tarification du site ──
@@ -182,7 +237,7 @@ function getAllUsers() {
   const users = db
     .prepare(
       `
-    SELECT u.id, u.useremail, u.shortname, u.role, u.created_at, u.last_login
+    SELECT u.id, u.useremail, u.shortname, u.role, u.created_at, u.last_login, u.disabled_at
     FROM users u ORDER BY u.useremail
   `
     )
@@ -198,7 +253,8 @@ function getUserById(id) {
   const user = db
     .prepare(
       `
-    SELECT u.id, u.useremail, u.shortname, u.role, u.langue, u.created_at, u.ntif_pushuser, u.ntif_pushtokn
+    SELECT u.id, u.useremail, u.shortname, u.role, u.langue, u.created_at, u.ntif_pushuser, u.ntif_pushtokn,
+      u.disabled_at
     FROM users u WHERE u.id = ?
   `
     )
@@ -209,8 +265,14 @@ function getUserById(id) {
   return user;
 }
 
+// E-mail insensible à la casse : « Jean@x.fr » et « jean@x.fr » désignent le même compte
 function getUserByEmail(useremail) {
-  return db.prepare('SELECT * FROM users WHERE useremail = ?').get(useremail);
+  return db.prepare('SELECT * FROM users WHERE useremail = ? COLLATE NOCASE').get(useremail);
+}
+
+function isEmailTaken(useremail, excludeUserId = null) {
+  const row = getUserByEmail(useremail);
+  return !!row && row.id !== excludeUserId;
 }
 
 function getUserByGoogleId(googleId) {
@@ -260,11 +322,31 @@ function updateUser(id, data) {
   return getUserById(id);
 }
 
-function deleteUser(id) {
+// Suppression d'un compte = anonymisation immédiate. Les sessions restent (remboursements déjà
+// versés, totaux des sites) mais ne portent plus que `deletedLabel` (« Utilisateur supprimé #id ») ;
+// les badges sont désactivés, détachés et vidés de leur description, sans être supprimés (leur
+// code reste dans l'historique et ne doit pas être réattribué par erreur).
+function deleteUser(id, deletedLabel = null) {
   db.transaction(() => {
+    db.prepare('UPDATE transactions SET user_name = ? WHERE user_id = ?').run(
+      deletedLabel || `#${id}`,
+      id
+    );
+    db.prepare(
+      'UPDATE id_tags SET active = 0, user_id = NULL, description = NULL WHERE user_id = ?'
+    ).run(id);
     db.prepare('DELETE FROM user_sites WHERE user_id = ?').run(id);
     db.prepare('DELETE FROM users WHERE id = ?').run(id);
   })();
+}
+
+// Compte désactivé : connexion refusée, badges refusés (authorizeIdTag), rien n'est effacé
+function setUserDisabled(id, disabled) {
+  db.prepare('UPDATE users SET disabled_at = ? WHERE id = ?').run(
+    disabled ? new Date().toISOString() : null,
+    id
+  );
+  return getUserById(id);
 }
 
 // ── Users Password Resets ──
@@ -338,7 +420,8 @@ function getSiteUsers(siteId) {
   return db
     .prepare(
       `
-    SELECT u.id, u.useremail, u.shortname, u.role as global_role, us.role as site_role, us.authorized, us.created_at as linked_at
+    SELECT u.id, u.useremail, u.shortname, u.role as global_role, us.role as site_role, us.authorized, us.created_at as linked_at,
+      u.disabled_at
     FROM user_sites us
     JOIN users u ON us.user_id = u.id
     WHERE us.site_id = ?
@@ -458,11 +541,33 @@ function setUserSiteRole(userId, siteId, role) {
   );
 }
 
+// Managers actifs du site (un compte désactivé ne gère plus rien)
 function countSiteManagers(siteId) {
   const row = db
-    .prepare('SELECT COUNT(*) as cnt FROM user_sites WHERE site_id = ? AND role = ?')
-    .get(siteId, 'manager');
+    .prepare(
+      `SELECT COUNT(*) as cnt FROM user_sites us JOIN users u ON u.id = us.user_id
+       WHERE us.site_id = ? AND us.role = 'manager' AND u.disabled_at IS NULL`
+    )
+    .get(siteId);
   return row ? row.cnt : 0;
+}
+
+// Sites dont ce compte est le seul manager actif : le retirer, le rétrograder, le désactiver ou
+// le supprimer laisserait un site qui avait un manager sans personne pour le gérer
+function getSolelyManagedSites(userId) {
+  return db
+    .prepare(
+      `SELECT us.site_id, s.sname AS site_name
+       FROM user_sites us
+       JOIN users u ON u.id = us.user_id
+       JOIN sites s ON s.id = us.site_id
+       WHERE us.user_id = ? AND us.role = 'manager' AND u.disabled_at IS NULL
+         AND (SELECT COUNT(*) FROM user_sites us2 JOIN users u2 ON u2.id = us2.user_id
+              WHERE us2.site_id = us.site_id AND us2.role = 'manager'
+                AND u2.disabled_at IS NULL) = 1
+       ORDER BY s.sname`
+    )
+    .all(userId);
 }
 
 function setUserSites(userId, sites) {
@@ -531,6 +636,8 @@ function getChargepointById(id) {
     .get(id);
 }
 
+// Crée la borne si elle n'existe pas : réservé aux tests et aux jeux de données. Le code OCPP
+// utilise updateChargepointByIdentity (jamais de recréation d'une borne supprimée ou renommée).
 function upsertChargepoint(identity, data) {
   const existing = getChargepointByIdentity(identity);
   if (existing) {
@@ -565,6 +672,54 @@ function upsertChargepoint(identity, data) {
     }
     return getChargepointById(info.lastInsertRowid);
   }
+}
+
+// Mise à jour seule, jamais d'insertion : un événement tardif (déconnexion, BootNotification)
+// d'une borne supprimée ou renommée ne doit pas recréer une borne fantôme sous l'ancienne identité
+function updateChargepointByIdentity(identity, data) {
+  const fields = [];
+  const values = [];
+  for (const [key, val] of Object.entries(data)) {
+    if (val !== undefined) {
+      fields.push(`${key} = ?`);
+      values.push(val);
+    }
+  }
+  if (fields.length > 0) {
+    values.push(identity);
+    db.prepare(`UPDATE chargepoints SET ${fields.join(', ')} WHERE identity = ?`).run(...values);
+  }
+  return getChargepointByIdentity(identity);
+}
+
+// Sessions enregistrées sur la borne, hors démarrages refusés (supprimés avec elle)
+function countChargepointSessions(chargepointId) {
+  return db
+    .prepare(
+      "SELECT COUNT(*) AS n FROM transactions WHERE chargepoint_id = ? AND status != 'Rejected'"
+    )
+    .get(chargepointId).n;
+}
+
+function countActiveTransactions(chargepointIds) {
+  const ids = Array.isArray(chargepointIds) ? chargepointIds : [chargepointIds];
+  if (ids.length === 0) return 0;
+  return db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM transactions
+       WHERE status = 'Active' AND chargepoint_id IN (${ids.map(() => '?').join(',')})`
+    )
+    .get(...ids).n;
+}
+
+// Archivage d'une borne : connexion OCPP refusée, identité réservée (la ligne reste), historique
+// conservé ; restaurable tant que son site n'est pas lui-même archivé
+function setChargepointArchived(id, archived) {
+  db.prepare('UPDATE chargepoints SET archived_at = ? WHERE id = ?').run(
+    archived ? new Date().toISOString() : null,
+    id
+  );
+  return getChargepointById(id);
 }
 
 function createChargepoint(identity, name, password, mode, site_id) {
@@ -823,7 +978,7 @@ function getAllConnectorsGrouped(siteIds) {
     LEFT JOIN sites s ON cp.site_id = s.id
     LEFT JOIN transactions t ON t.chargepoint_id = cp.id AND t.connector_id = c.connector_id AND t.status = 'Active'
       AND (t.evse_id IS NULL OR c.evse_id IS NULL OR t.evse_id = c.evse_id)
-    WHERE c.connector_id > 0
+    WHERE c.connector_id > 0 AND cp.archived_at IS NULL
   `;
   const params = [];
   if (siteIds !== null && Array.isArray(siteIds)) {
@@ -1265,6 +1420,10 @@ function buildTransactionQuery(baseCondition, baseParams, filters) {
   if (filters.site_id) {
     whereClause += ' AND t.site_id = ?';
     params.push(filters.site_id);
+  }
+  if (filters.user_id) {
+    whereClause += ' AND t.user_id = ?';
+    params.push(filters.user_id);
   }
   if (filters.status) {
     whereClause += ' AND t.status = ?';
@@ -2245,7 +2404,7 @@ function getAvailableConnectorsForUser(userId) {
     JOIN user_sites us ON us.site_id = s.id AND us.user_id = ?
     LEFT JOIN transactions t ON t.chargepoint_id = cp.id AND t.connector_id = c.connector_id AND t.status = 'Active'
       AND (t.evse_id IS NULL OR c.evse_id IS NULL OR t.evse_id = c.evse_id)
-    WHERE c.connector_id > 0
+    WHERE c.connector_id > 0 AND cp.archived_at IS NULL
     ORDER BY s.sname, cp.identity, c.connector_id
   `
     )
@@ -3186,6 +3345,9 @@ module.exports = {
   createSite,
   updateSite,
   deleteSite,
+  countSiteSessions,
+  archiveSite,
+  restoreSite,
   getAllUsers,
   getUserById,
   getUserByEmail,
@@ -3195,6 +3357,8 @@ module.exports = {
   createUser,
   updateUser,
   deleteUser,
+  setUserDisabled,
+  isEmailTaken,
   createPasswordReset,
   getUserPasswordResetByToken,
   markUserPasswordResetAsUsed,
@@ -3210,11 +3374,16 @@ module.exports = {
   setUserSiteAuthorized,
   setUserSiteRole,
   countSiteManagers,
+  getSolelyManagedSites,
   getAllChargepoints,
   getChargepointsBySite,
   getChargepointByIdentity,
   getChargepointById,
   upsertChargepoint,
+  updateChargepointByIdentity,
+  countChargepointSessions,
+  countActiveTransactions,
+  setChargepointArchived,
   createChargepoint,
   updateChargepoint,
   deleteChargepoint,

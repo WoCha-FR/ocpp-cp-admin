@@ -362,7 +362,7 @@ function register201Handlers(client, loggedHandle) {
     const cs = params.chargingStation || {};
     const modem = cs.modem || {};
 
-    db.upsertChargepoint(identity, {
+    db.updateChargepointByIdentity(identity, {
       vendor: sanitizeText(cs.vendorName, 25),
       model: sanitizeText(cs.model, 20),
       serial_number: sanitizeText(cs.serialNumber, 25),

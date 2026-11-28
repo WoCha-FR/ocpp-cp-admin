@@ -18,6 +18,7 @@ const passport = require('./auth');
 const {
   createOCPPServerBase,
   setBroadcast,
+  setUiSessionCloser,
   createTlsClientErrorHandler,
   startHeartbeatWatchdog,
   stopHeartbeatWatchdog,
@@ -604,6 +605,10 @@ function attachUIWebSocket(server, label) {
         return;
       }
       const dbUser = db.getUserById(userId);
+      if (!dbUser || dbUser.disabled_at) {
+        ws.close(4401, 'Unauthorized');
+        return;
+      }
       const dbSites = db.getUserSites(userId);
       ws.userId = userId;
       ws.userRole = dbUser?.role ?? 'user';
@@ -632,6 +637,12 @@ function broadcastToUI(message, siteId = null) {
 
 // Connecter le broadcast OCPP → UI
 setBroadcast(broadcastToUI);
+// Compte désactivé ou supprimé : ses écrans ouverts cessent de recevoir les mises à jour
+setUiSessionCloser((userId) => {
+  for (const client of uiClients) {
+    if (client.userId === userId) client.close(4401, 'Unauthorized');
+  }
+});
 
 // ── Serveur OCPP sur port unique ──
 const ocppProtocols = [];

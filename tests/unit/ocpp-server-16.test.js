@@ -3,7 +3,7 @@
 const mockDb = {
   getChargepointByIdentity: jest.fn(),
   getChargepointById: jest.fn(),
-  upsertChargepoint: jest.fn(),
+  updateChargepointByIdentity: jest.fn(),
   addOcppMessage: jest.fn(),
   bulkUpsertChargepointConfig: jest.fn(),
   upsertChargepointConfig: jest.fn(),
@@ -177,7 +177,7 @@ describe('ocpp-server-16 — BootNotification', () => {
       chargePointModel: 'M' + 'X'.repeat(80),
       meterType: '  \u0000Bad<Type>  ',
     });
-    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+    expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith(
       'CP001',
       expect.objectContaining({
         vendor: 'img src=x onerror=alert(1',
@@ -1174,7 +1174,7 @@ describe('ocpp-server-16 — StatusNotification', () => {
       'CP001', 'Unavailable', true,
       expect.objectContaining({ error_code: 'NoError' })
     );
-    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith('CP001', { has_connector0: 1 });
+    expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith('CP001', { has_connector0: 1 });
   });
 
   it('sanitizes StatusNotification fields before DB writes and notifications', () => {

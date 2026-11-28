@@ -14,6 +14,7 @@ const {
   callClient,
   broadcast,
   disconnectChargepoint,
+  closeUiSessions,
   remoteStopTransaction,
   remoteStartTransaction,
   pendingChargepoints,
@@ -433,6 +434,7 @@ router.put(
       return res.status(400).json({ error: result.array().map((e) => e.msg) });
     }
     const data = matchedData(req);
+    if (siteArchivedError(res, Number(req.params.id))) return;
     try {
       const site = db.updateSite(
         Number(req.params.id),
@@ -448,10 +450,79 @@ router.put(
   }
 );
 
+// Site archivé : lecture et export seulement (admin et ses managers) ; toute écriture est refusée
+// jusqu'à sa restauration. Répond 409 et retourne true si le site est archivé.
+function siteArchivedError(res, siteId) {
+  const site = siteId ? db.getSiteById(siteId) : null;
+  if (site && site.archived_at) {
+    res.status(409).json({ error: 'ERR_SITE_ARCHIVED' });
+    return true;
+  }
+  return false;
+}
+
+// Certificat client d'une borne retirée (archivage, changement d'identité) : révoqué et effacé
+function revokeChargepointCert(identity, reason) {
+  try {
+    certAuthority.removeClientCertificate(identity, reason);
+  } catch (e) {
+    logger.warn(`Client cert cleanup failed for ${identity}: ${e.message}`);
+  }
+}
+
+function generateChargepointCert(identity) {
+  certAuthority
+    .generateClientCertificate(identity)
+    .catch((e) => logger.warn(`Client cert generation failed for ${identity}: ${e.message}`));
+}
+
+// Suppression définitive : seulement un site sans aucune session (sinon l'archiver)
 router.delete('/sites/:id', requireRole('admin'), ...validateSchema(schema.IdParam), (req, res) => {
-  db.deleteSite(Number(req.params.id));
+  const siteId = Number(req.params.id);
+  if (!db.getSiteById(siteId)) return res.status(404).json({ error: 'ERR_SITE_NOT_FOUND' });
+  const count = db.countSiteSessions(siteId);
+  if (count > 0) return res.status(409).json({ error: 'ERR_SITE_HAS_SESSIONS', count });
+  db.deleteSite(siteId);
   res.json({ ok: true });
 });
+
+// Archivage : site et bornes retirés (connexion OCPP refusée, certificats révoqués), historique
+// conservé et consultable par l'admin et les managers du site
+router.post(
+  '/sites/:id/archive',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const siteId = Number(req.params.id);
+    const site = db.getSiteById(siteId);
+    if (!site) return res.status(404).json({ error: 'ERR_SITE_NOT_FOUND' });
+    if (site.archived_at) return res.status(409).json({ error: 'ERR_SITE_ARCHIVED' });
+    const cpIds = db.getChargepointsBySite(siteId).map((cp) => cp.id);
+    if (db.countActiveTransactions(cpIds) > 0) {
+      return res.status(409).json({ error: 'ERR_CHARGEPOINT_SESSION_ACTIVE' });
+    }
+    const archived = db.archiveSite(siteId);
+    for (const cp of archived) {
+      disconnectChargepoint(cp.identity, 'archived');
+      revokeChargepointCert(cp.identity, 'chargepoint_archived');
+    }
+    res.json({ ...db.getSiteById(siteId), archived_chargepoints: archived.length });
+  }
+);
+
+router.post(
+  '/sites/:id/restore',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const siteId = Number(req.params.id);
+    const site = db.getSiteById(siteId);
+    if (!site) return res.status(404).json({ error: 'ERR_SITE_NOT_FOUND' });
+    const restored = db.restoreSite(siteId);
+    for (const cp of restored) generateChargepointCert(cp.identity);
+    res.json({ ...db.getSiteById(siteId), restored_chargepoints: restored.length });
+  }
+);
 
 // ── Tarification du kWh d'un site (managers du site + admin) ──
 function assertSiteManaged(req, res, siteId) {
@@ -487,6 +558,7 @@ router.put(
   (req, res) => {
     const siteId = Number(req.params.siteId);
     if (!assertSiteManaged(req, res, siteId)) return;
+    if (siteArchivedError(res, siteId)) return;
     const input = tariff.normalizeTariffInput(req.body);
     if (!input) return res.status(400).json({ error: ['VALIDATION_TARIFF_BODY'] });
     const { valid, errors } = tariff.validateTariff(input);
@@ -547,6 +619,7 @@ router.post(
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
       }
     }
+    if (siteArchivedError(res, siteId)) return;
     // Valider les données
     const result = validationResult(req);
     if (!result.isEmpty()) {
@@ -593,6 +666,7 @@ router.patch(
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
       }
     }
+    if (siteArchivedError(res, siteId)) return;
     const data = matchedData(req);
 
     // Gestion du changement de rôle
@@ -606,12 +680,9 @@ router.patch(
       if (targetUser && targetUser.role === 'admin') {
         return res.status(400).json({ error: 'ERR_CANNOT_CHANGE_ADMIN_SITE_ROLE' });
       }
-      // Interdire de rétrograder le dernier manager du site
-      if (data.role === 'user') {
-        const managerCount = db.countSiteManagers(siteId);
-        if (managerCount <= 1) {
-          return res.status(400).json({ error: 'ERR_LAST_SITE_MANAGER' });
-        }
+      // Interdire de rétrograder le dernier manager (actif) du site
+      if (data.role === 'user' && soleManagerOf(userId, [siteId]).length > 0) {
+        return res.status(400).json({ error: 'ERR_LAST_SITE_MANAGER' });
       }
       db.setUserSiteRole(userId, siteId, data.role);
     }
@@ -653,6 +724,10 @@ router.delete(
         return res.status(403).json({ error: 'ERR_SITE_NOT_MANAGED' });
       }
     }
+    if (siteArchivedError(res, siteId)) return;
+    if (soleManagerOf(userId, [siteId]).length > 0) {
+      return res.status(400).json({ error: 'ERR_LAST_SITE_MANAGER' });
+    }
     db.removeUserFromSite(userId, siteId);
     // Notifier l'utilisateur qu'il a été retiré du site
     const user = db.getUserById(userId);
@@ -667,6 +742,24 @@ router.delete(
 // ══════════════════════════════════════
 //  USERS
 // ══════════════════════════════════════
+// Sites (parmi siteIds, ou tous si null) dont ce compte est le seul manager actif
+function soleManagerOf(userId, siteIds = null) {
+  return db
+    .getSolelyManagedSites(userId)
+    .filter((s) => siteIds === null || siteIds.includes(s.site_id));
+}
+
+function lastManagerError(res, sites) {
+  return res.status(400).json({
+    error: 'ERR_LAST_SITE_MANAGER',
+    params: { sites: sites.map((s) => s.site_name).join(', ') },
+  });
+}
+
+function activeAdminCount() {
+  return db.getAllUsers().filter((u) => u.role === 'admin' && !u.disabled_at).length;
+}
+
 router.get('/users', requireRole('admin'), (req, res) => {
   res.json(db.getAllUsers());
 });
@@ -681,6 +774,9 @@ router.post(
       return res.status(400).json({ error: result.array().map((e) => e.msg) });
     }
     const data = matchedData(req);
+    if (db.isEmailTaken(data.useremail)) {
+      return res.status(409).json({ error: 'ERR_EMAIL_ALREADY_USED' });
+    }
     try {
       const user = db.createUser(data.useremail, data.password, req.body.role, data.shortname);
       res.status(201).json(user);
@@ -704,9 +800,12 @@ router.put(
     try {
       const targetId = Number(req.params.id);
       const target = db.getUserById(targetId);
-      if (target && target.role === 'admin' && data.role === 'user') {
-        const adminCount = db.getAllUsers().filter((u) => u.role === 'admin').length;
-        if (adminCount <= 1) {
+      if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+      if (data.useremail && db.isEmailTaken(data.useremail, targetId)) {
+        return res.status(409).json({ error: 'ERR_EMAIL_ALREADY_USED' });
+      }
+      if (target.role === 'admin' && data.role === 'user' && !target.disabled_at) {
+        if (activeAdminCount() <= 1) {
           return res.status(403).json({ error: 'ERR_CANNOT_DEMOTE_LAST_ADMIN' });
         }
       }
@@ -718,21 +817,55 @@ router.put(
   }
 );
 
+// Suppression = anonymisation immédiate : les sessions restent, renommées
+// « Utilisateur supprimé #id » ; les badges sont désactivés et détachés (database.deleteUser)
 router.delete('/users/:id', requireRole('admin'), ...validateSchema(schema.IdParam), (req, res) => {
   const targetId = Number(req.params.id);
   if (targetId === req.user.id) {
     return res.status(403).json({ error: 'ERR_CANNOT_DELETE_SELF' });
   }
   const target = db.getUserById(targetId);
-  if (target && target.role === 'admin') {
-    const adminCount = db.getAllUsers().filter((u) => u.role === 'admin').length;
-    if (adminCount <= 1) {
-      return res.status(403).json({ error: 'ERR_CANNOT_DELETE_LAST_ADMIN' });
-    }
+  if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+  if (target.role === 'admin' && !target.disabled_at && activeAdminCount() <= 1) {
+    return res.status(403).json({ error: 'ERR_CANNOT_DELETE_LAST_ADMIN' });
   }
-  db.deleteUser(targetId);
+  const sole = soleManagerOf(targetId);
+  if (sole.length > 0) return lastManagerError(res, sole);
+  const label = i18next.t('users.uDeletedUserName', { id: targetId, lng: req.user.langue || 'fr' });
+  db.deleteUser(targetId, label);
+  closeUiSessions(targetId);
   res.json({ ok: true });
 });
+
+// Désactivation (réversible) : connexion et badges suspendus, rien n'est effacé
+router.put(
+  '/users/:id/disabled',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam, schema.UserDisabled),
+  (req, res) => {
+    const result = validationResult(req);
+    if (!result.isEmpty()) {
+      return res.status(400).json({ error: result.array().map((e) => e.msg) });
+    }
+    const targetId = Number(req.params.id);
+    const disabled = matchedData(req).disabled;
+    const target = db.getUserById(targetId);
+    if (!target) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
+    if (disabled) {
+      if (targetId === req.user.id) {
+        return res.status(403).json({ error: 'ERR_CANNOT_DISABLE_SELF' });
+      }
+      if (target.role === 'admin' && !target.disabled_at && activeAdminCount() <= 1) {
+        return res.status(403).json({ error: 'ERR_CANNOT_DISABLE_LAST_ADMIN' });
+      }
+      const sole = soleManagerOf(targetId);
+      if (sole.length > 0) return lastManagerError(res, sole);
+    }
+    const user = db.setUserDisabled(targetId, disabled);
+    if (disabled) closeUiSessions(targetId);
+    res.json(user);
+  }
+);
 
 // ── Sites assignés ──
 router.put(
@@ -745,6 +878,16 @@ router.put(
     if (!user) return res.status(404).json({ error: 'ERR_UNKNOWN_USER' });
     const sites = req.body.sites;
     if (!Array.isArray(sites)) return res.status(400).json({ error: 'ERR_INVALID_SITES' });
+    // Dernier manager : il ne peut perdre ni le site ni son rôle de manager
+    const keptManaged = sites.filter((s) => s.role === 'manager').map((s) => Number(s.site_id));
+    const lost = soleManagerOf(userId).filter((s) => !keptManaged.includes(s.site_id));
+    if (lost.length > 0) return lastManagerError(res, lost);
+    // Pas de nouveau rattachement à un site archivé (les liens existants sont conservés)
+    const currentIds = (user.sites || []).map((s) => s.site_id);
+    for (const s of sites) {
+      const siteId = Number(s.site_id);
+      if (!currentIds.includes(siteId) && siteArchivedError(res, siteId)) return;
+    }
     try {
       db.setUserSites(userId, sites);
       res.json(db.getUserById(userId));
@@ -827,14 +970,13 @@ router.post(
     const identity = req.params.identity;
     const pending = pendingChargepoints.get(identity);
     if (!pending) return res.status(404).json({ error: 'ERR_NO_PENDING_CHARGEPOINT' });
+    if (siteArchivedError(res, data.site_id)) return;
 
     try {
       const cp = db.createChargepoint(identity, identity, pending.password, 0, data.site_id);
       pendingChargepoints.delete(identity);
       broadcast('chargepoint_update', cp, cp.site_id ?? null);
-      certAuthority
-        .generateClientCertificate(identity)
-        .catch((e) => logger.warn(`Client cert generation failed for ${identity}: ${e.message}`));
+      generateChargepointCert(identity);
       res.json(cp);
     } catch (e) {
       errorResponse(res, 400, e.message);
@@ -953,15 +1095,36 @@ router.put(
     // matchedData écarte les champs optionnels à null : on conserve explicitement la
     // demande de suppression du mot de passe (null) pour la distinguer d'un champ absent
     if (req.body.password === null) data.password = null;
+    const before = db.getChargepointById(Number(req.params.id));
+    if (!before) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (before.archived_at) return res.status(409).json({ error: 'ERR_CHARGEPOINT_ARCHIVED' });
+    const identityChanged = !!data.identity && data.identity !== before.identity;
+    const siteChanged = data.site_id !== undefined && Number(data.site_id) !== before.site_id;
+    // Identité ou site : jamais pendant une session (elle resterait rattachée à l'ancien état)
+    if ((identityChanged || siteChanged) && db.countActiveTransactions(before.id) > 0) {
+      return res.status(409).json({ error: 'ERR_CHARGEPOINT_SESSION_ACTIVE' });
+    }
+    if (siteChanged && siteArchivedError(res, data.site_id)) return;
+    if (identityChanged && db.getChargepointByIdentity(data.identity)) {
+      return res.status(409).json({ error: 'ERR_CHARGEPOINT_IDENTITY_TAKEN' });
+    }
     try {
-      // Récupérer l'état avant mise à jour pour détecter un changement d'autorisation
-      const before = db.getChargepointById(Number(req.params.id));
-      const cp = db.updateChargepoint(Number(req.params.id), data);
-      // Si authorized passe de 1 à 0, déconnecter la borne immédiatement
-      if (before && before.authorized && cp && !cp.authorized) {
+      const cp = db.updateChargepoint(before.id, data);
+      if (identityChanged) {
+        // Remplacement d'une borne ou correction de saisie : l'historique suit (lié à l'id
+        // interne). L'ancienne connexion est coupée et son certificat (CN = ancienne identité)
+        // révoqué ; un nouveau est généré. La borne qui attendait sous la nouvelle identité
+        // n'est plus « en attente ».
+        disconnectChargepoint(before.identity, 'identity_changed');
+        revokeChargepointCert(before.identity, 'identity_changed');
+        generateChargepointCert(cp.identity);
+        pendingChargepoints.delete(cp.identity);
+        logger.info(`Chargepoint #${cp.id} identity changed: ${before.identity} -> ${cp.identity}`);
+      } else if (before.authorized && !cp.authorized) {
+        // Si authorized passe de 1 à 0, déconnecter la borne immédiatement
         disconnectChargepoint(cp.identity);
       }
-      res.json(cp);
+      res.json({ ...cp, identity_changed: identityChanged });
     } catch (e) {
       errorResponse(res, 400, e.message);
     }
@@ -978,8 +1141,15 @@ router.put(
       return res.status(400).json({ error: result.array().map((e) => e.msg) });
     }
     const data = matchedData(req);
+    const before = db.getChargepointById(Number(req.params.id));
+    if (!before) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (before.archived_at) return res.status(409).json({ error: 'ERR_CHARGEPOINT_ARCHIVED' });
+    if (Number(data.site_id) !== before.site_id && db.countActiveTransactions(before.id) > 0) {
+      return res.status(409).json({ error: 'ERR_CHARGEPOINT_SESSION_ACTIVE' });
+    }
+    if (siteArchivedError(res, data.site_id)) return;
     try {
-      const cp = db.assignChargepointToSite(Number(req.params.id), data.site_id);
+      const cp = db.assignChargepointToSite(before.id, data.site_id);
       res.json(cp);
     } catch (e) {
       errorResponse(res, 400, e.message);
@@ -993,6 +1163,11 @@ router.post('/chargepoints', requireRole('admin'), checkSchema(schema.ChargePoin
     return res.status(400).json({ error: result.array().map((e) => e.msg) });
   }
   const data = matchedData(req);
+  if (siteArchivedError(res, data.site_id)) return;
+  // Identité déjà enregistrée, y compris par une borne archivée (identité réservée)
+  if (db.getChargepointByIdentity(data.identity)) {
+    return res.status(409).json({ error: 'ERR_CHARGEPOINT_IDENTITY_TAKEN' });
+  }
   try {
     const cp = db.createChargepoint(
       data.identity,
@@ -1001,11 +1176,8 @@ router.post('/chargepoints', requireRole('admin'), checkSchema(schema.ChargePoin
       data.mode,
       data.site_id
     );
-    certAuthority
-      .generateClientCertificate(data.identity)
-      .catch((e) =>
-        logger.warn(`Client cert generation failed for ${data.identity}: ${e.message}`)
-      );
+    pendingChargepoints.delete(data.identity);
+    generateChargepointCert(data.identity);
     res.status(201).json(cp);
   } catch (e) {
     errorResponse(res, 400, e.message);
@@ -1018,17 +1190,50 @@ router.delete(
   ...validateSchema(schema.IdParam),
   (req, res) => {
     const cp = db.getChargepointById(Number(req.params.id));
-    db.deleteChargepoint(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    // Suppression définitive seulement sans aucune session (elle les effacerait) : sinon archiver
+    const count = db.countChargepointSessions(cp.id);
+    if (count > 0) return res.status(409).json({ error: 'ERR_CHARGEPOINT_HAS_SESSIONS', count });
+    disconnectChargepoint(cp.identity, 'archived');
+    db.deleteChargepoint(cp.id);
     // Certificat révoqué + clé privée effacée : une identité réutilisée plus tard ne doit pas
     // hériter d'un certificat encore valide dont l'ancienne borne détient la clé
-    if (cp) {
-      try {
-        certAuthority.removeClientCertificate(cp.identity);
-      } catch (e) {
-        logger.warn(`Client cert cleanup failed for ${cp.identity}: ${e.message}`);
-      }
-    }
+    revokeChargepointCert(cp.identity, 'chargepoint_deleted');
     res.json({ ok: true });
+  }
+);
+
+// Archivage : connexion refusée, certificat révoqué, identité réservée, historique conservé
+router.post(
+  '/chargepoints/:id/archive',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (cp.archived_at) return res.status(409).json({ error: 'ERR_CHARGEPOINT_ARCHIVED' });
+    if (db.countActiveTransactions(cp.id) > 0) {
+      return res.status(409).json({ error: 'ERR_CHARGEPOINT_SESSION_ACTIVE' });
+    }
+    const archived = db.setChargepointArchived(cp.id, true);
+    disconnectChargepoint(cp.identity, 'archived');
+    revokeChargepointCert(cp.identity, 'chargepoint_archived');
+    res.json(archived);
+  }
+);
+
+router.post(
+  '/chargepoints/:id/restore',
+  requireRole('admin'),
+  ...validateSchema(schema.IdParam),
+  (req, res) => {
+    const cp = db.getChargepointById(Number(req.params.id));
+    if (!cp) return res.status(404).json({ error: 'ERR_CHARGEPOINT_NOT_FOUND' });
+    if (!cp.archived_at) return res.json(cp);
+    if (siteArchivedError(res, cp.site_id)) return;
+    const restored = db.setChargepointArchived(cp.id, false);
+    generateChargepointCert(cp.identity);
+    res.json(restored);
   }
 );
 
@@ -2284,6 +2489,8 @@ router.get(
     if (req.query.category) filters.category = req.query.category;
     if (req.query.from) filters.from = req.query.from;
     if (req.query.to) filters.to = req.query.to;
+    // Export des sessions d'un salarié avant la suppression de son compte (admin)
+    if (req.query.user_id && req.user.role === 'admin') filters.user_id = Number(req.query.user_id);
 
     const user = req.user;
     if (user.role !== 'admin') {
@@ -2604,6 +2811,7 @@ router.post('/id-tags', requireManager, checkSchema(schema.IdTag), (req, res) =>
   // Préfixes réservés aux badges générés (ADMIN, MGR-, WEB-)
   if (isGeneratedTag(data.id_tag)) return res.status(400).json({ error: 'ERR_TAG_RESERVED' });
   const next = { site_id: data.site_id || null, user_id: data.user_id ?? null };
+  if (siteArchivedError(res, next.site_id)) return;
   const denied = idTagWriteError(idTagPolicyContext(req), next, db.getUserScope(next.user_id));
   if (denied) {
     return res.status(denied === 'ERR_SITE_REQUIRED' ? 400 : 403).json({ error: denied });
@@ -2656,6 +2864,7 @@ router.put(
       site_id: data.site_id !== undefined ? data.site_id || null : existing.site_id,
       user_id: data.user_id !== undefined ? data.user_id : existing.user_id,
     };
+    if (next.site_id !== existing.site_id && siteArchivedError(res, next.site_id)) return;
     const denied = idTagWriteError(idTagPolicyContext(req), next, db.getUserScope(next.user_id), {
       existing,
       existingOwner: db.getUserScope(existing.user_id),

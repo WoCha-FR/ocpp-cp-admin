@@ -206,7 +206,11 @@ test.describe.serial('Historique figé et périmètre des gestionnaires', () => 
     if (ids.tag) await apiCall(page, 'DELETE', `/id-tags/${ids.tag}`);
     if (ids.user) await apiCall(page, 'DELETE', `/users/${ids.user}`);
     for (const key of ['managed', 'other']) {
-      if (ids[key]) await apiCall(page, 'DELETE', `/sites/${ids[key]}`);
+      if (ids[key]) {
+        // site avec un historique : suppression refusée (409), on l'archive
+        const del = await apiCall(page, 'DELETE', `/sites/${ids[key]}`);
+        if (del.status === 409) await apiCall(page, 'POST', `/sites/${ids[key]}/archive`);
+      }
     }
   });
 });

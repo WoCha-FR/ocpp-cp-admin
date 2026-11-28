@@ -145,9 +145,11 @@ describe('Lot C — sécurité : régressions routes', () => {
 
   it('suppression d\'une borne : certificat révoqué et clé privée effacée', () => {
     const route = routeBlock("router.delete(\n  '/chargepoints/:id',", '// ── Commandes OCPP vers la borne ──');
-    expect(route).toMatch(/certAuthority\.removeClientCertificate\(cp\.identity\)/);
+    expect(route).toMatch(/revokeChargepointCert\(cp\.identity, 'chargepoint_deleted'\)/);
     // une erreur de nettoyage ne doit pas faire échouer la suppression
-    expect(route).toMatch(/catch \(e\)/);
+    const helper = routeBlock('function revokeChargepointCert(', 'function generateChargepointCert(');
+    expect(helper).toMatch(/certAuthority\.removeClientCertificate\(identity, reason\)/);
+    expect(helper).toMatch(/catch \(e\)/);
   });
 
   it('téléchargement du certificat client (clé privée) : jamais mis en cache', () => {

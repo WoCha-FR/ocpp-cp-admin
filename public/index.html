@@ -1475,22 +1475,25 @@ async function renderChargepoints(keepState = false) {
           <tbody>
             ${filtered.map(cp => `
               <tr>
-                <td>${cp.site_name ? escapeHtml(cp.site_name) : `<span class="badge badge-red" title="${escapeAttr(t('chargepoint.cpNoSiteInactiveHint'))}">${t('chargepoint.cpNoSiteInactive')}</span>`}</td>
+                <td>${cp.site_name ? escapeHtml(cp.site_name) : cp.archived_at ? '-' : `<span class="badge badge-red" title="${escapeAttr(t('chargepoint.cpNoSiteInactiveHint'))}">${t('chargepoint.cpNoSiteInactive')}</span>`}</td>
                 <td>
                   <span class="status-dot ${cp.online ? 'dot-online' : 'dot-offline'}"></span>
                   <a href="#" data-onclick="showChargepointDetail(${Number(cp.id) || 0});return false;" class="cp-identity-link">${escapeHtml(cp.identity)}</a>${appSettings.v16Enabled && appSettings.v201Enabled && cp.ocpp_version ? (cp.ocpp_version === '2.0.1' ? ' <span class="badge badge-purple badge-xs">2.0.1</span>' : ' <span class="badge badge-blue badge-xs">1.6</span>') : ''}
                 </td>
-                <td>${!cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? `${t('common.unknown')}` : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>`}</td>
+                <td>${cp.archived_at ? `<span class="badge badge-gray" title="${escapeAttr(t('chargepoint.cpArchivedHint'))}">🗄️ ${t('chargepoint.cpArchived')}</span>` : !cp.authorized ? `<span class="badge badge-gray" title="${t('chargepoint.cpNotAuthorized')}">🚫 ${t('chargepoint.cpBlocked')}</span>` : `<span class="badge ${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? 'badge-gray' : statusBadgeClass(cp.cpstatus)}">${!cp.online && cp.cpstatus !== 'pending' && cp.cpstatus !== 'Planned' ? `${t('common.unknown')}` : (cp.cpstatus ? escapeHtml(cp.cpstatus) : t('common.unknown'))}</span>`}</td>
                 <td>${cp.cpname ? escapeHtml(cp.cpname) : '-'}</td>
                 <td>${dashboardCpMode(cp.mode)}</td>
                 <td>${cp.vendor ? escapeHtml(cp.vendor) : '-'}</td>
                 <td>${cp.model ? escapeHtml(cp.model) : '-'}</td>
                 <td class="td-date">${cp.last_heartbeat ? formatDate(cp.last_heartbeat) : '-'}</td>
                 <td>
-                  ${adminManage() ? `
+                  ${adminManage() && cp.archived_at ? `
+                  <button class="btn btn-success btn-sm" data-onclick="withBtn(this, () => restoreChargepoint(${Number(cp.id) || 0}, ${jsArg(cp.identity)}))">${t('common.restore')}</button>` : ''}
+                  ${adminManage() && !cp.archived_at ? `
                   <button class="btn btn-indigo btn-sm" data-onclick="assignCpToSite(${Number(cp.id) || 0}, ${jsArg(cp.identity)}, ${cp.site_id || 'null'})">${t('chargepoint.cpAssign')}</button>
                   <button class="btn btn-teal btn-sm" data-onclick="showEditChargepointModal(${Number(cp.id) || 0})">${t('common.edit')}</button>
-                  <button class="btn btn-orange btn-sm" data-onclick="reinitializeChargepoint(event,${Number(cp.id) || 0})">${t('common.reset')}</button>` : ''}
+                  <button class="btn btn-orange btn-sm" data-onclick="reinitializeChargepoint(event,${Number(cp.id) || 0})">${t('common.reset')}</button>
+                  <button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => archiveChargepoint(${Number(cp.id) || 0}, ${jsArg(cp.identity)}))">${t('common.archive')}</button>` : ''}
                   ${adminManage() && !cp.online ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteChargepoint(${Number(cp.id) || 0}, ${jsArg(cp.identity)}))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
@@ -1542,7 +1545,7 @@ async function showCreateChargepointModal() {
   <div class="form-group">
     <label>${t('common.site_one')}</label>
     <select id="cpSiteId">
-      ${sites.map(s => `<option value="${s.id}">${escapeHtml(s.sname)}</option>`).join('')}
+      ${activeSites(sites).map(s => `<option value="${s.id}">${escapeHtml(s.sname)}</option>`).join('')}
     </select>
   </div>
   <div class="modal-actions">
@@ -1559,6 +1562,7 @@ async function showEditChargepointModal(id) {
   openModal(`
   <h3>${t('chargepoint.cpModifTitle')}</h3>
   <div class="form-group"><label>${t('chargepoint.cpIdentity')}</label><input type="text" id="editIdentity" value="${escapeAttr(cp.identity)}" /></div>
+  <div class="text-muted" style="font-size:12px;margin-bottom:12px;">${t('chargepoint.cpIdentityChangeHint')}</div>
   <div class="form-group"><label>${t('common.name')}</label><input type="text" id="editName" value="${escapeAttr(cp.cpname || '')}" /></div>
   <div class="form-group"><label>${t('common.password')}</label><input type="password" id="editPassword" ${cp.password ? 'placeholder="••••••••"' : ''} /></div>
   ${cp.password ? `<div class="form-group"><label><input type="checkbox" id="editDeletePassword" /> ${t('chargepoint.cpDeletePassword')}</label></div>` : ''}
@@ -1573,7 +1577,7 @@ async function showEditChargepointModal(id) {
   <div class="form-group">
     <label>${t('common.site_one')}</label>
     <select id="editSiteId">
-      ${sites.map(s => `<option value="${s.id}" ${s.id === cp.site_id ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
+      ${activeSites(sites).map(s => `<option value="${s.id}" ${s.id === cp.site_id ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
     </select>
   </div>
   <div class="form-group">
@@ -1613,9 +1617,10 @@ async function updateChargepoint(id) {
       site_id: document.getElementById('editSiteId').value ? Number(document.getElementById('editSiteId').value) : null,
       authorized: document.getElementById('editAuthorized').checked ? 1 : 0
     };
-    await api('PUT', `/chargepoints/${id}`, data);
+    const updated = await api('PUT', `/chargepoints/${id}`, data);
     closeModal();
     toast(t('chargepoint.cpUpdated'), 'success');
+    if (updated && updated.identity_changed) toast(t('chargepoint.cpIdentityChanged', { identity: updated.identity }), 'info');
     renderChargepoints(true);
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -1626,6 +1631,30 @@ async function deleteChargepoint(id, name) {
     await api('DELETE', `/chargepoints/${id}`);
     toast(t('chargepoint.cpDeleted'), 'success');
     renderChargepoints(true);
+  } catch (err) {
+    // Borne avec un historique : la supprimer effacerait ses sessions, on propose l'archivage
+    if (err.code === 'ERR_CHARGEPOINT_HAS_SESSIONS') return archiveChargepoint(id, name, true);
+    toast(err.message, 'error');
+  }
+}
+
+async function archiveChargepoint(id, name, afterDeleteRefused = false) {
+  const msg = (afterDeleteRefused ? t('chargepoint.cpHasSessionsArchive') + '\n\n' : '') + t('chargepoint.cpArchiveConfirm', { identity: name });
+  if (!await confirmDialog(msg, { confirmText: t('common.archive') })) return;
+  try {
+    await api('POST', `/chargepoints/${id}/archive`);
+    toast(t('chargepoint.cpArchivedDone', { identity: name }), 'success');
+    renderChargepoints(true);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function restoreChargepoint(id, name) {
+  if (!await confirmDialog(t('chargepoint.cpRestoreConfirm', { identity: name }), { confirmText: t('common.restore') })) return;
+  try {
+    await api('POST', `/chargepoints/${id}/restore`);
+    toast(t('chargepoint.cpRestored', { identity: name }), 'success');
+    renderChargepoints(true);
+    checkSitePrompt();
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -1636,7 +1665,7 @@ async function assignCpToSite(cpId, cpName, currentSiteId) {
   <div class="form-group">
     <label>${t('common.site_one')}</label>
     <select id="assignSiteSelect">
-      ${sites.map(s => `<option value="${s.id}" ${s.id === currentSiteId ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
+      ${activeSites(sites).map(s => `<option value="${s.id}" ${s.id === currentSiteId ? 'selected' : ''}>${escapeHtml(s.sname)}</option>`).join('')}
     </select>
   </div>
   <div class="modal-actions">
@@ -1660,7 +1689,7 @@ async function execAssignSite(cpId) {
 }
 
 async function acceptPendingChargepoint(identity) {
-  const sites = await api('GET', '/sites');
+  const sites = activeSites(await api('GET', '/sites'));
   if (!sites.length) return toast(t('chargepoint.cpNoSiteAvailable'), 'error');
   openModal(`
     <h3>${t('chargepoint.cpAcceptTitle', { identity })}</h3>
@@ -3799,7 +3828,7 @@ function resetIdTagsFilters() {
 async function idTagFormOptions() {
   const isAdmin = currentUser.role === 'admin';
   const [sites, users] = await Promise.all([api('GET', '/sites'), api('GET', '/id-tags/assignable-users')]);
-  return { isAdmin, users, availableSites: managedSitesOnly(sites) };
+  return { isAdmin, users, availableSites: managedSitesOnly(activeSites(sites)) };
 }
 
 function idTagUserSelect(id, users, current = null) {
@@ -4164,7 +4193,7 @@ async function renderUsers() {
               const canDelete = !isSelf && !isLastAdmin;
               return `
               <tr>
-                <td class="td-primary">${escapeHtml(u.useremail)}</td>
+                <td class="td-primary">${escapeHtml(u.useremail)}${u.disabled_at ? ` <span class="badge badge-gray badge-xs" title="${escapeAttr(t('users.uDisabledHint'))}">${t('users.uDisabled')}</span>` : ''}</td>
                 <td>${u.shortname ? escapeHtml(u.shortname) : '<span class="text-muted">-</span>'}</td>
                 <td>${formatRoleColumn(u)}</td>
                 <td>${formatUserSites(u.sites)}</td>
@@ -4175,6 +4204,8 @@ async function renderUsers() {
                   <button class="btn btn-teal btn-sm" data-onclick="showEditUserModal(${u.id})">${t('common.edit')}</button>
                   <button class="btn btn-purple btn-sm" data-onclick="showUserNotificationsModal(${u.id})">${t('users.uNotifications')}</button>
                   ${canResendSetupPassword ? `<button class="btn btn-lime btn-sm" data-onclick="resendSetupPassword(${u.id})">${t('users.uBtnResendSetupPassword')}</button>` : ''}
+                  ${!isSelf && u.disabled_at ? `<button class="btn btn-success btn-sm" data-onclick="withBtn(this, () => setUserDisabled(${u.id}, false, ${jsArg(u.useremail)}))">${t('users.uBtnEnable')}</button>` : ''}
+                  ${!isSelf && !isLastAdmin && !u.disabled_at ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => setUserDisabled(${u.id}, true, ${jsArg(u.useremail)}))">${t('users.uBtnDisable')}</button>` : ''}
                   ${canDelete ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteUser(${u.id}, ${jsArg(u.useremail)}))">${t('common.delete')}</button>` : ''}
                 </td>
               </tr>
@@ -4326,12 +4357,35 @@ async function updateUser(id) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
-async function deleteUser(id, name) {
+// Suppression = anonymisation immédiate : l'export des sessions est proposé avant
+function deleteUser(id, name) {
   if (id === currentUser.id) return toast(t('users.uCannotDeleteSelf'), 'error');
-  if (!await confirmDialog(t('users.uConfirmDelete', { name }), { danger: true })) return;
+  openModal(`
+    <h3>🗑️ ${t('users.uDeleteTitle', { name })}</h3>
+    <p style="font-size:13px;">${t('users.uDeleteAnonymizeHint')}</p>
+    <p style="font-size:13px;">${t('users.uDeleteExportHint')}</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" data-onclick="closeModal()">${t('common.cancel')}</button>
+      <a class="btn btn-outline" href="/api/transactions/csv?user_id=${Number(id) || 0}" download>⬇️ ${t('users.uDeleteExportBtn')}</a>
+      <button class="btn btn-danger" data-onclick="withBtn(this, () => execDeleteUser(${Number(id) || 0}))">${t('users.uDeleteConfirmBtn')}</button>
+    </div>
+  `);
+}
+
+async function execDeleteUser(id) {
   try {
     await api('DELETE', `/users/${id}`);
+    closeModal();
     toast(t('users.uDeleted'), 'success');
+    renderUsers();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function setUserDisabled(id, disabled, name) {
+  if (disabled && !await confirmDialog(t('users.uDisableConfirm', { name }), { confirmText: t('users.uBtnDisable') })) return;
+  try {
+    await api('PUT', `/users/${id}/disabled`, { disabled });
+    toast(t(disabled ? 'users.uDisabledDone' : 'users.uEnabledDone', { name }), 'success');
     renderUsers();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -4339,10 +4393,11 @@ async function deleteUser(id, name) {
 async function showUserSitesModal(id) {
   const user = (await api('GET', '/users')).find(u => u.id === id);
   if (!user) return;
-  const sites = await api('GET', '/sites');
+  const allSites = await api('GET', '/sites');
   const userSiteMap = {};
   (user.sites || []).forEach(s => { userSiteMap[s.site_id] = { role: s.role, authorized: s.authorized }; });
   const isAdmin = user.role === 'admin';
+  const sites = allSites.filter(s => !s.archived_at || userSiteMap[s.id]);
 
   openModal(`
     <h3>${t('users.uAssignedSites')} — ${escapeHtml(user.shortname || user.useremail)}</h3>
@@ -5749,11 +5804,11 @@ async function checkSitePrompt() {
   } catch {
     return;
   }
-  if (sites.length > 0) {
+  if (activeSites(sites).length > 0) {
     // Bornes sans site : inactives (aucun démarrage) tant qu'elles ne sont pas affectées
     let siteless = [];
     try {
-      siteless = (await api('GET', '/chargepoints')).filter(cp => !cp.site_id);
+      siteless = (await api('GET', '/chargepoints')).filter(cp => !cp.site_id && !cp.archived_at);
     } catch {
       return;
     }
@@ -7135,20 +7190,22 @@ async function renderSites() {
       const isManagedSite = isAdmin || (currentUser.sites || []).some(us => us.site_id === s.id && us.role === 'manager');
       return `
             <tr>
-              <td class="td-primary">${escapeHtml(s.sname)}${s.auto_web_badge === 0 ? ` <span class="badge badge-gray badge-xs" title="${escapeAttr(t('sites.siteAutoWebBadgeOffHint'))}">${t('sites.siteAutoWebBadgeOff')}</span>` : ''}</td>
+              <td class="td-primary">${escapeHtml(s.sname)}${s.archived_at ? ` <span class="badge badge-gray badge-xs" title="${escapeAttr(t('sites.siteArchivedHint'))}">🗄️ ${t('sites.siteArchived')}</span>` : ''}${s.auto_web_badge === 0 ? ` <span class="badge badge-gray badge-xs" title="${escapeAttr(t('sites.siteAutoWebBadgeOffHint'))}">${t('sites.siteAutoWebBadgeOff')}</span>` : ''}</td>
               <td>${s.address ? escapeHtml(s.address) : '-'}</td>
               <td>${cpCount}</td>
               <td class="td-date">${formatDateShort(s.created_at)}</td>
               <td>
                 ${s.default_price_per_kwh != null ? `<span class="td-meta">${t('tariff.summaryDefault', { price: formatCost(s.default_price_per_kwh, s.currency, 4) })}</span>` : `<span class="text-muted">${t('tariff.notConfigured')}</span>`}
-                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => showSiteTariffModal(${s.id}, ${jsArg(s.sname)}))">💶 ${t('tariff.button')}</button>` : ''}
+                ${isManagedSite && !s.archived_at ? `<button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => showSiteTariffModal(${s.id}, ${jsArg(s.sname)}))">💶 ${t('tariff.button')}</button>` : ''}
               </td>
               <td>
-                ${isManagedSite ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, ${jsArg(s.sname)})">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
+                ${isManagedSite && !s.archived_at ? `<button class="btn btn-secondary btn-sm" data-onclick="renderSiteUsers(${s.id}, ${jsArg(s.sname)})">\ud83d\udc65 ${t('sites.siteUsersManage')}</button>` : ''}
               </td>
               <td>
-                ${isAdmin ? `<button class="btn btn-teal btn-sm" data-onclick="showEditSiteModal(${s.id}, ${jsArg(s.sname)}, ${jsArg(s.address || '')}, ${s.auto_web_badge === 0 ? 0 : 1})">${t('common.edit')}</button>
-                <button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteSite(${s.id}, ${jsArg(s.sname)}))">${t('common.delete')}</button>` : ''}
+                ${isAdmin && s.archived_at ? `<button class="btn btn-success btn-sm" data-onclick="withBtn(this, () => restoreSite(${s.id}, ${jsArg(s.sname)}))">${t('common.restore')}</button>` : ''}
+                ${isAdmin && !s.archived_at ? `<button class="btn btn-teal btn-sm" data-onclick="showEditSiteModal(${s.id}, ${jsArg(s.sname)}, ${jsArg(s.address || '')}, ${s.auto_web_badge === 0 ? 0 : 1})">${t('common.edit')}</button>
+                <button class="btn btn-secondary btn-sm" data-onclick="withBtn(this, () => archiveSite(${s.id}, ${jsArg(s.sname)}))">${t('common.archive')}</button>` : ''}
+                ${isAdmin ? `<button class="btn btn-danger btn-sm" data-onclick="withBtn(this, () => deleteSite(${s.id}, ${jsArg(s.sname)}))">${t('common.delete')}</button>` : ''}
               </td>
             </tr>`;
     }).join('')}
@@ -7229,6 +7286,31 @@ async function deleteSite(id, name) {
   try {
     await api('DELETE', `/sites/${id}`);
     toast(t('sites.siteDeleted'), 'success');
+    renderSites();
+    checkSitePrompt();
+  } catch (err) {
+    // Site avec un historique : la suppression est refusée, on propose l'archivage
+    if (err.code === 'ERR_SITE_HAS_SESSIONS') return archiveSite(id, name, true);
+    toast(err.message, 'error');
+  }
+}
+
+async function archiveSite(id, name, afterDeleteRefused = false) {
+  const msg = (afterDeleteRefused ? t('sites.siteHasSessionsArchive') + '\n\n' : '') + t('sites.siteArchiveConfirm', { name });
+  if (!await confirmDialog(msg, { confirmText: t('common.archive') })) return;
+  try {
+    const res = await api('POST', `/sites/${id}/archive`);
+    toast(t('sites.siteArchivedDone', { name, count: res.archived_chargepoints || 0 }), 'success');
+    renderSites();
+    checkSitePrompt();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function restoreSite(id, name) {
+  if (!await confirmDialog(t('sites.siteRestoreConfirm', { name }), { confirmText: t('common.restore') })) return;
+  try {
+    const res = await api('POST', `/sites/${id}/restore`);
+    toast(t('sites.siteRestored', { name, count: res.restored_chargepoints || 0 }), 'success');
     renderSites();
     checkSitePrompt();
   } catch (err) { toast(err.message, 'error'); }
@@ -7446,7 +7528,7 @@ async function renderSiteUsers(siteId, siteName, keepState = false) {
         `;
         return `
         <tr>
-          <td>${escapeHtml(u.useremail)}</td>
+          <td>${escapeHtml(u.useremail)}${u.disabled_at ? ` <span class="badge badge-gray badge-xs" title="${escapeAttr(t('users.uDisabledHint'))}">${t('users.uDisabled')}</span>` : ''}</td>
           <td>${u.shortname ? escapeHtml(u.shortname) : '<span class="text-muted">-</span>'}</td>
           <td><span class="badge ${u.site_role === 'manager' ? 'role-manager' : 'role-user'}">${t(`common.${u.site_role}`)}</span></td>
           <td>${statusBadge}</td>
@@ -7609,6 +7691,11 @@ function adminManage() {
 }
 // Sites des pages de gestion : tous pour l'admin, sinon ceux où l'utilisateur est manager
 // (même périmètre que les routes de gestion côté serveur)
+// Sites archivés : consultables (filtres, historique), jamais proposés pour un nouveau rattachement
+function activeSites(sites) {
+  return (sites || []).filter(s => !s.archived_at);
+}
+
 function managedSitesOnly(sites) {
   if (!currentUser || currentUser.role === 'admin') return sites;
   const managed = new Set((currentUser.sites || []).filter(s => s.role === 'manager').map(s => s.site_id));

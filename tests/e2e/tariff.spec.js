@@ -217,6 +217,10 @@ test.describe.serial('Tarification du kWh', () => {
     const cps = await apiCall(page, 'GET', '/chargepoints');
     const cp = cps.body.find((c) => c.identity === identity);
     if (cp) await apiCall(page, 'DELETE', `/chargepoints/${cp.id}`);
-    await apiCall(page, 'DELETE', `/sites/${siteId}`);
+    {
+      // site avec un historique : suppression refusée (409), on l'archive
+      const del = await apiCall(page, 'DELETE', `/sites/${siteId}`);
+      if (del.status === 409) await apiCall(page, 'POST', `/sites/${siteId}/archive`);
+    }
   });
 });

@@ -36,7 +36,7 @@ jest.mock('../../src/logger', () => ({
 const mockDb = {
   getChargepointByIdentity: jest.fn(),
   getChargepointById: jest.fn(),
-  upsertChargepoint: jest.fn(),
+  updateChargepointByIdentity: jest.fn(),
   getTransactions: jest.fn(() => []),
   stopTransaction: jest.fn(),
   getInitialChargepointConfigByKey: jest.fn(),
@@ -129,6 +129,30 @@ describe('ocpp-common — createOCPPServerBase auth', () => {
     expect(reject).toHaveBeenCalledWith(400, 'Invalid identity format');
     expect(accept).not.toHaveBeenCalled();
     expect(mockDb.getChargepointByIdentity).not.toHaveBeenCalled();
+  });
+
+  it('refuse une borne archivée (identité réservée), même autorisée et sans mot de passe', () => {
+    mockDb.getChargepointByIdentity.mockReturnValue({
+      authorized: 1,
+      password: null,
+      archived_at: '2026-06-01T00:00:00.000Z',
+    });
+    const server = ocppCommon.createOCPPServerBase();
+    const accept = jest.fn();
+    const reject = jest.fn();
+    server._authFn(accept, reject, { identity: 'CPARCH', remoteAddress: '127.0.0.1' });
+    expect(reject).toHaveBeenCalledWith(401, 'Charge point archived');
+    expect(accept).not.toHaveBeenCalled();
+  });
+});
+
+// ── Fermeture des écrans d'un compte désactivé ou supprimé ──
+describe('ocpp-common — closeUiSessions', () => {
+  it('délègue à la fonction enregistrée par le serveur web', () => {
+    const fn = jest.fn();
+    ocppCommon.setUiSessionCloser(fn);
+    ocppCommon.closeUiSessions(42);
+    expect(fn).toHaveBeenCalledWith(42);
   });
 });
 
@@ -585,21 +609,21 @@ describe('ocpp-common — connexion chargepoint — ocpp_version', () => {
     ocppCommon.registerHandlersFn('2.0.1', jest.fn());
   });
 
-  it('appelle upsertChargepoint avec ocpp_version="2.0.1" pour un client ocpp2.0.1', () => {
+  it('appelle updateChargepointByIdentity avec ocpp_version="2.0.1" pour un client ocpp2.0.1', () => {
     const server = ocppCommon.createOCPPServerBase();
     const client = makeVersionedClient('CP201-CONN', 'ocpp2.0.1');
     server.emit('client', client);
-    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+    expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith(
       'CP201-CONN',
       expect.objectContaining({ ocpp_version: '2.0.1' })
     );
   });
 
-  it('appelle upsertChargepoint avec ocpp_version="1.6" pour un client ocpp1.6', () => {
+  it('appelle updateChargepointByIdentity avec ocpp_version="1.6" pour un client ocpp1.6', () => {
     const server = ocppCommon.createOCPPServerBase();
     const client = makeVersionedClient('CP16-CONN', 'ocpp1.6');
     server.emit('client', client);
-    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+    expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith(
       'CP16-CONN',
       expect.objectContaining({ ocpp_version: '1.6' })
     );
@@ -609,7 +633,7 @@ describe('ocpp-common — connexion chargepoint — ocpp_version', () => {
     const server = ocppCommon.createOCPPServerBase();
     const client = makeVersionedClient('CP-UNK-CONN', 'unknown');
     server.emit('client', client);
-    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+    expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith(
       'CP-UNK-CONN',
       expect.objectContaining({ ocpp_version: '1.6' })
     );
@@ -663,7 +687,7 @@ describe('ocpp-common — changement de protocole OCPP', () => {
     expect(mockDb.stopTransaction).toHaveBeenCalledWith(10, '102', 6000, expect.any(String), 'PowerLoss', 'server');
     expect(mockDb.clearChargingProfilesByFilter).toHaveBeenCalledWith(10, {});
     expect(mockDb.resetChargepointInitialized).toHaveBeenCalledWith(10);
-    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+    expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith(
       'CP-SWITCH',
       expect.objectContaining({ ocpp_version: '2.0.1' })
     );
@@ -1585,7 +1609,7 @@ describe('ocpp-common — enforcement des profils de sécurité OCPP 2.0.1', () 
         handle: jest.fn(),
       });
       server.emit('client', client);
-      expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+      expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith(
         'CP201-PROXY-WSS',
         expect.objectContaining({ connected_wss: 1 })
       );

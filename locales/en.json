@@ -7,6 +7,8 @@
     "dateTimeFormat": "m/d/Y H:i"
   },
   "common": {
+    "archive": "Archive",
+    "restore": "Restore",
     "add": "Add",
     "create": "Create",
     "cancel": "Cancel",
@@ -60,6 +62,15 @@
     "filterLimit": "Limit"
   },
   "sites": {
+    "siteArchived": "Archived",
+    "siteArchivedHint": "Site withdrawn: its charge points are archived, its history remains viewable and exportable by the admin and its managers. No changes allowed.",
+    "siteArchiveConfirm": "Archive site {{name}}? Its charge points will be archived (disconnected, connections refused, certificates revoked). Its history remains viewable and exportable. You can restore it later.",
+    "siteArchivedDone_one": "Site {{name}} archived with {{count}} charge point",
+    "siteArchivedDone_other": "Site {{name}} archived with {{count}} charge points",
+    "siteRestoreConfirm": "Restore site {{name}}? The charge points archived with it are restored too.",
+    "siteRestored_one": "Site {{name}} restored with {{count}} charge point",
+    "siteRestored_other": "Site {{name}} restored with {{count}} charge points",
+    "siteHasSessionsArchive": "This site has recorded sessions: deletion is refused to keep its history.",
     "siteBtnAdd": "New Site",
     "siteBtnEdit": "Edit Site",
     "siteNoData": "No Sites",
@@ -178,6 +189,15 @@
     "kpiMonths": " months"
   },
   "chargepoint": {
+    "cpArchived": "Archived",
+    "cpArchivedHint": "Charge point withdrawn: connection refused, history kept. Its identity stays reserved.",
+    "cpArchiveConfirm": "Archive charge point {{identity}}? It will be disconnected and its connections refused, and its certificate revoked. Its sessions remain viewable and exportable. You can restore it later.",
+    "cpArchivedDone": "Charge point {{identity}} archived",
+    "cpRestoreConfirm": "Restore charge point {{identity}}? It will be able to connect again; a new client certificate is generated.",
+    "cpRestored": "Charge point {{identity}} restored",
+    "cpHasSessionsArchive": "This charge point has recorded sessions: deleting it would erase them, so deletion is refused.",
+    "cpIdentityChangeHint": "Charge point replaced or typing error: changing the identity keeps the history. The charge point is disconnected and a new client certificate is generated (reinstall it if the charge point uses mTLS). Not possible during a charging session.",
+    "cpIdentityChanged": "Identity changed to {{identity}}: configure the charge point with this new identity (and its new certificate if it uses mTLS).",
     "cpIdentity": "OCPP Identifier",
     "cpIdentityHint": "The identifier must be unique and correspond to the Identity that the chargepoint sends when connecting.",
     "cpWsUrl": "OCPP Connection URL (WS)",
@@ -489,6 +509,19 @@
     }
   },
   "users": {
+    "uDisabled": "Disabled",
+    "uDisabledHint": "Disabled account: login and badges refused, history kept",
+    "uBtnDisable": "Disable",
+    "uBtnEnable": "Enable",
+    "uDisableConfirm": "Disable account {{name}}? Login and badges will be refused; nothing is erased and you can enable it again.",
+    "uDisabledDone": "Account {{name}} disabled",
+    "uEnabledDone": "Account {{name}} enabled",
+    "uDeleteTitle": "Delete account {{name}}",
+    "uDeleteAnonymizeHint": "Deletion is permanent and anonymizes the account: its sessions stay in totals and reimbursements under the name “Deleted user #n”, its badges are disabled and detached. To only suspend access, disable the account instead.",
+    "uDeleteExportHint": "Download its sessions first if you need to keep them with the name (accounting record).",
+    "uDeleteExportBtn": "Export sessions (CSV)",
+    "uDeleteConfirmBtn": "Delete and anonymize",
+    "uDeletedUserName": "Deleted user #{{id}}",
     "uBtnAdd": "New user",
     "uBtnEdit": "Modify user",
     "uAssignedSites": "Assigned Sites",
@@ -892,6 +925,7 @@
       "body": "The chargepoint {{identity}} was refused when connecting to the server.",
       "info": "Reason: {{reason}}",
       "reasons": {
+        "archived": "Charge point archived",
         "wss_no_auth":         "No valid authentication method provided (password or client certificate) — required OCPP security profile not met",
         "ws_no_auth":          "Plain WS connection without a password — required OCPP security profile not met (WS requires a password)",
         "mtls_invalid":        "Invalid or unverified mTLS client certificate (untrusted certificate or identity mismatch)",
@@ -1057,6 +1091,17 @@
     }
   },
   "apiErrors": {
+    "ERR_SITE_ARCHIVED": "Archived site: no changes allowed",
+    "ERR_SITE_HAS_SESSIONS": "This site has {{count}} recorded session(s): archive it instead of deleting it",
+    "ERR_CHARGEPOINT_HAS_SESSIONS": "This charge point has {{count}} recorded session(s): archive it instead of deleting it",
+    "ERR_CHARGEPOINT_ARCHIVED": "Archived charge point: restore it to change it",
+    "ERR_CHARGEPOINT_SESSION_ACTIVE": "Charging in progress: try again once the session has ended",
+    "ERR_CHARGEPOINT_IDENTITY_TAKEN": "This identity is already used by another charge point (possibly archived)",
+    "ERR_LAST_SITE_MANAGER": "Last manager of site {{sites}}: appoint another manager first",
+    "ERR_ACCOUNT_DISABLED": "Account disabled: contact your administrator",
+    "ERR_CANNOT_DISABLE_SELF": "You cannot disable your own account",
+    "ERR_CANNOT_DISABLE_LAST_ADMIN": "Cannot disable the last administrator",
+    "VALIDATION_USER_DISABLED": "Invalid disabled value.",
     "ERR_NOT_AUTHENTICATED": "Not authenticated",
     "ERR_ACCESS_DENIED": "Access denied",
     "ERR_SITE_NOT_MANAGED": "You do not manage this site",

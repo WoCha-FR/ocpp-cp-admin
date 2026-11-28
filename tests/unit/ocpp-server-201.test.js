@@ -3,7 +3,7 @@
 const mockDb = {
   getChargepointByIdentity: jest.fn(),
   getChargepointById: jest.fn(),
-  upsertChargepoint: jest.fn(),
+  updateChargepointByIdentity: jest.fn(),
   addOcppMessage: jest.fn(),
   createTransaction: jest.fn(),
   stopTransaction: jest.fn(),
@@ -189,7 +189,7 @@ describe('ocpp-server-201 — BootNotification', () => {
     expect(result.currentTime).toBeDefined();
   });
 
-  it('maps chargingStation fields to upsertChargepoint', () => {
+  it('maps chargingStation fields to updateChargepointByIdentity', () => {
     client._handlers['BootNotification']({
       chargingStation: {
         vendorName: 'ABB',
@@ -199,7 +199,7 @@ describe('ocpp-server-201 — BootNotification', () => {
         modem: { iccid: '12345', imsi: '67890' },
       },
     });
-    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+    expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith(
       'CP001',
       expect.objectContaining({
         vendor: 'ABB',
@@ -219,7 +219,7 @@ describe('ocpp-server-201 — BootNotification', () => {
         model: 'M' + 'X'.repeat(80),
       },
     });
-    expect(mockDb.upsertChargepoint).toHaveBeenCalledWith(
+    expect(mockDb.updateChargepointByIdentity).toHaveBeenCalledWith(
       'CP001',
       expect.objectContaining({
         vendor: 'scriptalert(1)/script',

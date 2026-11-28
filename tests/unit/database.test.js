@@ -2460,12 +2460,13 @@ describe('database — historique figé des sessions', () => {
     });
   });
 
-  it('supprimer le compte garde le nom enregistré sur ses sessions', () => {
-    db.deleteUser(paul);
+  it('supprimer le compte anonymise ses sessions sans les retirer du remboursement', () => {
+    const label = `Utilisateur supprimé #${paul}`;
+    db.deleteUser(paul, label);
     expect(report()).toEqual([
-      expect.objectContaining({ site_id: siteA, user_id: paul, user_name: 'Paul', sessions: 1 }),
+      expect.objectContaining({ site_id: siteA, user_id: paul, user_name: label, sessions: 1 }),
     ]);
-    expect(sessionsOf(cpId).find((t) => t.user_id === paul).tag_username).toBe('Paul');
+    expect(sessionsOf(cpId).find((t) => t.user_id === paul).tag_username).toBe(label);
   });
 
   it('site_ids (périmètre) et site_id (filtre choisi) s’appliquent ensemble', () => {
@@ -2565,6 +2566,155 @@ describe('database — badges et autorisation (lot 2)', () => {
     const onB = db.getUsersWithSites([siteB]);
     expect(onB.map((u) => u.id)).toContain(worker);
     expect(db.getUsersWithSites([])).toEqual([]);
+  });
+});
+
+// ── Lot 3 : sites, bornes et comptes (archivage, suppression conditionnelle, anonymisation) ──
+describe('database — sites, bornes et comptes (lot 3)', () => {
+  const START = '2026-06-01T08:00:00Z';
+  const STOP = '2026-06-01T09:00:00Z';
+  let site;
+  let cpUsed;
+  let cpEarly;
+  let cpFree;
+
+  beforeAll(() => {
+    site = db.createSite('Site lot3', null).id;
+    cpUsed = db.createChargepoint('CP-LOT3-USED', 'Utilisée', null, 1, site).id;
+    cpEarly = db.createChargepoint('CP-LOT3-EARLY', 'Archivée avant', null, 1, site).id;
+    cpFree = db.createChargepoint('CP-LOT3-FREE', 'Sans session', null, 1, site).id;
+    const tx = db.createTransaction(cpUsed, 1, 'LOT3TAG', 0, START, 'rfid');
+    db.stopTransaction(cpUsed, tx.transaction_id, 1500, STOP, 'Local');
+  });
+
+  it('sessions comptées par site (figé) et par borne, démarrages refusés exclus', () => {
+    db.createTransaction(cpUsed, 2, 'LOT3BAD', 0, START, 'rfid', { status: 'Rejected' });
+    expect(db.countSiteSessions(site)).toBe(1);
+    expect(db.countChargepointSessions(cpUsed)).toBe(1);
+    expect(db.countChargepointSessions(cpFree)).toBe(0);
+  });
+
+  it('transactions actives comptées sur une ou plusieurs bornes', () => {
+    expect(db.countActiveTransactions([cpUsed, cpFree])).toBe(0);
+    const tx = db.createTransaction(cpFree, 1, 'LOT3RUN', 0, START, 'rfid');
+    expect(db.countActiveTransactions(cpFree)).toBe(1);
+    expect(db.countActiveTransactions([])).toBe(0);
+    db.stopTransaction(cpFree, tx.transaction_id, 10, STOP, 'Local');
+    db.getDb().prepare('DELETE FROM transactions WHERE chargepoint_id = ?').run(cpFree);
+  });
+
+  it('archivage du site : ses bornes actives archivées avec lui, la restauration ne ramène que celles-là', () => {
+    db.setChargepointArchived(cpEarly, true);
+    const archived = db.archiveSite(site);
+    expect(archived.map((c) => c.identity).sort()).toEqual(['CP-LOT3-FREE', 'CP-LOT3-USED']);
+    expect(db.getSiteById(site).archived_at).toBeTruthy();
+    expect(db.getChargepointById(cpUsed).archived_at).toBe(db.getSiteById(site).archived_at);
+    // l'historique reste lisible
+    expect(db.getTransactions({ site_id: site }).length).toBe(1);
+
+    const restored = db.restoreSite(site);
+    expect(restored.map((c) => c.identity).sort()).toEqual(['CP-LOT3-FREE', 'CP-LOT3-USED']);
+    expect(db.getSiteById(site).archived_at).toBeNull();
+    expect(db.getChargepointById(cpUsed).archived_at).toBeNull();
+    // archivée séparément avant le site : reste archivée
+    expect(db.getChargepointById(cpEarly).archived_at).toBeTruthy();
+    expect(db.restoreSite(site)).toEqual([]);
+    db.setChargepointArchived(cpEarly, false);
+  });
+
+  it('borne archivée : absente des connecteurs du tableau de bord et du démarrage utilisateur', () => {
+    db.upsertConnector(cpEarly, 1, 'Available');
+    const user = db.createUser('lot3-start@test.com', 'Passw0rd!x', 'user', null).id;
+    db.setUserSites(user, [{ site_id: site, role: 'user', authorized: 1 }]);
+    const visible = () => db.getAvailableConnectorsForUser(user).some((c) => c.chargepoint_id === cpEarly);
+    expect(visible()).toBe(true);
+    db.setChargepointArchived(cpEarly, true);
+    expect(visible()).toBe(false);
+    db.setChargepointArchived(cpEarly, false);
+  });
+
+  it('updateChargepointByIdentity ne crée jamais de borne (pas de fantôme après suppression ou renommage)', () => {
+    expect(db.updateChargepointByIdentity('CP-LOT3-GHOST', { connected: 0 })).toBeUndefined();
+    expect(db.getChargepointByIdentity('CP-LOT3-GHOST')).toBeUndefined();
+    expect(db.updateChargepointByIdentity('CP-LOT3-FREE', { connected: 1 }).connected).toBe(1);
+  });
+
+  it('changement d’identité : les sessions suivent la borne (id interne)', () => {
+    db.updateChargepoint(cpUsed, { identity: 'CP-LOT3-NEW' });
+    expect(db.getChargepointByIdentity('CP-LOT3-USED')).toBeUndefined();
+    expect(db.getTransactions({ chargepoint_id: cpUsed })[0]).toMatchObject({ chargepoint_id: cpUsed, site_id: site });
+    expect(db.countChargepointSessions(db.getChargepointByIdentity('CP-LOT3-NEW').id)).toBe(1);
+  });
+
+  it('suppression d’un site : ses badges limités au site partent avec lui (jamais promus en badges globaux)', () => {
+    const tmp = db.createSite('Site lot3 vide', null).id;
+    db.createIdTag('LOT3LOCAL', null, tmp, null);
+    expect(db.countSiteSessions(tmp)).toBe(0);
+    db.deleteSite(tmp);
+    expect(db.getSiteById(tmp)).toBeUndefined();
+    expect(db.getIdTagByTag('LOT3LOCAL', null)).toBeUndefined();
+  });
+
+  describe('comptes', () => {
+    let boss;
+    let deputy;
+    let worker;
+
+    beforeAll(() => {
+      boss = db.createUser('lot3-boss@test.com', 'Passw0rd!x', 'user', 'Patron').id;
+      deputy = db.createUser('lot3-deputy@test.com', 'Passw0rd!x', 'user', 'Adjoint').id;
+      worker = db.createUser('Lot3-Worker@Test.com', 'Passw0rd!x', 'user', 'Ouvrier').id;
+      db.setUserSites(boss, [{ site_id: site, role: 'manager', authorized: 1 }]);
+      db.setUserSites(deputy, [{ site_id: site, role: 'user', authorized: 1 }]);
+      db.setUserSites(worker, [{ site_id: site, role: 'user', authorized: 1 }]);
+    });
+
+    it('e-mail insensible à la casse : même compte, doublon détecté', () => {
+      expect(db.getUserByEmail('lot3-worker@test.com').id).toBe(worker);
+      expect(db.isEmailTaken('LOT3-WORKER@test.com')).toBe(true);
+      expect(db.isEmailTaken('lot3-worker@test.com', worker)).toBe(false);
+      expect(db.isEmailTaken('lot3-nobody@test.com')).toBe(false);
+    });
+
+    it('dernier manager : seul manager actif du site, un manager désactivé ne compte pas', () => {
+      expect(db.getSolelyManagedSites(boss)).toEqual([{ site_id: site, site_name: 'Site lot3' }]);
+      db.setUserSites(deputy, [{ site_id: site, role: 'manager', authorized: 1 }]);
+      expect(db.getSolelyManagedSites(boss)).toEqual([]);
+      expect(db.countSiteManagers(site)).toBe(2);
+      db.setUserDisabled(deputy, true);
+      expect(db.countSiteManagers(site)).toBe(1);
+      expect(db.getSolelyManagedSites(boss)).toHaveLength(1);
+      // le compte désactivé n'est lui-même plus « dernier manager » de rien
+      expect(db.getSolelyManagedSites(deputy)).toEqual([]);
+      db.setUserDisabled(deputy, false);
+    });
+
+    it('désactivation réversible : date posée puis effacée, badges refusés entre-temps', () => {
+      db.createIdTag('LOT3WORKER', worker, null, null, null, 1, 'ISO14443', null, 'pro');
+      expect(db.setUserDisabled(worker, true).disabled_at).toBeTruthy();
+      expect(db.authorizeIdTag('LOT3WORKER', site).reason).toBe('user_disabled');
+      expect(db.setUserDisabled(worker, false).disabled_at).toBeNull();
+      expect(db.authorizeIdTag('LOT3WORKER', site).status).toBe('Accepted');
+    });
+
+    it('suppression = anonymisation : sessions gardées et renommées, badges désactivés et détachés', () => {
+      const tagId = db.getIdTagByTag('LOT3WORKER', null).id;
+      db.updateIdTag(tagId, { description: 'Badge de Jean Dupont' });
+      const tx = db.createTransaction(cpUsed, 1, 'LOT3WORKER', 0, START, 'rfid');
+      db.stopTransaction(cpUsed, tx.transaction_id, 3000, STOP, 'Local');
+      expect(db.getTransactions({ user_id: worker })[0].tag_username).toBe('Ouvrier');
+
+      db.deleteUser(worker, `Utilisateur supprimé #${worker}`);
+
+      expect(db.getUserById(worker)).toBeUndefined();
+      expect(db.getUserSites(worker)).toEqual([]);
+      const sessions = db.getTransactions({ user_id: worker });
+      expect(sessions).toHaveLength(1);
+      expect(sessions[0]).toMatchObject({ tag_username: `Utilisateur supprimé #${worker}`, tag_category: 'pro' });
+      const tag = db.getIdTagById(tagId);
+      expect(tag).toMatchObject({ active: 0, user_id: null, description: null, id_tag: 'LOT3WORKER' });
+      expect(db.authorizeIdTag('LOT3WORKER', site).status).not.toBe('Accepted');
+    });
   });
 });
 

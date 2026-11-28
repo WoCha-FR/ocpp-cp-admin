@@ -191,3 +191,103 @@ describe('Backend access control guards', () => {
     expect(route).toMatch(/noBadge: candidates === 0 && !autoWebAllowed/);
   });
 });
+
+// ── Lot 3 : sites, bornes et comptes ──
+describe('Lot 3 — cycle de vie des sites, bornes et comptes', () => {
+  const src = fs.readFileSync(path.join(__dirname, '../../src/routes.js'), 'utf8');
+  const block = (startMarker, len = 1800) => {
+    const start = src.indexOf(startMarker);
+    expect(start).toBeGreaterThan(-1);
+    return src.slice(start, start + len);
+  };
+
+  it('suppression d’un site ou d’une borne refusée dès qu’une session existe (archivage proposé)', () => {
+    const site = block("router.delete('/sites/:id', requireRole('admin')", 500);
+    expect(site).toMatch(/db\.countSiteSessions\(siteId\)/);
+    expect(site).toMatch(/status\(409\)\.json\(\{ error: 'ERR_SITE_HAS_SESSIONS', count \}\)/);
+    const cp = block("router.delete(\n  '/chargepoints/:id',", 900);
+    expect(cp).toMatch(/db\.countChargepointSessions\(cp\.id\)/);
+    expect(cp).toMatch(/ERR_CHARGEPOINT_HAS_SESSIONS/);
+    expect(cp.indexOf('countChargepointSessions')).toBeLessThan(cp.indexOf('db.deleteChargepoint'));
+  });
+
+  it('archivage et restauration : admin seul, jamais pendant une recharge, certificats gérés', () => {
+    for (const route of ["'/sites/:id/archive'", "'/sites/:id/restore'", "'/chargepoints/:id/archive'", "'/chargepoints/:id/restore'"]) {
+      expect(block(route, 120)).toMatch(/requireRole\('admin'\)/);
+    }
+    const site = block("'/sites/:id/archive'");
+    expect(site).toMatch(/countActiveTransactions\(cpIds\) > 0[\s\S]*ERR_CHARGEPOINT_SESSION_ACTIVE/);
+    expect(site).toMatch(/disconnectChargepoint\(cp\.identity, 'archived'\)/);
+    expect(site).toMatch(/revokeChargepointCert\(cp\.identity, 'chargepoint_archived'\)/);
+    const cp = block("'/chargepoints/:id/archive'");
+    expect(cp).toMatch(/countActiveTransactions\(cp\.id\) > 0/);
+    expect(cp).toMatch(/revokeChargepointCert\(cp\.identity, 'chargepoint_archived'\)/);
+    expect(block("'/chargepoints/:id/restore'")).toMatch(/siteArchivedError\(res, cp\.site_id\)[\s\S]*generateChargepointCert/);
+  });
+
+  it('site archivé : écritures refusées (site, tarif, utilisateurs, badges, bornes)', () => {
+    expect(src).toMatch(/function siteArchivedError\(res, siteId\)[\s\S]{0,200}ERR_SITE_ARCHIVED/);
+    expect(block("router.put(\n  '/sites/:id',")).toMatch(/siteArchivedError\(res, Number\(req\.params\.id\)\)/);
+    expect(block("router.put(\n  '/sites/:siteId/tariff',")).toMatch(/siteArchivedError\(res, siteId\)/);
+    expect(block("router.post(\n  '/sites/:siteId/users',")).toMatch(/siteArchivedError\(res, siteId\)/);
+    expect(block("router.patch(\n  '/sites/:siteId/users/:userId',")).toMatch(/siteArchivedError\(res, siteId\)/);
+    expect(block("router.post('/id-tags'", 1500)).toMatch(/siteArchivedError\(res, next\.site_id\)/);
+    expect(block("router.post('/chargepoints', requireRole('admin')", 600)).toMatch(/siteArchivedError\(res, data\.site_id\)/);
+    expect(block("'/chargepoints/pending/:identity/accept'", 900)).toMatch(/siteArchivedError\(res, data\.site_id\)/);
+  });
+
+  it('changement d’identité : refusé en recharge ou si pris, ancien certificat révoqué, nouveau généré', () => {
+    const route = block("router.put(\n  '/chargepoints/:id',", 3000);
+    expect(route).toMatch(/before\.archived_at\) return res\.status\(409\)\.json\(\{ error: 'ERR_CHARGEPOINT_ARCHIVED' \}\)/);
+    expect(route).toMatch(/\(identityChanged \|\| siteChanged\) && db\.countActiveTransactions\(before\.id\) > 0/);
+    expect(route).toMatch(/identityChanged && db\.getChargepointByIdentity\(data\.identity\)[\s\S]{0,120}ERR_CHARGEPOINT_IDENTITY_TAKEN/);
+    expect(route).toMatch(/disconnectChargepoint\(before\.identity, 'identity_changed'\)/);
+    expect(route).toMatch(/revokeChargepointCert\(before\.identity, 'identity_changed'\)/);
+    expect(route).toMatch(/generateChargepointCert\(cp\.identity\)/);
+    const assign = block("'/chargepoints/:id/assign',", 1200);
+    expect(assign).toMatch(/countActiveTransactions\(before\.id\) > 0/);
+    expect(assign).toMatch(/siteArchivedError\(res, data\.site_id\)/);
+  });
+
+  it('plus de recréation d’une borne fantôme par le code OCPP (mise à jour seule)', () => {
+    for (const file of ['ocpp-common.js', 'ocpp-server-16.js', 'ocpp-server-201.js']) {
+      const code = fs.readFileSync(path.join(__dirname, '../../src', file), 'utf8');
+      expect(code).not.toMatch(/db\.upsertChargepoint\(/);
+    }
+    const common = fs.readFileSync(path.join(__dirname, '../../src/ocpp-common.js'), 'utf8');
+    expect(common).toMatch(/cp && cp\.archived_at[\s\S]{0,400}reject\(401, 'Charge point archived'\)/);
+  });
+
+  it('dernier manager protégé sur tous les chemins (rôle, retrait, sites, désactivation, suppression)', () => {
+    expect(block("router.patch(\n  '/sites/:siteId/users/:userId',", 2000)).toMatch(/soleManagerOf\(userId, \[siteId\]\)\.length > 0/);
+    expect(block("router.delete(\n  '/sites/:siteId/users/:userId',", 1000)).toMatch(/soleManagerOf\(userId, \[siteId\]\)\.length > 0/);
+    expect(block("'/users/:id/sites',", 1500)).toMatch(/soleManagerOf\(userId\)\.filter[\s\S]{0,120}lastManagerError/);
+    expect(block("'/users/:id/disabled',", 1500)).toMatch(/soleManagerOf\(targetId\)[\s\S]{0,80}lastManagerError/);
+    expect(block("router.delete('/users/:id',", 1200)).toMatch(/soleManagerOf\(targetId\)[\s\S]{0,80}lastManagerError/);
+  });
+
+  it('comptes : désactivation admin (ni soi, ni dernier admin), suppression anonymisée, e-mail unique', () => {
+    const dis = block("'/users/:id/disabled',", 1500);
+    expect(dis).toMatch(/requireRole\('admin'\)/);
+    expect(dis).toMatch(/ERR_CANNOT_DISABLE_SELF/);
+    expect(dis).toMatch(/ERR_CANNOT_DISABLE_LAST_ADMIN/);
+    expect(dis).toMatch(/closeUiSessions\(targetId\)/);
+    const del = block("router.delete('/users/:id',", 1200);
+    expect(del).toMatch(/i18next\.t\('users\.uDeletedUserName'/);
+    expect(del).toMatch(/db\.deleteUser\(targetId, label\)/);
+    expect(del).toMatch(/closeUiSessions\(targetId\)/);
+    expect(block("router.post(\n  '/users',", 800)).toMatch(/db\.isEmailTaken\(data\.useremail\)[\s\S]{0,100}ERR_EMAIL_ALREADY_USED/);
+    expect(block("router.put(\n  '/users/:id',", 1200)).toMatch(/db\.isEmailTaken\(data\.useremail, targetId\)/);
+    // export des sessions d'un salarié réservé à l'admin
+    expect(block("'/transactions/csv',", 1200)).toMatch(/req\.query\.user_id && req\.user\.role === 'admin'/);
+  });
+
+  it('compte désactivé : connexion refusée (local, Google), session et temps réel coupés', () => {
+    const auth = fs.readFileSync(path.join(__dirname, '../../src/auth.js'), 'utf8');
+    expect(auth.match(/ERR_ACCOUNT_DISABLED/g)).toHaveLength(3);
+    expect(auth).toMatch(/if \(!user \|\| user\.disabled_at\) return done\(null, false\)/);
+    const server = fs.readFileSync(path.join(__dirname, '../../src/server.js'), 'utf8');
+    expect(server).toMatch(/if \(!dbUser \|\| dbUser\.disabled_at\)/);
+    expect(server).toMatch(/setUiSessionCloser\(/);
+  });
+});

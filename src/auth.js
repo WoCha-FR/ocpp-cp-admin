@@ -21,6 +21,10 @@ passport.use(
         if (!bcrypt.compareSync(password, user.password)) {
           return done(null, false, { message: 'ERR_WRONG_PASSWORD' });
         }
+        // Vérifié après le mot de passe : ne révèle pas l'état du compte à un tiers
+        if (user.disabled_at) {
+          return done(null, false, { message: 'ERR_ACCOUNT_DISABLED' });
+        }
         db.updateLastLogin(user.id);
         return done(null, {
           id: user.id,
@@ -61,6 +65,9 @@ if (config.auth?.google?.enabled) {
             // Vérifier si un utilisateur existe déjà avec ce Google ID
             const gguser = db.getUserByGoogleId(profile.id);
             if (gguser) {
+              if (gguser.disabled_at) {
+                return done(null, false, { message: 'ERR_ACCOUNT_DISABLED' });
+              }
               db.updateLastLogin(gguser.id);
               return done(null, {
                 id: gguser.id,
@@ -79,6 +86,9 @@ if (config.auth?.google?.enabled) {
             if (!user) {
               // Aucun utilisateur avec ce Google ID ni ce mail: Renvoie utilisateur inconnu.
               return done(null, false, { message: 'ERR_UNKNOWN_USER' });
+            }
+            if (user.disabled_at) {
+              return done(null, false, { message: 'ERR_ACCOUNT_DISABLED' });
             }
             // Un utilisateur existe avec ce mail, associer le compte Google à cet utilisateur
             db.updateUserGoogleProfile(user.id, profile);
@@ -108,7 +118,8 @@ passport.serializeUser((user, done) => {
 passport.deserializeUser((id, done) => {
   try {
     const user = db.getUserById(id);
-    if (!user) return done(null, false);
+    // Compte supprimé ou désactivé : la session ouverte est invalidée à la requête suivante
+    if (!user || user.disabled_at) return done(null, false);
     done(null, {
       id: user.id,
       useremail: user.useremail,

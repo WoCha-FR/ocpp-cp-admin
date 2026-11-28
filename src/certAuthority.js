@@ -174,9 +174,10 @@ function isClientCertRevoked(peerCert) {
   return Object.prototype.hasOwnProperty.call(readRevokedList(), String(fingerprint).toUpperCase());
 }
 
-// Suppression d'une borne : le certificat est révoqué puis les fichiers (dont la clé) effacés
-function removeClientCertificate(identity) {
-  const revoked = revokeClientCertificate(identity, 'chargepoint_deleted');
+// Borne supprimée, archivée ou renommée : le certificat est révoqué puis les fichiers (dont la
+// clé) effacés. Sa CN étant l'ancienne identité, il ne peut pas être repris tel quel.
+function removeClientCertificate(identity, reason = 'chargepoint_deleted') {
+  const revoked = revokeClientCertificate(identity, reason);
   fs.rmSync(getClientCertDir(identity), { recursive: true, force: true });
   return revoked;
 }

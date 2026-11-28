@@ -87,6 +87,16 @@ function broadcast(type, data, siteId = null) {
   if (wsBroadcast) wsBroadcast(JSON.stringify({ type, data }), siteId);
 }
 
+// Fermeture des connexions temps réel de l'interface d'un compte (désactivé ou supprimé) :
+// enregistrée par server.js, qui détient les sockets
+let uiSessionCloser = null;
+function setUiSessionCloser(fn) {
+  uiSessionCloser = fn;
+}
+function closeUiSessions(userId) {
+  if (uiSessionCloser) uiSessionCloser(userId);
+}
+
 function getSiteIdByIdentity(identity) {
   if (!identity) return null;
   return db.getChargepointByIdentity(identity)?.site_id ?? null;
@@ -338,6 +348,18 @@ function createOCPPServerBase(options = {}) {
       }
     }
 
+    // Borne archivée : identité réservée (historique conservé), connexion refusée jusqu'à sa
+    // restauration. Une borne qui la remplace doit recevoir une nouvelle identité.
+    if (cp && cp.archived_at) {
+      logger.warn(`Connection refused: charge point ${handshake.identity} is archived`);
+      if (checkRefusedNotifCooldown(handshake.identity, 'archived')) {
+        notifications
+          .emit('chargepoint_refused', { identity: handshake.identity, reason: 'archived' })
+          .catch(() => {});
+      }
+      return reject(401, 'Charge point archived');
+    }
+
     if (cp && !cp.authorized) {
       logger.warn(`Connection refused: charge ${handshake.identity} point not authorized`);
       if (checkRefusedNotifCooldown(handshake.identity, 'not_authorized')) {
@@ -549,7 +571,7 @@ function createOCPPServerBase(options = {}) {
 
     logger.info(`Chargepoint connected: ${identity} (protocol: ${ocppVersion})`);
     connectedClients.set(identity, client);
-    db.upsertChargepoint(identity, {
+    db.updateChargepointByIdentity(identity, {
       connected: 1,
       // WSS natif, ou TLS terminé en amont par le reverse proxy (ocpp.trustProxyProto)
       connected_wss: isWSS || client.session?.tlsUpstream ? 1 : 0,
@@ -658,7 +680,7 @@ function createOCPPServerBase(options = {}) {
       }
       logger.info(`Chargepoint ${identity} disconnected`);
       connectedClients.delete(identity);
-      db.upsertChargepoint(identity, {
+      db.updateChargepointByIdentity(identity, {
         connected: 0,
         connected_wss: 0,
         endpoint_address: null,
@@ -719,7 +741,14 @@ function createOCPPServerBase(options = {}) {
 // Raisons de déconnexion qui ne terminent PAS les sessions de charge : coupure réseau présumée
 // (heartbeat) ou révocation du certificat (la borne peut continuer à charger hors ligne puis
 // envoyer son arrêt réel à la reconnexion). Toute autre raison = dé-autorisation explicite.
-const NO_TX_CLOSE_REASONS = new Set(['heartbeat_timeout', 'cert_revoked']);
+// identity_changed / archived : refusés pendant une session (aucune transaction à clore), mais
+// une transaction ne doit jamais être close par ces opérations d'administration
+const NO_TX_CLOSE_REASONS = new Set([
+  'heartbeat_timeout',
+  'cert_revoked',
+  'identity_changed',
+  'archived',
+]);
 
 function disconnectChargepoint(identity, reason = null) {
   const client = connectedClients.get(identity);
@@ -1246,6 +1275,8 @@ module.exports = {
   explainSecurityProfileRefusal,
   setBroadcast,
   broadcast,
+  setUiSessionCloser,
+  closeUiSessions,
   getConnectedClients,
   callClient,
   registerCallClientImpl,

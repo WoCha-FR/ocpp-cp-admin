@@ -14,10 +14,11 @@ test.describe('Export CSV des logs d\'une borne', () => {
       return;
     }
 
-    await firstRow.click();
-    await page.locator('#detailTabLogs').waitFor({ timeout: 10000 });
-    await page.locator('#detailTabLogs').click();
-    await page.locator('#detailTabContent').waitFor({ timeout: 10000 });
+    // ouvre la fiche par le lien de l'identifiant (le reste de la ligne porte des boutons)
+    await firstRow.locator('.cp-identity-link').click();
+    const logsTab = page.locator(`[data-onclick*="switchDetailTab"][data-onclick*="'logs'"]`);
+    await logsTab.waitFor({ timeout: 10000 });
+    await logsTab.click();
 
     await expect(page.locator('[data-onclick^="exportCpLogsCsv("]')).toBeVisible({ timeout: 5000 });
   });
@@ -33,10 +34,11 @@ test.describe('Export CSV des logs d\'une borne', () => {
       return;
     }
 
-    await firstRow.click();
-    await page.locator('#detailTabLogs').waitFor({ timeout: 10000 });
-    await page.locator('#detailTabLogs').click();
-    await page.locator('#detailTabContent').waitFor({ timeout: 10000 });
+    // ouvre la fiche par le lien de l'identifiant (le reste de la ligne porte des boutons)
+    await firstRow.locator('.cp-identity-link').click();
+    const logsTab = page.locator(`[data-onclick*="switchDetailTab"][data-onclick*="'logs'"]`);
+    await logsTab.waitFor({ timeout: 10000 });
+    await logsTab.click();
 
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 5000 }),

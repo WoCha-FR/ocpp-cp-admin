@@ -338,7 +338,11 @@ test.describe.serial('Badges : droits du gestionnaire et règles (lot 2)', () =>
       if (ids[who]) await apiCall(page, 'DELETE', `/users/${ids[who]}`);
     }
     for (const key of ['hq', 'home', 'other']) {
-      if (ids[key]) await apiCall(page, 'DELETE', `/sites/${ids[key]}`);
+      if (ids[key]) {
+        // site avec un historique : suppression refusée (409), on l'archive
+        const del = await apiCall(page, 'DELETE', `/sites/${ids[key]}`);
+        if (del.status === 409) await apiCall(page, 'POST', `/sites/${ids[key]}/archive`);
+      }
     }
   });
 });

@@ -344,11 +344,22 @@ const SiteUserParams = {
   },
 };
 
+// Rôle global : admin ou user (la base refuse tout autre valeur). « manager » est un rôle de
+// site (user_sites.role), jamais un rôle global.
 const UserRole = {
   role: {
     in: ['body'],
-    isIn: { options: [['admin', 'manager', 'user']] },
+    isIn: { options: [['admin', 'user']] },
     errorMessage: 'VALIDATION_USER_ROLE',
+  },
+};
+
+const UserDisabled = {
+  disabled: {
+    in: ['body'],
+    isBoolean: { options: { strict: true } },
+    toBoolean: true,
+    errorMessage: 'VALIDATION_USER_DISABLED',
   },
 };
 
@@ -466,6 +477,14 @@ const TransactionsQuery = {
     isInt: { options: { gt: 0 } },
     toInt: true,
     errorMessage: 'VALIDATION_SITE_ID',
+  },
+  // Sessions d'un salarié (export avant suppression de son compte)
+  user_id: {
+    in: ['query'],
+    optional: true,
+    isInt: { options: { gt: 0 } },
+    toInt: true,
+    errorMessage: 'VALIDATION_USER_ID',
   },
   status: {
     in: ['query'],
@@ -1178,6 +1197,7 @@ module.exports = {
   SiteIdParam,
   SiteUserParams,
   UserRole,
+  UserDisabled,
   UserSitesAssignment,
   SiteUserPatch,
   StartCharge,

@@ -53,7 +53,7 @@ test.describe('Notifications utilisateur (administration)', () => {
     await page.locator('#modalContent [data-onclick="closeModal()"]').click();
     await expect(page.locator('#modalOverlay')).toBeHidden({ timeout: 5000 });
     await row.locator('[data-onclick*="deleteUser"]').click();
-    await page.locator('#confirmBtnOk').click();
+    await page.locator('#modalContent [data-onclick*="execDeleteUser"]').click();
     await expect(page.locator('#pageContent').getByText(email)).toBeHidden({ timeout: 8000 });
   });
 });

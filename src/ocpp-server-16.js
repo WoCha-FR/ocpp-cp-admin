@@ -257,7 +257,7 @@ function register16Handlers(client, loggedHandle) {
     const safeMeterSn = sanitizeText(params.meterSerialNumber, 25);
     const safeMeterType = sanitizeText(params.meterType, 25);
 
-    db.upsertChargepoint(identity, {
+    db.updateChargepointByIdentity(identity, {
       vendor: safeVendor,
       model: safeModel,
       serial_number: safeSerial,
@@ -506,7 +506,7 @@ function register16Handlers(client, loggedHandle) {
           vendor_id: safeVendorId,
           vendor_error_code: safeVendorErrorCode,
         });
-        db.upsertChargepoint(identity, { has_connector0: 1 });
+        db.updateChargepointByIdentity(identity, { has_connector0: 1 });
       }
       const existingConnector = db.getConnectorByChargepointAndId(cp.id, params.connectorId);
       const previousStatus = existingConnector?.cnstatus || null;

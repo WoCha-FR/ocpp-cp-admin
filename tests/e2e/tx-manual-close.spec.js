@@ -234,6 +234,10 @@ test.describe.serial('Clôture manuelle d’une transaction', () => {
     const cp = cps.body.find((c) => c.identity === identity);
     if (cp) await apiCall(page, 'DELETE', `/chargepoints/${cp.id}`);
     if (userId) await apiCall(page, 'DELETE', `/users/${userId}`);
-    if (siteId) await apiCall(page, 'DELETE', `/sites/${siteId}`);
+    if (siteId) {
+      // site avec un historique : suppression refusée (409), on l'archive
+      const del = await apiCall(page, 'DELETE', `/sites/${siteId}`);
+      if (del.status === 409) await apiCall(page, 'POST', `/sites/${siteId}/archive`);
+    }
   });
 });
